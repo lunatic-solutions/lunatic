@@ -1,0 +1,21 @@
+[package]
+name = "lunatic"
+version = "0.1.0"
+authors = ["Bernard Kolobara <me@kolobara.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+async_wormhole = { path = "../async_wormhole" }
+wasmtime = {path = "../wasmtime/crates/wasmtime"}
+wasmtime-runtime = {path = "../wasmtime/crates/runtime"}
+anyhow = "1.0"
+smol = "0.3"
+
+[dev-dependencies]
+criterion = "0.3"
+
+[[bench]]
+name = "lunatic_benchmark"
+harness = false
