@@ -3,9 +3,12 @@ use anyhow::Result;
 use wasmtime::*;
 use std::mem::ManuallyDrop;
 
-use smol::Task;
 use smol::Timer;
 use std::time::{Duration, Instant};
+
+use tokio::prelude::*;
+use tokio::runtime::Runtime;
+use tokio::time::delay_for;
 
 fn main() -> Result<()> {
     // All wasm objects operate within the context of a "store"
@@ -33,7 +36,7 @@ fn main() -> Result<()> {
             };
             println!("Now wait");
             let now = Instant::now();
-            yielder.async_suspend( Timer::new(Duration::from_secs(5)) );
+            yielder.async_suspend( delay_for(Duration::from_secs(5)) );
             println!("{}", now.elapsed().as_nanos());
         });
 
@@ -53,7 +56,8 @@ fn main() -> Result<()> {
 
     wasm.preserve_tls(&wasmtime_runtime::traphandlers::tls::PTR);
 
-    smol::run(wasm);
+    let mut rt = Runtime::new()?;
+    rt.block_on(wasm);
 
     Ok(())
 }
