@@ -12,7 +12,7 @@ wasmtime = {path = "../wasmtime/crates/wasmtime"}
 wasmtime-runtime = {path = "../wasmtime/crates/runtime"}
 wasmer = "1.0.0-alpha.1"
 parity-wasm = "0.41"
-tokio = { version = "0.2", features= ["time"] }
+tokio = { version = "0.2", features= ["time", "rt-core"] }
 anyhow = "1.0"
 smol = "0.3"
 
