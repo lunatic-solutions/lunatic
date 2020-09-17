@@ -1,5 +1,5 @@
 use criterion::{criterion_group, criterion_main, Criterion};
-use wasmer::{Store, Module, Instance, Value, imports};
+use wasmer::{Store, Module, Instance, imports};
 // use wasmtime::*;
 
 fn lunatic_bench(c: &mut Criterion) {
@@ -12,7 +12,7 @@ fn lunatic_bench(c: &mut Criterion) {
         let import_object = imports! {};
 
         b.iter(move || {
-            let handle = Instance::new(&module, &import_object);
+            Instance::new(&module, &import_object).unwrap();
         });
     });
 }

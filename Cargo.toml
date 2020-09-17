@@ -7,11 +7,12 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-async_wormhole = { path = "../async_wormhole" }
+async-wormhole = { path = "../async_wormhole" }
 wasmtime = {path = "../wasmtime/crates/wasmtime"}
 wasmtime-runtime = {path = "../wasmtime/crates/runtime"}
 wasmer = "1.0.0-alpha.1"
 parity-wasm = "0.41"
+walrus = "0.18"
 tokio = { version = "0.2", features= ["time", "rt-core"] }
 anyhow = "1.0"
 smol = "0.3"
@@ -20,8 +21,12 @@ smol = "0.3"
 [dev-dependencies]
 criterion = "0.3"
 wat = "1.0"
-wasmparser = "0.62"
+wasmprinter = "0.2"
 
 [[bench]]
 name = "lunatic_benchmark"
+harness = false
+
+[[test]]
+name = "patching"
 harness = false

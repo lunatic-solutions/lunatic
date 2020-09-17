@@ -3,26 +3,19 @@ use anyhow::Result;
 use wasmtime::*;
 
 use std::mem::ManuallyDrop;
-use std::fs::File;
-use std::io::prelude::*;
-
-
 
 use tokio::runtime::Runtime;
 use tokio::task::yield_now;
 
-use lunatic::codemod::reduction_counting::insert_reduction_counting;
+use lunatic::patching::patch;
 
 fn main() -> Result<()> {
     // All wasm objects operate within the context of a "store"
     let store = Store::default();
 
     // Modules can be compiled through either the text or binary format
-    let test = include_bytes!("test_yield.wasm");
-    let test = insert_reduction_counting(test);
-    
-    let mut file = File::create("dump.wasm")?;
-    file.write_all(&test)?;
+    let test: [u8; 0] = [];
+    let test = patch(&test)?;
 
     let module = Module::new(store.engine(), test)?;
 
@@ -51,7 +44,7 @@ fn main() -> Result<()> {
 
         // And finally we can call the wasm as if it were a Rust function!
         let now = std::time::Instant::now();
-        hello();
+        hello().unwrap();
         println!("{}", now.elapsed().as_millis());
     })?;
 
