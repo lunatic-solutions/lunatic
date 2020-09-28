@@ -49,5 +49,5 @@ fn run_tests(tests: Vec<PathBuf>) {
 
 fn run_test(input: &str) -> Vec<u8> {
     let wasm = wat::parse_str(input).unwrap();
-    patch(&wasm).unwrap()
+    patch(&wasm).unwrap().1
 }

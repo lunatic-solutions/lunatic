@@ -9,9 +9,10 @@
 (module
     (global (;0 reduction counter ;) (mut i32) (i32.const 0))
     (type (;0 yield type ;) (func))
+    (type (;1;) (func (result i32)))
     (import "lunatic" "yield" (func (;0;) (type 0)))
 
-    (func (;1;) (result i32)
+    (func (;1;) (type 1) (result i32)
         block  ;; Reduction counter logic
             global.get 0
             i32.const 1
