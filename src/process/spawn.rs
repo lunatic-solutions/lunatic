@@ -76,18 +76,15 @@ impl Spawner {
         }
 
         let instance = Instance::new(&spawner.module, &spawner.imports).unwrap();
+        let func = instance.exports.get_function("lunatic_spawn_by_index").unwrap()
+                .native::<i32,()>().unwrap();
 
         let mut task = ASYNC_POOL.with_tls(
             &wasmtime_runtime::traphandlers::tls::PTR,
             move |yielder|
         {
             let yielder_ptr = &yielder as *const AsyncYielder<()> as usize;
-            
-            // let func = instance
-            //     .get_func("lunatic_spawn_by_index")
-            //     .ok_or(anyhow::format_err!("failed to find `hello`  function export")).unwrap()
-            //     .get1::<i32, ()>().unwrap();
-        //     func(index).unwrap();
+            func.call(index).unwrap();
         }).unwrap();
         tokio::spawn(async move {
             (&mut task).await;
