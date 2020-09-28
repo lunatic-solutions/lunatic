@@ -1,6 +1,6 @@
-use wasmtime::Linker;
+use wasmer::Exports;
 
 pub trait LunaticLib {
     fn functions(&self) -> Vec<&'static str>;
-    fn add_to_linker(&self, yielder_ptr: usize, linker: &mut Linker);
+    fn add_to_imports(&self, yielder_ptr: usize, linker: &mut Exports);
 }
