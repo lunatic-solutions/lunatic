@@ -3,7 +3,7 @@ use tokio::runtime::Runtime;
 use wasmer::{Store, Module};
 
 use lunatic::patching::patch;
-use lunatic::process::spawn::Spawner;
+use lunatic::process::creator::spawn_by_name;
 
 use std::env;
 use std::fs;
@@ -18,8 +18,7 @@ fn main() -> Result<()> {
 
     let mut rt = Runtime::new()?;
     rt.block_on(async {
-        let spawner = Spawner::new(module, store, initial_memory_size);
-        spawner.spawn_by_name("_start").await.unwrap();
+        spawn_by_name(module, "_start", initial_memory_size).await.unwrap();
     });
 
     Ok(())

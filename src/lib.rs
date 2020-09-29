@@ -1,3 +1,3 @@
 pub mod patching;
-pub mod library;
 pub mod process;
+pub mod wasi;
