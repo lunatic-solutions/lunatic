@@ -2,8 +2,8 @@ use anyhow::Result;
 use tokio::runtime::Runtime;
 use wasmer::{Store, Module, Features, JITEngine, Cranelift, Target, CompilerConfig};
 
-use lunatic::patching::patch;
-use lunatic::process::creator::spawn_by_name;
+use lunatic_vm::patching::patch;
+use lunatic_vm::process::creator::spawn_by_name;
 
 use std::env;
 use std::fs;

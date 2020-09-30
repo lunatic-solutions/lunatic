@@ -59,8 +59,9 @@ pub fn spawn_by_name(module: Module, function: &'static str, min_memory: u32) ->
 }
 
 /// Spawn new process from an existing one and use the function with the `index` in the main table as
-/// entrance point. If `share_memory` is true the new process will share memory with the old one.
-pub fn spawn_by_index(process: Process, index: i32, share_memory: bool) -> JoinHandle<()> {
+/// entrance point (passing `argument` as the 1st argument to the function). If `share_memory` is true
+/// the new process will share memory with the old one.
+pub fn spawn_by_index(process: Process, index: i32, argument: i32, share_memory: bool) -> JoinHandle<()> {
     let mut task = ASYNC_POOL.with_tls(
         &wasmtime_runtime::traphandlers::tls::PTR, // TODO: Update to
         move |yielder|
@@ -81,7 +82,7 @@ pub fn spawn_by_index(process: Process, index: i32, share_memory: bool) -> JoinH
         let instance = Instance::new(&process.instance.module(), &resolver).unwrap();
         let func = instance.exports
             .get_function("lunatic_spawn_by_index").unwrap()
-            .native::<i32,()>().unwrap();
+            .native::<(i32, i32),()>().unwrap();
 
         let process = Process {
             instance,
@@ -90,7 +91,7 @@ pub fn spawn_by_index(process: Process, index: i32, share_memory: bool) -> JoinH
         };
         { *import_env.process.borrow_mut() = Some(process); }
 
-        func.call(index).unwrap();
+        func.call(index, argument).unwrap();
     }).unwrap();
 
     tokio::spawn(async move {
@@ -113,11 +114,12 @@ fn create_lunatic_imports(store: &Store, resolver: &mut ImportObject, import_env
         Function::new_native_with_env(store, import_env.clone(), yield_)
     );
 
-    fn spawn(env: &mut ImportEnv, index: i32, shared: i32) {
+    fn spawn(env: &mut ImportEnv, index: i32, argument: i32) {
         spawn_by_index(
             env.process.borrow().as_ref().unwrap().clone(),
             index,
-            if shared == 0 { false } else { true }
+            argument,
+            false
         );
     }
     lunatic_env.insert(

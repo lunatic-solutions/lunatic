@@ -4,7 +4,7 @@
 use std::path::{Path, PathBuf};
 use std::fs::read_to_string;
 
-use lunatic::patching::patch;
+use lunatic_vm::patching::patch;
 
 fn main() {
     let mut tests = Vec::new();

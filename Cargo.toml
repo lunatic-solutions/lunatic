@@ -1,5 +1,5 @@
 [package]
-name = "lunatic"
+name = "lunatic-vm"
 version = "0.1.0"
 authors = ["Bernard Kolobara <me@kolobara.com>"]
 edition = "2018"

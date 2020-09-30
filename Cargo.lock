@@ -840,7 +840,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "lunatic"
+name = "lunatic-vm"
 version = "0.1.0"
 dependencies = [
  "anyhow",
