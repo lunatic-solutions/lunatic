@@ -12,7 +12,7 @@ pub fn patch(module_buffer: &[u8]) -> Result<(u32, Vec<u8>), Error> {
 
     reduction_counting::patch(&mut module);
     stdlib::patch(&mut module);
-    let initial_memory_size = shared_memory::patch(&mut module);
+    let min_memory = shared_memory::patch(&mut module);
 
-    Ok((initial_memory_size, module.emit_wasm()))
+    Ok((min_memory, module.emit_wasm()))
 }
