@@ -8,7 +8,7 @@ use std::future::Future;
 #[derive(Clone)]
 pub struct Process {
     instance: Instance,
-    memory: Memory,
+    pub memory: Memory,
     yielder: usize
 }
 

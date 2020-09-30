@@ -16,8 +16,8 @@ lazy_static! {
 }
 
 #[derive(Clone)]
-struct ImportEnv {
-    process: Rc<RefCell<Option<Process>>>
+pub struct ImportEnv {
+    pub process: Rc<RefCell<Option<Process>>>
 }
 
 /// Spawns a new process by creating a WASM instance from the `module` with `min_memory` of WASM memory pages
@@ -33,7 +33,7 @@ pub fn spawn_by_name(module: Module, function: &'static str, min_memory: u32) ->
         let mut resolver = ImportObject::new();
         let import_env = ImportEnv { process: Rc::new(RefCell::new(None)) };
         create_lunatic_imports(module.store(), &mut resolver, import_env.clone(), memory.clone());
-        create_wasi_imports(module.store().clone(), &mut resolver);
+        create_wasi_imports(module.store().clone(), &mut resolver, import_env.clone());
 
         let instance = Instance::new(&module, &resolver).unwrap();
         let func = instance.exports
@@ -76,7 +76,7 @@ pub fn spawn_by_index(process: Process, index: i32, share_memory: bool) -> JoinH
         let mut resolver = ImportObject::new();
         let import_env = ImportEnv { process: Rc::new(RefCell::new(None)) };
         create_lunatic_imports(process.instance.store(), &mut resolver, import_env.clone(), memory.clone());
-        create_wasi_imports(process.instance.store().clone(), &mut resolver);
+        create_wasi_imports(process.instance.store().clone(), &mut resolver, import_env.clone());
 
         let instance = Instance::new(&process.instance.module(), &resolver).unwrap();
         let func = instance.exports
