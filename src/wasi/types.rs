@@ -1,7 +1,7 @@
 // This file is taken from wasmer's WASI implementation:
 // https://github.com/wasmerio/wasmer/blob/master/lib/wasi/src/syscalls/types.rs
 
-#![allow(non_camel_case_types, clippy::identity_op)]
+#![allow(non_camel_case_types, clippy::identity_op, dead_code, unreachable_patterns)]
 
 use super::ptr::{Array, WasmPtr};
 use std::fmt;
@@ -46,7 +46,7 @@ pub struct __wasi_dirent_t {
 
 unsafe impl ValueType for __wasi_dirent_t {}
 
-pub fn dirent_to_le_bytes(ent: &__wasi_dirent_t) -> Vec<u8> {
+pub fn _dirent_to_le_bytes(ent: &__wasi_dirent_t) -> Vec<u8> {
     use std::mem::transmute;
     let mut out = Vec::with_capacity(std::mem::size_of::<__wasi_dirent_t>());
     let bytes: [u8; 8] = unsafe { transmute(ent.d_next.to_le()) };

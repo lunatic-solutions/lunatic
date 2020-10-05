@@ -120,11 +120,11 @@ fn write_bytes<T: Write>(
     iovs_arr_cell: &[Cell<__wasi_ciovec_t>],
 ) -> Result<u32, __wasi_errno_t> {
     let result = write_bytes_inner(&mut write_loc, memory, iovs_arr_cell);
-    write_loc.flush();
+    write_loc.flush().unwrap();
     result
 }
 
-fn read_bytes<T: Read>(
+fn _read_bytes<T: Read>(
     mut reader: T,
     memory: &Memory,
     iovs_arr_cell: &[Cell<__wasi_iovec_t>],
@@ -134,7 +134,7 @@ fn read_bytes<T: Read>(
     for iov in iovs_arr_cell {
         let iov_inner = iov.get();
         let bytes = iov_inner.buf.deref(memory, 0, iov_inner.buf_len)?;
-        let mut raw_bytes: &mut [u8] =
+        let raw_bytes: &mut [u8] =
             unsafe { &mut *(bytes as *const [_] as *mut [_] as *mut [u8]) };
         bytes_read += reader.read(raw_bytes).map_err(|_| __WASI_EIO)? as u32;
     }

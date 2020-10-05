@@ -45,12 +45,12 @@ impl<T: Copy, Ty> Eq for WasmPtr<T, Ty> {}
 
 impl<T: Copy, Ty> WasmPtr<T, Ty> {
     #[inline(always)]
-    pub fn new(offset: u32) -> Self {
+    pub fn _new(offset: u32) -> Self {
         Self(BaseWasmPtr::new(offset))
     }
 
     #[inline(always)]
-    pub fn offset(self) -> u32 {
+    pub fn _offset(self) -> u32 {
         self.0.offset()
     }
 }
@@ -74,7 +74,7 @@ impl<T: Copy + ValueType> WasmPtr<T, Array> {
     }
 
     #[inline(always)]
-    pub fn get_utf8_string(self, memory: &Memory, str_len: u32) -> Option<&str> {
+    pub fn _get_utf8_string(self, memory: &Memory, str_len: u32) -> Option<&str> {
         self.0.get_utf8_string(memory, str_len)
     }
 }

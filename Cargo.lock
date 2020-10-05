@@ -847,6 +847,7 @@ dependencies = [
  "async-wormhole",
  "criterion",
  "lazy_static",
+ "thiserror",
  "tokio",
  "walrus",
  "wasmer",

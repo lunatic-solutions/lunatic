@@ -9,6 +9,7 @@ use std::sync::{Arc, Mutex, RwLock};
 use std::future::Future;
 use tokio::sync::mpsc::{Sender, Receiver};
 use tokio::task::JoinHandle;
+use thiserror::Error;
 
 /// Each process uses a lot of virtual memory. Even vritual memory is cheap we need to have a hard
 /// cap at around 20k processes or we risk to run out of virtual memory on a 64bit system.
@@ -35,16 +36,34 @@ impl Process {
     }
 }
 
-#[derive(PartialEq)]
+#[derive(Error, Debug)]
+pub enum ProcessError {
+    #[error("instantation error")]
+    Instantiation(#[from] wasmer::InstantiationError),
+    #[error("heap allocation error")]
+    HeapAllocation(#[from] wasmer::MemoryError),
+    #[error("runtime error")]
+    Runtime(#[from] wasmer::RuntimeError),
+}
 pub enum ProcessStatus {
     INIT,
     RUNNING,
-    DONE // Add Result<(), Error> child element
+    DONE(Result<(), ProcessError>)
 }
+
 pub struct ProcessInformation {
     status: ProcessStatus,
     sender: Option<Sender<channel::ChannelBuffer>>,
     join_handle: Option<JoinHandle<()>>
+}
+
+impl ProcessInformation {
+    pub fn is_done(&self) -> bool {
+        match self.status {
+            ProcessStatus::DONE(_) => true,
+            _ => false
+        }
+    }
 }
 
 /// Holds all active processes and some finished ones (before their slot is reused) in the system.
@@ -64,3 +83,4 @@ impl AllProcesses {
         }
     }
 }
+

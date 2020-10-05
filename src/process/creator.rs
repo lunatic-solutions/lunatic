@@ -49,7 +49,7 @@ fn create_process_information() -> usize {
                 processes.iter().enumerate().for_each(|(id, process)| {
                     let lock = process.try_lock();
                     if let Ok(process) = lock {
-                        if process.status == ProcessStatus::DONE {
+                        if process.is_done() {
                             free_slots.push(id)
                         }
                     }
@@ -69,36 +69,34 @@ pub fn spawn_by_name(module: Module, function: &'static str, min_memory: u32) ->
         &wasmtime_runtime::traphandlers::tls::PTR, // TODO: Update to
         move |yielder|
     {
-        {
-            let memory_ty = MemoryType::new(min_memory, None, false);
-            let memory = Memory::new(module.store(), memory_ty).unwrap();
+        let memory_ty = MemoryType::new(min_memory, None, false);
+        let memory = Memory::new(module.store(), memory_ty)?;
 
-            let mut resolver = ImportObject::new();
-            let import_env = ImportEnv { process: Rc::new(RefCell::new(None)) };
-            create_lunatic_imports(module.store(), &mut resolver, import_env.clone(), memory.clone());
-            create_wasi_imports(module.store().clone(), &mut resolver, import_env.clone());
+        let mut resolver = ImportObject::new();
+        let import_env = ImportEnv { process: Rc::new(RefCell::new(None)) };
+        create_lunatic_imports(module.store(), &mut resolver, import_env.clone(), memory.clone());
+        create_wasi_imports(module.store().clone(), &mut resolver, import_env.clone());
 
-            let yielder = &yielder as *const AsyncYielder<()> as usize;
-            let instance = create_instance(id, &module, memory, yielder);
-            let func = instance.exports
-                .get_function(function).unwrap()
-                .native::<(),()>().unwrap();
+        let yielder = &yielder as *const AsyncYielder<Result<_, _>> as usize;
+        let instance = create_instance(id, &module, memory, yielder)?;
+        let func = instance.exports
+            .get_function(function).unwrap()
+            .native::<(),()>().unwrap();
 
-            let now = std::time::Instant::now();
-            func.call().unwrap();
-            println!("Elapsed time: {} ms", now.elapsed().as_millis());
-        }
+        let now = std::time::Instant::now();
+        func.call()?;
+        println!("Elapsed time: {} ms", now.elapsed().as_millis());
 
-        {
-            let processes = PROCESSES.processes.read().unwrap();
-            processes.get(id).unwrap().lock().unwrap().status = ProcessStatus::DONE;
-        };
+        Ok(())
     }).unwrap();
 
-    tokio::spawn(async {
-        (&mut task).await;
+    let handle = tokio::spawn(async move {
+        let result = (&mut task).await;
         ASYNC_POOL.recycle(task);
-    })
+        let processes = PROCESSES.processes.read().unwrap();
+        processes.get(id).unwrap().lock().unwrap().status = ProcessStatus::DONE(result.unwrap());
+    });
+    handle
 }
 
 /// Spawn new process from an existing one and use the function with the `index` in the main table as
@@ -121,39 +119,35 @@ pub fn spawn_by_index(process: Process, index: i32, argument: i32, share_memory:
                 process.memory.clone()
             };
 
-            let yielder = &yielder as *const AsyncYielder<()> as usize;
-            let instance = create_instance(id, &process.module, memory, yielder);
+            let yielder = &yielder as *const AsyncYielder<Result<_, _>> as usize;
+            let instance = create_instance(id, &process.module, memory, yielder)?;
 
             let func = instance.exports
                 .get_function("lunatic_spawn_by_index").unwrap()
                 .native::<(i32, i32), ()>().unwrap();
-            func.call(index, argument).unwrap();
+            func.call(index, argument)?;
+            Ok(())
         }
-        {
-            let processes = PROCESSES.processes.read().unwrap();
-            processes.get(id).unwrap().lock().unwrap().status = ProcessStatus::DONE;
-        };
     }).unwrap();
 
-    let join_handle = tokio::spawn(async {
-        (&mut task).await;
+    let join_handle = tokio::spawn(async move {
+        let result = (&mut task).await;
         ASYNC_POOL.recycle(task);
-    });
-    {
         let processes = PROCESSES.processes.read().unwrap();
-        processes.get(id).unwrap().lock().unwrap().join_handle = Some(join_handle);
-    };
+        processes.get(id).unwrap().lock().unwrap().status = ProcessStatus::DONE(result.unwrap());
+    });
+    PROCESSES.processes.read().unwrap().get(id).unwrap().lock().unwrap().join_handle = Some(join_handle);
     id
 }
 
 /// Creates a new wasm instance and associates it with a process id and memory
-fn create_instance(id: usize, module: &Module, memory: Memory, yielder: usize) -> Instance {
+fn create_instance(id: usize, module: &Module, memory: Memory, yielder: usize) -> Result<Instance, wasmer::InstantiationError> {
     let mut resolver = ImportObject::new();
     let import_env = ImportEnv { process: Rc::new(RefCell::new(None)) };
     create_lunatic_imports(module.store(), &mut resolver, import_env.clone(), memory.clone());
     create_wasi_imports(module.store().clone(), &mut resolver, import_env.clone());
 
-    let instance = Instance::new(&module, &resolver).unwrap();
+    let instance = Instance::new(&module, &resolver)?;
 
     let (sender, receiver) = channel(100);
     let process = Process {
@@ -172,7 +166,7 @@ fn create_instance(id: usize, module: &Module, memory: Memory, yielder: usize) -
         processes.get(id).unwrap().lock().unwrap().status = ProcessStatus::RUNNING;
     };
 
-    instance
+    Ok(instance)
 }
 
 /// Add all imports provided by the Lunatic runtime to this instance.
