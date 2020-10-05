@@ -12,7 +12,7 @@ wasmtime = {path = "../wasmtime/crates/wasmtime"}
 wasmtime-runtime = {path = "../wasmtime/crates/runtime"}
 wasmer = "1.0.0-alpha.3"
 walrus = "0.18"
-tokio = { version = "0.2", features= ["time", "rt-threaded"] }
+tokio = { version = "0.2", features= ["time", "rt-threaded", "sync"] }
 anyhow = "1.0"
 lazy_static = "1.4.0"
 

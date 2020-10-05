@@ -4,11 +4,23 @@ mod ptr;
 use types::*;
 use ptr::{WasmPtr, Array};
 
-use wasmer::{Store, Function, Exports, ImportObject, Memory};
+use wasmer::{Store, Function, Exports, ImportObject, Memory, RuntimeError};
 use crate::process::creator::ImportEnv;
 
 use std::io::{stdout, stderr, Write, Read};
 use std::cell::Cell;
+use std::fmt;
+
+#[derive(Debug, Clone, Copy)]
+struct ExitCode(i32);
+
+impl fmt::Display for ExitCode {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl std::error::Error for ExitCode {}
 
 pub fn create_wasi_imports(store: Store, resolver: &mut ImportObject, import_env: ImportEnv) {
     let mut wasi_env = Exports::new();
@@ -16,7 +28,7 @@ pub fn create_wasi_imports(store: Store, resolver: &mut ImportObject, import_env
     // proc_exit(exit_code)
     fn proc_exit(exit_code: i32) {
         println!("wasi_snapshot_preview1:proc_exit({}) called!", exit_code);
-        std::process::exit(exit_code);
+        RuntimeError::raise(Box::new(ExitCode(exit_code)));
     }
     wasi_env.insert("proc_exit", Function::new_native(&store, proc_exit));
 
@@ -48,7 +60,7 @@ pub fn create_wasi_imports(store: Store, resolver: &mut ImportObject, import_env
         nwritten_cell.set(bytes_written);
         __WASI_ESUCCESS
     }
-    wasi_env.insert("fd_write", Function::new_native_with_env(&store, import_env.clone(), fd_write));
+    wasi_env.insert("fd_write", Function::new_native_with_env(&store, import_env, fd_write));
 
 
     fn fd_prestat_get(_: i32, _: i32) -> i32 {
@@ -80,7 +92,7 @@ pub fn create_wasi_imports(store: Store, resolver: &mut ImportObject, import_env
 }
 
 
-// This file is taken from wasmer's WASI implementation:
+// The following functin implementations are taken from wasmer's WASI implementation:
 // https://github.com/wasmerio/wasmer/blob/master/lib/wasi/src/syscalls/mod.rs#L48
 
 fn write_bytes_inner<T: Write>(
