@@ -175,6 +175,7 @@ fn create_lunatic_imports(store: &Store, resolver: &mut ImportObject, import_env
     let mut lunatic_env = Exports::new();
     lunatic_env.insert("memory", memory);
 
+    // Yield this process allowing other to be scheduled on same thread.
     fn yield_(env: &mut ImportEnv) {
         env.process.borrow().as_ref().unwrap().async_( yield_now() );
     }
@@ -183,6 +184,7 @@ fn create_lunatic_imports(store: &Store, resolver: &mut ImportObject, import_env
         Function::new_native_with_env(store, import_env.clone(), yield_)
     );
 
+    // Spawn new process and call a fuction from the function table under the `index` and pass one i32 argument.
     fn spawn(env: &mut ImportEnv, index: i32, argument: i32) -> i32 {
         spawn_by_index(
             env.process.borrow().as_ref().unwrap().clone(),
@@ -193,7 +195,25 @@ fn create_lunatic_imports(store: &Store, resolver: &mut ImportObject, import_env
     }
     lunatic_env.insert(
         "spawn",
-        Function::new_native_with_env(store, import_env, spawn)
+        Function::new_native_with_env(store, import_env.clone(), spawn)
+    );
+
+    // Create a buffer and send it to the process with the `pid`
+    fn send(env: &mut ImportEnv, pid: i32, buffer: i32, len: i32) -> i32 {
+        0
+    }
+    lunatic_env.insert(
+        "send",
+        Function::new_native_with_env(store, import_env.clone(), send)
+    );
+
+    // Receive buffer
+    fn receive(env: &mut ImportEnv, buffer: i32, len: i32) -> i32 {
+        0
+    }
+    lunatic_env.insert(
+        "receive",
+        Function::new_native_with_env(store, import_env, receive)
     );
 
     resolver.register("lunatic", lunatic_env);
