@@ -1,5 +1,5 @@
 use lazy_static::lazy_static;
-use tokio::task::JoinHandle;
+use smol::{Task, Executor};
 use wasmtime::{Engine, Memory, Module, Val};
 
 use async_wormhole::pool::OneMbAsyncPool;
@@ -8,8 +8,9 @@ use async_wormhole::AsyncYielder;
 use super::pool::StoreLinkerPool;
 
 lazy_static! {
-    static ref ASYNC_POOL: OneMbAsyncPool = OneMbAsyncPool::new(128);
-    static ref STORE_LINKER_ENV_POOL: StoreLinkerPool = StoreLinkerPool::new(128);
+    static ref ASYNC_POOL: OneMbAsyncPool = OneMbAsyncPool::new(1024);
+    static ref STORE_LINKER_ENV_POOL: StoreLinkerPool = StoreLinkerPool::new(1024);
+    pub static ref EXECUTOR: Executor<'static> = Executor::new();
 }
 
 /// Used to look up a functions by name or table index inside of an Instance.
@@ -25,7 +26,7 @@ pub fn spawn(
     module: Module,
     function: FunctionLookup,
     memory: Option<Memory>,
-) -> JoinHandle<()> {
+) -> Task<()> {
     let mut task = ASYNC_POOL
         .with_tls(&wasmtime_runtime::traphandlers::tls::PTR, move |yielder| {
             let yielder = &yielder as *const AsyncYielder<_> as usize;
@@ -42,16 +43,15 @@ pub fn spawn(
                 }
                 FunctionLookup::TableIndex((index, argument)) => {
                     let func = instance.get_func("lunatic_spawn_by_index").unwrap();
-                    func.call(&[Val::from(index), Val::from(argument)]).unwrap();
+                    func.call(&[Val::from(index), Val::from(argument)]).unwrap();                 
                 }
             }
             STORE_LINKER_ENV_POOL.recycle(store_linker_env);
         })
         .unwrap();
 
-    let join_handle = tokio::spawn(async move {
+    EXECUTOR.spawn(async {
         (&mut task).await;
         ASYNC_POOL.recycle(task);
-    });
-    join_handle
+    })
 }

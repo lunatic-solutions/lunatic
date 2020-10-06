@@ -12,7 +12,9 @@ wasmtime = {path = "../wasmtime/crates/wasmtime"}
 wasmtime-runtime = {path = "../wasmtime/crates/runtime"}
 wasmer = "1.0.0-alpha.3"
 walrus = "0.18"
-tokio = { version = "0.2", features= ["time", "rt-threaded", "sync"] }
+smol = "1.2"
+easy-parallel = "3"
+num_cpus = "1"
 crossbeam = "0.7"
 anyhow = "1.0"
 thiserror = "1.0"

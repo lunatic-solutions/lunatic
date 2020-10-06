@@ -1,9 +1,10 @@
 use anyhow::Result;
-use tokio::runtime::Runtime;
+use smol::{Executor, future, channel};
+use easy_parallel::Parallel;
 use wasmtime::{Config, Engine, Module};
 
 use lunatic_vm::patching::patch;
-use lunatic_vm::process::creator::{spawn, FunctionLookup};
+use lunatic_vm::process::creator::{spawn, FunctionLookup, EXECUTOR};
 
 use std::env;
 use std::fs;
@@ -21,12 +22,16 @@ fn main() -> Result<()> {
 
     let module = Module::new(&engine, wasm)?;
 
-    let mut rt = Runtime::new()?;
-    rt.block_on(async {
-        spawn(engine, module, FunctionLookup::Name("_start"), None)
-            .await
-            .unwrap();
-    });
+    // Set up async runtime
+    let cpus = num_cpus::get();
+    let (signal, shutdown) = channel::unbounded::<()>();
+
+    Parallel::new()
+        .each(0..cpus, |_| future::block_on(EXECUTOR.run(shutdown.recv())))
+        .finish(|| future::block_on(async {
+            spawn(engine, module, FunctionLookup::Name("_start"), None).await;
+            drop(signal);
+    }));
 
     Ok(())
 }

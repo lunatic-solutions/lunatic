@@ -1,7 +1,7 @@
 use super::creator::{spawn, FunctionLookup};
 use super::ProcessEnvironment;
 
-use tokio::task::yield_now;
+use smol::future::yield_now;
 use wasmtime::Linker;
 
 /// Add all imports provided by the Lunatic runtime to this instance.

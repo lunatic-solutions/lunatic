@@ -75,6 +75,7 @@ impl StoreLinkerPool {
             }
             Ok(mut store_linker_pool) => {
                 store_linker_pool.environment.yielder = yielder;
+                // TODO: Create new memory
                 store_linker_pool
             }
         }
