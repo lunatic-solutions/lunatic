@@ -1,5 +1,5 @@
 use criterion::{criterion_group, criterion_main, Criterion};
-use wasmer::{Store, Module, Instance, imports};
+use wasmer::{imports, Instance, Module, Store};
 // use wasmtime::*;
 
 fn lunatic_bench(c: &mut Criterion) {
@@ -31,9 +31,7 @@ fn lunatic_bench(c: &mut Criterion) {
 
     c.bench_function("spawn thread", |b| {
         b.iter(move || {
-            std::thread::spawn(|| {
-                1 + 3
-            });
+            std::thread::spawn(|| 1 + 3);
         });
     });
 }

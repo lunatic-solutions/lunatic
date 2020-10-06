@@ -264,7 +264,7 @@ dependencies = [
  "cranelift-codegen-meta 0.67.0",
  "cranelift-codegen-shared 0.67.0",
  "cranelift-entity 0.67.0",
- "gimli 0.21.0",
+ "gimli 0.22.0",
  "log",
  "regalloc 0.0.30",
  "serde",
@@ -355,10 +355,11 @@ dependencies = [
  "cranelift-codegen 0.67.0",
  "cranelift-entity 0.67.0",
  "cranelift-frontend 0.67.0",
+ "itertools",
  "log",
  "serde",
  "thiserror",
- "wasmparser 0.59.0",
+ "wasmparser 0.63.0",
 ]
 
 [[package]]
@@ -697,6 +698,11 @@ name = "gimli"
 version = "0.22.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "aaf91faf136cb47367fa430cd46e37a788775e7fa104f8b4bcb3861dc389b724"
+dependencies = [
+ "fallible-iterator",
+ "indexmap",
+ "stable_deref_trait",
+]
 
 [[package]]
 name = "glob"
@@ -846,6 +852,7 @@ dependencies = [
  "anyhow",
  "async-wormhole",
  "criterion",
+ "crossbeam",
  "lazy_static",
  "thiserror",
  "tokio",
@@ -1806,6 +1813,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e36b5b8441a5d83ea606c9eb904a3ee3889ebfeda1df1a5c48b84725239d93ce"
 
 [[package]]
+name = "wasmparser"
+version = "0.63.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "57da5d7300428d75d8b3cdfb736e41ee6af8926d69c1de2f201a1a22f234b7b5"
+
+[[package]]
 name = "wasmprinter"
 version = "0.2.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1831,7 +1844,7 @@ dependencies = [
  "serde",
  "smallvec",
  "target-lexicon 0.11.0",
- "wasmparser 0.59.0",
+ "wasmparser 0.63.0",
  "wasmtime-cache",
  "wasmtime-environ",
  "wasmtime-jit",
@@ -1876,12 +1889,12 @@ name = "wasmtime-debug"
 version = "0.20.0"
 dependencies = [
  "anyhow",
- "gimli 0.21.0",
+ "gimli 0.22.0",
  "more-asserts",
  "object 0.21.1",
  "target-lexicon 0.11.0",
  "thiserror",
- "wasmparser 0.59.0",
+ "wasmparser 0.63.0",
  "wasmtime-environ",
 ]
 
@@ -1894,13 +1907,13 @@ dependencies = [
  "cranelift-codegen 0.67.0",
  "cranelift-entity 0.67.0",
  "cranelift-wasm",
- "gimli 0.21.0",
+ "gimli 0.22.0",
  "indexmap",
  "log",
  "more-asserts",
  "serde",
  "thiserror",
- "wasmparser 0.59.0",
+ "wasmparser 0.63.0",
 ]
 
 [[package]]
@@ -1914,7 +1927,7 @@ dependencies = [
  "cranelift-frontend 0.67.0",
  "cranelift-native",
  "cranelift-wasm",
- "gimli 0.21.0",
+ "gimli 0.22.0",
  "log",
  "more-asserts",
  "object 0.21.1",
@@ -1923,7 +1936,7 @@ dependencies = [
  "serde",
  "target-lexicon 0.11.0",
  "thiserror",
- "wasmparser 0.59.0",
+ "wasmparser 0.63.0",
  "wasmtime-cranelift",
  "wasmtime-debug",
  "wasmtime-environ",
@@ -1951,10 +1964,10 @@ version = "0.20.0"
 dependencies = [
  "anyhow",
  "cfg-if",
- "gimli 0.21.0",
+ "gimli 0.22.0",
  "lazy_static",
  "libc",
- "object 0.19.0",
+ "object 0.21.1",
  "scroll",
  "serde",
  "target-lexicon 0.11.0",

@@ -5,7 +5,9 @@ use walrus::*;
 pub fn patch(module: &mut Module) -> u32 {
     if let Some(memory) = module.memories.iter_mut().next() {
         let memory_id = memory.id();
-        let memory_import = module.imports.add("lunatic", "memory", ImportKind::Memory(memory_id));
+        let memory_import = module
+            .imports
+            .add("lunatic", "memory", ImportKind::Memory(memory_id));
         memory.shared = true;
         memory.import = Some(memory_import);
         memory.initial

@@ -1,8 +1,8 @@
 // This test patches all WASM files in the ./patching folder and compares them to the expected output.
 // TODO: Pretty print diff errors.
 
-use std::path::{Path, PathBuf};
 use std::fs::read_to_string;
+use std::path::{Path, PathBuf};
 
 use lunatic_vm::patching::patch;
 

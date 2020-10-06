@@ -1,9 +1,9 @@
-use walrus::Module;
 use anyhow::Error;
+use walrus::Module;
 
 mod reduction_counting;
-mod stdlib;
 mod shared_memory;
+mod stdlib;
 
 /// Prepares a WASM module before execution inside of Lunatic. This preparation includes:
 /// * Adding reduction counters to functions and ~hot loops~.

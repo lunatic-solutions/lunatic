@@ -1,38 +1,35 @@
-pub mod creator;
 pub mod channel;
+pub mod creator;
+pub mod imports;
+pub mod pool;
 
-use wasmer::{Module, Memory};
 use async_wormhole::AsyncYielder;
+use wasmtime::{Engine, Memory, Module};
 
-use std::mem::ManuallyDrop;
-use std::sync::{Arc, Mutex, RwLock};
 use std::future::Future;
-use tokio::sync::mpsc::{Sender, Receiver};
-use tokio::task::JoinHandle;
+use std::mem::ManuallyDrop;
 use thiserror::Error;
 
-/// Each process uses a lot of virtual memory. Even vritual memory is cheap we need to have a hard
-/// cap at around 20k processes or we risk to run out of virtual memory on a 64bit system.
-pub const PROCESS_CAPACITY: usize = 20_000;
-
 #[derive(Clone)]
-pub struct Process {
-    id: usize,
-    pub module: Module,
-    pub memory: Memory,
-    receiver: Arc<Receiver<channel::ChannelBuffer>>,
-    yielder: usize
+pub struct ProcessEnvironment {
+    engine: Engine,
+    module: Module,
+    memory: Memory,
+    yielder: usize,
 }
 
-impl Process {
+impl ProcessEnvironment {
     pub fn async_<Fut, R>(&self, future: Fut) -> R
     where
         Fut: Future<Output = R>,
     {
-        let mut yielder = unsafe {
-            std::ptr::read(self.yielder as *const ManuallyDrop<AsyncYielder<()>>)
-        };
-        yielder.async_suspend( future )
+        let mut yielder =
+            unsafe { std::ptr::read(self.yielder as *const ManuallyDrop<AsyncYielder<()>>) };
+        yielder.async_suspend(future)
+    }
+
+    pub fn memory(&self) -> Memory {
+        self.memory.clone()
     }
 }
 
@@ -45,42 +42,3 @@ pub enum ProcessError {
     #[error("runtime error")]
     Runtime(#[from] wasmer::RuntimeError),
 }
-pub enum ProcessStatus {
-    INIT,
-    RUNNING,
-    DONE(Result<(), ProcessError>)
-}
-
-pub struct ProcessInformation {
-    status: ProcessStatus,
-    sender: Option<Sender<channel::ChannelBuffer>>,
-    join_handle: Option<JoinHandle<()>>
-}
-
-impl ProcessInformation {
-    pub fn is_done(&self) -> bool {
-        match self.status {
-            ProcessStatus::DONE(_) => true,
-            _ => false
-        }
-    }
-}
-
-/// Holds all active processes and some finished ones (before their slot is reused) in the system.
-pub struct AllProcesses {
-    /// All processes known to the system.
-    pub processes: RwLock<Vec<Mutex<ProcessInformation>>>,
-    /// Free slots in the `processes` vector for new processes.
-    pub free_slots: RwLock<Vec<usize>>,
-}
-
-impl AllProcesses {
-    /// Reserve a capacity of `PROCESS_CAPACITY` processes for this system.
-    pub fn new() -> Self {
-        Self {
-            processes: RwLock::new(Vec::with_capacity(PROCESS_CAPACITY)),
-            free_slots: RwLock::new((0..PROCESS_CAPACITY).rev().collect())
-        }
-    }
-}
-

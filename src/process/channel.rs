@@ -1,5 +1,5 @@
-use std::{ptr, mem};
 use std::alloc::{alloc, dealloc, Layout};
+use std::{mem, ptr};
 
 pub struct ChannelBuffer {
     ptr: *mut u8,
@@ -20,7 +20,7 @@ impl ChannelBuffer {
 
     pub fn take(self, destination: *mut u8) {
         unsafe {
-            ptr::copy_nonoverlapping(self.ptr, destination, self.len); 
+            ptr::copy_nonoverlapping(self.ptr, destination, self.len);
             let layout = Layout::from_size_align(self.len, 16).expect("Invalid layout");
             dealloc(self.ptr, layout)
         }

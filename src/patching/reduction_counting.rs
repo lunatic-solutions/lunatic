@@ -12,14 +12,16 @@ const REDUCTION_LIMIT: i32 = 100_000;
 /// * An import to the host provided `yield` function
 /// * Instructions on top of each function to check if we reached the `REDUCTION_LIMIT` and yield
 pub fn patch(module: &mut Module) {
-    let counter = module.globals.add_local(ValType::I32, true, InitExpr::Value(ir::Value::I32(0)));
+    let counter = module
+        .globals
+        .add_local(ValType::I32, true, InitExpr::Value(ir::Value::I32(0)));
     let yield_type = module.types.add(&[], &[]);
     let yield_import = module.add_import_func("lunatic", "yield", yield_type);
 
     for function in module.funcs.iter_mut() {
         match &mut function.kind {
             FunctionKind::Local(function) => patch_function(function, counter, yield_import.0),
-            _ => continue
+            _ => continue,
         }
     }
 }
@@ -42,13 +44,9 @@ fn patch_function(function: &mut LocalFunction, counter: GlobalId, yield_func: F
             .if_else(
                 None,
                 |then| {
-                    then
-                        .call(yield_func)
-                        .i32_const(0)
-                        .global_set(counter);
+                    then.call(yield_func).i32_const(0).global_set(counter);
                 },
                 |_else| {},
             );
     });
-
 }
