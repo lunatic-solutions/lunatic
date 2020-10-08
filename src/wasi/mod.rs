@@ -22,9 +22,9 @@ impl fmt::Display for ExitCode {
 
 impl std::error::Error for ExitCode {}
 
-pub fn create_wasi_imports(linker: &mut Linker, process_env_original: ProcessEnvironment) {
+pub fn create_wasi_imports(linker: &mut Linker, process_env_original: &ProcessEnvironment) {
     // proc_exit(exit_code)
-    let process_env = process_env_original.clone();
+    // let process_env = process_env_original.clone();
     linker.func(
         "wasi_snapshot_preview1",
         "proc_exit",
@@ -35,7 +35,7 @@ pub fn create_wasi_imports(linker: &mut Linker, process_env_original: ProcessEnv
     );
 
     // fd_write(...)
-    let process_env = process_env_original.clone();
+    // let process_env = process_env_original.clone();
     linker.func(
         "wasi_snapshot_preview1",
         "fd_write",

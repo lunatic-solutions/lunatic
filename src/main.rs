@@ -4,7 +4,7 @@ use easy_parallel::Parallel;
 use wasmtime::{Config, Engine, Module};
 
 use lunatic_vm::patching::patch;
-use lunatic_vm::process::creator::{spawn, FunctionLookup, EXECUTOR};
+use lunatic_vm::process::creator::{spawn, FunctionLookup, MemoryChoice, EXECUTOR};
 
 use std::env;
 use std::fs;
@@ -17,7 +17,11 @@ fn main() -> Result<()> {
     // Transfrom WASM file into a format
     let (min_memory, wasm) = patch(&wasm)?;
 
-    let config = Config::new();
+    let mut config = Config::new();
+    config.wasm_threads(true);
+    config.wasm_simd(true);
+    // config.static_memory_maximum_size(2*1024*1024);
+    // config.static_memory_guard_size(1024*1024);
     let engine = Engine::new(&config);
 
     let module = Module::new(&engine, wasm)?;
@@ -29,9 +33,15 @@ fn main() -> Result<()> {
     Parallel::new()
         .each(0..cpus, |_| future::block_on(EXECUTOR.run(shutdown.recv())))
         .finish(|| future::block_on(async {
-            spawn(engine, module, FunctionLookup::Name("_start"), None).await;
+            let result = spawn(
+                engine,
+                module,
+                FunctionLookup::Name("_start"),
+                MemoryChoice::New(min_memory)
+            ).await;
             drop(signal);
-    }));
+            result
+    })).1?;
 
     Ok(())
 }
