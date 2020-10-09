@@ -1,72 +1,55 @@
 pub mod channel;
 pub mod creator;
 pub mod imports;
-pub mod pool;
 
 use async_wormhole::AsyncYielder;
-use wasmtime::{Engine, Module, Memory};
+use wasmtime::{Engine, Module};
 
 use std::future::Future;
-use std::rc::Rc;
-use std::cell::RefCell;
 use std::mem::ManuallyDrop;
-use thiserror::Error;
 
+/// This structure is captured inside HOST function closures passed to Wasmtime's Linker.
+/// It allows us to expose Lunatic runtime functionalities inside host functions, like
+/// async yields or Instance memory access.
+///
+/// ### Safety
+///
+/// Having a raw pointer to Wasmtime's memory is generally unsafe, but Lunatic always uses
+/// static memories and one memory per instance. This makes it somewhat safe to have a
+/// raw pointer to its memory content and only use it inside of host functinos.
 #[derive(Clone)]
 pub struct ProcessEnvironment {
-    inner: Rc<RefCell<ProcessEnvironmentInner>>
-}
-
-struct ProcessEnvironmentInner {
     engine: Engine,
     module: Module,
-    // memory: Memory,
+    memory: *mut u8,
     yielder: usize,
 }
 
 impl ProcessEnvironment {
-    pub fn new(engine: Engine, module: Module, yielder: usize) -> Self {
-        ProcessEnvironment {
-            inner: Rc::new(RefCell::new(ProcessEnvironmentInner { engine, module, yielder } ))
-        }
+    pub fn new(engine: Engine, module: Module, memory: *mut u8, yielder: usize) -> Self {
+        Self { engine, module, memory, yielder }
     }
 
+    /// Run an async future and return the output when done.
     pub fn async_<Fut, R>(&self, future: Fut) -> R
     where
         Fut: Future<Output = R>,
     {
+        // The yielder should not be dropped until this process is done running.
         let mut yielder =
-            unsafe { std::ptr::read(self.inner.borrow().yielder as *const ManuallyDrop<AsyncYielder<R>>) };
+            unsafe { std::ptr::read(self.yielder as *const ManuallyDrop<AsyncYielder<R>>) };
         yielder.async_suspend(future)
     }
 
-    // pub fn memory(&self) -> Memory {
-    //     self.inner.borrow().memory.clone()
-    // }
-
-    // pub fn set_memory(&self, memory: Memory) {
-    //     self.inner.borrow_mut().memory = memory;
-    // }
+    pub fn memory(&self) -> *mut u8 {
+        self.memory
+    }
 
     pub fn engine(&self) -> Engine {
-        self.inner.borrow().engine.clone()
+        self.engine.clone()
     }
 
     pub fn module(&self) -> Module {
-        self.inner.borrow().module.clone()
+        self.module.clone()
     }
-
-    pub fn set_yielder(&mut self, yielder: usize) {
-        self.inner.borrow_mut().yielder = yielder;
-    }
-}
-
-#[derive(Error, Debug)]
-pub enum ProcessError {
-    #[error("instantation error")]
-    Instantiation(#[from] wasmer::InstantiationError),
-    #[error("heap allocation error")]
-    HeapAllocation(#[from] wasmer::MemoryError),
-    #[error("runtime error")]
-    Runtime(#[from] wasmer::RuntimeError),
 }

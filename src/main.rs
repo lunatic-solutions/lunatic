@@ -1,5 +1,5 @@
 use anyhow::Result;
-use smol::{Executor, future, channel};
+use smol::{future, channel};
 use easy_parallel::Parallel;
 use wasmtime::{Config, Engine, Module};
 
@@ -20,8 +20,7 @@ fn main() -> Result<()> {
     let mut config = Config::new();
     config.wasm_threads(true);
     config.wasm_simd(true);
-    // config.static_memory_maximum_size(2*1024*1024);
-    // config.static_memory_guard_size(1024*1024);
+    config.static_memory_guard_size(128*1024*1024); // 128 Mb
     let engine = Engine::new(&config);
 
     let module = Module::new(&engine, wasm)?;

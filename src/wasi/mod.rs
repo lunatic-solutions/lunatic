@@ -5,7 +5,7 @@ use ptr::{Array, WasmPtr};
 use types::*;
 
 use crate::process::ProcessEnvironment;
-use wasmtime::{Linker, Memory};
+use wasmtime::{Linker, Trap};
 
 use std::cell::Cell;
 use std::fmt;
@@ -24,15 +24,15 @@ impl std::error::Error for ExitCode {}
 
 pub fn create_wasi_imports(linker: &mut Linker, process_env_original: &ProcessEnvironment) {
     // proc_exit(exit_code)
-    // let process_env = process_env_original.clone();
+    let process_env = process_env_original.clone();
     linker.func(
         "wasi_snapshot_preview1",
         "proc_exit",
-        move |exit_code: i32| {
+        move |exit_code: i32| -> Result<(), Trap> {
             println!("wasi_snapshot_preview1:proc_exit({}) called!", exit_code);
-            std::process::exit(exit_code);
+            Err(Trap::new("proc_exit() called"))
         },
-    );
+    ).unwrap();
 
     // fd_write(...)
     // let process_env = process_env_original.clone();

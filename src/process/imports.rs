@@ -5,10 +5,10 @@ use smol::future::yield_now;
 use wasmtime::Linker;
 use anyhow::Result;
 
-/// Add all imports provided by the Lunatic runtime to this instance.
-pub fn create_lunatic_imports(linker: &mut Linker, environment: &ProcessEnvironment) -> Result<()> {
-    // Lunatic stdlib
-
+/// This is somewhat of a Lunatic stdlib definition. It creates HOST functions as closures exposing
+/// functionality provided by the runtime (filesystem access, networking, process creation, etc).
+/// This closures capture the environment belonging to this instance and are added to the linker.
+pub fn create_lunatic_imports(linker: &mut Linker, environment: ProcessEnvironment) -> Result<()> {
     // Yield this process allowing other to be scheduled on same thread.
     let env = environment.clone();
     linker.func("lunatic", "yield", move || env.async_(yield_now()))?;
