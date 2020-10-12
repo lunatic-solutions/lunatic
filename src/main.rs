@@ -4,7 +4,8 @@ use easy_parallel::Parallel;
 use wasmtime::{Config, Engine, Module};
 
 use lunatic_vm::patching::patch;
-use lunatic_vm::process::creator::{spawn, FunctionLookup, MemoryChoice, EXECUTOR};
+use lunatic_vm::process::EXECUTOR;
+use lunatic_vm::process::creator::{spawn, FunctionLookup, MemoryChoice};
 
 use std::env;
 use std::fs;

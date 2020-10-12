@@ -1,20 +1,12 @@
-use lazy_static::lazy_static;
-use smol::{Task, Executor};
+use smol::Task;
 use wasmtime::{Engine, Module, Store, Linker, Memory, MemoryType, Limits, Val };
 use anyhow::Result;
 
-use async_wormhole::pool::OneMbAsyncPool;
 use async_wormhole::AsyncYielder;
 
-use super::ProcessEnvironment;
+use super::{ ProcessEnvironment, ASYNC_POOL, EXECUTOR};
 use super::imports::create_lunatic_imports;
 use crate::wasi::create_wasi_imports;
-
-
-lazy_static! {
-    static ref ASYNC_POOL: OneMbAsyncPool = OneMbAsyncPool::new(128);
-    pub static ref EXECUTOR: Executor<'static> = Executor::new();
-}
 
 /// Used to look up a function by name or table index inside of an Instance.
 pub enum FunctionLookup {
@@ -62,7 +54,7 @@ pub fn spawn(
 
             linker.define("lunatic", "memory", memory)?;
             create_lunatic_imports(&mut linker, environment.clone())?;
-            create_wasi_imports(&mut linker, &environment);
+            create_wasi_imports(&mut linker, &environment)?;
 
             let instance = linker.instantiate(&module)?;
             match function {

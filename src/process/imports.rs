@@ -1,13 +1,16 @@
 use super::creator::{spawn, FunctionLookup, MemoryChoice};
-use super::ProcessEnvironment;
+use super::{ ProcessEnvironment, Process };
 
 use smol::future::yield_now;
 use wasmtime::Linker;
 use anyhow::Result;
 
-/// This is somewhat of a Lunatic stdlib definition. It creates HOST functions as closures exposing
-/// functionality provided by the runtime (filesystem access, networking, process creation, etc).
-/// This closures capture the environment belonging to this instance and are added to the linker.
+/// This is somewhat of a Lunatic stdlib definition. It creates HOST functions exposing
+/// functionality provided by the runtime (filesystem, networking, process creation, etc).
+/// It should be a complement to the WASI functions.
+///
+/// The HOST functions are implemented with closures that capturing the environment belonging
+/// to the instance, like yielder address and memory pointers.
 pub fn create_lunatic_imports(linker: &mut Linker, environment: ProcessEnvironment) -> Result<()> {
     // Yield this process allowing other to be scheduled on same thread.
     let env = environment.clone();
@@ -19,13 +22,29 @@ pub fn create_lunatic_imports(linker: &mut Linker, environment: ProcessEnvironme
         "lunatic",
         "spawn",
         move |index: i32, argument: i32| -> i32 {
-            spawn(
+            let task = spawn(
                 env.engine(),
                 env.module(),
                 FunctionLookup::TableIndex((index, argument)),
                 MemoryChoice::New(18),
-            ).detach();
-            0
+            );
+            let process = Process::from(task);
+            match env.processes.borrow_mut().insert(process) {
+                None => -1,
+                Some(id) => id as i32
+            }
+        },
+    )?;
+
+    // Wait on chaild process to finish.
+    let env = environment.clone();
+    linker.func(
+        "lunatic",
+        "join",
+        move |pid: i32| {
+            if let Some(process) = env.processes.borrow_mut().get_mut(pid as usize) {
+                env.async_(process.mut_task());
+            }
         },
     )?;
 

@@ -2,13 +2,13 @@
 
 mod stdlib {
     #[link(wasm_import_module = "lunatic")]
-    #[allow(improper_ctypes)]
     extern "C" {
-        pub fn spawn(function_ptr: usize, argument: usize) -> usize;
+        pub fn spawn(function_ptr: unsafe extern "C" fn(usize), argument: usize) -> i32;
+        pub fn join(pid: usize);
     }
 }
 
-pub fn spawn<F>(f: F) -> usize
+pub fn spawn<F>(f: F) -> Option<usize>
 where
     F: FnOnce() + Copy + 'static
 {
@@ -20,15 +20,24 @@ where
         f();
     }
 
-    unsafe { stdlib::spawn(spawn_wrapper::<F> as usize, &f as *const F as usize) }
+    let pid = unsafe { stdlib::spawn(spawn_wrapper::<F>, &f as *const F as usize) };
+    if pid > -1 {
+        Some(pid as usize)
+    } else {
+        None
+    }
+}
+
+pub fn join(pid: usize) {
+    unsafe { stdlib::join(pid); }
 }
 
 
-pub unsafe auto trait ProcessSend {}
+// pub unsafe auto trait ProcessSend {}
 
-impl<F> !ProcessSend for &F where F: FnOnce() {}
+// impl<F> !ProcessSend for &F where F: FnOnce() {}
 
-impl !ProcessSend for &i32 {}
-impl !ProcessSend for &mut i32 {}
-impl !ProcessSend for *const i32 {}
-impl !ProcessSend for *mut i32 {}
+// impl !ProcessSend for &i32 {}
+// impl !ProcessSend for &mut i32 {}
+// impl !ProcessSend for *const i32 {}
+// impl !ProcessSend for *mut i32 {}
