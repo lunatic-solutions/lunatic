@@ -56,6 +56,14 @@ impl<'a> WasiIoVec<'a> {
     pub fn write<W: Write>(&self, dest: &mut W) -> Result<usize, Error> {
         dest.write(self.slice)
     }
+
+    pub fn as_slice(&self) -> &[u8] {
+        self.slice
+    }
+
+    pub fn as_mut_slice(&mut self) -> &mut [u8] {
+        self.slice
+    }
 }
 
 /// Iterator over the WASI (c)iovec_array type.

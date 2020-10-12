@@ -1,5 +1,8 @@
+use super::{ ProcessEnvironment, Process, CHANNELS };
 use super::creator::{spawn, FunctionLookup, MemoryChoice};
-use super::{ ProcessEnvironment, Process };
+use super::channel::Channel;
+
+use crate::wasi::types::*;
 
 use smol::future::yield_now;
 use wasmtime::Linker;
@@ -43,20 +46,49 @@ pub fn create_lunatic_imports(linker: &mut Linker, environment: ProcessEnvironme
         "join",
         move |pid: i32| {
             if let Some(process) = env.processes.borrow_mut().get_mut(pid as usize) {
-                env.async_(process.mut_task());
+                let _ignore = env.async_(process.mut_task());
             }
         },
     )?;
 
-    // Create a buffer and send it to the process with the `pid`
+    // Create a channel
+    linker.func(
+        "lunatic",
+        "channel",
+        |bound: i32| -> i32 {
+            let channel = Channel::new(if bound > 0 {Some (bound as usize)} else {None});
+            match CHANNELS.insert(channel) {
+                None => -1,
+                Some(id) => id as i32
+            }
+        },
+    )?;
+
+    // Create a buffer and send it to a channel
+    let env = environment.clone();
     linker.func(
         "lunatic",
         "send",
-        |pid: i32, buffer: i32, len: i32| -> i32 { 0 },
+        move |channel_id: i32, iovec: i32| {
+            let iovec = WasiIoVec::from(env.memory(), iovec);
+            let channel = CHANNELS.get(channel_id as usize).unwrap();
+            let future = channel.send(iovec.as_slice());
+            env.async_(future);
+        },
     )?;
 
-    // Receive buffer
-    linker.func("lunatic", "receive", |buffer: i32, len: i32| -> i32 { 0 })?;
+    // Receive buffer and write it to memory
+    let env = environment.clone();
+    linker.func("lunatic", "receive",
+        move |channel_id: i32, iovec: i32| {
+            let mut iovec = WasiIoVec::from(env.memory(), iovec);
+            let channel = CHANNELS.get(channel_id as usize).unwrap();
+            let future = channel.recieve();
+            let buffer = env.async_(future).unwrap();
+            // TODO: Check for length of buffer before writing to it.
+            buffer.give_to(iovec.as_mut_slice().as_mut_ptr());
+        }
+    )?;
 
     Ok(())
 }

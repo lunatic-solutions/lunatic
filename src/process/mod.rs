@@ -19,6 +19,7 @@ use std::mem::ManuallyDrop;
 lazy_static! {
     static ref ASYNC_POOL: OneMbAsyncPool = OneMbAsyncPool::new(128);
     pub static ref EXECUTOR: Executor<'static> = Executor::new();
+    pub static ref CHANNELS: GlobalState<channel::Channel> = GlobalState::new(20_000);
 }
 
 /// This structure is captured inside HOST function closures passed to Wasmtime's Linker.
@@ -84,7 +85,7 @@ impl Process {
 }
 
 
-struct State<T> {
+pub struct State<T> {
     occupied: Vec<Option<T>>,
     free: Vec<usize>
 }
@@ -121,6 +122,28 @@ impl<T> State<T> {
     }
 }
 
-struct GlobalState<T> {
+pub struct GlobalState<T> {
     state: RwLock<State<T>>
+}
+
+impl<T: Clone> GlobalState<T> {
+    pub fn new(capacity: usize) -> Self {
+        let state: RwLock<State<T>> = RwLock::new(State::new(capacity));
+        Self { state }
+    }
+
+    fn insert(&self, value: T) -> Option<usize> {
+        let mut state = self.state.write().unwrap();
+        state.insert(value)
+    }
+
+    fn delete(&self, slot: usize) {
+        let mut state = self.state.write().unwrap();
+        state.delete(slot);
+    }
+
+    fn get(&self, slot: usize) -> Option<T> {
+        let state = self.state.read().unwrap();
+        state.get(slot).clone()
+    }
 }
