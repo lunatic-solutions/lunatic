@@ -1,29 +1,15 @@
 use criterion::{criterion_group, criterion_main, Criterion};
-use wasmer::{imports, Instance, Module, Store};
-// use wasmtime::*;
+use wasmtime::{Store, Linker, Engine, Module};
 
 fn lunatic_bench(c: &mut Criterion) {
-    c.bench_function("wasmer instance creation", |b| {
-        let store = Store::default();
-
-        // Modules can be compiled through either the text or binary format
-        let wasm = include_bytes!("start.wasm");
-        let module = Module::new(&store, &wasm).unwrap();
-
-        b.iter(move || {
-            let import_object = imports! {};
-            Instance::new(&module, &import_object)
-        });
-    });
-
     c.bench_function("wasmtime instance creation", |b| {
-        let engine = wasmtime::Engine::default();
+        let engine = Engine::default();
         let wasm = include_bytes!("start.wasm");
-        let module = wasmtime::Module::new(&engine, &wasm).unwrap();
+        let module = Module::new(&engine, &wasm).unwrap();
 
         b.iter(move || {
-            let store = wasmtime::Store::new(&engine);
-            let linker = wasmtime::Linker::new(&store);
+            let store = Store::new(&engine);
+            let linker = Linker::new(&store);
             let _instance = linker.instantiate(&module);
             store
         });

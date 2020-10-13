@@ -1,4 +1,4 @@
-use super::{ ProcessEnvironment, Process, CHANNELS };
+use super::{ ProcessEnvironment, Process, Resource, RESOURCES };
 use super::creator::{spawn, FunctionLookup, MemoryChoice};
 use super::channel::Channel;
 
@@ -32,10 +32,8 @@ pub fn create_lunatic_imports(linker: &mut Linker, environment: ProcessEnvironme
                 MemoryChoice::New(18),
             );
             let process = Process::from(task);
-            match env.processes.borrow_mut().insert(process) {
-                None => -1,
-                Some(id) => id as i32
-            }
+
+            RESOURCES.create(Resource::Process(process)) as i32
         },
     )?;
 
@@ -44,9 +42,12 @@ pub fn create_lunatic_imports(linker: &mut Linker, environment: ProcessEnvironme
     linker.func(
         "lunatic",
         "join",
-        move |pid: i32| {
-            if let Some(process) = env.processes.borrow_mut().get_mut(pid as usize) {
-                let _ignore = env.async_(process.mut_task());
+        move |index: i32| {
+            match RESOURCES.get(index as usize) {
+                Resource::Process(mut process) => {
+                    let _ignore = env.async_(process.mut_task());
+                },
+                _ => panic!("Only processes can be joined")
             }
         },
     )?;
@@ -57,10 +58,7 @@ pub fn create_lunatic_imports(linker: &mut Linker, environment: ProcessEnvironme
         "channel",
         |bound: i32| -> i32 {
             let channel = Channel::new(if bound > 0 {Some (bound as usize)} else {None});
-            match CHANNELS.insert(channel) {
-                None => -1,
-                Some(id) => id as i32
-            }
+            RESOURCES.create(Resource::Channel(channel)) as i32
         },
     )?;
 
@@ -69,24 +67,32 @@ pub fn create_lunatic_imports(linker: &mut Linker, environment: ProcessEnvironme
     linker.func(
         "lunatic",
         "send",
-        move |channel_id: i32, iovec: i32| {
+        move |index: i32, iovec: i32| {
             let iovec = WasiIoVec::from(env.memory(), iovec);
-            let channel = CHANNELS.get(channel_id as usize).unwrap();
-            let future = channel.send(iovec.as_slice());
-            env.async_(future);
+            match RESOURCES.get(index as usize) {
+                Resource::Channel(channel) => {
+                    let future = channel.send(iovec.as_slice());
+                    env.async_(future);
+                },
+                _ => panic!("Only channels can be sent to")
+            }
         },
     )?;
 
     // Receive buffer and write it to memory
     let env = environment.clone();
     linker.func("lunatic", "receive",
-        move |channel_id: i32, iovec: i32| {
+        move |index: i32, iovec: i32| {
             let mut iovec = WasiIoVec::from(env.memory(), iovec);
-            let channel = CHANNELS.get(channel_id as usize).unwrap();
-            let future = channel.recieve();
-            let buffer = env.async_(future).unwrap();
-            // TODO: Check for length of buffer before writing to it.
-            buffer.give_to(iovec.as_mut_slice().as_mut_ptr());
+            match RESOURCES.get(index as usize) {
+                Resource::Channel(channel) => {
+                    let future = channel.recieve();
+                    let buffer = env.async_(future).unwrap();
+                    // TODO: Check for length of buffer before writing to it.
+                    buffer.give_to(iovec.as_mut_slice().as_mut_ptr());
+                },
+                _ => panic!("Only channels can be received to")
+            }
         }
     )?;
 

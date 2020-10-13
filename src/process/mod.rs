@@ -9,17 +9,17 @@ use wasmtime::{Engine, Module};
 use smol::{Task, Executor};
 use anyhow::Result;
 use lazy_static::lazy_static;
+use crossbeam::queue::SegQueue;
 
 use std::future::Future;
-use std::sync::RwLock;
-use std::rc::Rc;
-use std::cell::RefCell;
+use std::sync::{RwLock, Mutex, Arc};
+use std::cell::UnsafeCell;
 use std::mem::ManuallyDrop;
 
 lazy_static! {
     static ref ASYNC_POOL: OneMbAsyncPool = OneMbAsyncPool::new(128);
     pub static ref EXECUTOR: Executor<'static> = Executor::new();
-    pub static ref CHANNELS: GlobalState<channel::Channel> = GlobalState::new(20_000);
+    pub static ref RESOURCES: GlobalResources = GlobalResources::new();
 }
 
 /// This structure is captured inside HOST function closures passed to Wasmtime's Linker.
@@ -37,13 +37,11 @@ pub struct ProcessEnvironment {
     module: Module,
     memory: *mut u8,
     yielder: usize,
-    processes: Rc<RefCell<State<Process>>>
 }
 
 impl ProcessEnvironment {
     pub fn new(engine: Engine, module: Module, memory: *mut u8, yielder: usize) -> Self {
-        let processes = Rc::new(RefCell::new(State::new(20_000)));
-        Self { engine, module, memory, yielder, processes }
+        Self { engine, module, memory, yielder }
     }
 
     /// Run an async future and return the output when done.
@@ -70,80 +68,111 @@ impl ProcessEnvironment {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct Process {
-    task: Task<Result<()>>
+    task: Arc<Task<Result<()>>>
 }
 
 impl Process {
     pub fn from(task: Task<Result<()>>) -> Self {
-        Self { task }
+        Self { task: Arc::new(task) }
     }
 
     pub fn mut_task(&mut self) -> &mut Task<Result<()>> {
-        &mut self.task
+        Arc::get_mut(&mut self.task).unwrap()
     }
 }
 
-
-pub struct State<T> {
-    occupied: Vec<Option<T>>,
-    free: Vec<usize>
+pub struct GlobalResources {
+    resources: RwLock<Vec<ResourceRc>>,
+    free: SegQueue<usize>
 }
 
-impl<T> State<T> {
-    fn new(capacity: usize) -> Self {
+unsafe impl Sync for GlobalResources {}
+
+impl GlobalResources {
+    pub fn new() -> Self {
         Self {
-            occupied: Vec::with_capacity(capacity),
-            free: (0..capacity).rev().collect()
+            resources: RwLock::new(Vec::new()),
+            free: SegQueue::new()
         }
     }
 
-    fn insert(&mut self, value: T) -> Option<usize> {
-        let free_slot = self.free.pop()?;
-        if free_slot == self.occupied.len() {
-            self.occupied.push(Some(value));
-        } else {
-            self.occupied[free_slot] = Some(value);
+    pub fn create(&self, new_resource: Resource) -> usize {
+        match self.free.pop() {
+            Some(free_index) => {
+                let resources = self.resources.read().unwrap();
+                let resource_rc = resources.get(free_index).unwrap();
+                let mut ref_count = resource_rc.count.lock().unwrap();
+
+                assert!(resource_rc.get_mut().is_none());
+                assert_eq!(*ref_count, 0);
+
+                { *resource_rc.get_mut() = Some(new_resource); }
+                *ref_count += 1;
+                free_index
+            },
+            None => {
+                let mut resources = self.resources.write().unwrap();
+                let resource_rc = ResourceRc { resource: UnsafeCell::new(Some(new_resource)), count: Mutex::new(1) };
+                resources.push(resource_rc);
+                resources.len() - 1
+            }
         }
-        Some(free_slot)
     }
 
-    fn delete(&mut self, slot: usize) {
-        let _drop = self.occupied[slot].take();
-        self.free.push(slot);
+    pub fn clone(&self, index: usize) {
+        let resources = self.resources.read().unwrap();
+        let resource_rc = resources.get(index).unwrap();
+        let mut ref_count = resource_rc.count.lock().unwrap();
+
+        assert!(resource_rc.get_mut().is_some());
+        assert!(*ref_count > 0);
+
+        *ref_count += 1;
     }
 
-    fn get_mut(&mut self, slot: usize) -> &mut Option<T> {
-        &mut self.occupied[slot]
+    pub fn drop(&self, index: usize) {
+        let resources = self.resources.read().unwrap();
+        let resource_rc = resources.get(index).unwrap();
+        let mut ref_count = resource_rc.count.lock().unwrap();
+
+        assert!(resource_rc.get_mut().is_some());
+        assert!(*ref_count > 0);
+
+        *ref_count -= 1;
+
+        if *ref_count == 0 {
+            *resource_rc.get_mut() = None;
+            self.free.push(index);
+        }
     }
 
-    fn get(&self, slot: usize) -> &Option<T> {
-        &self.occupied[slot]
+    pub fn get(&self, index: usize) -> Resource {
+        let resources = self.resources.read().unwrap();
+        let resource_rc = resources.get(index).unwrap();
+
+        assert!(resource_rc.get_mut().is_some());
+
+        let resrouce = resource_rc.get_mut().clone().unwrap();
+        resrouce
     }
 }
 
-pub struct GlobalState<T> {
-    state: RwLock<State<T>>
+#[derive(Debug)]
+pub struct ResourceRc {
+    resource: UnsafeCell<Option<Resource>>,
+    count: Mutex<usize>
 }
 
-impl<T: Clone> GlobalState<T> {
-    pub fn new(capacity: usize) -> Self {
-        let state: RwLock<State<T>> = RwLock::new(State::new(capacity));
-        Self { state }
+impl ResourceRc {
+    pub fn get_mut(&self) -> &mut Option<Resource> {
+        unsafe { &mut *self.resource.get() }
     }
+}
 
-    fn insert(&self, value: T) -> Option<usize> {
-        let mut state = self.state.write().unwrap();
-        state.insert(value)
-    }
-
-    fn delete(&self, slot: usize) {
-        let mut state = self.state.write().unwrap();
-        state.delete(slot);
-    }
-
-    fn get(&self, slot: usize) -> Option<T> {
-        let state = self.state.read().unwrap();
-        state.get(slot).clone()
-    }
+#[derive(Debug, Clone)]
+pub enum Resource {
+    Process(Process),
+    Channel(channel::Channel)
 }

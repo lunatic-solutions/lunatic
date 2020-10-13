@@ -4,7 +4,7 @@ use std::future::Future;
 
 use smol::channel::{bounded, unbounded, Sender, Receiver, RecvError};
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Channel {
     sender: Sender<ChannelBuffer>,
     receiver: Receiver<ChannelBuffer>
