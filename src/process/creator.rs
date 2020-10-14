@@ -1,11 +1,9 @@
-use smol::Task;
-use wasmtime::{Engine, Module, Store, Linker, Memory, MemoryType, Limits, Val };
 use anyhow::Result;
+use smol::Task;
+use wasmtime::{Engine, Limits, Linker, Memory, MemoryType, Module, Store, Val};
 
-use async_wormhole::AsyncYielder;
-
-use super::{ ProcessEnvironment, ASYNC_POOL, EXECUTOR};
 use super::imports::create_lunatic_imports;
+use super::{AsyncYielderCast, ProcessEnvironment, ASYNC_POOL, EXECUTOR};
 use crate::wasi::create_wasi_imports;
 
 /// Used to look up a function by name or table index inside of an Instance.
@@ -20,7 +18,7 @@ pub enum FunctionLookup {
 #[derive(Clone)]
 pub enum MemoryChoice {
     Existing(Memory),
-    New(u32)
+    New(u32),
 }
 
 /// Spawn a new process.
@@ -30,9 +28,10 @@ pub fn spawn(
     function: FunctionLookup,
     memory: MemoryChoice,
 ) -> Task<Result<()>> {
-    let task = ASYNC_POOL
-        .with_tls(&wasmtime_runtime::traphandlers::tls::PTR, move |yielder| {
-            let yielder_ptr = &yielder as *const AsyncYielder<_> as usize;
+    let task = ASYNC_POOL.with_tls(
+        [&wasmtime_runtime::traphandlers::tls::PTR],
+        move |yielder| {
+            let yielder_ptr = &yielder as *const AsyncYielderCast as usize;
 
             let store = Store::new(&engine);
             let mut linker = Linker::new(&store);
@@ -44,13 +43,9 @@ pub fn spawn(
                     Memory::new(&store, memory_ty)
                 }
             };
-            
-            let environment = ProcessEnvironment::new(
-                engine,
-                module.clone(),
-                memory.data_ptr(),
-                yielder_ptr,
-            );
+
+            let environment =
+                ProcessEnvironment::new(engine, module.clone(), memory.data_ptr(), yielder_ptr);
 
             linker.define("lunatic", "memory", memory)?;
             create_lunatic_imports(&mut linker, environment.clone())?;
@@ -66,12 +61,13 @@ pub fn spawn(
                 }
                 FunctionLookup::TableIndex((index, argument)) => {
                     let func = instance.get_func("lunatic_spawn_by_index").unwrap();
-                    func.call(&[Val::from(index), Val::from(argument)])?;                 
+                    func.call(&[Val::from(index), Val::from(argument)])?;
                 }
             }
-            
+
             Ok(())
-        });
+        },
+    );
 
     EXECUTOR.spawn(async {
         let mut task = task?;

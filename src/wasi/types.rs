@@ -2,26 +2,30 @@
 
 #![allow(dead_code)]
 
-use std::slice::from_raw_parts_mut;
+use std::io::{Error, Write};
 use std::iter::Iterator;
-use std::mem::size_of;
 use std::marker::PhantomData;
-use std::io::{Write, Error};
+use std::mem::size_of;
+use std::slice::from_raw_parts_mut;
 
 /// WASI size (u32) type
 pub struct WasiSize {
-    ptr: *mut u32
+    ptr: *mut u32,
 }
 
 impl WasiSize {
     #[inline(always)]
-    pub fn from(memory: *mut u8, ptr: i32) -> Self {
-        Self { ptr: unsafe { memory.add(ptr as usize) as *mut u32 } }
+    pub fn from(memory: *mut u8, ptr: usize) -> Self {
+        Self {
+            ptr: unsafe { memory.add(ptr) as *mut u32 },
+        }
     }
 
     #[inline(always)]
     pub fn set(&mut self, value: u32) {
-        unsafe { *(self.ptr) = value; }
+        unsafe {
+            *(self.ptr) = value;
+        }
     }
 
     #[inline(always)]
@@ -32,19 +36,19 @@ impl WasiSize {
 
 #[repr(C)]
 pub struct __wasi_iovec_t {
-    pub buf: i32,
-    pub buf_len: i32,
+    pub buf: u32,
+    pub buf_len: u32,
 }
 /// A read/write WASI iovec type. Represents both a iovec and ciovec.
 pub struct WasiIoVec<'a> {
-    slice: &'a mut [u8]
+    slice: &'a mut [u8],
 }
 
 impl<'a> WasiIoVec<'a> {
     #[inline(always)]
-    pub fn from(memory: *mut u8, ptr: i32) -> Self {
+    pub fn from(memory: *mut u8, ptr: usize) -> Self {
         unsafe {
-            let wasi_iovec = memory.add(ptr as usize) as *mut __wasi_iovec_t;
+            let wasi_iovec = memory.add(ptr) as *mut __wasi_iovec_t;
             let slice_ptr = memory.add((*wasi_iovec).buf as usize);
             let slice_len = (*wasi_iovec).buf_len as usize;
             let slice = from_raw_parts_mut(slice_ptr, slice_len);
@@ -69,16 +73,22 @@ impl<'a> WasiIoVec<'a> {
 /// Iterator over the WASI (c)iovec_array type.
 pub struct WasiIoVecArrayIter<'a> {
     memory: *mut u8,
-    ptr: i32,
+    ptr: usize,
     current: usize,
     len: usize,
-    phantom: PhantomData<&'a ()>
+    phantom: PhantomData<&'a ()>,
 }
 
 impl WasiIoVecArrayIter<'_> {
     #[inline(always)]
-    pub fn from(memory: *mut u8, ptr: i32, len: i32) -> Self {
-        Self { memory, ptr, current: 0, len: len as usize, phantom: PhantomData }
+    pub fn from(memory: *mut u8, ptr: usize, len: usize) -> Self {
+        Self {
+            memory,
+            ptr: ptr,
+            current: 0,
+            len: len as usize,
+            phantom: PhantomData,
+        }
     }
 
     #[inline(always)]
@@ -97,16 +107,15 @@ impl<'a> Iterator for WasiIoVecArrayIter<'a> {
     #[inline(always)]
     fn next(&mut self) -> Option<Self::Item> {
         if self.current < self.len {
-            let wasm_iovec = Some(WasiIoVec::from(self.memory, self.ptr));
+            let wasm_iovec = WasiIoVec::from(self.memory, self.ptr);
             self.current += 1;
-            self.ptr += size_of::<__wasi_iovec_t>() as i32;
-            wasm_iovec
+            self.ptr += size_of::<__wasi_iovec_t>();
+            Some(wasm_iovec)
         } else {
             None
         }
     }
 }
-
 
 pub const WASI_ESUCCESS: i32 = 0;
 pub const WASI_E2BIG: i32 = 1;

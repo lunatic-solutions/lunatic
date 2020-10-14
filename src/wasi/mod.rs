@@ -3,8 +3,8 @@ pub mod types;
 use types::*;
 
 use crate::process::ProcessEnvironment;
-use wasmtime::{Linker, Trap};
 use anyhow::Result;
+use wasmtime::{Linker, Trap};
 
 use std::fmt;
 use std::io::{stderr, stdout};
@@ -20,15 +20,15 @@ impl fmt::Display for ExitCode {
 
 impl std::error::Error for ExitCode {}
 
-pub fn create_wasi_imports(linker: &mut Linker, process_env_original: &ProcessEnvironment) -> Result<()> {
+pub fn create_wasi_imports(
+    linker: &mut Linker,
+    process_env_original: &ProcessEnvironment,
+) -> Result<()> {
     // proc_exit(exit_code)
     linker.func(
         "wasi_snapshot_preview1",
         "proc_exit",
-        move |exit_code: i32| -> Result<(), Trap> {
-            println!("wasi_snapshot_preview1:proc_exit({}) called!", exit_code);
-            Err(Trap::new("proc_exit() called"))
-        },
+        move |_exit_code: i32| -> Result<(), Trap> { Err(Trap::new("proc_exit() called")) },
     )?;
 
     // fd_write(...)
@@ -36,19 +36,15 @@ pub fn create_wasi_imports(linker: &mut Linker, process_env_original: &ProcessEn
     linker.func(
         "wasi_snapshot_preview1",
         "fd_write",
-        //    fd     , [ciovec] , size         , *size    
         move |fd: i32, iovs: i32, iovs_len: i32, nwritten: i32| -> i32 {
-            let wasi_iovecs = WasiIoVecArrayIter::from(env.memory(), iovs, iovs_len);
-            let mut wasi_nwritten = WasiSize::from(env.memory(), nwritten);
+            let wasi_iovecs =
+                WasiIoVecArrayIter::from(env.memory(), iovs as usize, iovs_len as usize);
+            let mut wasi_nwritten = WasiSize::from(env.memory(), nwritten as usize);
 
             let bytes_written = match fd {
                 WASI_STDIN_FILENO => return WASI_EINVAL,
-                WASI_STDOUT_FILENO => {
-                    wasi_iovecs.write(&mut stdout()).unwrap()
-                }
-                WASI_STDERR_FILENO => {
-                    wasi_iovecs.write(&mut stderr()).unwrap()
-                }
+                WASI_STDOUT_FILENO => wasi_iovecs.write(&mut stdout()).unwrap(),
+                WASI_STDERR_FILENO => wasi_iovecs.write(&mut stderr()).unwrap(),
                 _ => {
                     unimplemented!("Only stdout & stderror allowed for now");
                 }

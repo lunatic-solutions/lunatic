@@ -1,5 +1,5 @@
 use criterion::{criterion_group, criterion_main, Criterion};
-use wasmtime::{Store, Linker, Engine, Module};
+use wasmtime::{Engine, Linker, Module, Store};
 
 fn lunatic_bench(c: &mut Criterion) {
     c.bench_function("wasmtime instance creation", |b| {

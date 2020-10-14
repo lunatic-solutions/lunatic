@@ -1,20 +1,20 @@
 use std::alloc::{alloc, dealloc, Layout};
-use std::{mem, ptr};
 use std::future::Future;
+use std::{mem, ptr};
 
-use smol::channel::{bounded, unbounded, Sender, Receiver, RecvError};
+use smol::channel::{bounded, unbounded, Receiver, RecvError, Sender};
 
 #[derive(Clone, Debug)]
 pub struct Channel {
     sender: Sender<ChannelBuffer>,
-    receiver: Receiver<ChannelBuffer>
+    receiver: Receiver<ChannelBuffer>,
 }
 
 impl Channel {
     pub fn new(bound: Option<usize>) -> Self {
         let (sender, receiver) = match bound {
             Some(bound) => bounded(bound),
-            None => unbounded()
+            None => unbounded(),
         };
         Self { sender, receiver }
     }
@@ -24,7 +24,7 @@ impl Channel {
         self.sender.send(buffer)
     }
 
-    pub fn recieve(&self) -> impl Future<Output=Result<ChannelBuffer, RecvError>> + '_ {
+    pub fn recieve(&self) -> impl Future<Output = Result<ChannelBuffer, RecvError>> + '_ {
         self.receiver.recv()
     }
 }

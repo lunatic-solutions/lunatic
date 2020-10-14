@@ -7,7 +7,7 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-async-wormhole = { path = "../async_wormhole" }
+async-wormhole = "0.2"
 wasmtime = {path = "../wasmtime/crates/wasmtime"}
 wasmtime-runtime = {path = "../wasmtime/crates/runtime"}
 walrus = "0.18"

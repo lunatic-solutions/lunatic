@@ -1,11 +1,11 @@
 use anyhow::Result;
-use smol::{future, channel};
 use easy_parallel::Parallel;
+use smol::{channel, future};
 use wasmtime::{Config, Engine, Module};
 
 use lunatic_vm::patching::patch;
-use lunatic_vm::process::EXECUTOR;
 use lunatic_vm::process::creator::{spawn, FunctionLookup, MemoryChoice};
+use lunatic_vm::process::EXECUTOR;
 
 use std::env;
 use std::fs;
@@ -21,7 +21,7 @@ fn main() -> Result<()> {
     let mut config = Config::new();
     config.wasm_threads(true);
     config.wasm_simd(true);
-    config.static_memory_guard_size(128*1024*1024); // 128 Mb
+    config.static_memory_guard_size(128 * 1024 * 1024); // 128 Mb
     let engine = Engine::new(&config);
 
     let module = Module::new(&engine, wasm)?;
@@ -32,16 +32,20 @@ fn main() -> Result<()> {
 
     Parallel::new()
         .each(0..cpus, |_| future::block_on(EXECUTOR.run(shutdown.recv())))
-        .finish(|| future::block_on(async {
-            let result = spawn(
-                engine,
-                module,
-                FunctionLookup::Name("_start"),
-                MemoryChoice::New(min_memory)
-            ).await;
-            drop(signal);
-            result
-    })).1?;
+        .finish(|| {
+            future::block_on(async {
+                let result = spawn(
+                    engine,
+                    module,
+                    FunctionLookup::Name("_start"),
+                    MemoryChoice::New(min_memory),
+                )
+                .await;
+                drop(signal);
+                result
+            })
+        })
+        .1?;
 
     Ok(())
 }

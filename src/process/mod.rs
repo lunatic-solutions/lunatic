@@ -5,16 +5,18 @@ pub mod imports;
 use async_wormhole::pool::OneMbAsyncPool;
 use async_wormhole::AsyncYielder;
 
-use wasmtime::{Engine, Module};
-use smol::{Task, Executor};
 use anyhow::Result;
-use lazy_static::lazy_static;
 use crossbeam::queue::SegQueue;
+use lazy_static::lazy_static;
+use smol::{Executor, Task};
+use wasmtime::{Engine, Module};
 
-use std::future::Future;
-use std::sync::{RwLock, Mutex, Arc};
 use std::cell::UnsafeCell;
+use std::future::Future;
 use std::mem::ManuallyDrop;
+use std::sync::{Arc, Mutex, RwLock};
+
+pub type AsyncYielderCast<'a> = AsyncYielder<'a, Result<()>>;
 
 lazy_static! {
     static ref ASYNC_POOL: OneMbAsyncPool = OneMbAsyncPool::new(128);
@@ -41,7 +43,12 @@ pub struct ProcessEnvironment {
 
 impl ProcessEnvironment {
     pub fn new(engine: Engine, module: Module, memory: *mut u8, yielder: usize) -> Self {
-        Self { engine, module, memory, yielder }
+        Self {
+            engine,
+            module,
+            memory,
+            yielder,
+        }
     }
 
     /// Run an async future and return the output when done.
@@ -51,7 +58,7 @@ impl ProcessEnvironment {
     {
         // The yielder should not be dropped until this process is done running.
         let mut yielder =
-            unsafe { std::ptr::read(self.yielder as *const ManuallyDrop<AsyncYielder<R>>) };
+            unsafe { std::ptr::read(self.yielder as *const ManuallyDrop<AsyncYielderCast>) };
         yielder.async_suspend(future)
     }
 
@@ -70,12 +77,14 @@ impl ProcessEnvironment {
 
 #[derive(Debug, Clone)]
 pub struct Process {
-    task: Arc<Task<Result<()>>>
+    task: Arc<Task<Result<()>>>,
 }
 
 impl Process {
     pub fn from(task: Task<Result<()>>) -> Self {
-        Self { task: Arc::new(task) }
+        Self {
+            task: Arc::new(task),
+        }
     }
 
     pub fn mut_task(&mut self) -> &mut Task<Result<()>> {
@@ -85,7 +94,7 @@ impl Process {
 
 pub struct GlobalResources {
     resources: RwLock<Vec<ResourceRc>>,
-    free: SegQueue<usize>
+    free: SegQueue<usize>,
 }
 
 unsafe impl Sync for GlobalResources {}
@@ -94,7 +103,7 @@ impl GlobalResources {
     pub fn new() -> Self {
         Self {
             resources: RwLock::new(Vec::new()),
-            free: SegQueue::new()
+            free: SegQueue::new(),
         }
     }
 
@@ -108,13 +117,18 @@ impl GlobalResources {
                 assert!(resource_rc.get_mut().is_none());
                 assert_eq!(*ref_count, 0);
 
-                { *resource_rc.get_mut() = Some(new_resource); }
+                {
+                    *resource_rc.get_mut() = Some(new_resource);
+                }
                 *ref_count += 1;
                 free_index
-            },
+            }
             None => {
                 let mut resources = self.resources.write().unwrap();
-                let resource_rc = ResourceRc { resource: UnsafeCell::new(Some(new_resource)), count: Mutex::new(1) };
+                let resource_rc = ResourceRc {
+                    resource: UnsafeCell::new(Some(new_resource)),
+                    count: Mutex::new(1),
+                };
                 resources.push(resource_rc);
                 resources.len() - 1
             }
@@ -162,7 +176,7 @@ impl GlobalResources {
 #[derive(Debug)]
 pub struct ResourceRc {
     resource: UnsafeCell<Option<Resource>>,
-    count: Mutex<usize>
+    count: Mutex<usize>,
 }
 
 impl ResourceRc {
@@ -174,5 +188,5 @@ impl ResourceRc {
 #[derive(Debug, Clone)]
 pub enum Resource {
     Process(Process),
-    Channel(channel::Channel)
+    Channel(channel::Channel),
 }
