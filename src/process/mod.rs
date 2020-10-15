@@ -11,10 +11,11 @@ use lazy_static::lazy_static;
 use smol::{Executor, Task};
 use wasmtime::{Engine, Module};
 
-use std::cell::UnsafeCell;
+use std::cell::{RefCell, UnsafeCell};
+use std::fmt;
 use std::future::Future;
 use std::mem::ManuallyDrop;
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Mutex, RwLock};
 
 pub type AsyncYielderCast<'a> = AsyncYielder<'a, Result<()>>;
 
@@ -75,20 +76,36 @@ impl ProcessEnvironment {
     }
 }
 
-#[derive(Debug, Clone)]
+/// A lunatic process represents an actor.
 pub struct Process {
-    task: Arc<Task<Result<()>>>,
+    task: RefCell<Option<Task<Result<()>>>>,
+}
+
+impl fmt::Debug for Process {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Process").finish()
+    }
+}
+
+// We cheat here, Task can't be cloned, but we just take it away from the parent.
+// As we only expect join(process) to be called once, this should be fine.
+impl Clone for Process {
+    fn clone(&self) -> Self {
+        Process {
+            task: RefCell::new(self.task.borrow_mut().take()),
+        }
+    }
 }
 
 impl Process {
     pub fn from(task: Task<Result<()>>) -> Self {
         Self {
-            task: Arc::new(task),
+            task: RefCell::new(Some(task)),
         }
     }
 
-    pub fn mut_task(&mut self) -> &mut Task<Result<()>> {
-        Arc::get_mut(&mut self.task).unwrap()
+    pub fn take(&mut self) -> Option<Task<Result<()>>> {
+        self.task.get_mut().take()
     }
 }
 
@@ -117,9 +134,7 @@ impl GlobalResources {
                 assert!(resource_rc.get_mut().is_none());
                 assert_eq!(*ref_count, 0);
 
-                {
-                    *resource_rc.get_mut() = Some(new_resource);
-                }
+                *resource_rc.get_mut() = Some(new_resource);
                 *ref_count += 1;
                 free_index
             }
@@ -157,7 +172,18 @@ impl GlobalResources {
         *ref_count -= 1;
 
         if *ref_count == 0 {
-            *resource_rc.get_mut() = None;
+            let drop = resource_rc.get_mut().take();
+            match drop.unwrap() {
+                // If we are dropping a process we need to detach it first or it will be canceled.
+                Resource::Process(mut process) => {
+                    // If we joined the process is gone already.
+                    match process.take() {
+                        Some(task) => task.detach(),
+                        None => (), // Task already consumed
+                    }
+                }
+                _ => (),
+            };
             self.free.push(index);
         }
     }

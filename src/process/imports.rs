@@ -15,6 +15,16 @@ use wasmtime::Linker;
 /// The HOST functions are implemented with closures that capturing the environment belonging
 /// to the instance, like yielder address and memory pointers.
 pub fn create_lunatic_imports(linker: &mut Linker, environment: ProcessEnvironment) -> Result<()> {
+    // Increments reference count on a resource
+    linker.func("lunatic", "clone", move |index: i32| {
+        RESOURCES.clone(index as usize);
+    })?;
+
+    // Decrements reference count on a resource
+    linker.func("lunatic", "drop", move |index: i32| {
+        RESOURCES.drop(index as usize);
+    })?;
+
     // Yield this process allowing other to be scheduled on same thread.
     let env = environment.clone();
     linker.func("lunatic", "yield", move || env.async_(yield_now()))?;
@@ -24,7 +34,7 @@ pub fn create_lunatic_imports(linker: &mut Linker, environment: ProcessEnvironme
     linker.func(
         "lunatic",
         "spawn",
-        move |index: i32, argument: i32| -> i32 {
+        move |index: i32, argument: i64| -> i32 {
             let task = spawn(
                 env.engine(),
                 env.module(),
@@ -42,7 +52,11 @@ pub fn create_lunatic_imports(linker: &mut Linker, environment: ProcessEnvironme
     linker.func("lunatic", "join", move |index: i32| {
         match RESOURCES.get(index as usize) {
             Resource::Process(mut process) => {
-                let _ignore = env.async_(process.mut_task());
+                let task = match process.take() {
+                    Some(task) => task,
+                    None => panic!("Process already joined"),
+                };
+                let _ignore = env.async_(task);
             }
             _ => panic!("Only processes can be joined"),
         }

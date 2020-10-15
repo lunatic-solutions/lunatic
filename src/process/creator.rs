@@ -9,7 +9,7 @@ use crate::wasi::create_wasi_imports;
 /// Used to look up a function by name or table index inside of an Instance.
 pub enum FunctionLookup {
     /// (table index, argument)
-    TableIndex((i32, i32)),
+    TableIndex((i32, i64)),
     Name(&'static str),
 }
 

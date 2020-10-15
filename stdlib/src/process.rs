@@ -1,11 +1,13 @@
-use std::mem::size_of;
+use std::mem::{forget, size_of, zeroed};
+use std::ptr;
 
-use crate::Channel;
+use crate::stdlib::drop;
+use crate::{Channel, ProcessClosureSend};
 
 mod stdlib {
     #[link(wasm_import_module = "lunatic")]
     extern "C" {
-        pub fn spawn(function_ptr: unsafe extern "C" fn(usize), argument: usize) -> i32;
+        pub fn spawn(function_ptr: unsafe extern "C" fn(i64), argument: i64) -> i32;
         pub fn join(pid: i32);
     }
 }
@@ -14,39 +16,56 @@ mod stdlib {
 pub struct SpawnError {}
 
 pub struct Process {
-    id: i32
+    id: i32,
+}
+
+impl Drop for Process {
+    fn drop(&mut self) {
+        // Decrement reference count of resource in the VM
+        unsafe {
+            drop(self.id);
+        }
+    }
 }
 
 impl Process {
     pub fn spawn<F>(closure: F) -> Result<Process, SpawnError>
     where
-        F: FnOnce() + Copy + 'static
+        F: FnOnce() + ProcessClosureSend,
     {
-        unsafe extern "C" fn spawn_without_capture<F>(function_ptr: usize)
+        unsafe extern "C" fn spawn_small_capture<F>(closure_in_i64: i64)
         where
-            F: FnOnce() + Copy + 'static
+            F: FnOnce() + ProcessClosureSend,
         {
-            let f = std::ptr::read(function_ptr as *const F);
+            let source = &closure_in_i64 as *const i64 as *const F;
+            let mut f: F = zeroed();
+            ptr::copy_nonoverlapping(source, &mut f, size_of::<F>());
             f();
         }
 
-        unsafe extern "C" fn spawn_with_capture<F>(channel: usize)
+        unsafe extern "C" fn spawn_large_capture<F>(channel: i64)
         where
-            F: FnOnce() + Copy + 'static
+            F: FnOnce() + ProcessClosureSend,
         {
             let channel: Channel<F> = Channel::from_id(channel as i32);
             let f = channel.receive();
             f();
         }
 
-        let id = if size_of::<F>() == 0 {
-            // If no environment is captured pass the closure pointer directly.
-            unsafe { stdlib::spawn(spawn_without_capture::<F>, &closure as *const F as usize) }
+        let id = if size_of::<F>() <= size_of::<i64>() {
+            // If we can fit the environment directly in a 64 bit pointer do so.
+            let source = &closure as *const F as *const i64;
+            let mut closure_in_i64: i64 = 0;
+            unsafe { ptr::copy_nonoverlapping(source, &mut closure_in_i64, size_of::<F>()) };
+            forget(closure);
+            unsafe { stdlib::spawn(spawn_small_capture::<F>, closure_in_i64) }
         } else {
             // We need to first send the environment between the processes before we can use the closure.
             let channel: Channel<F> = Channel::new(1);
             channel.send(closure);
-            unsafe { stdlib::spawn(spawn_with_capture::<F>, channel.id() as usize) }
+            let id = unsafe { stdlib::spawn(spawn_large_capture::<F>, channel.id() as i64) };
+            forget(channel);
+            id
         };
 
         if id > -1 {
@@ -56,7 +75,9 @@ impl Process {
         }
     }
 
-    pub fn join(&self) {
-        unsafe { stdlib::join(self.id); }
+    pub fn join(self) {
+        unsafe {
+            stdlib::join(self.id);
+        }
     }
 }
