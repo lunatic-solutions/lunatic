@@ -57,10 +57,37 @@ pub fn create_wasi_imports(
 
     linker.func(
         "wasi_snapshot_preview1",
+        "path_open",
+        move |_fd: u32,
+              _dirflags: u32,
+              _path_ptr: u32,
+              _path_len: u32,
+              _oflags: u32,
+              _fs_rights_base: u64,
+              _fs_rights_inherting: u64,
+              _fd_flags: u32,
+              _opened_fd_ptr: u32|
+              -> u32 {
+            println!("wasi_snapshot_preview1:path_open()");
+            WASI_EINVAL
+        },
+    )?;
+
+    linker.func(
+        "wasi_snapshot_preview1",
+        "fd_close",
+        move |_fd: u32| -> u32 {
+            println!("wasi_snapshot_preview1:fd_close()");
+            WASI_ENOTSUP
+        },
+    )?;
+
+    linker.func(
+        "wasi_snapshot_preview1",
         "fd_prestat_get",
         move |_: u32, _: u32| -> u32 {
             println!("wasi_snapshot_preview1:fd_prestat_get()");
-            8 // WASI_EBADF
+            WASI_EBADF
         },
     )?;
 
@@ -69,7 +96,7 @@ pub fn create_wasi_imports(
         "fd_prestat_dir_name",
         move |_: u32, _: u32, _: u32| -> u32 {
             println!("wasi_snapshot_preview1:fd_prestat_dir_name()");
-            28 // WASI_EINVAL
+            WASI_EINVAL
         },
     )?;
 
@@ -87,7 +114,7 @@ pub fn create_wasi_imports(
         "environ_get",
         move |_: u32, _: u32| -> u32 {
             println!("wasi_snapshot_preview1:environ_get()");
-            0
+            WASI_ENOTSUP
         },
     )?;
 
