@@ -36,7 +36,7 @@ pub fn create_wasi_imports(
     linker.func(
         "wasi_snapshot_preview1",
         "fd_write",
-        move |fd: i32, iovs: i32, iovs_len: i32, nwritten: i32| -> i32 {
+        move |fd: u32, iovs: u32, iovs_len: u32, nwritten: u32| -> u32 {
             let wasi_iovecs =
                 WasiIoVecArrayIter::from(env.memory(), iovs as usize, iovs_len as usize);
             let mut wasi_nwritten = WasiSize::from(env.memory(), nwritten as usize);
@@ -58,7 +58,7 @@ pub fn create_wasi_imports(
     linker.func(
         "wasi_snapshot_preview1",
         "fd_prestat_get",
-        move |_: i32, _: i32| -> i32 {
+        move |_: u32, _: u32| -> u32 {
             println!("wasi_snapshot_preview1:fd_prestat_get()");
             8 // WASI_EBADF
         },
@@ -67,7 +67,7 @@ pub fn create_wasi_imports(
     linker.func(
         "wasi_snapshot_preview1",
         "fd_prestat_dir_name",
-        move |_: i32, _: i32, _: i32| -> i32 {
+        move |_: u32, _: u32, _: u32| -> u32 {
             println!("wasi_snapshot_preview1:fd_prestat_dir_name()");
             28 // WASI_EINVAL
         },
@@ -76,7 +76,7 @@ pub fn create_wasi_imports(
     linker.func(
         "wasi_snapshot_preview1",
         "environ_sizes_get",
-        move |_: i32, _: i32| -> i32 {
+        move |_: u32, _: u32| -> u32 {
             println!("wasi_snapshot_preview1:environ_sizes_get()");
             0
         },
@@ -85,7 +85,7 @@ pub fn create_wasi_imports(
     linker.func(
         "wasi_snapshot_preview1",
         "environ_get",
-        move |_: i32, _: i32| -> i32 {
+        move |_: u32, _: u32| -> u32 {
             println!("wasi_snapshot_preview1:environ_get()");
             0
         },

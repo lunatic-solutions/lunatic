@@ -16,12 +16,12 @@ use wasmtime::Linker;
 /// to the instance, like yielder address and memory pointers.
 pub fn create_lunatic_imports(linker: &mut Linker, environment: ProcessEnvironment) -> Result<()> {
     // Increments reference count on a resource
-    linker.func("lunatic", "clone", move |index: i32| {
+    linker.func("lunatic", "clone", move |index: u32| {
         RESOURCES.clone(index as usize);
     })?;
 
     // Decrements reference count on a resource
-    linker.func("lunatic", "drop", move |index: i32| {
+    linker.func("lunatic", "drop", move |index: u32| {
         RESOURCES.drop(index as usize);
     })?;
 
@@ -34,7 +34,7 @@ pub fn create_lunatic_imports(linker: &mut Linker, environment: ProcessEnvironme
     linker.func(
         "lunatic",
         "spawn",
-        move |index: i32, argument: i64| -> i32 {
+        move |index: u32, argument: i64| -> u32 {
             let task = spawn(
                 env.engine(),
                 env.module(),
@@ -43,13 +43,13 @@ pub fn create_lunatic_imports(linker: &mut Linker, environment: ProcessEnvironme
             );
             let process = Process::from(task);
 
-            RESOURCES.create(Resource::Process(process)) as i32
+            RESOURCES.create(Resource::Process(process)) as u32
         },
     )?;
 
     // Wait on chaild process to finish.
     let env = environment.clone();
-    linker.func("lunatic", "join", move |index: i32| {
+    linker.func("lunatic", "join", move |index: u32| {
         match RESOURCES.get(index as usize) {
             Resource::Process(mut process) => {
                 let task = match process.take() {
@@ -63,18 +63,18 @@ pub fn create_lunatic_imports(linker: &mut Linker, environment: ProcessEnvironme
     })?;
 
     // Create a channel
-    linker.func("lunatic", "channel", |bound: i32| -> i32 {
+    linker.func("lunatic", "channel", |bound: u32| -> u32 {
         let channel = Channel::new(if bound > 0 {
             Some(bound as usize)
         } else {
             None
         });
-        RESOURCES.create(Resource::Channel(channel)) as i32
+        RESOURCES.create(Resource::Channel(channel)) as u32
     })?;
 
     // Create a buffer and send it to a channel
     let env = environment.clone();
-    linker.func("lunatic", "send", move |index: i32, iovec: i32| {
+    linker.func("lunatic", "send", move |index: u32, iovec: u32| {
         let iovec = WasiIoVec::from(env.memory(), iovec as usize);
         match RESOURCES.get(index as usize) {
             Resource::Channel(channel) => {
@@ -87,7 +87,7 @@ pub fn create_lunatic_imports(linker: &mut Linker, environment: ProcessEnvironme
 
     // Receive buffer and write it to memory
     let env = environment.clone();
-    linker.func("lunatic", "receive", move |index: i32, iovec: i32| {
+    linker.func("lunatic", "receive", move |index: u32, iovec: u32| {
         let mut iovec = WasiIoVec::from(env.memory(), iovec as usize);
         match RESOURCES.get(index as usize) {
             Resource::Channel(channel) => {

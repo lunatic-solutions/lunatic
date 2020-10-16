@@ -9,8 +9,8 @@ pub use process::Process;
 pub mod stdlib {
     #[link(wasm_import_module = "lunatic")]
     extern "C" {
-        pub fn clone(channel: i32);
-        pub fn drop(channel: i32);
+        pub fn clone(channel: u32);
+        pub fn drop(channel: u32);
         pub fn r#yield();
     }
 }

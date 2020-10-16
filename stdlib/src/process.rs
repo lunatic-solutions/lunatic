@@ -7,8 +7,8 @@ use crate::{Channel, ProcessClosureSend};
 mod stdlib {
     #[link(wasm_import_module = "lunatic")]
     extern "C" {
-        pub fn spawn(function_ptr: unsafe extern "C" fn(i64), argument: i64) -> i32;
-        pub fn join(pid: i32);
+        pub fn spawn(function_ptr: unsafe extern "C" fn(i64), argument: i64) -> u32;
+        pub fn join(pid: u32);
     }
 }
 
@@ -16,7 +16,7 @@ mod stdlib {
 pub struct SpawnError {}
 
 pub struct Process {
-    id: i32,
+    id: u32,
 }
 
 impl Drop for Process {
@@ -47,7 +47,7 @@ impl Process {
         where
             F: FnOnce() + ProcessClosureSend,
         {
-            let channel: Channel<F> = Channel::from_id(channel as i32);
+            let channel: Channel<F> = Channel::from_id(channel as u32);
             let f = channel.receive();
             f();
         }
@@ -68,11 +68,7 @@ impl Process {
             id
         };
 
-        if id > -1 {
-            Ok(Self { id })
-        } else {
-            Err(SpawnError {})
-        }
+        Ok(Self { id })
     }
 
     pub fn join(self) {

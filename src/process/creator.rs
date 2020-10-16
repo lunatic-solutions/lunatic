@@ -9,7 +9,7 @@ use crate::wasi::create_wasi_imports;
 /// Used to look up a function by name or table index inside of an Instance.
 pub enum FunctionLookup {
     /// (table index, argument)
-    TableIndex((i32, i64)),
+    TableIndex((u32, i64)),
     Name(&'static str),
 }
 
@@ -61,7 +61,7 @@ pub fn spawn(
                 }
                 FunctionLookup::TableIndex((index, argument)) => {
                     let func = instance.get_func("lunatic_spawn_by_index").unwrap();
-                    func.call(&[Val::from(index), Val::from(argument)])?;
+                    func.call(&[Val::from(index as i32), Val::from(argument)])?;
                 }
             }
 

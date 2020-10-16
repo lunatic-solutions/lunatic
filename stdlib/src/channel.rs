@@ -6,8 +6,8 @@ use crate::ProcessClosureSend;
 
 #[repr(C)]
 pub struct __wasi_iovec_t {
-    pub buf: i32,
-    pub buf_len: i32,
+    pub buf: u32,
+    pub buf_len: u32,
 }
 
 mod stdlib {
@@ -15,14 +15,14 @@ mod stdlib {
 
     #[link(wasm_import_module = "lunatic")]
     extern "C" {
-        pub fn channel(bound: i32) -> i32;
-        pub fn send(channel: i32, data: *const __wasi_iovec_t);
-        pub fn receive(channel: i32, data: *const __wasi_iovec_t);
+        pub fn channel(bound: u32) -> u32;
+        pub fn send(channel: u32, data: *const __wasi_iovec_t);
+        pub fn receive(channel: u32, data: *const __wasi_iovec_t);
     }
 }
 
 pub struct Channel<T> {
-    id: i32,
+    id: u32,
     phantom: PhantomData<T>,
 }
 
@@ -51,7 +51,7 @@ impl<T> Drop for Channel<T> {
 impl<T: ProcessClosureSend> Channel<T> {
     /// If `bound` is 0, returns an unbound channel.
     pub fn new(bound: usize) -> Self {
-        let id = unsafe { stdlib::channel(bound as i32) };
+        let id = unsafe { stdlib::channel(bound as u32) };
         Self {
             id,
             phantom: PhantomData,
@@ -60,8 +60,8 @@ impl<T: ProcessClosureSend> Channel<T> {
 
     pub fn send(&self, value: T) {
         let data = __wasi_iovec_t {
-            buf: &value as *const T as i32,
-            buf_len: size_of::<T>() as i32,
+            buf: &value as *const T as u32,
+            buf_len: size_of::<T>() as u32,
         };
 
         unsafe {
@@ -74,8 +74,8 @@ impl<T: ProcessClosureSend> Channel<T> {
         let result: T = unsafe { zeroed() };
 
         let data = __wasi_iovec_t {
-            buf: &result as *const T as i32,
-            buf_len: size_of::<T>() as i32,
+            buf: &result as *const T as u32,
+            buf_len: size_of::<T>() as u32,
         };
 
         unsafe {
@@ -84,11 +84,11 @@ impl<T: ProcessClosureSend> Channel<T> {
         result
     }
 
-    pub fn id(&self) -> i32 {
+    pub fn id(&self) -> u32 {
         self.id
     }
 
-    pub unsafe fn from_id(id: i32) -> Self {
+    pub unsafe fn from_id(id: u32) -> Self {
         Self {
             id,
             phantom: PhantomData,
