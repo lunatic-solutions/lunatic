@@ -1,6 +1,9 @@
 use super::channel::Channel;
 use super::creator::{spawn, FunctionLookup, MemoryChoice};
-use super::{Process, ProcessEnvironment, Resource, RESOURCES};
+use super::{
+    Process, ProcessEnvironment, Resource, ResourceRc, ResourceTypeClonable, ResourceTypeOwned,
+    RESOURCES,
+};
 
 use crate::wasi::types::*;
 
@@ -42,20 +45,16 @@ pub fn create_lunatic_imports(linker: &mut Linker, environment: ProcessEnvironme
                 MemoryChoice::New(18),
             );
             let process = Process::from(task);
-
-            RESOURCES.create(Resource::Process(process)) as u32
+            RESOURCES.create(Resource::Owned(ResourceTypeOwned::Process(process))) as u32
         },
     )?;
 
     // Wait on chaild process to finish.
     let env = environment.clone();
     linker.func("lunatic", "join", move |index: u32| {
-        match RESOURCES.get(index as usize) {
-            Resource::Process(mut process) => {
-                let task = match process.take() {
-                    Some(task) => task,
-                    None => panic!("Process already joined"),
-                };
+        match RESOURCES.take(index as usize) {
+            Resource::Owned(ResourceTypeOwned::Process(process)) => {
+                let task = process.take_task();
                 let _ignore = env.async_(task);
             }
             _ => panic!("Only processes can be joined"),
@@ -69,35 +68,43 @@ pub fn create_lunatic_imports(linker: &mut Linker, environment: ProcessEnvironme
         } else {
             None
         });
-        RESOURCES.create(Resource::Channel(channel)) as u32
+        let resource_rc = ResourceRc {
+            resource: ResourceTypeClonable::Channel(channel),
+            count: 1,
+        };
+        RESOURCES.create(Resource::Clonable(resource_rc)) as u32
     })?;
 
     // Create a buffer and send it to a channel
     let env = environment.clone();
     linker.func("lunatic", "send", move |index: u32, iovec: u32| {
-        let iovec = WasiIoVec::from(env.memory(), iovec as usize);
-        match RESOURCES.get(index as usize) {
-            Resource::Channel(channel) => {
-                let future = channel.send(iovec.as_slice());
-                env.async_(future);
-            }
+        RESOURCES.with_resource(index as usize, |resource| match resource {
+            Resource::Clonable(resource_rc) => match &resource_rc.resource {
+                ResourceTypeClonable::Channel(channel) => {
+                    let iovec = WasiIoVec::from(env.memory(), iovec as usize);
+                    let future = channel.send(iovec.as_slice());
+                    env.async_(future);
+                }
+            },
             _ => panic!("Only channels can be sent to"),
-        }
+        });
     })?;
 
     // Receive buffer and write it to memory
     let env = environment.clone();
     linker.func("lunatic", "receive", move |index: u32, iovec: u32| {
-        let mut iovec = WasiIoVec::from(env.memory(), iovec as usize);
-        match RESOURCES.get(index as usize) {
-            Resource::Channel(channel) => {
-                let future = channel.recieve();
-                let buffer = env.async_(future).unwrap();
-                // TODO: Check for length of buffer before writing to it.
-                buffer.give_to(iovec.as_mut_slice().as_mut_ptr());
-            }
-            _ => panic!("Only channels can be received to"),
-        }
+        RESOURCES.with_resource(index as usize, |resource| match resource {
+            Resource::Clonable(resource_rc) => match &resource_rc.resource {
+                ResourceTypeClonable::Channel(channel) => {
+                    let mut iovec = WasiIoVec::from(env.memory(), iovec as usize);
+                    let future = channel.recieve();
+                    let buffer = env.async_(future).unwrap();
+                    // TODO: Check for length of buffer before writing to it.
+                    buffer.give_to(iovec.as_mut_slice().as_mut_ptr());
+                }
+            },
+            _ => panic!("Only channels can be sent to"),
+        });
     })?;
 
     Ok(())

@@ -13,7 +13,6 @@ wasmtime-runtime = {path = "./wasmtime/crates/runtime"}
 walrus = "0.18"
 smol = "1.2"
 easy-parallel = "3"
-num_cpus = "1"
 crossbeam = "0.8"
 anyhow = "1.0"
 lazy_static = "1.4.0"

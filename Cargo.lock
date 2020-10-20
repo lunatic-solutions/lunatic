@@ -991,7 +991,6 @@ dependencies = [
  "crossbeam",
  "easy-parallel",
  "lazy_static",
- "num_cpus",
  "smol",
  "walrus",
  "wasmprinter",

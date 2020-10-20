@@ -74,6 +74,7 @@ impl Process {
     pub fn join(self) {
         unsafe {
             stdlib::join(self.id);
-        }
+        };
+        forget(self);
     }
 }

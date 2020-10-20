@@ -1,3 +1,5 @@
+#![feature(available_concurrency)]
+
 use anyhow::Result;
 use easy_parallel::Parallel;
 use smol::{channel, future};
@@ -9,6 +11,7 @@ use lunatic_vm::process::EXECUTOR;
 
 use std::env;
 use std::fs;
+use std::thread;
 
 fn main() -> Result<()> {
     let args: Vec<String> = env::args().collect();
@@ -27,11 +30,13 @@ fn main() -> Result<()> {
     let module = Module::new(&engine, wasm)?;
 
     // Set up async runtime
-    let cpus = num_cpus::get();
+    let cpus = thread::available_concurrency().unwrap();
     let (signal, shutdown) = channel::unbounded::<()>();
 
     Parallel::new()
-        .each(0..cpus, |_| future::block_on(EXECUTOR.run(shutdown.recv())))
+        .each(0..cpus.into(), |_| {
+            future::block_on(EXECUTOR.run(shutdown.recv()))
+        })
         .finish(|| {
             future::block_on(async {
                 let result = spawn(

@@ -6,7 +6,10 @@ use std::io::{Error, Write};
 use std::iter::Iterator;
 use std::marker::PhantomData;
 use std::mem::size_of;
-use std::slice::from_raw_parts_mut;
+use std::slice::{from_raw_parts, from_raw_parts_mut};
+use std::str;
+
+use smol::io::AsyncWriteExt;
 
 /// WASI size (u32) type
 pub struct WasiSize {
@@ -99,6 +102,19 @@ impl WasiIoVecArrayIter<'_> {
         }
         Ok(bytes_written)
     }
+
+    // TODO: Refactor to make it acutally vectored
+    #[inline(always)]
+    pub async fn write_vectored<W: AsyncWriteExt + Unpin>(
+        self,
+        dest: &mut W,
+    ) -> Result<usize, Error> {
+        let mut bytes_written = 0;
+        for io_vec in self {
+            bytes_written += dest.write(io_vec.as_slice()).await?;
+        }
+        Ok(bytes_written)
+    }
 }
 
 impl<'a> Iterator for WasiIoVecArrayIter<'a> {
@@ -113,6 +129,59 @@ impl<'a> Iterator for WasiIoVecArrayIter<'a> {
             Some(wasm_iovec)
         } else {
             None
+        }
+    }
+}
+
+#[repr(C)]
+pub struct __wasi_prestat_t {
+    pub union_tag: u32, // 0 for prestat_dir (only option in snapshot1)
+    pub value: u32,
+}
+
+pub struct WasiPrestatDir {
+    ptr: *mut __wasi_prestat_t,
+}
+
+impl WasiPrestatDir {
+    #[inline(always)]
+    pub fn from(memory: *mut u8, ptr: usize) -> Self {
+        Self {
+            ptr: unsafe { memory.add(ptr) as *mut __wasi_prestat_t },
+        }
+    }
+
+    #[inline(always)]
+    pub fn set_dir_len(&mut self, dir_len: u32) {
+        let prestat = __wasi_prestat_t {
+            union_tag: 0,
+            value: dir_len,
+        };
+        unsafe {
+            *(self.ptr) = prestat;
+        }
+    }
+}
+
+pub struct WasiString {
+    ptr: *mut u8,
+    len: usize,
+}
+
+impl WasiString {
+    #[inline(always)]
+    pub fn from(memory: *mut u8, ptr: usize, len: usize) -> Self {
+        Self {
+            ptr: unsafe { memory.add(ptr) as *mut u8 },
+            len,
+        }
+    }
+
+    #[inline(always)]
+    pub fn get(&self) -> &str {
+        unsafe {
+            let slice = from_raw_parts(self.ptr, self.len);
+            str::from_utf8(slice).unwrap()
         }
     }
 }

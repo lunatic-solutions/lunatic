@@ -8,11 +8,9 @@ use async_wormhole::AsyncYielder;
 use anyhow::Result;
 use crossbeam::queue::SegQueue;
 use lazy_static::lazy_static;
-use smol::{Executor, Task};
+use smol::{fs, Executor, Task};
 use wasmtime::{Engine, Module};
 
-use std::cell::{RefCell, UnsafeCell};
-use std::fmt;
 use std::future::Future;
 use std::mem::ManuallyDrop;
 use std::sync::{Mutex, RwLock};
@@ -78,39 +76,24 @@ impl ProcessEnvironment {
 
 /// A lunatic process represents an actor.
 pub struct Process {
-    task: RefCell<Option<Task<Result<()>>>>,
-}
-
-impl fmt::Debug for Process {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Process").finish()
-    }
-}
-
-// We cheat here, Task can't be cloned, but we just take it away from the parent.
-// As we only expect join(process) to be called once, this should be fine.
-impl Clone for Process {
-    fn clone(&self) -> Self {
-        Process {
-            task: RefCell::new(self.task.borrow_mut().take()),
-        }
-    }
+    task: Task<Result<()>>,
 }
 
 impl Process {
     pub fn from(task: Task<Result<()>>) -> Self {
-        Self {
-            task: RefCell::new(Some(task)),
-        }
+        Self { task }
     }
 
-    pub fn take(&mut self) -> Option<Task<Result<()>>> {
-        self.task.get_mut().take()
+    pub fn take_task(self) -> impl Future {
+        self.task
     }
 }
 
+/// Holds all resources that are sendable between processes (file descriptors, channels, other processes, ...).
+/// Each process has his own heap space and it's not possible to keep track of allocated processes (especially
+/// clonable) in the guest space.
 pub struct GlobalResources {
-    resources: RwLock<Vec<ResourceRc>>,
+    resources: RwLock<Vec<Mutex<Option<Resource>>>>,
     free: SegQueue<usize>,
 }
 
@@ -128,91 +111,109 @@ impl GlobalResources {
         match self.free.pop() {
             Some(free_index) => {
                 let resources = self.resources.read().unwrap();
-                let resource_rc = resources.get(free_index).unwrap();
-                let mut ref_count = resource_rc.count.lock().unwrap();
+                let resource_mutex = resources.get(free_index).unwrap();
+                let mut resource = resource_mutex.lock().unwrap();
 
-                assert!(resource_rc.get_mut().is_none());
-                assert_eq!(*ref_count, 0);
+                assert!(resource.is_none());
 
-                *resource_rc.get_mut() = Some(new_resource);
-                *ref_count += 1;
+                *resource = Some(new_resource);
                 free_index
             }
             None => {
                 let mut resources = self.resources.write().unwrap();
-                let resource_rc = ResourceRc {
-                    resource: UnsafeCell::new(Some(new_resource)),
-                    count: Mutex::new(1),
-                };
-                resources.push(resource_rc);
+                resources.push(Mutex::new(Some(new_resource)));
                 resources.len() - 1
             }
         }
     }
 
+    /// If it's a clonable resource clone it.
     pub fn clone(&self, index: usize) {
         let resources = self.resources.read().unwrap();
-        let resource_rc = resources.get(index).unwrap();
-        let mut ref_count = resource_rc.count.lock().unwrap();
+        let resource_mutex = resources.get(index).unwrap();
+        let mut resource = resource_mutex.lock().unwrap();
 
-        assert!(resource_rc.get_mut().is_some());
-        assert!(*ref_count > 0);
+        assert!(resource.is_some());
 
-        *ref_count += 1;
+        match resource.as_mut() {
+            Some(Resource::Clonable(resrouce)) => {
+                assert!(resrouce.count > 0);
+                resrouce.count += 1;
+            }
+            _ => panic!("Can't clone owned resources"),
+        }
     }
 
+    /// Drop resource.
+    /// If it's clonable decrement the reference count and after reaching 0 free the whole process.
     pub fn drop(&self, index: usize) {
         let resources = self.resources.read().unwrap();
-        let resource_rc = resources.get(index).unwrap();
-        let mut ref_count = resource_rc.count.lock().unwrap();
+        let resource_mutex = resources.get(index).unwrap();
+        let mut resource = resource_mutex.lock().unwrap();
 
-        assert!(resource_rc.get_mut().is_some());
-        assert!(*ref_count > 0);
+        assert!(resource.is_some());
 
-        *ref_count -= 1;
+        let count = match resource.as_mut() {
+            Some(Resource::Clonable(resrouce)) => {
+                assert!(resrouce.count > 0);
+                resrouce.count -= 1;
+                resrouce.count
+            }
+            Some(Resource::Owned(_resrouce)) => 0,
+            None => unreachable!("Assert stops us from getting here"),
+        };
 
-        if *ref_count == 0 {
-            let drop = resource_rc.get_mut().take();
+        if count == 0 {
+            let drop = resource.take();
             match drop.unwrap() {
                 // If we are dropping a process we need to detach it first or it will be canceled.
-                Resource::Process(mut process) => {
-                    // If we joined the process is gone already.
-                    match process.take() {
-                        Some(task) => task.detach(),
-                        None => (), // Task already consumed
-                    }
-                }
+                Resource::Owned(ResourceTypeOwned::Process(process)) => process.task.detach(),
                 _ => (),
             };
             self.free.push(index);
         }
     }
 
-    pub fn get(&self, index: usize) -> Resource {
+    /// Runs function `f` with access to the resource.
+    pub fn with_resource<F: FnOnce(&mut Resource)>(&self, index: usize, f: F) {
         let resources = self.resources.read().unwrap();
-        let resource_rc = resources.get(index).unwrap();
+        let resource_mutex = resources.get(index).unwrap();
+        let mut resource = resource_mutex.lock().unwrap();
 
-        assert!(resource_rc.get_mut().is_some());
+        assert!(resource.is_some());
 
-        let resrouce = resource_rc.get_mut().clone().unwrap();
-        resrouce
+        f(resource.as_mut().unwrap());
     }
+
+    /// Take resource
+    pub fn take(&self, index: usize) -> Resource {
+        let resources = self.resources.read().unwrap();
+        let resource_mutex = resources.get(index).unwrap();
+        let mut resource = resource_mutex.lock().unwrap();
+
+        assert!(resource.is_some());
+
+        resource.take().unwrap()
+    }
+}
+
+pub enum Resource {
+    Clonable(ResourceRc),
+    Owned(ResourceTypeOwned),
 }
 
 #[derive(Debug)]
 pub struct ResourceRc {
-    resource: UnsafeCell<Option<Resource>>,
-    count: Mutex<usize>,
+    resource: ResourceTypeClonable,
+    count: usize,
 }
 
-impl ResourceRc {
-    pub fn get_mut(&self) -> &mut Option<Resource> {
-        unsafe { &mut *self.resource.get() }
-    }
+pub enum ResourceTypeOwned {
+    Process(Process),
+    File(fs::File),
 }
 
 #[derive(Debug, Clone)]
-pub enum Resource {
-    Process(Process),
+pub enum ResourceTypeClonable {
     Channel(channel::Channel),
 }

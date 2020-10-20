@@ -2,8 +2,10 @@ pub mod types;
 
 use types::*;
 
-use crate::process::ProcessEnvironment;
+use crate::process::{ProcessEnvironment, Resource, ResourceTypeOwned, RESOURCES};
+
 use anyhow::Result;
+use smol::fs;
 use wasmtime::{Linker, Trap};
 
 use std::fmt;
@@ -31,6 +33,9 @@ pub fn create_wasi_imports(
         move |_exit_code: i32| -> Result<(), Trap> { Err(Trap::new("proc_exit() called")) },
     )?;
 
+    // This offset is used to allow file descriptors to occupy resource slots from 0-2 and not interfere
+    // with stdin, stdout and stderr.
+    const FD_OFFSET: u32 = 3;
     // fd_write(...)
     let env = process_env_original.clone();
     linker.func(
@@ -46,7 +51,16 @@ pub fn create_wasi_imports(
                 WASI_STDOUT_FILENO => wasi_iovecs.write(&mut stdout()).unwrap(),
                 WASI_STDERR_FILENO => wasi_iovecs.write(&mut stderr()).unwrap(),
                 _ => {
-                    unimplemented!("Only stdout & stderror allowed for now");
+                    assert!(fd > 2);
+
+                    let mut bytes_written = 0;
+                    RESOURCES.with_resource((fd - FD_OFFSET) as usize, |resource| match resource {
+                        Resource::Owned(ResourceTypeOwned::File(file)) => {
+                            bytes_written = env.async_(wasi_iovecs.write_vectored(file)).unwrap();
+                        }
+                        _ => panic!("Can only write to File type"),
+                    });
+                    bytes_written
                 }
             };
 
@@ -55,48 +69,71 @@ pub fn create_wasi_imports(
         },
     )?;
 
+    // path_open(...)
+    let env = process_env_original.clone();
     linker.func(
         "wasi_snapshot_preview1",
         "path_open",
-        move |_fd: u32,
+        move |fd: u32,
               _dirflags: u32,
-              _path_ptr: u32,
-              _path_len: u32,
+              path_ptr: u32,
+              path_len: u32,
               _oflags: u32,
-              _fs_rights_base: u64,
+              fs_rights_base: u64,
               _fs_rights_inherting: u64,
               _fd_flags: u32,
-              _opened_fd_ptr: u32|
+              opened_fd_ptr: u32|
               -> u32 {
-            println!("wasi_snapshot_preview1:path_open()");
-            WASI_EINVAL
+            println!("wasi_snapshot_preview1:path_open({})", fd);
+            let path = WasiString::from(env.memory(), path_ptr as usize, path_len as usize);
+            let file = env.async_(fs::File::create(path.get())).unwrap();
+            let fd_value = RESOURCES.create(Resource::Owned(ResourceTypeOwned::File(file))) as u32;
+            let mut fd = WasiSize::from(env.memory(), opened_fd_ptr as usize);
+            fd.set(fd_value + FD_OFFSET);
+            WASI_ESUCCESS
         },
     )?;
 
     linker.func(
         "wasi_snapshot_preview1",
         "fd_close",
-        move |_fd: u32| -> u32 {
-            println!("wasi_snapshot_preview1:fd_close()");
-            WASI_ENOTSUP
+        move |fd: u32| -> u32 {
+            println!("wasi_snapshot_preview1:fd_close({})", fd);
+            RESOURCES.drop((fd - FD_OFFSET) as usize);
+            WASI_ESUCCESS
         },
     )?;
 
+    let env = process_env_original.clone();
     linker.func(
         "wasi_snapshot_preview1",
         "fd_prestat_get",
-        move |_: u32, _: u32| -> u32 {
-            println!("wasi_snapshot_preview1:fd_prestat_get()");
-            WASI_EBADF
+        move |fd: u32, prestat_ptr: u32| -> u32 {
+            println!("wasi_snapshot_preview1:fd_prestat_get({})", fd);
+            // ALlow access to all directories
+            if fd == 3 {
+                let mut prestat = WasiPrestatDir::from(env.memory(), prestat_ptr as usize);
+                prestat.set_dir_len(0);
+                WASI_ESUCCESS
+            } else {
+                WASI_EBADF
+            }
         },
     )?;
 
     linker.func(
         "wasi_snapshot_preview1",
         "fd_prestat_dir_name",
-        move |_: u32, _: u32, _: u32| -> u32 {
+        move |fd: u32, _path_ptr: u32, path_len: u32| -> u32 {
             println!("wasi_snapshot_preview1:fd_prestat_dir_name()");
-            WASI_EINVAL
+            if fd == 3 {
+                if path_len != 0 {
+                    panic!("path len can only be the value passed in fd_prestat_get");
+                }
+                WASI_ESUCCESS
+            } else {
+                WASI_EINVAL
+            }
         },
     )?;
 
