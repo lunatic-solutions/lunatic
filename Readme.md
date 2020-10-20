@@ -46,7 +46,7 @@ and run it with
 lunatic target/wasm32-wasi/release/<example>.wasm
 ```
 
-This app spawns 100k processes (actors), does some calculation in them and prints out the result. If you wrote some Rust code before this should feel familiar. Similar to creating a new threads `Process::spawn` takes a closure, but in this case the closure can only capture `Copy` types. The reason for this is that the child processes don't share any heap or stack with the parent one, making them completely sandboxed. The only way they can communicate is by sending messages to each other.
+This app spawns 100k processes (actors), does some calculation in them and prints out the result. If you wrote some Rust code before this should feel familiar. Similar to creating new threads `Process::spawn` takes a closure, but in this case the closure can only capture `Copy` types. The reason for this is that the child processes don't share any heap or stack with the parent one, making them completely sandboxed. The only way they can communicate is by sending messages to each other.
 
 ## Architecture
 
@@ -66,7 +66,7 @@ Lunatic processes are intended to be really lightweight. It should be possible t
 
 ### Compatibility
 
-Lunatic intends to eventually be completely compatible with [WASI](https://wasi.dev/). Ideally you could just take existing code, compile it to WebAssembly and run on top of Lunatic. Giving the best developer experience possible. But It's still a long until there.
+Lunatic intends to eventually be completely compatible with [WASI](https://wasi.dev/). Ideally you could just take existing code, compile it to WebAssembly and run on top of Lunatic. Giving the best developer experience possible. But It's still a long way until there.
 
 ### Help wanted
 
