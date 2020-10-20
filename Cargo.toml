@@ -3,6 +3,9 @@ name = "lunatic-vm"
 version = "0.1.0"
 authors = ["Bernard Kolobara <me@kolobara.com>"]
 edition = "2018"
+description = "An actor platform built on WebAssembly"
+license = "Apache-2.0/MIT"
+readme = "Readme.md"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

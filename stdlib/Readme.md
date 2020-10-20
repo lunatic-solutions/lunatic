@@ -4,6 +4,8 @@ This library contains higher level wrappers for low level Lunatic syscalls.
 
 Currently it requires nightly.
 
+<!-- [Check out the docs!](#) -->
+
 ### Example
 
 Create 100k processes and calculate the power of numbers then send the results back to the original process.
@@ -34,7 +36,7 @@ fn power(a: i32) -> i32 {
 
 ```
 
-Compile your app with:
+Compile your app to a WebAssembly target:
 
 ```
 cargo build --release --target=wasm32-wasi
