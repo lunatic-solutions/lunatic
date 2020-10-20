@@ -21,6 +21,8 @@ mod stdlib {
     }
 }
 
+/// A channel allows for sending messages between processes.
+/// The message is copied from one process to another, as processes don't share any memory.
 pub struct Channel<T> {
     id: u32,
     phantom: PhantomData<T>,

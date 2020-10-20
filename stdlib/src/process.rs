@@ -15,6 +15,8 @@ mod stdlib {
 #[derive(Debug)]
 pub struct SpawnError {}
 
+/// A process consists of its own stack and heap. It can only share data with other processes by
+/// sending it to them.
 pub struct Process {
     id: u32,
 }
@@ -29,6 +31,7 @@ impl Drop for Process {
 }
 
 impl Process {
+    /// Spawn a new process. The passed closure can only capture copy types.
     pub fn spawn<F>(closure: F) -> Result<Process, SpawnError>
     where
         F: FnOnce() + ProcessClosureSend,
@@ -71,6 +74,7 @@ impl Process {
         Ok(Self { id })
     }
 
+    /// Wait on a process to finish.
     pub fn join(self) {
         unsafe {
             stdlib::join(self.id);
