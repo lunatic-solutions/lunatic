@@ -80,3 +80,12 @@ Even though Lunatic is still early in development I spent a lot of time thinking
 - [ ] Process supervision
 - [ ] Hot reloading
 - [ ] Support for other WebAssembly languages
+
+### License
+
+Licensed under either of
+
+- Apache License, Version 2.0, ([LICENSE-APACHE](LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
+- MIT license ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
+
+at your option.
