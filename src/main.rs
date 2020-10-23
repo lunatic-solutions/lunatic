@@ -5,9 +5,8 @@ use easy_parallel::Parallel;
 use smol::{channel, future};
 use wasmtime::{Config, Engine, Module};
 
-use lunatic_vm::patching::patch;
-use lunatic_vm::process::creator::{spawn, FunctionLookup, MemoryChoice};
-use lunatic_vm::process::EXECUTOR;
+use lunatic_vm::normalisation::patch;
+use lunatic_vm::process::{FunctionLookup, MemoryChoice, Process, EXECUTOR};
 
 use std::env;
 use std::fs;
@@ -39,12 +38,13 @@ fn main() -> Result<()> {
         })
         .finish(|| {
             future::block_on(async {
-                let result = spawn(
+                let result = Process::spawn(
                     engine,
                     module,
                     FunctionLookup::Name("_start"),
                     MemoryChoice::New(min_memory),
                 )
+                .take_task()
                 .await;
                 drop(signal);
                 result

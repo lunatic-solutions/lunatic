@@ -1,14 +1,16 @@
 use walrus::*;
 
 // How many operations should happen before we yield
-const REDUCTION_LIMIT: i32 = 100_000;
+const REDUCTION_LIMIT: i32 = 10_000;
 
-/// Modifies the WASM binary to add a `yield` import call after `REDUCTION_LIMIT` of **operations** is reached.
-/// Currently only function calls are counted as **operations**.
-/// TODO: If there is a tight loop without function calls, this becomes an issue. We need to check for this case.
-/// The idea behind this is to not allow any WASM Instance to block a thread in an async environment for too long.
+/// Modifies the WASM binary to add a `yield` import call after `REDUCTION_LIMIT` of **operations**
+/// has been reached. Currently only function calls are counted as **operations**.
+/// TODO: If there is a tight loop without function calls, this becomes an issue.
+/// The idea behind this is to not allow any WASM Instance to block a thread in the async environment
+/// for too long.
+///
 /// To achive this the following things are inserted into the WASM module:
-/// * Global variable to hold the current count
+/// * A global variable to hold the current count
 /// * An import to the host provided `yield` function
 /// * Instructions on top of each function to check if we reached the `REDUCTION_LIMIT` and yield
 pub fn patch(module: &mut Module) {

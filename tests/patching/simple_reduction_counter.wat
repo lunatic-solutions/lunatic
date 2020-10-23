@@ -19,7 +19,7 @@
             i32.add
             global.set 0
             global.get 0
-            i32.const 100000
+            i32.const 10000
             i32.gt_s
             if
                 call 0
