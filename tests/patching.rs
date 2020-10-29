@@ -1,6 +1,7 @@
 // This test patches all WASM files in the ./patching folder and compares them to the expected output.
-// TODO: Pretty print diff errors.
 
+#[cfg(test)]
+use pretty_assertions::assert_eq;
 use std::fs::read_to_string;
 use std::path::{Path, PathBuf};
 
@@ -43,7 +44,12 @@ fn run_tests(tests: Vec<PathBuf>) {
         let expected_output_wasm = wat::parse_str(expected_output).unwrap();
         let expected_output_wat = wasmprinter::print_bytes(&expected_output_wasm).unwrap();
 
-        assert_eq!(expected_output_wat, output_wat);
+        let expected_output_multiline: Vec<&str> =
+            expected_output_wat.split("\n").into_iter().collect();
+
+        let output_multiline: Vec<&str> = output_wat.split("\n").into_iter().collect();
+
+        assert_eq!(expected_output_multiline, output_multiline);
     }
 }
 

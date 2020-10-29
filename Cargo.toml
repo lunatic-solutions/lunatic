@@ -24,6 +24,7 @@ lazy_static = "1.4.0"
 criterion = "0.3"
 wat = "1.0"
 wasmprinter = "0.2"
+pretty_assertions = "0.6.1"
 
 [[bench]]
 name = "lunatic_benchmark"
