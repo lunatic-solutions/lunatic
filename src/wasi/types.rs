@@ -49,12 +49,21 @@ pub struct WasiIoVec<'a> {
 
 impl<'a> WasiIoVec<'a> {
     #[inline(always)]
-    pub fn from(memory: *mut u8, ptr: usize) -> Self {
+    pub fn from_ptr(memory: *mut u8, ptr: usize) -> Self {
         unsafe {
             let wasi_iovec = memory.add(ptr) as *mut __wasi_iovec_t;
             let slice_ptr = memory.add((*wasi_iovec).buf as usize);
             let slice_len = (*wasi_iovec).buf_len as usize;
             let slice = from_raw_parts_mut(slice_ptr, slice_len);
+            Self { slice }
+        }
+    }
+
+    #[inline(always)]
+    pub fn from_values(memory: *mut u8, buf: usize, buf_len: usize) -> Self {
+        unsafe {
+            let slice_ptr = memory.add(buf);
+            let slice = from_raw_parts_mut(slice_ptr, buf_len);
             Self { slice }
         }
     }
@@ -123,7 +132,7 @@ impl<'a> Iterator for WasiIoVecArrayIter<'a> {
     #[inline(always)]
     fn next(&mut self) -> Option<Self::Item> {
         if self.current < self.len {
-            let wasm_iovec = WasiIoVec::from(self.memory, self.ptr);
+            let wasm_iovec = WasiIoVec::from_ptr(self.memory, self.ptr);
             self.current += 1;
             self.ptr += size_of::<__wasi_iovec_t>();
             Some(wasm_iovec)

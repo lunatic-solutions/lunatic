@@ -3,10 +3,11 @@
 use anyhow::Result;
 use easy_parallel::Parallel;
 use smol::{channel, future};
-use wasmtime::{Config, Engine, Module};
+use wasmtime::Module;
 
 use lunatic_vm::normalisation::patch;
 use lunatic_vm::process::{FunctionLookup, MemoryChoice, Process, EXECUTOR};
+use lunatic_vm::wasmtime::engine;
 
 use std::env;
 use std::fs;
@@ -20,11 +21,7 @@ fn main() -> Result<()> {
     // Transfrom WASM file into a format
     let (min_memory, wasm) = patch(&wasm)?;
 
-    let mut config = Config::new();
-    config.wasm_threads(true);
-    config.wasm_simd(true);
-    config.static_memory_guard_size(128 * 1024 * 1024); // 128 Mb
-    let engine = Engine::new(&config);
+    let engine = engine();
 
     let module = Module::new(&engine, wasm)?;
 
@@ -45,6 +42,7 @@ fn main() -> Result<()> {
                     MemoryChoice::New(min_memory),
                 )
                 .take_task()
+                .unwrap()
                 .await;
                 drop(signal);
                 result

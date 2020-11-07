@@ -1,37 +1,35 @@
-#![feature(optin_builtin_traits, negative_impls)]
-
 //! This library contains higher level wrappers for low level Lunatic syscalls.
-//!
-//! Currently it requires nightly.
 //!
 //! ### Example
 //!
-//! Create 100k processes and calculate the power of numbers then send the results back to the original process.
+//! Create 1_000 child processes and calculate the sum of numbers from 0 to i in each child process,
+//! then send the result back to the parent process and print it.
 //!
 //! ```rust
 //! use lunatic::{Channel, Process};
 //!
 //! fn main() {
 //!     let channel = Channel::new(0);
+//!     let vec: Vec<i32> = (0..1_000).collect();
 //!
-//!     for i in 0..100_000 {
-//!         let x = channel.clone();
-//!         Process::spawn(move || {
-//!             x.send((i, power(i)));
-//!         })
-//!         .unwrap();
+//!     for i in vec.iter() {
+//!         Process::spawn((*i, vec.clone(), channel.clone()), child).unwrap();
 //!     }
 //!
-//!     for _ in 0..100_000 {
-//!         let (i, power) = channel.receive();
-//!         println!("Power of {} is {}", i, power);
+//!     for _ in vec.iter() {
+//!         let (i, sum) = channel.receive();
+//!         println!("Sum until {}: {}", i, sum);
 //!     }
 //! }
 //!
-//! fn power(a: i32) -> i32 {
-//!     a * a
+//! //! Child process calculates the sum of numbers of context.1 until context.0 index.
+//! fn child(context: (i32, Vec<i32>, Channel<(i32, i32)>)) {
+//!     let i = context.0;
+//!     let vec = context.1;
+//!     let channel = context.2;
+//!     let sum_until_i: i32 = vec[..=i as usize].iter().sum();
+//!     channel.send((i, sum_until_i));
 //! }
-//!
 //! ```
 //!
 //! Compile your app to a WebAssembly target:
@@ -55,8 +53,6 @@ pub use process::Process;
 pub mod stdlib {
     #[link(wasm_import_module = "lunatic")]
     extern "C" {
-        pub fn clone(channel: u32);
-        pub fn drop(channel: u32);
         pub fn r#yield();
     }
 }
@@ -67,11 +63,6 @@ pub fn yield_() {
     }
 }
 
-/// Sending data to another process requires copying it into an independent buffer.
-/// It's only safe to do so with copy types without serialisation.
-pub unsafe auto trait ProcessClosureSend {}
-
-impl<T> !ProcessClosureSend for &T where T: ?Sized {}
-impl<T> !ProcessClosureSend for &mut T where T: ?Sized {}
-impl<T> !ProcessClosureSend for *const T where T: ?Sized {}
-impl<T> !ProcessClosureSend for *mut T where T: ?Sized {}
+pub fn drop(id: u32) {
+    // TODO: Call _lunatic_externref_drop(id)
+}

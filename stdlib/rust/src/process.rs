@@ -1,13 +1,20 @@
-use std::mem::{forget, size_of, zeroed};
-use std::ptr;
+use std::mem::{forget, transmute};
 
-use crate::stdlib::drop;
-use crate::{Channel, ProcessClosureSend};
+use serde::de::Deserialize;
+use serde::ser::Serialize;
+
+use crate::drop;
+use crate::Channel;
 
 mod stdlib {
     #[link(wasm_import_module = "lunatic")]
     extern "C" {
-        pub fn spawn(function_ptr: unsafe extern "C" fn(i64), argument: i64) -> u32;
+        pub fn spawn(
+            function: unsafe extern "C" fn(usize, u64),
+            argument1: usize,
+            argument2: u64,
+        ) -> u32;
+
         pub fn join(pid: u32);
     }
 }
@@ -16,59 +23,45 @@ mod stdlib {
 pub struct SpawnError {}
 
 /// A process consists of its own stack and heap. It can only share data with other processes by
-/// sending it to them.
+/// exchanging the data with messages passing.
 pub struct Process {
     id: u32,
 }
 
 impl Drop for Process {
     fn drop(&mut self) {
-        // Decrement reference count of resource in the VM
-        unsafe {
-            drop(self.id);
-        }
+        drop(self.id);
     }
 }
 
 impl Process {
-    /// Spawn a new process. The passed closure can only capture copy types.
-    pub fn spawn<F>(closure: F) -> Result<Process, SpawnError>
+    /// Spawn a new process from a function and cotext.
+    /// `function` is going to be starting point of the new process.
+    /// `context` is some data that we want to pass to the newly spawned process.
+    pub fn spawn<'de, T>(context: T, function: fn(T)) -> Result<Process, SpawnError>
     where
-        F: FnOnce() + ProcessClosureSend,
+        T: Serialize + Deserialize<'de>,
     {
-        unsafe extern "C" fn spawn_small_capture<F>(closure_in_i64: i64)
+        unsafe extern "C" fn spawn_with_context<'de, T>(function: usize, channel: u64)
         where
-            F: FnOnce() + ProcessClosureSend,
+            T: Serialize + Deserialize<'de>,
         {
-            let source = &closure_in_i64 as *const i64 as *const F;
-            let mut f: F = zeroed();
-            ptr::copy_nonoverlapping(source, &mut f, size_of::<F>());
-            f();
+            let channel: Channel<T> = Channel::dserialize_from_u64(channel);
+            let context: T = channel.receive();
+            let function: fn(T) = transmute(function);
+            function(context);
         }
 
-        unsafe extern "C" fn spawn_large_capture<F>(channel: i64)
-        where
-            F: FnOnce() + ProcessClosureSend,
-        {
-            let channel: Channel<F> = Channel::from_id(channel as u32);
-            let f = channel.receive();
-            f();
-        }
+        let channel = Channel::new(1);
+        channel.send(context);
+        let serialized_channel = channel.serialize_as_u64();
 
-        let id = if size_of::<F>() <= size_of::<i64>() {
-            // If we can fit the environment directly in a 64 bit pointer do so.
-            let source = &closure as *const F as *const i64;
-            let mut closure_in_i64: i64 = 0;
-            unsafe { ptr::copy_nonoverlapping(source, &mut closure_in_i64, size_of::<F>()) };
-            forget(closure);
-            unsafe { stdlib::spawn(spawn_small_capture::<F>, closure_in_i64) }
-        } else {
-            // We need to first send the environment between the processes before we can use the closure.
-            let channel: Channel<F> = Channel::new(1);
-            channel.send(closure);
-            let id = unsafe { stdlib::spawn(spawn_large_capture::<F>, channel.id() as i64) };
-            forget(channel);
-            id
+        let id = unsafe {
+            stdlib::spawn(
+                spawn_with_context::<T>,
+                transmute(function),
+                serialized_channel,
+            )
         };
 
         Ok(Self { id })
@@ -80,5 +73,6 @@ impl Process {
             stdlib::join(self.id);
         };
         forget(self);
+        // TODO: Drop externref
     }
 }

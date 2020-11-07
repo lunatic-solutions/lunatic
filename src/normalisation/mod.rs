@@ -23,10 +23,13 @@ mod stdlib;
 pub fn patch(module_buffer: &[u8]) -> Result<(u32, Vec<u8>), Error> {
     let mut module = Module::from_buffer(&module_buffer)?;
 
-    extern_func_ref::patch(&mut module);
     reduction_counting::patch(&mut module);
+    extern_func_ref::patch(&mut module);
     stdlib::patch(&mut module);
     let min_memory = shared_memory::patch(&mut module);
+
+    // Remove unused (currently removes too much from tests too :)
+    // walrus::passes::gc::run(&mut module);
 
     Ok((min_memory, module.emit_wasm()))
 }

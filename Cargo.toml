@@ -19,6 +19,7 @@ easy-parallel = "3"
 crossbeam = "0.8"
 anyhow = "1.0"
 lazy_static = "1.4.0"
+dashmap = "3.11"
 
 [dev-dependencies]
 criterion = "0.3"
@@ -31,5 +32,5 @@ name = "lunatic_benchmark"
 harness = false
 
 [[test]]
-name = "patching"
+name = "normalisation_patching_test"
 harness = false

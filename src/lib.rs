@@ -4,6 +4,7 @@ pub mod channel;
 pub mod normalisation;
 pub mod process;
 pub mod wasi;
+pub mod wasmtime;
 
 use crossbeam::queue::SegQueue;
 use lazy_static::lazy_static;
@@ -107,7 +108,7 @@ impl GlobalResources {
             match drop.unwrap() {
                 // If we are dropping a process we need to detach it first or it will be canceled.
                 Resource::Owned(ResourceTypeOwned::Process(process)) => {
-                    process.take_task().detach()
+                    process.take_task().unwrap().detach()
                 }
                 _ => (),
             };
@@ -158,6 +159,4 @@ pub enum ResourceTypeOwned {
 }
 
 #[derive(Debug, Clone)]
-pub enum ResourceTypeCloneable {
-    Channel(channel::Channel),
-}
+pub enum ResourceTypeCloneable {}

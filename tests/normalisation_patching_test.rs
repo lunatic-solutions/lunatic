@@ -1,4 +1,6 @@
-// This test patches all WASM files in the ./patching folder and compares them to the expected output.
+//! The normalisation phase does many code transformations.
+//! This test checks if all code transformations applied during the normalisation phase are correct.
+//! All WASM files in the ./normalisation_patching_test folder are patched and compared to the expected output.
 
 #[cfg(test)]
 use pretty_assertions::assert_eq;
@@ -9,7 +11,7 @@ use lunatic_vm::normalisation::patch;
 
 fn main() {
     let mut tests = Vec::new();
-    find_tests("tests/patching".as_ref(), &mut tests);
+    find_tests("tests/normalisation_patching_test".as_ref(), &mut tests);
     run_tests(tests);
 }
 
