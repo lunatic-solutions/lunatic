@@ -6,7 +6,14 @@
 //! To work around this limitation, WASM code compiled from this languages defines their imports by
 //! replacing externrefs with i32 args:
 //!  (import "lunatic" "spawn" (func (;0;) (param i32 i64) (result i32)))
-//! Obviously this type mismatch would be rejected by Wasmtime
+//! Obviously this type mismatch would be rejected by Wasmtime during instantiation. To make this work
+//! and only provide one implementation (with Externrefs), Lunatic wraps the incompatible imports in
+//! small wrapper functions. If the import returns an Externref, the wrapper saves it to a WASM table
+//! and returns the index in this table. If the import takes an Externref, the wrapper grabs the externref
+//! by provided index and passes it to import.
+//!
+//! Lunatic exposes functions (`get_externref_free_slot` &` set_externref_free_slot`) to keep track of free
+//! slots in the Externref table.
 
 use crate::{
     process::MemoryChoice,
@@ -299,17 +306,17 @@ fn add_externref_save_drop(module: &mut Module) -> (TableId, FunctionId, Functio
         .table_size(resource_table)
         .binop(ir::BinaryOp::I32Eq)
         .if_else(
-            None,
+            Some(ValType::I32),
             |then| {
                 // If we don't have nough space for this index, double the table first.
                 then.ref_null(ValType::Externref)
                     .table_size(resource_table)
-                    .table_grow(resource_table)
-                    .drop();
+                    .table_grow(resource_table);
             },
-            |_else| {},
+            |else_| {
+                else_.local_get(free_slot);
+            },
         )
-        .local_get(free_slot)
         .local_get(externref)
         .table_set(resource_table)
         .local_get(free_slot);

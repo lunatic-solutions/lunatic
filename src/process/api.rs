@@ -37,13 +37,12 @@ pub fn add_to_linker(linker: &mut Linker, environment: ProcessEnvironment) -> Re
         "lunatic",
         "spawn",
         move |index: i32, argument1: i32, argument2: i64| -> Option<ExternRef> {
-            let task = Process::spawn(
+            let process = Process::spawn(
                 env.engine(),
                 env.module(),
                 FunctionLookup::TableIndex((index, argument1, argument2)),
                 MemoryChoice::New(18),
             );
-            let process = Process::from(task);
             Some(ExternRef::new(process))
         },
     )?;

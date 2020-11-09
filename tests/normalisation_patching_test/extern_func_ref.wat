@@ -50,14 +50,13 @@
     local.tee 1
     table.size 0
     i32.eq
-    if  ;; label = @1,
+    if (result i32)  ;; label = @1",
       ref.null extern
       table.size 0
       table.grow 0
-      drop
     else
+      local.get 1
     end
-    local.get 1
     local.get 0
     table.set 0
     local.get 1)
