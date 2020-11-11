@@ -185,7 +185,7 @@ pub fn patch(module: &mut Module) {
     });
 
     if functions_to_transfrom.len() > 0 {
-        let (resource_table, save_externref, _drop_externref) = add_externref_save_drop(module);
+        let (resource_table, save_externref) = add_externref_save_drop_extend3(module);
         for transformation in functions_to_transfrom.into_iter() {
             // Declare new import with externref/funcref types
             let import = module.imports.get(transformation.import_id);
@@ -254,40 +254,46 @@ pub fn patch(module: &mut Module) {
                 TransformationStep::Funcref => unimplemented!("TODO: Implement this!"),
             });
 
-            // To swap out an import an unsafe trick is used.
-            // https://github.com/rustwasm/walrus/issues/186
-            struct UnsafeLocalFunction {
-                _builder: FunctionBuilder,
-                _args: Vec<LocalId>,
-            }
-
-            let unsafe_local_wrapper = UnsafeLocalFunction {
-                _builder: wrapper_builder,
-                _args: wrapper_arguments,
-            };
-
             let import_function = module.funcs.get_mut(transformation.function_id);
-            unsafe {
-                // Old import is "in place" replaced by new import wrapper.
-                import_function.kind =
-                    FunctionKind::Local(std::mem::transmute(unsafe_local_wrapper));
-            }
+            replace_import_with_local_function(import_function, wrapper_builder, wrapper_arguments);
         }
     }
 }
 
-/// Adds two functions to the module:
-/// * __lunatic__externref__save(externref) -> index
+/// Replaces all calls to the imported function with a local one **in place**.
+/// This is currently not supported in Walrus, so an unsafe transmute is used to perfrom the operation.
+fn replace_import_with_local_function(import_function: &mut Function, builder: FunctionBuilder, args: Vec<LocalId>) {
+    // To swap out an import an unsafe trick is used.
+    // https://github.com/rustwasm/walrus/issues/186
+    struct UnsafeLocalFunction {
+        _builder: FunctionBuilder,
+        _args: Vec<LocalId>,
+    }
+
+    let unsafe_local_wrapper = UnsafeLocalFunction {
+        _builder: builder,
+        _args: args,
+    };
+
+    unsafe {
+        // Old import is "in place" replaced by new import wrapper.
+        import_function.kind =
+            FunctionKind::Local(std::mem::transmute(unsafe_local_wrapper));
+    }
+}
+
+/// Adds to the module:
+/// * _lunatic_externref_save(externref) -> index
 ///   Preserves the externref in the externref table and returns the index inside the table.
-/// * __lunatic__externref__drop(index)
-///   Drops the externref from the table, allowing Wasmtime to GC it.
-fn add_externref_save_drop(module: &mut Module) -> (TableId, FunctionId, FunctionId) {
+///
+/// Replaces import of `lunatic::drop_externref` with a local function that drops the externref.
+fn add_externref_save_drop_extend3(module: &mut Module) -> (TableId, FunctionId) {
     let resource_table = module.tables.add_local(4, None, ValType::Externref);
     module
         .exports
         .add("__lunatic_externref_resource_table", resource_table);
 
-    // _lunatic__externref__save(externref) -> index
+    // _lunatic_externref_save(externref) -> index
     let get_externref_free_slot_type = module.types.add(&[], &[ValType::I32]);
     let (get_externref_free_slot, _) = module.add_import_func(
         "lunatic",
@@ -325,27 +331,41 @@ fn add_externref_save_drop(module: &mut Module) -> (TableId, FunctionId, Functio
         .exports
         .add("_lunatic_externref_save", save_externref);
 
-    // __lunatic__externref__drop(index)
-    let set_externref_free_slot_type = module.types.add(&[ValType::I32], &[]);
-    let (set_externref_free_slot, _) = module.add_import_func(
-        "lunatic",
-        "set_externref_free_slot",
-        set_externref_free_slot_type,
-    );
+    // _lunatic_externref_drop(index)
+    if let Some(externref_drop_import_id) = module.imports.find("lunatic", "drop_externref") {
+        let externref_drop_import = module.imports.get(externref_drop_import_id);
+        let externref_drop_func_id = match externref_drop_import.kind {
+            ImportKind::Function(function) => function,
+            _  => panic!("lunatic::externref_drop must be a function")
+        };
 
-    let mut drop_builder = walrus::FunctionBuilder::new(&mut module.types, &[ValType::I32], &[]);
-    let free_slot = module.locals.add(ValType::I32);
-    drop_builder
-        .func_body()
-        .local_get(free_slot)
-        .ref_null(ValType::Externref)
-        .table_set(resource_table)
-        .local_get(free_slot)
-        .call(set_externref_free_slot);
-    let drop_externref = drop_builder.finish(vec![free_slot], &mut module.funcs);
-    module
-        .exports
-        .add("_lunatic_externref_drop", drop_externref);
+        let set_externref_free_slot_type = module.types.add(&[ValType::I32], &[]);
+        let (set_externref_free_slot, _) = module.add_import_func(
+            "lunatic",
+            "set_externref_free_slot",
+            set_externref_free_slot_type,
+        );
 
-    (resource_table, save_externref, drop_externref)
+        let mut drop_builder = walrus::FunctionBuilder::new(&mut module.types, &[ValType::I32], &[]);
+        let free_slot = module.locals.add(ValType::I32);
+        drop_builder
+            .func_body()
+            .local_get(free_slot)
+            .ref_null(ValType::Externref)
+            .table_set(resource_table)
+            .local_get(free_slot)
+            .call(set_externref_free_slot);
+
+        let externref_drop_import = module.funcs.get_mut(externref_drop_func_id);
+        replace_import_with_local_function(externref_drop_import, drop_builder, vec![free_slot]);
+
+        module
+            .exports
+            .add("_lunatic_externref_drop", externref_drop_func_id);
+
+        // Delete the import once it's replaced
+        module.imports.delete(externref_drop_import_id);
+    };
+
+    (resource_table, save_externref)
 }

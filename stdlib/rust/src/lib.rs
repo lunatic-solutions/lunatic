@@ -54,6 +54,7 @@ pub mod stdlib {
     #[link(wasm_import_module = "lunatic")]
     extern "C" {
         pub fn r#yield();
+        pub fn drop_externref(id: u32);
     }
 }
 
@@ -63,6 +64,7 @@ pub fn yield_() {
     }
 }
 
-pub fn drop(id: u32) {
-    // TODO: Call _lunatic_externref_drop(id)
+// Drop Externref resource by id.
+fn drop(id: u32) {
+    stdlib::drop_externref(id);
 }

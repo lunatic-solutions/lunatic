@@ -1,6 +1,7 @@
 ;; Input
 (module
   (import "lunatic" "spawn" (func (;0;) (param i32 i32 i64) (result i32)))
+  (import "lunatic" "drop_externref" (func (;1;) (param i32)))
   (func $test (result i32)
     i32.const 0
     i32.const 0
@@ -76,8 +77,6 @@
     table.set 0
     local.get 0
     call 2)
-
-  
 
   (table (;0;) 4 externref)
   (global (;0;) (mut i32) (i32.const 0))

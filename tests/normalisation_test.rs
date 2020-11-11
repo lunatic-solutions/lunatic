@@ -14,6 +14,7 @@ fn externref_save_drop() {
         ;; Importing to force the generation of _lunatic_externref_save and _lunatic_externref_drop
         ;; by the normaliser's `extern_func_ref.rs` patch.
         (import "lunatic" "spawn" (func $spawn (param i32 i32 i64) (result i32)))
+        (import "lunatic" "drop_externref" (func (;1;) (param i32)))
     )
     "#,
     )
