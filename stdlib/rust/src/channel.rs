@@ -1,7 +1,7 @@
 use std::alloc::{alloc, dealloc, Layout};
 use std::fmt;
 use std::marker::PhantomData;
-use std::mem::{forget, transmute};
+use std::mem::transmute;
 use std::slice;
 
 use serde::de::{self, Deserialize, Deserializer, Visitor};

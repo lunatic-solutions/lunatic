@@ -3,7 +3,9 @@
 use crate::channel;
 use crate::process::{self, MemoryChoice, ProcessEnvironment};
 use crate::wasi;
-use wasmtime::{Config, Engine, Instance, Limits, Linker, Memory, MemoryType, Module, Store};
+use wasmtime::{
+    Config, Engine, ExternRef, Instance, Limits, Linker, Memory, MemoryType, Module, Store, Val,
+};
 
 use anyhow::Result;
 
@@ -51,8 +53,28 @@ impl LunaticLinker {
         })
     }
 
-    pub fn instance(&self) -> Result<Instance> {
-        self.linker.instantiate(&self.module)
+    /// Create a new instance and set it up.
+    /// This consumes the linker, as each of them is bound to one instance (environment).
+    pub fn instance(self) -> Result<Instance> {
+        let instance = self.linker.instantiate(&self.module)?;
+        if let Some(externref_save) = instance.get_func("_lunatic_externref_save") {
+            let stdin = ExternRef::new(std::io::stdin());
+            assert_eq!(
+                0,
+                externref_save.call(&[Val::ExternRef(Some(stdin))])?[0].unwrap_i32()
+            );
+            let stdout = ExternRef::new(std::io::stdout());
+            assert_eq!(
+                1,
+                externref_save.call(&[Val::ExternRef(Some(stdout))])?[0].unwrap_i32()
+            );
+            let stderr = ExternRef::new(std::io::stderr());
+            assert_eq!(
+                2,
+                externref_save.call(&[Val::ExternRef(Some(stderr))])?[0].unwrap_i32()
+            );
+        }
+        Ok(instance)
     }
 
     pub fn linker(&mut self) -> &mut Linker {

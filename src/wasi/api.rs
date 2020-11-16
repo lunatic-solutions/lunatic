@@ -5,10 +5,11 @@ use crate::{Resource, ResourceTypeOwned, RESOURCES};
 
 use anyhow::Result;
 use smol::fs;
-use wasmtime::{Linker, Trap};
+use wasmtime::{ExternRef, Linker, Trap};
 
+use std::any::TypeId;
 use std::fmt;
-use std::io::{stderr, stdout};
+use std::io::{Stderr, Stdin, Stdout};
 
 #[derive(Debug, Clone, Copy)]
 struct ExitCode(i32);
@@ -37,27 +38,23 @@ pub fn add_to_linker(linker: &mut Linker, process_env_original: &ProcessEnvironm
     linker.func(
         "wasi_snapshot_preview1",
         "fd_write",
-        move |fd: u32, iovs: u32, iovs_len: u32, nwritten: u32| -> u32 {
+        move |fd: Option<ExternRef>, iovs: u32, iovs_len: u32, nwritten: u32| -> u32 {
             let wasi_iovecs =
                 WasiIoVecArrayIter::from(env.memory(), iovs as usize, iovs_len as usize);
             let mut wasi_nwritten = WasiSize::from(env.memory(), nwritten as usize);
 
-            let bytes_written = match fd {
-                WASI_STDIN_FILENO => return WASI_EINVAL,
-                WASI_STDOUT_FILENO => wasi_iovecs.write(&mut stdout()).unwrap(),
-                WASI_STDERR_FILENO => wasi_iovecs.write(&mut stderr()).unwrap(),
-                _ => {
-                    assert!(fd > 2);
+            let mut fd = fd.unwrap();
+            let mut fd = fd.data();
+            if let Some(_) = fd.downcast_ref::<Stdin>() {
+                return WASI_EINVAL;
+            }
 
-                    let mut bytes_written = 0;
-                    RESOURCES.with_resource((fd - FD_OFFSET) as usize, |resource| match resource {
-                        Resource::Owned(ResourceTypeOwned::File(file)) => {
-                            bytes_written = env.async_(wasi_iovecs.write_vectored(file)).unwrap();
-                        }
-                        _ => panic!("Can only write to File type"),
-                    });
-                    bytes_written
-                }
+            let bytes_written = if let Some(mut stdout) = fd.downcast_ref::<Stdout>() {
+                wasi_iovecs.write(&mut stdout).unwrap()
+            } else if let Some(mut stderr) = fd.downcast_ref::<Stderr>() {
+                wasi_iovecs.write(&mut stderr).unwrap()
+            } else {
+                unimplemented!();
             };
 
             wasi_nwritten.set(bytes_written as u32);

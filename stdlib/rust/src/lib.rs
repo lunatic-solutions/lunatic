@@ -66,5 +66,5 @@ pub fn yield_() {
 
 // Drop Externref resource by id.
 fn drop(id: u32) {
-    stdlib::drop_externref(id);
+    unsafe { stdlib::drop_externref(id); }
 }

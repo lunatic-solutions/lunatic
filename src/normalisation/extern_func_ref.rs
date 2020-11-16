@@ -262,7 +262,11 @@ pub fn patch(module: &mut Module) {
 
 /// Replaces all calls to the imported function with a local one **in place**.
 /// This is currently not supported in Walrus, so an unsafe transmute is used to perfrom the operation.
-fn replace_import_with_local_function(import_function: &mut Function, builder: FunctionBuilder, args: Vec<LocalId>) {
+fn replace_import_with_local_function(
+    import_function: &mut Function,
+    builder: FunctionBuilder,
+    args: Vec<LocalId>,
+) {
     // To swap out an import an unsafe trick is used.
     // https://github.com/rustwasm/walrus/issues/186
     struct UnsafeLocalFunction {
@@ -277,8 +281,7 @@ fn replace_import_with_local_function(import_function: &mut Function, builder: F
 
     unsafe {
         // Old import is "in place" replaced by new import wrapper.
-        import_function.kind =
-            FunctionKind::Local(std::mem::transmute(unsafe_local_wrapper));
+        import_function.kind = FunctionKind::Local(std::mem::transmute(unsafe_local_wrapper));
     }
 }
 
@@ -336,7 +339,7 @@ fn add_externref_save_drop_extend3(module: &mut Module) -> (TableId, FunctionId)
         let externref_drop_import = module.imports.get(externref_drop_import_id);
         let externref_drop_func_id = match externref_drop_import.kind {
             ImportKind::Function(function) => function,
-            _  => panic!("lunatic::externref_drop must be a function")
+            _ => panic!("lunatic::externref_drop must be a function"),
         };
 
         let set_externref_free_slot_type = module.types.add(&[ValType::I32], &[]);
@@ -346,7 +349,8 @@ fn add_externref_save_drop_extend3(module: &mut Module) -> (TableId, FunctionId)
             set_externref_free_slot_type,
         );
 
-        let mut drop_builder = walrus::FunctionBuilder::new(&mut module.types, &[ValType::I32], &[]);
+        let mut drop_builder =
+            walrus::FunctionBuilder::new(&mut module.types, &[ValType::I32], &[]);
         let free_slot = module.locals.add(ValType::I32);
         drop_builder
             .func_body()
