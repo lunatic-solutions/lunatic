@@ -1,3 +1,3 @@
 [submodule "wasmtime"]
 	path = wasmtime
-	url = git@github.com:lunatic-lang/wasmtime.git
+	url = https://github.com/lunatic-lang/wasmtime.git
