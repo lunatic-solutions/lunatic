@@ -23,6 +23,7 @@ dashmap = "3.11"
 
 [dev-dependencies]
 criterion = "0.3"
+rayon = "1.5"
 wat = "1.0"
 wasmprinter = "0.2"
 pretty_assertions = "0.6.1"

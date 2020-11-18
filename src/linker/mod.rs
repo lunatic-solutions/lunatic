@@ -1,4 +1,4 @@
-//! This module contains a few helper structures and functions to work with Wasmtime.
+//! This module contains a few helper structures and wrappers around Wasmtime's linker.
 
 use crate::channel;
 use crate::process::{self, MemoryChoice, ProcessEnvironment};

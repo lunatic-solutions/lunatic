@@ -1,6 +1,10 @@
 ;; Input
 (module
+  ;; Import expects a i32, but the API for `lunatic::spawn` returns an Externref.
+  ;; This will tell the normaliser to generate wrappers.
   (import "lunatic" "spawn" (func (;0;) (param i32 i32 i64) (result i32)))
+  ;; If the normaliser sees the import `lunatic::drop_externref`, it will replace
+  ;; it with an in-place drop function.
   (import "lunatic" "drop_externref" (func (;1;) (param i32)))
   (func $test (result i32)
     i32.const 0

@@ -16,41 +16,74 @@
 //! slots in the Externref table.
 
 use crate::{
+    linker::{engine, LunaticLinker},
     process::MemoryChoice,
-    wasmtime::{engine, LunaticLinker},
 };
 
 use walrus::*;
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Clone)]
 enum TransformationStep {
+    ParamReturn(ValType),
     Externref,
     Funcref,
     Nop(ValType),
 }
 
 /// Instructions on how to transform imports to match the expected format.
-/// TODO: Wasmtime's Func is for now limited to a singel return value. Once multivalue lands this should be extended.
 struct Transformation {
     import_id: ImportId,
     function_id: FunctionId,
     params: Vec<TransformationStep>,
-    return_: Vec<TransformationStep>,
+    params_return: Vec<TransformationStep>,
+    results: Vec<TransformationStep>,
 }
 
 impl Transformation {
     // Create a transformation only if the signatures don't match.
+    // `expected_type` refers to types provided by the Lunatic API.
+    // `received_type` refers to types declared in the wasm file.
     pub fn from(
         import_id: ImportId,
         function_id: FunctionId,
         expected_type: wasmtime::FuncType,
         received_type: &Type,
     ) -> Option<Self> {
+        // If there are more results than expected, rest of the results needs to be returned through params.
+        let params_return: Vec<TransformationStep> =
+            if expected_type.results().len() > received_type.results().len() {
+                // Only if this conditions are met it's possible to do a correct transformation.
+                assert_eq!(received_type.results().len(), 1);
+                assert_eq!(
+                    expected_type.params().len() + expected_type.results().len(),
+                    received_type.params().len() + received_type.results().len()
+                );
+                // Skip first argument and transform others into parameter returns.
+                expected_type
+                    .results()
+                    .into_iter()
+                    .skip(1)
+                    .map(|type_| {
+                        TransformationStep::ParamReturn(match type_ {
+                            wasmtime::ValType::I32 => ValType::I32,
+                            wasmtime::ValType::I64 => ValType::I32,
+                            wasmtime::ValType::F32 => ValType::I32,
+                            wasmtime::ValType::F64 => ValType::I32,
+                            wasmtime::ValType::V128 => ValType::I32,
+                            wasmtime::ValType::ExternRef => ValType::Externref,
+                            wasmtime::ValType::FuncRef => ValType::Funcref,
+                        })
+                    })
+                    .collect()
+            } else {
+                Vec::with_capacity(0)
+            };
+
         let params = Transformation::create_transformation_steps(
             expected_type.params(),
             received_type.params(),
         );
-        let return_ = Transformation::create_transformation_steps(
+        let results = Transformation::create_transformation_steps(
             expected_type.results(),
             received_type.results(),
         );
@@ -59,17 +92,19 @@ impl Transformation {
         if params.iter().all(|step| match step {
             TransformationStep::Nop(_) => true,
             _ => false,
-        }) && return_.iter().all(|step| match step {
+        }) && results.iter().all(|step| match step {
             TransformationStep::Nop(_) => true,
             _ => false,
-        }) {
+        }) && params_return.len() == 0
+        {
             None
         } else {
             Some(Self {
                 import_id,
                 function_id,
                 params,
-                return_,
+                params_return,
+                results,
             })
         }
     }
@@ -91,22 +126,25 @@ impl Transformation {
         expected
             .zip(received.iter())
             .for_each(|(ex_type, rec_type)| {
-                if (ex_type.eq(&wasmtime::ValType::I32) && rec_type.eq(&walrus::ValType::I32))
-                    || (ex_type.eq(&wasmtime::ValType::I64) && rec_type.eq(&walrus::ValType::I64))
-                    || (ex_type.eq(&wasmtime::ValType::F32) && rec_type.eq(&walrus::ValType::F32))
-                    || (ex_type.eq(&wasmtime::ValType::F64) && rec_type.eq(&walrus::ValType::F64))
-                    || (ex_type.eq(&wasmtime::ValType::V128) && rec_type.eq(&walrus::ValType::V128))
-                    || (ex_type.eq(&wasmtime::ValType::ExternRef)
+                if (ex_type == wasmtime::ValType::I32 && rec_type.eq(&walrus::ValType::I32))
+                    || (ex_type == wasmtime::ValType::I64 && rec_type.eq(&walrus::ValType::I64))
+                    || (ex_type == wasmtime::ValType::F32 && rec_type.eq(&walrus::ValType::F32))
+                    || (ex_type == wasmtime::ValType::F64 && rec_type.eq(&walrus::ValType::F64))
+                    || (ex_type == wasmtime::ValType::V128 && rec_type.eq(&walrus::ValType::V128))
+                    || (ex_type == wasmtime::ValType::ExternRef
                         && rec_type.eq(&walrus::ValType::Externref))
-                    || (ex_type.eq(&wasmtime::ValType::FuncRef)
+                    || (ex_type == wasmtime::ValType::FuncRef
                         && rec_type.eq(&walrus::ValType::Funcref))
                 {
+                    // Nothing to do
                     result.push(TransformationStep::Nop(rec_type.clone()));
                 } else {
+                    // Externref -> i32 transformation
                     if ex_type.eq(&wasmtime::ValType::ExternRef)
                         && rec_type.eq(&walrus::ValType::I32)
                     {
                         result.push(TransformationStep::Externref);
+                    // Externref -> i32 transformation
                     } else if ex_type.eq(&wasmtime::ValType::FuncRef)
                         && rec_type.eq(&walrus::ValType::I32)
                     {
@@ -127,11 +165,14 @@ impl Transformation {
                 TransformationStep::Nop(val_type) => val_type.clone(),
                 TransformationStep::Externref => ValType::Externref,
                 TransformationStep::Funcref => ValType::Funcref,
+                TransformationStep::ParamReturn(val_type) => val_type.clone(),
             };
 
         let params = self.params.iter().map(import_type_resolver).collect();
-        let return_ = self.return_.iter().map(import_type_resolver).collect();
-        (params, return_)
+        let mut results_extended = self.results.clone();
+        results_extended.extend(self.params_return.clone());
+        let results = results_extended.iter().map(import_type_resolver).collect();
+        (params, results)
     }
 
     // Return type of import wrapper function after the transformation.
@@ -143,9 +184,11 @@ impl Transformation {
                 _ => ValType::I32,
             };
 
-        let params = self.params.iter().map(import_type_resolver).collect();
-        let return_ = self.return_.iter().map(import_type_resolver).collect();
-        (params, return_)
+        let mut params_extended = self.params.clone();
+        params_extended.extend(self.params_return.clone());
+        let params = params_extended.iter().map(import_type_resolver).collect();
+        let results = self.results.iter().map(import_type_resolver).collect();
+        (params, results)
     }
 }
 
@@ -239,19 +282,131 @@ pub fn patch(module: &mut Module) {
                         }
                         None => panic!("Can't take a Funcref without a main function table"),
                     },
+                    TransformationStep::ParamReturn(_) => panic!("Can't appear in params"),
                 });
+
             // Call the wrapped import
             instructions.call(import);
+
+            // If we are returning values through params, write them to the correct memory location.
+            let offset = transformation.params.len();
+            transformation
+                .params_return
+                .iter()
+                .enumerate()
+                .rev()
+                .for_each(|(i, step)| match step {
+                    TransformationStep::ParamReturn(type_) => {
+                        let main_memory_id = module.memories.iter().next().unwrap().id();
+                        let i = i + offset;
+                        match type_ {
+                            ValType::Funcref => unimplemented!(""),
+                            ValType::Externref => {
+                                let temp = module.locals.add(ValType::I32);
+                                instructions
+                                    .call(save_externref)
+                                    .local_set(temp)
+                                    .local_get(wrapper_arguments[i])
+                                    .local_get(temp)
+                                    .store(
+                                        main_memory_id,
+                                        ir::StoreKind::I32 { atomic: false },
+                                        ir::MemArg {
+                                            align: 1,
+                                            offset: 0,
+                                        },
+                                    );
+                            }
+                            ValType::I32 => {
+                                let temp = module.locals.add(ValType::I32);
+                                instructions
+                                    .local_set(temp)
+                                    .local_get(wrapper_arguments[i])
+                                    .local_get(temp)
+                                    .store(
+                                        main_memory_id,
+                                        ir::StoreKind::I32 { atomic: false },
+                                        ir::MemArg {
+                                            align: 1,
+                                            offset: 0,
+                                        },
+                                    );
+                            }
+                            ValType::I64 => {
+                                let temp = module.locals.add(ValType::I64);
+                                instructions
+                                    .local_set(temp)
+                                    .local_get(wrapper_arguments[i])
+                                    .local_get(temp)
+                                    .store(
+                                        main_memory_id,
+                                        ir::StoreKind::I64 { atomic: false },
+                                        ir::MemArg {
+                                            align: 1,
+                                            offset: 0,
+                                        },
+                                    );
+                            }
+                            ValType::F32 => {
+                                let temp = module.locals.add(ValType::F32);
+                                instructions
+                                    .local_set(temp)
+                                    .local_get(wrapper_arguments[i])
+                                    .local_get(temp)
+                                    .store(
+                                        main_memory_id,
+                                        ir::StoreKind::F32,
+                                        ir::MemArg {
+                                            align: 1,
+                                            offset: 0,
+                                        },
+                                    );
+                            }
+                            ValType::F64 => {
+                                let temp = module.locals.add(ValType::F64);
+                                instructions
+                                    .local_set(temp)
+                                    .local_get(wrapper_arguments[i])
+                                    .local_get(temp)
+                                    .store(
+                                        main_memory_id,
+                                        ir::StoreKind::F64,
+                                        ir::MemArg {
+                                            align: 1,
+                                            offset: 0,
+                                        },
+                                    );
+                            }
+                            ValType::V128 => {
+                                let temp = module.locals.add(ValType::V128);
+                                instructions
+                                    .local_set(temp)
+                                    .local_get(wrapper_arguments[i])
+                                    .local_get(temp)
+                                    .store(
+                                        main_memory_id,
+                                        ir::StoreKind::V128,
+                                        ir::MemArg {
+                                            align: 1,
+                                            offset: 0,
+                                        },
+                                    );
+                            }
+                        }
+                    }
+                    _ => unreachable!("Can't contain any other values"),
+                });
+
             // If we are returning externrefs, save them first in the resource table and return index to them.
-            // TODO: Only one return supported at this time.
-            // TODO: Either way multi-value returns are not supported by Wasmtime currently
-            assert!(transformation.return_.len() <= 1);
-            transformation.return_.iter().for_each(|step| match step {
+            // TODO: Only one return supported without returning values as params at this time.
+            assert!(transformation.results.len() <= 1);
+            transformation.results.iter().for_each(|step| match step {
                 TransformationStep::Nop(_) => {}
                 TransformationStep::Externref => {
                     instructions.call(save_externref);
                 }
                 TransformationStep::Funcref => unimplemented!("TODO: Implement this!"),
+                TransformationStep::ParamReturn(_) => panic!("Can't appear in results"),
             });
 
             let import_function = module.funcs.get_mut(transformation.function_id);

@@ -7,7 +7,7 @@ use lazy_static::lazy_static;
 use smol::{Executor, Task};
 use wasmtime::{Engine, Memory, Module, Val};
 
-use crate::wasmtime::LunaticLinker;
+use crate::linker::LunaticLinker;
 
 use std::cell::RefCell;
 use std::future::Future;
