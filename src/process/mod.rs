@@ -1,4 +1,5 @@
 pub mod api;
+mod permissions;
 
 use anyhow::Result;
 use async_wormhole::pool::OneMbAsyncPool;
@@ -8,6 +9,7 @@ use smol::{Executor, Task};
 use wasmtime::{Engine, Memory, Module, Val};
 
 use crate::linker::LunaticLinker;
+use permissions::ProcessPermissions;
 
 use std::cell::RefCell;
 use std::future::Future;
@@ -49,6 +51,7 @@ pub enum MemoryChoice {
 pub struct ProcessEnvironment {
     engine: Engine,
     module: Module,
+    permissions: ProcessPermissions,
     memory: *mut u8,
     yielder: usize,
     /// If the  language running on top of Lunatic doesn't support externrefs natively, during the
@@ -67,6 +70,7 @@ impl ProcessEnvironment {
         Self {
             engine,
             module,
+            permissions: ProcessPermissions::current_dir(),
             memory,
             yielder,
             externref_free_slots,
