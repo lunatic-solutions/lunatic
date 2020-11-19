@@ -3,19 +3,21 @@ use std::mem::{forget, transmute};
 use serde::de::Deserialize;
 use serde::ser::Serialize;
 
-use crate::drop;
+use crate::{drop, Externref};
 use crate::Channel;
 
 mod stdlib {
+    use crate::Externref;
+
     #[link(wasm_import_module = "lunatic")]
     extern "C" {
         pub fn spawn(
             function: unsafe extern "C" fn(usize, u64),
             argument1: usize,
             argument2: u64,
-        ) -> u32;
+        ) -> Externref;
 
-        pub fn join(pid: u32);
+        pub fn join(pid: Externref);
     }
 }
 
@@ -25,12 +27,12 @@ pub struct SpawnError {}
 /// A process consists of its own stack and heap. It can only share data with other processes by
 /// exchanging the data with messages passing.
 pub struct Process {
-    id: u32,
+    externref: Externref,
 }
 
 impl Drop for Process {
     fn drop(&mut self) {
-        drop(self.id);
+        drop(self.externref);
     }
 }
 
@@ -56,7 +58,7 @@ impl Process {
         channel.send(context);
         let serialized_channel = channel.serialize_as_u64();
 
-        let id = unsafe {
+        let externref = unsafe {
             stdlib::spawn(
                 spawn_with_context::<T>,
                 transmute(function),
@@ -64,13 +66,13 @@ impl Process {
             )
         };
 
-        Ok(Self { id })
+        Ok(Self { externref })
     }
 
     /// Wait on a process to finish.
     pub fn join(self) {
         unsafe {
-            stdlib::join(self.id);
+            stdlib::join(self.externref);
         };
         forget(self);
         // TODO: Drop externref

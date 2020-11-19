@@ -19,7 +19,7 @@ impl fmt::Display for ExitCode {
 
 impl std::error::Error for ExitCode {}
 
-pub fn add_to_linker(linker: &mut Linker, process_env_original: &ProcessEnvironment) -> Result<()> {
+pub fn add_to_linker(linker: &mut Linker, environment: &ProcessEnvironment) -> Result<()> {
     // proc_exit(exit_code)
     linker.func(
         "wasi_snapshot_preview1",
@@ -28,7 +28,7 @@ pub fn add_to_linker(linker: &mut Linker, process_env_original: &ProcessEnvironm
     )?;
 
     // fd_write(...)
-    let env = process_env_original.clone();
+    let env = environment.clone();
     linker.func(
         "wasi_snapshot_preview1",
         "fd_write",
@@ -57,7 +57,7 @@ pub fn add_to_linker(linker: &mut Linker, process_env_original: &ProcessEnvironm
     )?;
 
     // path_open(...)
-    let _env = process_env_original.clone();
+    let _env = environment.clone();
     let path_open = Func::new(
         linker.store(),
         FuncType::new(
@@ -87,7 +87,7 @@ pub fn add_to_linker(linker: &mut Linker, process_env_original: &ProcessEnvironm
         },
     )?;
 
-    let env = process_env_original.clone();
+    let env = environment.clone();
     linker.func(
         "wasi_snapshot_preview1",
         "fd_prestat_get",

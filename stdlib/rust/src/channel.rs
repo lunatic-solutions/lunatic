@@ -7,7 +7,7 @@ use std::slice;
 use serde::de::{self, Deserialize, Deserializer, Visitor};
 use serde::ser::{Serialize, Serializer};
 
-use crate::drop;
+use crate::{drop, Externref};
 
 #[repr(C)]
 pub struct __wasi_iovec_t {
@@ -16,19 +16,20 @@ pub struct __wasi_iovec_t {
 }
 
 mod stdlib {
+    use crate::Externref;
     use super::__wasi_iovec_t;
 
     #[link(wasm_import_module = "lunatic")]
     extern "C" {
-        pub fn channel(bound: u32) -> u32;
-        pub fn channel_send(channel: u32, data: *const __wasi_iovec_t);
+        pub fn channel(bound: u32) -> Externref;
+        pub fn channel_send(channel: Externref, data: *const __wasi_iovec_t);
         pub fn channel_receive(
-            channel: u32,
+            channel: Externref,
             allocation_function: unsafe extern "C" fn(usize) -> *mut u8,
             buf: *mut usize,
         ) -> usize;
-        pub fn channel_serialize(channel: u32) -> u64;
-        pub fn channel_deserialize(channel: u64) -> u32;
+        pub fn channel_serialize(channel: Externref) -> u64;
+        pub fn channel_deserialize(channel: u64) -> Externref;
     }
 }
 
@@ -36,22 +37,22 @@ mod stdlib {
 /// The message needs to implement `serde::ser::Serializer`, because processes don't share any memory.
 #[derive(Clone)]
 pub struct Channel<T> {
-    id: u32,
+    externref: Externref,
     phantom: PhantomData<T>,
 }
 
 impl<T> Drop for Channel<T> {
     fn drop(&mut self) {
-        drop(self.id);
+        drop(self.externref);
     }
 }
 
 impl<'de, T: Serialize + Deserialize<'de>> Channel<T> {
     /// If `bound` is 0, returns an unbound channel.
     pub fn new(bound: usize) -> Self {
-        let id = unsafe { stdlib::channel(bound as u32) };
+        let externref = unsafe { stdlib::channel(bound as u32) };
         Self {
-            id,
+            externref,
             phantom: PhantomData,
         }
     }
@@ -64,7 +65,7 @@ impl<'de, T: Serialize + Deserialize<'de>> Channel<T> {
         };
 
         unsafe {
-            stdlib::channel_send(self.id, &data as *const __wasi_iovec_t);
+            stdlib::channel_send(self.externref, &data as *const __wasi_iovec_t);
         }
     }
 
@@ -76,8 +77,11 @@ impl<'de, T: Serialize + Deserialize<'de>> Channel<T> {
 
         let mut buf_ptr: usize = 0;
         let serialized_buffer = unsafe {
-            let buf_len =
-                stdlib::channel_receive(self.id, allocation_function, &mut buf_ptr as *mut usize);
+            let buf_len = stdlib::channel_receive(
+                self.externref,
+                allocation_function,
+                &mut buf_ptr as *mut usize,
+            );
             slice::from_raw_parts(buf_ptr as *const u8, buf_len)
         };
 
@@ -89,24 +93,24 @@ impl<'de, T: Serialize + Deserialize<'de>> Channel<T> {
         result
     }
 
-    pub fn id(&self) -> u32 {
-        self.id
+    pub fn externref(&self) -> Externref {
+        self.externref
     }
 
-    pub unsafe fn from_id(id: u32) -> Self {
+    pub unsafe fn from_externref(externref: Externref) -> Self {
         Self {
-            id,
+            externref,
             phantom: PhantomData,
         }
     }
 
     pub fn serialize_as_u64(self) -> u64 {
-        unsafe { stdlib::channel_serialize(self.id) }
+        unsafe { stdlib::channel_serialize(self.externref) }
     }
 
     pub fn dserialize_from_u64(id: u64) -> Self {
-        let channel_id = unsafe { stdlib::channel_deserialize(id) };
-        unsafe { Channel::from_id(channel_id) }
+        let channel_externref = unsafe { stdlib::channel_deserialize(id) };
+        unsafe { Channel::from_externref(channel_externref) }
     }
 }
 
@@ -115,7 +119,7 @@ impl<'de, T: Serialize + Deserialize<'de>> Serialize for Channel<T> {
     where
         S: Serializer,
     {
-        let serialized_channel = unsafe { stdlib::channel_serialize(self.id) };
+        let serialized_channel = unsafe { stdlib::channel_serialize(self.externref) };
         serializer.serialize_u64(serialized_channel)
     }
 }
@@ -135,8 +139,8 @@ impl<'de, T: Serialize + Deserialize<'de>> Visitor<'de> for ChannelVisitor<T> {
     where
         E: de::Error,
     {
-        let channel_id = unsafe { stdlib::channel_deserialize(value) };
-        unsafe { Ok(Channel::from_id(channel_id)) }
+        let channel_externref = unsafe { stdlib::channel_deserialize(value) };
+        unsafe { Ok(Channel::from_externref(channel_externref)) }
     }
 }
 

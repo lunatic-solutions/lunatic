@@ -18,6 +18,7 @@ mod stdlib;
 
 /// Patches:
 /// * Add reduction counters and yielding to functions and ~hot loops~.
+/// * Add support for Externrefs in languages that don't support them (Rust, C, ...).
 /// * Add low level functions required by the Lunatic stdlib.
 /// * Transforming defined memories into imported (shared) ones.
 pub fn patch(module_buffer: &[u8]) -> Result<(u32, Vec<u8>), Error> {

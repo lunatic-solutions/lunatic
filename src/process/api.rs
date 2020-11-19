@@ -10,7 +10,7 @@ use wasmtime::{ExternRef, Linker};
 ///
 /// The HOST functions are implemented with closures that capturing the environment belonging
 /// to the instance, like yielder address and memory pointers.
-pub fn add_to_linker(linker: &mut Linker, environment: ProcessEnvironment) -> Result<()> {
+pub fn add_to_linker(linker: &mut Linker, environment: &ProcessEnvironment) -> Result<()> {
     // Return a free slot in the externref table.
     let env = environment.clone();
     linker.func("lunatic", "get_externref_free_slot", move || -> i32 {

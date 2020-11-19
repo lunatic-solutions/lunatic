@@ -1,6 +1,7 @@
 //! This module contains a few helper structures and wrappers around Wasmtime's linker.
 
 use crate::channel;
+use crate::networking;
 use crate::process::{self, MemoryChoice, ProcessEnvironment};
 use crate::wasi;
 use wasmtime::{
@@ -41,8 +42,9 @@ impl LunaticLinker {
             ProcessEnvironment::new(engine, module.clone(), memory.data_ptr(), yielder_ptr);
 
         linker.define("lunatic", "memory", memory)?;
-        process::api::add_to_linker(&mut linker, environment.clone())?;
-        channel::api::add_to_linker(&mut linker, environment.clone())?;
+        networking::api::add_to_linker(&mut linker, &environment)?;
+        process::api::add_to_linker(&mut linker, &environment)?;
+        channel::api::add_to_linker(&mut linker, &environment)?;
         wasi::api::add_to_linker(&mut linker, &environment)?;
 
         Ok(Self {

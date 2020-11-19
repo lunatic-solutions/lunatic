@@ -1,6 +1,6 @@
 use criterion::{criterion_group, criterion_main, Criterion};
+use lunatic_vm::linker::{engine, LunaticLinker};
 use lunatic_vm::process::MemoryChoice;
-use lunatic_vm::wasmtime::{engine, LunaticLinker};
 use wasmtime::{Engine, Linker, Module, Store};
 
 fn lunatic_bench(c: &mut Criterion) {

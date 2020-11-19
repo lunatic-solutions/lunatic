@@ -1,19 +1,40 @@
 //! Lunatic tries to expose all resources (file descriptors, processes, sockets, ...) to WASM guest
 //! code as externrefs. Usually, the signature of Lunatic imports returning resources looks something
 //! like this:
+//!
 //!  (import "lunatic" "spawn" (func (;0;) (param i32 i64) (result externref)))
+//!
 //! Many programming languages (including Rust and C) don't have a way of dealing with externref types.
 //! To work around this limitation, WASM code compiled from this languages defines their imports by
 //! replacing externrefs with i32 args:
-//!  (import "lunatic" "spawn" (func (;0;) (param i32 i64) (result i32)))
-//! Obviously this type mismatch would be rejected by Wasmtime during instantiation. To make this work
-//! and only provide one implementation (with Externrefs), Lunatic wraps the incompatible imports in
-//! small wrapper functions. If the import returns an Externref, the wrapper saves it to a WASM table
-//! and returns the index in this table. If the import takes an Externref, the wrapper grabs the externref
-//! by provided index and passes it to import.
 //!
-//! Lunatic exposes functions (`get_externref_free_slot` &` set_externref_free_slot`) to keep track of free
-//! slots in the Externref table.
+//!  (import "lunatic" "spawn" (func (;0;) (param i32 i64) (result i32)))
+//!
+//! Obviously this type mismatch would be rejected by Wasmtime during instantiation. To make this
+//! work and only provide one implementation (with Externrefs), Lunatic wraps the incompatible imports
+//! in small wrapper functions:
+//! * If the import returns an Externref, the wrapper saves it to a WASM table and returns the index
+//!   in this table.
+//! * If the import takes an Externref, the wrapper grabs the externref by provided index and passes
+//!   it to the import.
+//!
+//! Lunatic exposes functions (`get_externref_free_slot` &` set_externref_free_slot`) that keep track
+//! of free slots in the Externref table.
+//!
+//! Another transformation performed is the one on multi-value returns. If multi-value returns are
+//! not supported by the WASM module it will usually use the last function parameters as pointers
+//! to return the value through them. Lunatic's API only exports multi-value returns. To make them
+//! work with languages only supporting a single return, a wrapper is needed to correctly map from:
+//!
+//!   (import "test" "test" (func (;0;) (param i64) (result i32 i32 externref)))
+//!
+//! to:
+//!
+//!   (import "test" "test" (func (;0;) (param i64 i32 i32) (result i32)))
+//!
+//! Notice how the first i32 is still returned, but the other 2 are now written to memory locations
+//! passed as parameters 2 and 3. If an Externref is returned it's first transformed to an i32 that
+//! represents its index in the Externref table and then the index is written to the memory location.
 
 use crate::{
     linker::{engine, LunaticLinker},

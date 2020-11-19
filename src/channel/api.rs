@@ -7,7 +7,7 @@ use wasmtime::{ExternRef, Func, Linker, Val};
 
 /// Expose channel API to WebAssembly guests through the `lunatic` namespace.
 /// TODO: Transform all the panics into traps (wrong argument)
-pub fn add_to_linker(linker: &mut Linker, environment: ProcessEnvironment) -> Result<()> {
+pub fn add_to_linker(linker: &mut Linker, environment: &ProcessEnvironment) -> Result<()> {
     // Create a channel
     // TODO: Return sender, receiver as multivalue once this lands:
     // TODO: https://github.com/bytecodealliance/wasmtime/issues/1178
