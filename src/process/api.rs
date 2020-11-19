@@ -27,6 +27,13 @@ pub fn add_to_linker(linker: &mut Linker, environment: &ProcessEnvironment) -> R
         },
     )?;
 
+    // Clone externref slot
+    linker.func(
+        "lunatic",
+        "clone_externref",
+        move |externref: Option<ExternRef>| -> Option<ExternRef> { externref.clone() },
+    )?;
+
     // Yield this process allowing other to be scheduled on same thread.
     let env = environment.clone();
     linker.func("lunatic", "yield", move || env.async_(yield_now()))?;

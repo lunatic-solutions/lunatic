@@ -53,11 +53,11 @@ pub fn add_to_linker(linker: &mut Linker, environment: &ProcessEnvironment) -> R
     linker.func(
         "lunatic",
         "channel_send",
-        move |mut channel: Option<ExternRef>, iovec: u32| {
+        move |mut channel: Option<ExternRef>, ciovec: u32| {
             let channel = channel.take().unwrap();
             let channel = channel.data();
             if let Some(channel) = channel.downcast_ref::<Channel>() {
-                let iovec = WasiIoVec::from_ptr(env.memory(), iovec as usize);
+                let iovec = WasiConstIoVec::from(env.memory(), ciovec as usize);
                 let future = channel.send(iovec.as_slice());
                 env.async_(future);
             } else {
@@ -92,7 +92,7 @@ pub fn add_to_linker(linker: &mut Linker, environment: &ProcessEnvironment) -> R
                         let iovec_buf: usize = iovec[0].i32().unwrap() as usize;
                         let iovec_buf_len: usize = buffer.len() as usize;
                         let mut iovec =
-                            WasiIoVec::from_values(env.memory(), iovec_buf, iovec_buf_len);
+                            WasiIoVec::from_wasi_iovec_t(env.memory(), iovec_buf, iovec_buf_len);
                         buffer.give_to(iovec.as_mut_slice().as_mut_ptr());
                         let mut slice_buf = WasiSize::from(env.memory(), slice_buf as usize);
                         slice_buf.set(iovec_buf as u32);

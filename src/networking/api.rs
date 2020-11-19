@@ -5,6 +5,8 @@ use anyhow::Result;
 use smol::net;
 use wasmtime::{ExternRef, Func, FuncType, Linker, Trap, Val, ValType::*};
 
+use std::cell::RefCell;
+
 pub fn add_to_linker(linker: &mut Linker, environment: &ProcessEnvironment) -> Result<()> {
     // tcp_bind_str
     let env = environment.clone();
@@ -36,7 +38,7 @@ pub fn add_to_linker(linker: &mut Linker, environment: &ProcessEnvironment) -> R
             if let Some(listener) = listener.downcast_ref::<net::TcpListener>() {
                 let (stream, addr) = env.async_(listener.accept()).unwrap();
                 result[0] = Val::I32(0); // success
-                result[1] = Val::ExternRef(Some(ExternRef::new(stream)));
+                result[1] = Val::ExternRef(Some(ExternRef::new(RefCell::new(stream))));
                 result[2] = Val::ExternRef(Some(ExternRef::new(addr)));
                 Ok(())
             } else {

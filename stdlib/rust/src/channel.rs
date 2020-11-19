@@ -7,7 +7,7 @@ use std::slice;
 use serde::de::{self, Deserialize, Deserializer, Visitor};
 use serde::ser::{Serialize, Serializer};
 
-use crate::{drop, Externref};
+use crate::{clone, drop, Externref};
 
 #[repr(C)]
 pub struct __wasi_iovec_t {
@@ -16,8 +16,8 @@ pub struct __wasi_iovec_t {
 }
 
 mod stdlib {
-    use crate::Externref;
     use super::__wasi_iovec_t;
+    use crate::Externref;
 
     #[link(wasm_import_module = "lunatic")]
     extern "C" {
@@ -35,10 +35,19 @@ mod stdlib {
 
 /// A channel allows exchanging messages between processes.
 /// The message needs to implement `serde::ser::Serializer`, because processes don't share any memory.
-#[derive(Clone)]
 pub struct Channel<T> {
     externref: Externref,
     phantom: PhantomData<T>,
+}
+
+impl<T> Clone for Channel<T> {
+    fn clone(&self) -> Self {
+        let externref = clone(self.externref);
+        Self {
+            externref,
+            phantom: PhantomData,
+        }
+    }
 }
 
 impl<T> Drop for Channel<T> {
@@ -108,7 +117,7 @@ impl<'de, T: Serialize + Deserialize<'de>> Channel<T> {
         unsafe { stdlib::channel_serialize(self.externref) }
     }
 
-    pub fn dserialize_from_u64(id: u64) -> Self {
+    pub fn deserialize_from_u64(id: u64) -> Self {
         let channel_externref = unsafe { stdlib::channel_deserialize(id) };
         unsafe { Channel::from_externref(channel_externref) }
     }

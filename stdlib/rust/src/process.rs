@@ -3,8 +3,8 @@ use std::mem::{forget, transmute};
 use serde::de::Deserialize;
 use serde::ser::Serialize;
 
-use crate::{drop, Externref};
 use crate::Channel;
+use crate::{drop, Externref};
 
 mod stdlib {
     use crate::Externref;
@@ -48,7 +48,7 @@ impl Process {
         where
             T: Serialize + Deserialize<'de>,
         {
-            let channel: Channel<T> = Channel::dserialize_from_u64(channel);
+            let channel: Channel<T> = Channel::deserialize_from_u64(channel);
             let context: T = channel.receive();
             let function: fn(T) = transmute(function);
             function(context);

@@ -20,6 +20,7 @@ crossbeam = "0.8"
 anyhow = "1.0"
 lazy_static = "1.4.0"
 dashmap = "3.11"
+smallvec = "1.5"
 
 [dev-dependencies]
 criterion = "0.3"

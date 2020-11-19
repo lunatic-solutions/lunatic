@@ -3,10 +3,13 @@ use super::types::*;
 use crate::process::ProcessEnvironment;
 
 use anyhow::Result;
+use smol::net::TcpStream;
+use smol::prelude::AsyncWriteExt;
 use wasmtime::{ExternRef, Func, FuncType, Linker, Trap, ValType::*};
 
+use std::cell::RefCell;
 use std::fmt;
-use std::io::{Stderr, Stdin, Stdout};
+use std::io::{Stderr, Stdin, Stdout, Write};
 
 #[derive(Debug, Clone, Copy)]
 struct ExitCode(i32);
@@ -32,10 +35,10 @@ pub fn add_to_linker(linker: &mut Linker, environment: &ProcessEnvironment) -> R
     linker.func(
         "wasi_snapshot_preview1",
         "fd_write",
-        move |fd: Option<ExternRef>, iovs: u32, iovs_len: u32, nwritten: u32| -> u32 {
-            let wasi_iovecs =
-                WasiIoVecArrayIter::from(env.memory(), iovs as usize, iovs_len as usize);
-            let mut wasi_nwritten = WasiSize::from(env.memory(), nwritten as usize);
+        move |fd: Option<ExternRef>, ciovs: u32, ciovs_len: u32, nwritten_ptr: u32| -> u32 {
+            let wasi_ciovecs =
+                WasiConstIoVecArray::from(env.memory(), ciovs as usize, ciovs_len as usize);
+            let mut wasi_nwritten = WasiSize::from(env.memory(), nwritten_ptr as usize);
 
             let fd = fd.unwrap();
             let fd = fd.data();
@@ -44,9 +47,16 @@ pub fn add_to_linker(linker: &mut Linker, environment: &ProcessEnvironment) -> R
             }
 
             let bytes_written = if let Some(mut stdout) = fd.downcast_ref::<Stdout>() {
-                wasi_iovecs.write(&mut stdout).unwrap()
+                stdout.write_vectored(wasi_ciovecs.get_io_slices()).unwrap()
             } else if let Some(mut stderr) = fd.downcast_ref::<Stderr>() {
-                wasi_iovecs.write(&mut stderr).unwrap()
+                stderr.write_vectored(wasi_ciovecs.get_io_slices()).unwrap()
+            } else if let Some(tcp_stream) = fd.downcast_ref::<RefCell<TcpStream>>() {
+                env.async_(
+                    tcp_stream
+                        .borrow_mut()
+                        .write_vectored(wasi_ciovecs.get_io_slices()),
+                )
+                .unwrap()
             } else {
                 unimplemented!();
             };

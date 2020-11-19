@@ -1,7 +1,10 @@
 use crate::{drop, Externref};
 
+use std::io::{self, Error, ErrorKind, IoSlice, Write};
+
 pub mod stdlib {
     use crate::Externref;
+    use std::io::IoSlice;
 
     #[link(wasm_import_module = "lunatic")]
     extern "C" {
@@ -10,6 +13,16 @@ pub mod stdlib {
             listener: Externref,
             tcp_socket: *mut Externref,
             addr: *mut Externref,
+        ) -> i32;
+    }
+
+    #[link(wasm_import_module = "wasi_snapshot_preview1")]
+    extern "C" {
+        pub fn fd_write(
+            tcp_stream: Externref,
+            ciovs_ptr: *const IoSlice<'_>,
+            ciovs_len: usize,
+            nwritten_ptr: *mut usize,
         ) -> i32;
     }
 }
@@ -65,5 +78,36 @@ pub struct TcpStream {
 impl Drop for TcpStream {
     fn drop(&mut self) {
         drop(self.externref);
+    }
+}
+
+impl Write for TcpStream {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        let io_slice = IoSlice::new(buf);
+        self.write_vectored(&[io_slice])
+    }
+
+    fn write_vectored(&mut self, bufs: &[IoSlice<'_>]) -> io::Result<usize> {
+        let mut nwritten: usize = 0;
+        let result = unsafe {
+            stdlib::fd_write(
+                self.externref,
+                bufs.as_ptr(),
+                bufs.len(),
+                &mut nwritten as *mut usize,
+            )
+        };
+        if result == 0 {
+            Ok(nwritten)
+        } else {
+            Err(Error::new(
+                ErrorKind::Other,
+                format!("write_vectored error: {}", result),
+            ))
+        }
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
     }
 }

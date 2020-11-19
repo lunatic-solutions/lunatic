@@ -2,14 +2,12 @@
 
 #![allow(dead_code)]
 
-use std::io::{Error, Write};
-use std::iter::Iterator;
-use std::marker::PhantomData;
+use std::io::{IoSlice, IoSliceMut};
 use std::mem::size_of;
 use std::slice::{from_raw_parts, from_raw_parts_mut};
 use std::str;
 
-use smol::io::AsyncWriteExt;
+use smallvec::SmallVec;
 
 /// WASI size (u32) type
 pub struct WasiSize {
@@ -38,20 +36,48 @@ impl WasiSize {
 }
 
 #[repr(C)]
-pub struct __wasi_iovec_t {
+pub struct _wasi_iovec_t {
     pub buf: u32,
     pub buf_len: u32,
 }
-/// A read/write WASI iovec type. Represents both a iovec and ciovec.
+/// A region of memory used as SOURCE for gather WRITES.
+pub struct WasiConstIoVec<'a> {
+    slice: &'a [u8],
+}
+
+impl<'a> WasiConstIoVec<'a> {
+    #[inline(always)]
+    pub fn from(memory: *mut u8, ptr: usize) -> Self {
+        unsafe {
+            let wasi_iovec = memory.add(ptr) as *const _wasi_iovec_t;
+            let slice_ptr = memory.add((*wasi_iovec).buf as usize);
+            let slice_len = (*wasi_iovec).buf_len as usize;
+            let slice = from_raw_parts_mut(slice_ptr, slice_len);
+            Self { slice }
+        }
+    }
+
+    pub fn as_slice(&self) -> &[u8] {
+        self.slice
+    }
+}
+
+impl<'a> From<WasiConstIoVec<'a>> for IoSlice<'a> {
+    fn from(wasi_io_vec: WasiConstIoVec) -> IoSlice {
+        IoSlice::new(wasi_io_vec.slice)
+    }
+}
+
+/// A region of memory used as DESTINATION for scatter READS.
 pub struct WasiIoVec<'a> {
     slice: &'a mut [u8],
 }
 
 impl<'a> WasiIoVec<'a> {
     #[inline(always)]
-    pub fn from_ptr(memory: *mut u8, ptr: usize) -> Self {
+    pub fn from(memory: *mut u8, ptr: usize) -> Self {
         unsafe {
-            let wasi_iovec = memory.add(ptr) as *mut __wasi_iovec_t;
+            let wasi_iovec = memory.add(ptr) as *mut _wasi_iovec_t;
             let slice_ptr = memory.add((*wasi_iovec).buf as usize);
             let slice_len = (*wasi_iovec).buf_len as usize;
             let slice = from_raw_parts_mut(slice_ptr, slice_len);
@@ -60,7 +86,7 @@ impl<'a> WasiIoVec<'a> {
     }
 
     #[inline(always)]
-    pub fn from_values(memory: *mut u8, buf: usize, buf_len: usize) -> Self {
+    pub fn from_wasi_iovec_t(memory: *mut u8, buf: usize, buf_len: usize) -> Self {
         unsafe {
             let slice_ptr = memory.add(buf);
             let slice = from_raw_parts_mut(slice_ptr, buf_len);
@@ -68,101 +94,82 @@ impl<'a> WasiIoVec<'a> {
         }
     }
 
-    #[inline(always)]
-    pub fn write<W: Write>(&self, dest: &mut W) -> Result<usize, Error> {
-        dest.write(self.slice)
-    }
-
-    pub fn as_slice(&self) -> &[u8] {
-        self.slice
-    }
-
     pub fn as_mut_slice(&mut self) -> &mut [u8] {
         self.slice
     }
 }
 
-/// Iterator over the WASI (c)iovec_array type.
-pub struct WasiIoVecArrayIter<'a> {
-    memory: *mut u8,
-    ptr: usize,
-    current: usize,
-    len: usize,
-    phantom: PhantomData<&'a ()>,
+impl<'a> From<WasiIoVec<'a>> for IoSliceMut<'a> {
+    fn from(wasi_io_vec: WasiIoVec) -> IoSliceMut {
+        IoSliceMut::new(wasi_io_vec.slice)
+    }
 }
 
-impl WasiIoVecArrayIter<'_> {
+/// Array of WasiConstIoVecs, internally represented as IoSlices
+pub struct WasiConstIoVecArray<'a> {
+    io_slices: SmallVec<[IoSlice<'a>; 4]>,
+}
+
+impl<'a> WasiConstIoVecArray<'a> {
     #[inline(always)]
     pub fn from(memory: *mut u8, ptr: usize, len: usize) -> Self {
-        Self {
-            memory,
-            ptr: ptr,
-            current: 0,
-            len: len as usize,
-            phantom: PhantomData,
+        let mut io_slices = SmallVec::with_capacity(len);
+        for i in 0..len {
+            let ptr = ptr + i * size_of::<_wasi_iovec_t>();
+            let wasi_io_vec = WasiConstIoVec::from(memory, ptr);
+            io_slices.push(wasi_io_vec.into());
         }
+        Self { io_slices }
     }
 
-    #[inline(always)]
-    pub fn write<W: Write>(self, dest: &mut W) -> Result<usize, Error> {
-        let mut bytes_written = 0;
-        for io_vec in self {
-            bytes_written += io_vec.write(dest)?;
-        }
-        Ok(bytes_written)
-    }
-
-    // TODO: Refactor to make it acutally vectored
-    #[inline(always)]
-    pub async fn write_vectored<W: AsyncWriteExt + Unpin>(
-        self,
-        dest: &mut W,
-    ) -> Result<usize, Error> {
-        let mut bytes_written = 0;
-        for io_vec in self {
-            bytes_written += dest.write(io_vec.as_slice()).await?;
-        }
-        Ok(bytes_written)
+    pub fn get_io_slices(&self) -> &[IoSlice<'a>] {
+        self.io_slices.as_slice()
     }
 }
 
-impl<'a> Iterator for WasiIoVecArrayIter<'a> {
-    type Item = WasiIoVec<'a>;
+/// Array of WasiIoVecs, internally represented as IoSliceMuts
+pub struct WasiIoVecArray<'a> {
+    io_slices: SmallVec<[IoSliceMut<'a>; 4]>,
+}
 
+impl<'a> WasiIoVecArray<'a> {
     #[inline(always)]
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.current < self.len {
-            let wasm_iovec = WasiIoVec::from_ptr(self.memory, self.ptr);
-            self.current += 1;
-            self.ptr += size_of::<__wasi_iovec_t>();
-            Some(wasm_iovec)
-        } else {
-            None
+    pub fn from(memory: *mut u8, ptr: usize, len: usize) -> Self {
+        let mut io_slices = SmallVec::with_capacity(len);
+        for i in 0..len {
+            let ptr = ptr + i * size_of::<_wasi_iovec_t>();
+            let wasi_io_vec = WasiIoVec::from(memory, ptr);
+            io_slices.push(wasi_io_vec.into());
         }
+        Self { io_slices }
+    }
+
+    pub fn get_io_slices_mut(&mut self) -> &mut [IoSliceMut<'a>] {
+        self.io_slices.as_mut_slice()
     }
 }
 
 #[repr(C)]
-pub struct __wasi_prestat_t {
+pub struct _wasi_prestat_t {
     pub union_tag: u32, // 0 for prestat_dir (only option in snapshot1)
     pub value: u32,
 }
 
 pub struct WasiPrestatDir {
-    ptr: *mut __wasi_prestat_t,
+    ptr: *mut _wasi_prestat_t,
 }
 
 impl WasiPrestatDir {
     #[inline(always)]
     pub fn from(memory: *mut u8, ptr: usize) -> Self {
         Self {
-            ptr: unsafe { memory.add(ptr) as *mut __wasi_prestat_t },
+            ptr: unsafe { memory.add(ptr) as *mut _wasi_prestat_t },
         }
     }
 
     #[inline(always)]
     pub fn set_dir_len(&mut self, dir_len: u32) {
-        let prestat = __wasi_prestat_t {
+        let prestat = _wasi_prestat_t {
             union_tag: 0,
             value: dir_len,
         };

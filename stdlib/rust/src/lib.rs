@@ -62,6 +62,7 @@ pub mod stdlib {
     extern "C" {
         pub fn r#yield();
         pub fn drop_externref(externref: Externref);
+        pub fn clone_externref(externref: Externref) -> Externref;
     }
 }
 
@@ -71,9 +72,14 @@ pub fn yield_() {
     }
 }
 
-// Drop Externref resource by id.
-fn drop(id: Externref) {
+// Drop Externref resource from table.
+fn drop(externref: Externref) {
     unsafe {
-        stdlib::drop_externref(id);
+        stdlib::drop_externref(externref);
     }
+}
+
+// Duplicate Externref resource on table.
+fn clone(externref: Externref) -> Externref {
+    unsafe { stdlib::clone_externref(externref) }
 }
