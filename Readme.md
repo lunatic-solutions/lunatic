@@ -52,8 +52,8 @@ and run it with
 lunatic target/wasm32-wasi/release/<example>.wasm
 ```
 
-This app spawns 1_000 child processes and calculate the sum of numbers from 0 to i in each child process,
-then send the result back to the parent process and print it. If you wrote some Rust code before this should feel familiar. [Check out the docs for more examples.](https://docs.rs/lunatic/0.2.0/lunatic/)
+This app spawns `1000` child processes and calculate the sum of numbers from 0 to i in each child process,
+then sends the result back to the parent process and prints it. If you wrote some Rust code before this should feel familiar. [Check out the docs for more examples.](https://docs.rs/lunatic/0.2.0/lunatic/)
 
 ## Architecture
 
