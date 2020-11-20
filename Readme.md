@@ -5,6 +5,8 @@
 
 Lunatic is a platform for building actor systems that use [WebAssembly](https://webassembly.org/) instances as actors. It is heavily inspired by Erlang and can be targeted from any language that can compile to WebAssembly. Currently there are only [bindings for Rust](https://crates.io/crates/lunatic) available.
 
+[Read more about the motivation behind Lunatic.](https://kolobara.com/lunatic/index.html#motivation)
+
 [Join our discord server!](https://discord.gg/tjQx3wRt)
 
 ### Example
