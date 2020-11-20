@@ -9,6 +9,7 @@ use serde::ser::{Serialize, Serializer};
 
 use crate::{clone, drop, Externref};
 
+// TODO: Replace with std::io::IoSlice. Same ABI!
 #[repr(C)]
 pub struct __wasi_iovec_t {
     pub buf: u32,
