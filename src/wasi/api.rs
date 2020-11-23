@@ -4,12 +4,12 @@ use crate::process::ProcessEnvironment;
 
 use anyhow::Result;
 use smol::net::TcpStream;
-use smol::prelude::AsyncWriteExt;
+use smol::prelude::{AsyncReadExt, AsyncWriteExt};
 use wasmtime::{ExternRef, Func, FuncType, Linker, Trap, ValType::*};
 
 use std::cell::RefCell;
 use std::fmt;
-use std::io::{Stderr, Stdin, Stdout, Write};
+use std::io::{Read, Stderr, Stdin, Stdout, Write};
 
 #[derive(Debug, Clone, Copy)]
 struct ExitCode(i32);
@@ -62,6 +62,40 @@ pub fn add_to_linker(linker: &mut Linker, environment: &ProcessEnvironment) -> R
             };
 
             wasi_nwritten.set(bytes_written as u32);
+            WASI_ESUCCESS
+        },
+    )?;
+
+    // fd_read(...)
+    let env = environment.clone();
+    linker.func(
+        "wasi_snapshot_preview1",
+        "fd_read",
+        move |fd: Option<ExternRef>, iovs: u32, iovs_len: u32, nread_ptr: u32| -> u32 {
+            let mut wasi_iovecs =
+                WasiIoVecArray::from(env.memory(), iovs as usize, iovs_len as usize);
+            let mut wasi_nread = WasiSize::from(env.memory(), nread_ptr as usize);
+
+            let fd = fd.unwrap();
+            let fd = fd.data();
+            if fd.downcast_ref::<Stdout>().is_some() || fd.downcast_ref::<Stderr>().is_some() {
+                return WASI_EINVAL;
+            }
+
+            let bytes_read = if let Some(stdin) = fd.downcast_ref::<Stdin>() {
+                stdin
+                    .lock()
+                    .read_vectored(wasi_iovecs.get_io_slices_mut())
+                    .unwrap()
+            } else if let Some(tcp_stream) = fd.downcast_ref::<RefCell<TcpStream>>() {
+                let mut tcp_stream = tcp_stream.borrow_mut();
+                env.async_(tcp_stream.read_vectored(wasi_iovecs.get_io_slices_mut()))
+                    .unwrap()
+            } else {
+                unimplemented!();
+            };
+
+            wasi_nread.set(bytes_read as u32);
             WASI_ESUCCESS
         },
     )?;

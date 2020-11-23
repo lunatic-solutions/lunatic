@@ -52,7 +52,7 @@ impl<'a> WasiConstIoVec<'a> {
             let wasi_iovec = memory.add(ptr) as *const _wasi_iovec_t;
             let slice_ptr = memory.add((*wasi_iovec).buf as usize);
             let slice_len = (*wasi_iovec).buf_len as usize;
-            let slice = from_raw_parts_mut(slice_ptr, slice_len);
+            let slice = from_raw_parts(slice_ptr, slice_len);
             Self { slice }
         }
     }
