@@ -129,13 +129,13 @@ impl<'a> WasiConstIoVecArray<'a> {
 
 /// Array of WasiIoVecs, internally represented as IoSliceMuts
 pub struct WasiIoVecArray<'a> {
-    io_slices: SmallVec<[IoSliceMut<'a>; 4]>,
+    io_slices: Vec<IoSliceMut<'a>>,
 }
 
 impl<'a> WasiIoVecArray<'a> {
     #[inline(always)]
     pub fn from(memory: *mut u8, ptr: usize, len: usize) -> Self {
-        let mut io_slices = SmallVec::with_capacity(len);
+        let mut io_slices = Vec::with_capacity(len);
         for i in 0..len {
             let ptr = ptr + i * size_of::<_wasi_iovec_t>();
             let wasi_io_vec = WasiIoVec::from(memory, ptr);
