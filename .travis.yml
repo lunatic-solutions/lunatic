@@ -1,0 +1,10 @@
+language: rust
+sudo: false # <-- always goodness
+cache: cargo
+rust:
+  - nightly
+matrix:
+  fast_finish: true
+script:
+  - cargo build --verbose --all
+  - cargo test --verbose --all
