@@ -7,7 +7,7 @@ Lunatic is a platform for building actor systems that use [WebAssembly](https://
 
 [Read more about the motivation behind Lunatic.](https://kolobara.com/lunatic/index.html#motivation)
 
-[Join our discord server!](https://discord.gg/tRfnMPSG27)
+[Join our discord server!](https://discord.gg/b7zDqpXpB4)
 
 ### Example
 
