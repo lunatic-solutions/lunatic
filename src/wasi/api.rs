@@ -164,21 +164,54 @@ pub fn add_to_linker(linker: &mut Linker, environment: &ProcessEnvironment) -> R
         },
     )?;
 
+
+    // Create a vector of byte vectors representing environment variables.
+    // The vector will be copied to the guest memory on `environ_get`.
+    let mut env_bytes: Vec<Vec<u8>> = vec![]; 
+    for (k, v) in std::env::vars() {
+        env_bytes.push(format!("{}={}\0", k, v).into_bytes());
+    }
+    let env_bytes_copy = env_bytes.clone();
+
+    let env = environment.clone();
     linker.func(
         "wasi_snapshot_preview1",
         "environ_sizes_get",
-        move |_: u32, _: u32| -> u32 {
-            println!("wasi_snapshot_preview1:environ_sizes_get()");
+        move |environc: u32, environ_buf_size: u32| -> u32 {
+            println!("wasi_snapshot_preview1:environ_sizes_get({}, {})", environc, environ_buf_size);
+            // TODO needs better abstraction. This is manual memory poking, very error prone
+            unsafe { 
+                let number_of_elements = env.memory().add(environc as usize) as *mut u32;
+                *number_of_elements = (&env_bytes).len() as u32;
+
+                let total_size = env.memory().add(environ_buf_size as usize) as *mut u32;
+                *total_size = (&env_bytes).iter().map(|v| v.len()as u32).sum();
+            }
             0
         },
     )?;
 
+    let env = environment.clone();
+    let env_bytes = env_bytes_copy;
     linker.func(
         "wasi_snapshot_preview1",
         "environ_get",
-        move |_: u32, _: u32| -> u32 {
-            println!("wasi_snapshot_preview1:environ_get()");
-            WASI_ENOTSUP
+        move |environ: u32, environ_buf: u32| -> u32 {
+            println!("wasi_snapshot_preview1:environ_get({}, {})", environ, environ_buf);
+            // TODO needs better abstraction. This is manual memory poking, very error prone
+            unsafe { 
+                let mut size = 0;
+                for (i, entry) in env_bytes.iter().enumerate() {
+                    let ith = env.memory().add(environ as usize + 4 * i as usize) as *mut u32;
+                    *ith = environ_buf + size;
+                    for (j, byte) in entry.iter().enumerate() {
+                        let p = env.memory().add(environ_buf as usize + size as usize + j) as *mut u8;
+                        *p = *byte;
+                    }
+                    size += entry.len() as u32;
+                }
+            }
+            0
         },
     )?;
 
