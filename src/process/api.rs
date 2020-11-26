@@ -1,8 +1,10 @@
 use super::{FunctionLookup, MemoryChoice, Process, ProcessEnvironment};
 
 use anyhow::Result;
-use smol::future::yield_now;
+use smol::{Timer, future::yield_now};
 use wasmtime::{ExternRef, Linker};
+
+use std::time::{Duration, Instant};
 
 /// This is somewhat of a Lunatic stdlib definition. It creates HOST functions exposing
 /// functionality provided by the runtime (filesystem, networking, process creation, etc).
@@ -37,6 +39,14 @@ pub fn add_to_linker(linker: &mut Linker, environment: &ProcessEnvironment) -> R
     // Yield this process allowing other to be scheduled on same thread.
     let env = environment.clone();
     linker.func("lunatic", "yield", move || env.async_(yield_now()))?;
+
+    // Suspend process for some time
+    let env = environment.clone();
+    linker.func("lunatic", "sleep_ms", move |millis: u64| {
+        let now = Instant::now();
+        let when = now + Duration::from_millis(millis);
+        env.async_(Timer::at(when));
+    })?;
 
     // Spawn new process and call a fuction from the function table under the `index` and pass one i32 argument.
     let env = environment.clone();

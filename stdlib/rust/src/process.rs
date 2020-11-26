@@ -18,6 +18,7 @@ mod stdlib {
         ) -> Externref;
 
         pub fn join(pid: Externref);
+        pub fn sleep_ms(millis: u64);
     }
 }
 
@@ -76,5 +77,12 @@ impl Process {
         };
         forget(self);
         // TODO: Drop externref
+    }
+
+    /// Suspends the current process for `milliseconds`.
+    pub fn sleep(milliseconds: u64) {
+        unsafe {
+            stdlib::sleep_ms(milliseconds);
+        };
     }
 }
