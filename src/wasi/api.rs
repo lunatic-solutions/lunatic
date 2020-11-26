@@ -7,6 +7,7 @@ use smol::net::TcpStream;
 use smol::prelude::{AsyncReadExt, AsyncWriteExt};
 use wasmtime::{ExternRef, Func, FuncType, Linker, Trap, ValType::*};
 
+use log::trace;
 use std::cell::RefCell;
 use std::fmt;
 use std::io::{Read, Stderr, Stdin, Stdout, Write};
@@ -126,7 +127,7 @@ pub fn add_to_linker(linker: &mut Linker, environment: &ProcessEnvironment) -> R
         "wasi_snapshot_preview1",
         "fd_close",
         move |fd: u32| -> u32 {
-            println!("wasi_snapshot_preview1:fd_close({})", fd);
+            trace!("wasi_snapshot_preview1:fd_close({})", fd);
             WASI_ESUCCESS
         },
     )?;
@@ -136,7 +137,7 @@ pub fn add_to_linker(linker: &mut Linker, environment: &ProcessEnvironment) -> R
         "wasi_snapshot_preview1",
         "fd_prestat_get",
         move |fd: u32, prestat_ptr: u32| -> u32 {
-            println!("wasi_snapshot_preview1:fd_prestat_get({})", fd);
+            trace!("wasi_snapshot_preview1:fd_prestat_get({})", fd);
             // ALlow access to all directories
             if fd == 3 {
                 let mut prestat = WasiPrestatDir::from(env.memory(), prestat_ptr as usize);
@@ -152,7 +153,7 @@ pub fn add_to_linker(linker: &mut Linker, environment: &ProcessEnvironment) -> R
         "wasi_snapshot_preview1",
         "fd_prestat_dir_name",
         move |fd: u32, _path_ptr: u32, path_len: u32| -> u32 {
-            println!("wasi_snapshot_preview1:fd_prestat_dir_name()");
+            trace!("wasi_snapshot_preview1:fd_prestat_dir_name()");
             if fd == 3 {
                 if path_len != 0 {
                     panic!("path len can only be the value passed in fd_prestat_get");
@@ -178,7 +179,7 @@ pub fn add_to_linker(linker: &mut Linker, environment: &ProcessEnvironment) -> R
         "wasi_snapshot_preview1",
         "environ_sizes_get",
         move |environc: u32, environ_buf_size: u32| -> u32 {
-            println!("wasi_snapshot_preview1:environ_sizes_get({}, {})", environc, environ_buf_size);
+            trace!("wasi_snapshot_preview1:environ_sizes_get({}, {})", environc, environ_buf_size);
             // TODO needs better abstraction. This is manual memory poking, very error prone
             unsafe { 
                 let number_of_elements = env.memory().add(environc as usize) as *mut u32;
@@ -197,7 +198,7 @@ pub fn add_to_linker(linker: &mut Linker, environment: &ProcessEnvironment) -> R
         "wasi_snapshot_preview1",
         "environ_get",
         move |environ: u32, environ_buf: u32| -> u32 {
-            println!("wasi_snapshot_preview1:environ_get({}, {})", environ, environ_buf);
+            trace!("wasi_snapshot_preview1:environ_get({}, {})", environ, environ_buf);
             // TODO needs better abstraction. This is manual memory poking, very error prone
             unsafe { 
                 let mut size = 0;

@@ -21,6 +21,8 @@ anyhow = "1.0"
 lazy_static = "1.4.0"
 dashmap = "3.11"
 smallvec = "1.5"
+env_logger = "0.8"
+log = "0.4"
 
 [dev-dependencies]
 criterion = "0.3"

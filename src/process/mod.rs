@@ -15,6 +15,7 @@ use std::cell::RefCell;
 use std::future::Future;
 use std::mem::ManuallyDrop;
 use std::rc::Rc;
+use log::info;
 
 lazy_static! {
     static ref WORMHOLE_POOL: OneMbAsyncPool = OneMbAsyncPool::new(128);
@@ -151,9 +152,10 @@ impl Process {
                 match function {
                     FunctionLookup::Name(name) => {
                         let func = instance.get_func(name).unwrap();
-                        let now = std::time::Instant::now();
+                        // Measure how long the function takes for named functions.
+                        let performance_timer = std::time::Instant::now();
                         func.call(&[])?;
-                        println!("Elapsed time: {} ms", now.elapsed().as_millis());
+                        info!(target: "performance", "Process {} finished in {} ms.", name, performance_timer.elapsed().as_millis());
                     }
                     FunctionLookup::TableIndex((index, argument1, argument2)) => {
                         let func = instance.get_func("lunatic_spawn_by_index").unwrap();
