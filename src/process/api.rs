@@ -1,7 +1,7 @@
 use super::{FunctionLookup, MemoryChoice, Process, ProcessEnvironment};
 
 use anyhow::Result;
-use smol::{Timer, future::yield_now};
+use smol::{future::yield_now, Timer};
 use wasmtime::{ExternRef, Linker};
 
 use std::time::{Duration, Instant};

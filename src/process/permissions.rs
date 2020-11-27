@@ -1,4 +1,4 @@
-use std::{env::current_dir, path::PathBuf, path::Path};
+use std::{env::current_dir, path::Path, path::PathBuf};
 
 /// Permissions held by a process.
 /// All filesystem/networking functions will check for permissions first before performing any operations.

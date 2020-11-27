@@ -11,11 +11,11 @@ use wasmtime::{Engine, Memory, Module, Val};
 use crate::linker::LunaticLinker;
 use permissions::ProcessPermissions;
 
+use log::info;
 use std::cell::RefCell;
 use std::future::Future;
 use std::mem::ManuallyDrop;
 use std::rc::Rc;
-use log::info;
 
 lazy_static! {
     static ref WORMHOLE_POOL: OneMbAsyncPool = OneMbAsyncPool::new(128);
