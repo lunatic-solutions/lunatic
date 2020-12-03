@@ -49,6 +49,7 @@ pub mod net;
 pub mod process;
 
 pub use channel::Channel;
+pub use net::{TcpListener, TcpStream};
 pub use process::Process;
 
 /// Rust doesn't have a native representation for Externrefs.
