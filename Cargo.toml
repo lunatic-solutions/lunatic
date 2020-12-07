@@ -11,6 +11,8 @@ readme = "Readme.md"
 
 [dependencies]
 async-wormhole = "0.2"
+wasmer = {path = "./wasmer/lib/api"}
+wasmer-vm = {path = "./wasmer/lib/vm"}
 wasmtime = {path = "./wasmtime/crates/wasmtime"}
 wasmtime-runtime = {path = "./wasmtime/crates/runtime"}
 walrus = "0.18"
