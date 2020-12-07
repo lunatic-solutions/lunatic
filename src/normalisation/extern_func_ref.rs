@@ -36,10 +36,7 @@
 //! passed as parameters 2 and 3. If an Externref is returned it's first transformed to an i32 that
 //! represents its index in the Externref table and then the index is written to the memory location.
 
-use crate::{
-    linker::{engine, LunaticLinker},
-    process::MemoryChoice,
-};
+use crate::{linker::LunaticLinker, module::LunaticModule, process::MemoryChoice};
 
 use walrus::*;
 
@@ -216,10 +213,8 @@ impl Transformation {
 pub fn patch(module: &mut Module) {
     // Create a LunaticLinker for an empty module just to extract all the signatures from generated imports.
     // The data passed to LunaticLinker::new in this case doesn't have any impotance and is mocked.
-    let engine = engine();
-    let temp_module = wasmtime::Module::new(&engine, "(module)").unwrap();
-    let mut lunatic_linker =
-        LunaticLinker::new(engine, temp_module, 0, MemoryChoice::New(0)).unwrap();
+    let temp_module = LunaticModule::new("(module)".into()).unwrap();
+    let mut lunatic_linker = LunaticLinker::new(temp_module, 0, MemoryChoice::New).unwrap();
     let wasmtime_linker = lunatic_linker.linker();
 
     // Collect all functions to be transformed by comparing expected and given signatures.

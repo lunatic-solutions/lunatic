@@ -55,10 +55,9 @@ pub fn add_to_linker(linker: &mut Linker, environment: &ProcessEnvironment) -> R
         "spawn",
         move |index: i32, argument1: i32, argument2: i64| -> Option<ExternRef> {
             let process = Process::spawn(
-                env.engine(),
                 env.module(),
                 FunctionLookup::TableIndex((index, argument1, argument2)),
-                MemoryChoice::New(18),
+                MemoryChoice::New,
             );
             Some(ExternRef::new(process))
         },

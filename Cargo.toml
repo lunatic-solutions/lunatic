@@ -9,6 +9,11 @@ readme = "Readme.md"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[features]
+default = ["vm-wasmtime"]
+vm-wasmtime = []
+vm-wasmer = []
+
 [dependencies]
 async-wormhole = "0.2"
 wasmer = {path = "./wasmer/lib/api"}

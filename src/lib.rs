@@ -2,6 +2,7 @@
 
 pub mod channel;
 pub mod linker;
+pub mod module;
 pub mod networking;
 pub mod normalisation;
 pub mod process;
@@ -9,10 +10,7 @@ pub mod wasi;
 
 use anyhow::Result;
 use easy_parallel::Parallel;
-use wasmtime::Module;
 
-use linker::engine;
-use normalisation::patch;
 use process::{FunctionLookup, MemoryChoice, Process, EXECUTOR};
 
 use std::env;
@@ -24,12 +22,7 @@ pub fn run() -> Result<()> {
     let wasm_path = args.get(1).expect("Not enough arguments passed");
     let wasm = fs::read(wasm_path).expect("Can't open WASM file");
 
-    // Transfrom WASM file into a format
-    let (min_memory, wasm) = patch(&wasm)?;
-
-    let engine = engine();
-
-    let module = Module::new(&engine, wasm)?;
+    let module = module::LunaticModule::new(wasm)?;
 
     // Set up async runtime
     let cpus = thread::available_concurrency().unwrap();
@@ -41,15 +34,11 @@ pub fn run() -> Result<()> {
         })
         .finish(|| {
             smol::future::block_on(async {
-                let result = Process::spawn(
-                    engine,
-                    module,
-                    FunctionLookup::Name("_start"),
-                    MemoryChoice::New(min_memory),
-                )
-                .take_task()
-                .unwrap()
-                .await;
+                let result =
+                    Process::spawn(module, FunctionLookup::Name("_start"), MemoryChoice::New)
+                        .take_task()
+                        .unwrap()
+                        .await;
                 drop(signal);
                 result
             })

@@ -6,9 +6,10 @@ use async_wormhole::pool::OneMbAsyncPool;
 use async_wormhole::AsyncYielder;
 use lazy_static::lazy_static;
 use smol::{Executor, Task};
-use wasmtime::{Engine, Memory, Module, Val};
+use wasmtime::Val;
 
 use crate::linker::LunaticLinker;
+use crate::module::LunaticModule;
 use permissions::ProcessPermissions;
 
 use log::info;
@@ -35,8 +36,8 @@ pub enum FunctionLookup {
 /// sharing memories between instances (once the WASM multi-threading proposal is supported in Wasmtime).
 #[derive(Clone)]
 pub enum MemoryChoice {
-    Existing(Memory),
-    New(u32),
+    Existing,
+    New,
 }
 
 /// This structure is captured inside HOST function closures passed to Wasmtime's Linker.
@@ -50,8 +51,7 @@ pub enum MemoryChoice {
 /// raw pointer to its memory content and only use it inside of host functions.
 #[derive(Clone)]
 pub struct ProcessEnvironment {
-    engine: Engine,
-    module: Module,
+    module: LunaticModule,
     permissions: ProcessPermissions,
     memory: *mut u8,
     yielder: usize,
@@ -65,11 +65,10 @@ pub struct ProcessEnvironment {
 }
 
 impl ProcessEnvironment {
-    pub fn new(engine: Engine, module: Module, memory: *mut u8, yielder: usize) -> Self {
+    pub fn new(module: LunaticModule, memory: *mut u8, yielder: usize) -> Self {
         // Initialise externref table with 4 free slots.
         let externref_free_slots = Rc::new(RefCell::new((4, Vec::from([3, 2, 1, 0]))));
         Self {
-            engine,
             module,
             permissions: ProcessPermissions::current_dir(),
             memory,
@@ -115,11 +114,7 @@ impl ProcessEnvironment {
         self.memory
     }
 
-    pub fn engine(&self) -> Engine {
-        self.engine.clone()
-    }
-
-    pub fn module(&self) -> Module {
+    pub fn module(&self) -> LunaticModule {
         self.module.clone()
     }
 }
@@ -135,18 +130,13 @@ impl Process {
     }
 
     /// Spawn a new process.
-    pub fn spawn(
-        engine: Engine,
-        module: Module,
-        function: FunctionLookup,
-        memory: MemoryChoice,
-    ) -> Self {
+    pub fn spawn(module: LunaticModule, function: FunctionLookup, memory: MemoryChoice) -> Self {
         let process = WORMHOLE_POOL.with_tls(
             [&wasmtime_runtime::traphandlers::tls::PTR],
             move |yielder| {
                 let yielder_ptr = &yielder as *const AsyncYielderCast as usize;
 
-                let linker = LunaticLinker::new(engine, module, yielder_ptr, memory)?;
+                let linker = LunaticLinker::new(module, yielder_ptr, memory)?;
                 let instance = linker.instance()?;
 
                 match function {

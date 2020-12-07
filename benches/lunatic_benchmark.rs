@@ -1,5 +1,6 @@
 use criterion::{criterion_group, criterion_main, Criterion};
 use lunatic_vm::linker::{engine, LunaticLinker};
+use lunatic_vm::module::LunaticModule;
 use lunatic_vm::process::MemoryChoice;
 use wasmtime::{Engine, Linker, Module, Store};
 
@@ -24,13 +25,10 @@ fn lunatic_bench(c: &mut Criterion) {
     });
 
     c.bench_function("lunatic instance creation", |b| {
-        let engine = engine();
-        let module = Module::new(&engine, "(module)").unwrap();
+        let module = LunaticModule::new("(module)".into()).unwrap();
 
         b.iter(move || {
-            let linker =
-                LunaticLinker::new(engine.clone(), module.clone(), 0, MemoryChoice::New(32))
-                    .unwrap();
+            let linker = LunaticLinker::new(module.clone(), 0, MemoryChoice::New).unwrap();
             linker.instance().unwrap()
         });
     });
@@ -38,15 +36,12 @@ fn lunatic_bench(c: &mut Criterion) {
     c.bench_function("lunatic instance creation multithreaded", |b| {
         use rayon::prelude::*;
 
-        let engine = engine();
-        let module = Module::new(&engine, "(module)").unwrap();
+        let module = LunaticModule::new("(module)".into()).unwrap();
 
         b.iter_custom(move |iters| {
             let start = std::time::Instant::now();
             (0..iters).into_par_iter().for_each(|_i| {
-                let linker =
-                    LunaticLinker::new(engine.clone(), module.clone(), 0, MemoryChoice::New(32))
-                        .unwrap();
+                let linker = LunaticLinker::new(module.clone(), 0, MemoryChoice::New).unwrap();
                 criterion::black_box(linker.instance().unwrap());
             });
             start.elapsed()
