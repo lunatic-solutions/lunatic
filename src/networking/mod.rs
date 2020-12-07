@@ -1,6 +1,5 @@
 pub mod api;
 
-use std::cell::RefCell;
 use std::sync::atomic::AtomicUsize;
 
 use dashmap::DashMap;
