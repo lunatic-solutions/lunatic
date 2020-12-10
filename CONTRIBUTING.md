@@ -43,6 +43,10 @@ Lunatic requires the latest release of Rust Nightly.
 To build the project run:
 
 ```shell
+rustup default nightly
+```
+
+```shell
 cargo build
 ```
 
@@ -56,4 +60,12 @@ To run the tests:
 
 ```shell
 cargo test
+```
+
+Or, without setting nightly as the default:
+
+```shell
+cargo +nightly build
+cargo +nightly build --release
+cargo +nightly test
 ```
