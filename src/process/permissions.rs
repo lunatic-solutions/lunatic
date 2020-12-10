@@ -8,6 +8,7 @@ pub struct ProcessPermissions {
     networking: Vec<NetworkingPermission>,
 }
 
+#[allow(dead_code)]
 #[derive(Copy, Clone, PartialEq)]
 /// Used to express permission level
 enum Permission {
@@ -32,7 +33,8 @@ impl ProcessPermissions {
     }
 
     /// Returns true if process has `permission` for `path`, otherwise false.
-    pub fn path_has_permission(&self, path: &Path, permission: Permission) -> bool {
+    #[allow(dead_code)]
+    fn path_has_permission(&self, path: &Path, permission: Permission) -> bool {
         self.filesystem
             .iter()
             .map(|fsp| fsp.path_permission(path))
@@ -57,6 +59,7 @@ impl FilesystemPermission {
     }
 }
 
+#[allow(dead_code)]
 #[derive(Clone)]
 enum NetworkingPermission {
     Connect,
