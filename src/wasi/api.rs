@@ -4,7 +4,7 @@ use crate::process::ProcessEnvironment;
 
 use anyhow::Result;
 use smol::net::TcpStream;
-use smol::prelude::{AsyncReadExt, AsyncWriteExt};
+use smol::prelude::*;
 use wasmtime::{ExternRef, Func, FuncType, Linker, Trap, ValType::*};
 
 use log::trace;
