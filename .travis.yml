@@ -8,3 +8,11 @@ matrix:
 script:
   - cargo build --verbose --all
   - cargo test --verbose --all
+- stage: GitHub Release
+  script: echo "Deploying to GitHub releases ..."
+  deploy:
+    provider: releases
+    api_key: $GITHUB_OAUTH_TOKEN
+    skip_cleanup: true
+    on:
+      tags: true
