@@ -3,16 +3,18 @@ sudo: false # <-- always goodness
 cache: cargo
 rust:
   - nightly
-matrix:
-  fast_finish: true
-script:
-  - cargo build --verbose --all
-  - cargo test --verbose --all
-- stage: GitHub Release
-  script: echo "Deploying to GitHub releases ..."
-  deploy:
-    provider: releases
-    api_key: $GITHUB_OAUTH_TOKEN
-    skip_cleanup: true
-    on:
-      tags: true
+jobs:
+  include:
+    - stage: "Build and Test"
+      name: "Build"
+      script: cargo build --verbose --all
+    - script: cargo test --verbose --all
+      name: "Test"
+    - stage: GitHub Release
+      script: echo "Deploying to GitHub releases ..."
+      deploy:
+        provider: releases
+        api_key: $GITHUB_OAUTH_TOKEN
+        skip_cleanup: true
+        on:
+          tags: true
