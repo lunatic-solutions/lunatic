@@ -14,7 +14,7 @@ jobs:
       script: echo "Deploying to GitHub releases ..."
       deploy:
         provider: releases
-        api_key: $GITHUB_OAUTH_TOKEN
+        # api_key: $GITHUB_OAUTH_TOKEN
         skip_cleanup: true
         on:
           tags: true
