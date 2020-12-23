@@ -14,6 +14,7 @@ use std::{mem, ptr};
 use dashmap::DashMap;
 use lazy_static::lazy_static;
 use smol::channel::{bounded, unbounded, Receiver, RecvError, Sender};
+use uptown_funk::{FromWasmI32, ToWasmI32};
 
 lazy_static! {
     // Channels are used to send messages between processes, but they can also be sent themselves
@@ -38,7 +39,39 @@ static mut UNIQUE_ID: AtomicUsize = AtomicUsize::new(0);
 pub struct Channel {
     id: usize,
     sender: Sender<ChannelBuffer>,
+    sender_len: Sender<usize>,
     receiver: Receiver<ChannelBuffer>,
+    receiver_len: Receiver<usize>,
+}
+
+impl ToWasmI32 for Channel {
+    type State = api::ChannelState;
+
+    fn to_i32<ProcessEnvironment>(
+        state: &Self::State,
+        _instance_environment: &ProcessEnvironment,
+        channel: Self,
+    ) -> Result<i32, uptown_funk::Trap> {
+        Ok(state.add_channel(channel))
+    }
+}
+
+impl FromWasmI32 for Channel {
+    type State = api::ChannelState;
+
+    fn from_i32<ProcessEnvironment>(
+        state: &Self::State,
+        _instance_environment: &ProcessEnvironment,
+        id: i32,
+    ) -> Result<Self, uptown_funk::Trap>
+    where
+        Self: Sized,
+    {
+        match state.remove_channel(id) {
+            Some(channel) => Ok(channel),
+            None => Err(uptown_funk::Trap::new("Channel not found")),
+        }
+    }
 }
 
 impl Clone for Channel {
@@ -47,6 +80,8 @@ impl Clone for Channel {
             id: unsafe { UNIQUE_ID.fetch_add(1, Ordering::SeqCst) },
             sender: self.sender.clone(),
             receiver: self.receiver.clone(),
+            sender_len: self.sender_len.clone(),
+            receiver_len: self.receiver_len.clone(),
         }
     }
 }
@@ -58,20 +93,33 @@ impl Channel {
             Some(bound) => bounded(bound),
             None => unbounded(),
         };
+        let (sender_len, receiver_len) = match bound {
+            Some(bound) => bounded(bound),
+            None => unbounded(),
+        };
         Self {
             id,
             sender,
+            sender_len,
             receiver,
+            receiver_len,
         }
     }
 
-    pub fn send(&self, slice: &[u8]) -> impl Future + '_ {
+    pub async fn send(&self, slice: &[u8]) {
         let buffer = ChannelBuffer::new(slice.as_ptr(), slice.len());
-        self.sender.send(buffer)
+        self.sender_len.send(buffer.len()).await.unwrap();
+        self.sender.send(buffer).await.unwrap();
     }
 
     pub fn recieve(&self) -> impl Future<Output = Result<ChannelBuffer, RecvError>> + '_ {
         self.receiver.recv()
+    }
+
+    // TODO: This must be called right before recieve & the same exact number of times.
+    // There should be a better design.
+    pub fn next_message_size(&self) -> impl Future<Output = Result<usize, RecvError>> + '_ {
+        self.receiver_len.recv()
     }
 
     pub fn serialize(self) -> usize {

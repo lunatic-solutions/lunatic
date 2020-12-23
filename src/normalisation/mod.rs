@@ -11,21 +11,18 @@
 use anyhow::Error;
 use walrus::Module;
 
-mod extern_func_ref;
 mod reduction_counting;
 mod shared_memory;
 mod stdlib;
 
 /// Patches:
 /// * Add reduction counters and yielding to functions and ~hot loops~.
-/// * Add support for Externrefs in languages that don't support them (Rust, C, ...).
 /// * Add low level functions required by the Lunatic stdlib.
 /// * Transforming defined memories into imported (shared) ones.
 pub fn patch(module_buffer: &[u8]) -> Result<(u32, Vec<u8>), Error> {
     let mut module = Module::from_buffer(&module_buffer)?;
 
     reduction_counting::patch(&mut module);
-    extern_func_ref::patch(&mut module);
     stdlib::patch(&mut module);
     let min_memory = shared_memory::patch(&mut module);
 

@@ -18,7 +18,7 @@ pub fn patch(module: &mut Module) {
         .globals
         .add_local(ValType::I32, true, InitExpr::Value(ir::Value::I32(0)));
     let yield_type = module.types.add(&[], &[]);
-    let yield_import = module.add_import_func("lunatic", "yield", yield_type);
+    let yield_import = module.add_import_func("lunatic", "yield_", yield_type);
 
     for function in module.funcs.iter_mut() {
         match &mut function.kind {

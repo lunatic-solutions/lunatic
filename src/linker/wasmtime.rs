@@ -6,8 +6,9 @@ use crate::wasi;
 
 use anyhow::Result;
 use std::sync::Once;
+use uptown_funk::HostFunctions;
 use wasmtime::{
-    Config, Engine, ExternRef, Instance, Limits, Linker, Memory, MemoryType, Module, Store, Val,
+    Config, Engine, ExternRef, Instance, Limits, Linker, Memory, MemoryType, Store, Val,
 };
 
 /// Contains data necessary to create Wasmtime instances suitable to be used with Lunatic processes.
@@ -37,10 +38,18 @@ impl LunaticLinker {
         let environment = ProcessEnvironment::new(module.clone(), memory.data_ptr(), yielder_ptr);
 
         linker.define("lunatic", "memory", memory)?;
-        networking::api::add_to_linker(&mut linker, &environment)?;
-        process::api::add_to_linker(&mut linker, &environment)?;
-        channel::api::add_to_linker(&mut linker, &environment)?;
-        wasi::api::add_to_linker(&mut linker, &environment)?;
+
+        let process_state = process::api::ProcessState::new(module.clone());
+        process_state.add_to_linker(environment.clone(), &mut linker);
+
+        let channel_state = channel::api::ChannelState::new();
+        channel_state.add_to_linker(environment.clone(), &mut linker);
+
+        let networking_state = networking::api::TcpListenerState::new();
+        networking_state.add_to_linker(environment.clone(), &mut linker);
+
+        let wasi_state = wasi::api::WasiState::new();
+        wasi_state.add_to_linker(environment.clone(), &mut linker);
 
         Ok(Self {
             store,

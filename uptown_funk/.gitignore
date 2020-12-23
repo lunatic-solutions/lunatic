@@ -1,0 +1,3 @@
+/tests/wasm/*.wasm
+/target
+Cargo.lock

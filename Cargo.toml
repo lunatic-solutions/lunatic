@@ -16,6 +16,7 @@ vm-wasmer = []
 
 [dependencies]
 async-wormhole = "0.2"
+uptown_funk = { path = "./uptown_funk", features=["async"] }
 wasmer = {path = "./wasmer/lib/api"}
 wasmer-vm = {path = "./wasmer/lib/vm"}
 wasmtime = {path = "./wasmtime/crates/wasmtime"}

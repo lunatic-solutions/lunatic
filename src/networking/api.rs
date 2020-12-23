@@ -1,84 +1,76 @@
-use crate::process::ProcessEnvironment;
-use crate::wasi::types::*;
-
+use super::{TcpListener, TcpStream};
 use anyhow::Result;
-use smol::net;
-use wasmtime::{ExternRef, Func, FuncType, Linker, Trap, Val, ValType::*};
+use uptown_funk::host_functions;
 
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::sync::atomic::Ordering;
 
-pub fn add_to_linker(linker: &mut Linker, environment: &ProcessEnvironment) -> Result<()> {
-    // tcp_bind_str
-    let env = environment.clone();
-    let tcp_bind_str = Func::new(
-        linker.store(),
-        FuncType::new(vec![I32, I32], vec![I32, ExternRef]),
-        move |_caller, params, result| -> Result<(), Trap> {
-            let str_ptr = params[0].unwrap_i32();
-            let str_len = params[1].unwrap_i32();
-            let addr = WasiString::from(env.memory(), str_ptr as usize, str_len as usize);
-            let listener = env.async_(net::TcpListener::bind(addr.get())).unwrap();
+pub struct TcpListenerState {
+    count_listener: RefCell<i32>,
+    state_listener: RefCell<HashMap<i32, TcpListener>>,
+    count_stream: RefCell<i32>,
+    state_stream: RefCell<HashMap<i32, TcpStream>>,
+}
 
-            result[0] = Val::I32(0); // success
-            result[1] = Val::ExternRef(Some(ExternRef::new(listener)));
+impl TcpListenerState {
+    pub fn new() -> Self {
+        Self {
+            count_listener: RefCell::new(0),
+            state_listener: RefCell::new(HashMap::new()),
+            count_stream: RefCell::new(0),
+            state_stream: RefCell::new(HashMap::new()),
+        }
+    }
 
-            Ok(())
-        },
-    );
-    linker.define("lunatic", "tcp_bind_str", tcp_bind_str)?;
+    pub fn add_tcp_listener(&self, listener: TcpListener) -> i32 {
+        let mut id = self.count_listener.borrow_mut();
+        *id += 1;
+        self.state_listener.borrow_mut().insert(*id, listener);
+        *id
+    }
 
-    // tcp_accept
-    let env = environment.clone();
-    let tcp_accept = Func::new(
-        linker.store(),
-        FuncType::new(vec![ExternRef], vec![I32, ExternRef, ExternRef]),
-        move |_caller, params, result| -> Result<(), Trap> {
-            let listener = params[0].unwrap_externref().unwrap();
-            let listener = listener.data();
-            if let Some(listener) = listener.downcast_ref::<net::TcpListener>() {
-                let (stream, addr) = env.async_(listener.accept()).unwrap();
-                result[0] = Val::I32(0); // success
-                result[1] = Val::ExternRef(Some(ExternRef::new(RefCell::new(stream))));
-                result[2] = Val::ExternRef(Some(ExternRef::new(addr)));
-                Ok(())
-            } else {
-                Err(Trap::new("lunatic::tcp_accept only accepts TcpListener"))
-            }
-        },
-    );
-    linker.define("lunatic", "tcp_accept", tcp_accept)?;
+    pub fn remove_tcp_listener(&self, id: i32) -> Option<TcpListener> {
+        self.state_listener.borrow_mut().remove(&id)
+    }
+
+    pub fn add_tcp_stream(&self, stream: TcpStream) -> i32 {
+        let mut id = self.count_stream.borrow_mut();
+        *id += 1;
+        self.state_stream.borrow_mut().insert(*id, stream);
+        *id
+    }
+
+    pub fn remove_tcp_stream(&self, id: i32) -> Option<TcpStream> {
+        self.state_stream.borrow_mut().remove(&id)
+    }
+}
+
+#[host_functions(namespace = "lunatic")]
+impl TcpListenerState {
+    async fn tcp_bind_str(&self, address: &str) -> (i32, TcpListener) {
+        match TcpListener::bind(address).await {
+            Ok(tcp_listener) => (0, tcp_listener),
+            Err(tcp_listener) => (-1, tcp_listener),
+        }
+    }
+
+    async fn tcp_accept(&self, tcp_listener: TcpListener) -> (i32, TcpStream) {
+        (0, tcp_listener.accept().await)
+    }
 
     // Serializes an Externref containing a tcp_stream as an id.
     // Memory leak: If the value in never deserialized, this will leak memory.
-    linker.func(
-        "lunatic",
-        "tcp_stream_serialize",
-        move |mut tcp_stream: Option<ExternRef>| -> i64 {
-            let tcp_stream = tcp_stream.take().unwrap();
-            let tcp_stream = tcp_stream.data();
-            if let Some(tcp_stream) = tcp_stream.downcast_ref::<RefCell<net::TcpStream>>() {
-                let tcp_stream = tcp_stream.clone().into_inner();
-                let id = unsafe { super::UNIQUE_ID.fetch_add(1, Ordering::SeqCst) };
-                super::SERIALIZED_TCP_STREAM.insert(id, tcp_stream);
-                id as i64
-            } else {
-                panic!("Argument is not a channel")
-            }
-        },
-    )?;
+    async fn tcp_stream_serialize(&self, tcp_stream: TcpStream) -> i64 {
+        let id = unsafe { super::UNIQUE_ID.fetch_add(1, Ordering::SeqCst) };
+        super::SERIALIZED_TCP_STREAM.insert(id, tcp_stream);
+        id as i64
+    }
 
-    // Deserializes a tcp_stream.
-    linker.func(
-        "lunatic",
-        "tcp_stream_deserialize",
-        move |serialized_tcp_stream: i64| -> Option<ExternRef> {
-            match super::SERIALIZED_TCP_STREAM.remove(&(serialized_tcp_stream as usize)) {
-                Some((_id, tcp_stream)) => Some(ExternRef::new(RefCell::new(tcp_stream))),
-                None => None,
-            }
-        },
-    )?;
-
-    Ok(())
+    async fn tcp_stream_deserialize(&self, serialized_tcp_stream: i64) -> TcpStream {
+        match super::SERIALIZED_TCP_STREAM.remove(&(serialized_tcp_stream as usize)) {
+            Some((_id, tcp_stream)) => tcp_stream,
+            None => panic!("Can't deserialize tcp stream"),
+        }
+    }
 }

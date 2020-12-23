@@ -1,0 +1,15 @@
+[package]
+name = "uptown_funk_macro"
+version = "0.1.1"
+authors = ["Bernard Kolobara <me@kolobara.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+proc-macro = true
+
+[dependencies]
+syn = {version = "1.0", features=["full", "extra-traits", "printing", "clone-impls"]}
+quote = "1.0"
+proc-macro2 = "1.0"
