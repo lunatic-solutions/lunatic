@@ -112,11 +112,11 @@ impl Channel {
         self.sender.send(buffer).await.unwrap();
     }
 
-    pub fn recieve(&self) -> impl Future<Output = Result<ChannelBuffer, RecvError>> + '_ {
+    pub fn receive(&self) -> impl Future<Output = Result<ChannelBuffer, RecvError>> + '_ {
         self.receiver.recv()
     }
 
-    // TODO: This must be called right before recieve & the same exact number of times.
+    // TODO: This must be called right before receive & the same exact number of times.
     // There should be a better design.
     pub fn next_message_size(&self) -> impl Future<Output = Result<usize, RecvError>> + '_ {
         self.receiver_len.recv()
