@@ -63,7 +63,7 @@ impl ChannelState {
     async fn channel_receive(&self, channel: Channel, iovec_slice: &mut [IoSliceMut<'_>]) -> i32 {
         assert_eq!(iovec_slice.len(), 1);
         if let Some(guest_buffer) = iovec_slice.first_mut() {
-            let buffer = channel.recieve().await;
+            let buffer = channel.receive().await;
             match buffer {
                 Ok(channel_buffer) => {
                     let length = channel_buffer.len();
