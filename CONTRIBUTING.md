@@ -40,6 +40,12 @@ Code changes to Lunatic are welcomed via the process below.
 
 Lunatic requires the latest release of Rust Nightly.
 
+To initialize and update git submodules run:
+
+```shell
+   git submodule update --init --recursive
+```
+
 To build the project run:
 
 ```shell
