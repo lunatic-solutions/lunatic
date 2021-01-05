@@ -45,7 +45,7 @@ impl LunaticLinker {
         let channel_state = channel::api::ChannelState::new();
         channel_state.add_to_linker(environment.clone(), &mut linker);
 
-        let networking_state = networking::api::TcpListenerState::new();
+        let networking_state = networking::api::TcpState::new();
         networking_state.add_to_linker(environment.clone(), &mut linker);
 
         let wasi_state = wasi::api::WasiState::new();

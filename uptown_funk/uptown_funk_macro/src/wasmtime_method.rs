@@ -31,8 +31,11 @@ pub fn wrap(namespace: &LitStr, method: &ImplItemMethod) -> Result<TokenStream2,
         let state_wrapper = state.clone();
         let closure = move |#guest_signature_input| -> Result<#guest_signature_return, wasmtime::Trap> {
             #from_guest_input_transformations
-            let result = Self::#method_name(state_wrapper.state(), #host_call_signature);
-            let result = #maybe_async(result);
+            let result = {
+                let mut borrow = state_wrapper.borrow_state_mut();
+                let result = Self::#method_name(&mut borrow, #host_call_signature);
+                #maybe_async(result)
+            };
             Ok(#from_host_return_transformations(result)?)
         };
         linker.func(#namespace, #method_name_as_str, closure).unwrap();

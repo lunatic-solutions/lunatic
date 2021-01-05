@@ -32,15 +32,17 @@ impl std::ops::Add<MyNumber> for MyNumber {
     }
 }
 
-impl uptown_funk::FromWasmI32 for MyNumber {
+impl uptown_funk::FromWasmU32 for MyNumber {
     type State = Empty;
 
-    fn from_i32<InstanceState>(
-        _state: &Self::State,
-        _instance_environment: &InstanceState,
-        wasm_i32: i32,
+    fn from_u32<InstanceState>(
+        _: &mut Self::State,
+        _: &InstanceState,
+        wasm_u32: u32,
     ) -> Result<Self, uptown_funk::Trap> {
-        Ok(MyNumber { value: wasm_i32 })
+        Ok(MyNumber {
+            value: wasm_u32 as i32,
+        })
     }
 }
 

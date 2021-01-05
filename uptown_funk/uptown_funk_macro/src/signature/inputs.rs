@@ -21,14 +21,14 @@ use super::arg_error;
 ///    ciovec structs and its length.
 /// 5. **&mut [IoSliceMut<'_>]** is split on the guest in two arguments, a pointer to a slice containing WASI
 ///    iovec structs and its length.
-/// 6. **Custom types** need to implement uptown_funk::FromWasmI32 and are created from a **i32** wasm type.
+/// 6. **Custom types** need to implement uptown_funk::FromWasmU32 and are created from a **i32** wasm type.
 /// 7. All other patterns will result in a compilation error.
 pub fn transform(
     pat_type: &PatType,
 ) -> Result<(TokenStream2, TokenStream2, TokenStream2), TokenStream> {
     let argument_name = match &*pat_type.pat {
         Pat::Ident(pat_ident) => {
-            if pat_ident.by_ref.is_some() || pat_ident.mutability.is_some() {
+            if pat_ident.by_ref.is_some() {
                 return Err(arg_error(&pat_type.pat));
             };
             &pat_ident.ident
@@ -52,10 +52,10 @@ pub fn transform(
         }
         // CustomStruct, CustomEnum, ...
         Transformation::CustomType => {
-            let input_argument = quote! { #argument_name: i32 };
+            let input_argument = quote! { #argument_name: u32 };
             let transformation = quote! {
-                let #argument_name = <#pat_type_ty as uptown_funk::FromWasmI32>::from_i32(
-                    state_wrapper.state(),
+                let #argument_name = <#pat_type_ty as uptown_funk::FromWasmU32>::from_u32(
+                    &mut state_wrapper.borrow_state_mut(),
                     state_wrapper.instance_environment(),
                     #argument_name
                 )?;
@@ -63,28 +63,28 @@ pub fn transform(
             let host_call_argument = quote! { #argument_name };
             Ok((input_argument, transformation, host_call_argument))
         }
-        // &CustomStruct, &CustomEnum, ...
+        // &CustomStruct, &mut CustomEnum, ...
         Transformation::RefCustomType => {
             let pat_type_ty_without_ref = match pat_type_ty {
                 Type::Reference(type_ref) => &type_ref.elem,
                 _ => return Err(arg_error(pat_type_ty)),
             };
-            let input_argument = quote! { #argument_name: i32 };
+            let input_argument = quote! { #argument_name: u32 };
             let transformation = quote! {
-                let #argument_name = <#pat_type_ty_without_ref as uptown_funk::FromWasmI32Borrowed>::from_i32_borrowed(
-                    state_wrapper.state(),
+                let mut #argument_name = <#pat_type_ty_without_ref as uptown_funk::FromWasmU32>::from_u32(
+                    &mut state_wrapper.borrow_state_mut(),
                     state_wrapper.instance_environment(),
                     #argument_name
                 )?;
             };
-            let host_call_argument = quote! { #argument_name };
+            let host_call_argument = quote! { &mut #argument_name };
             Ok((input_argument, transformation, host_call_argument))
         }
         // &str
         Transformation::RefStr => {
             let varname_ptr = format_ident!("{}_ptr_", argument_name);
             let varname_len = format_ident!("{}_len_", argument_name);
-            let input_argument = quote! { #varname_ptr: i32, #varname_len: i32 };
+            let input_argument = quote! { #varname_ptr: u32, #varname_len: u32 };
             let transformation = quote! {
                 let #argument_name = {
                     let slice = state_wrapper.wasm_memory().get(
@@ -101,7 +101,7 @@ pub fn transform(
         Transformation::RefMutSlice => {
             let varname_ptr = format_ident!("{}_ptr_", argument_name);
             let varname_len = format_ident!("{}_len_", argument_name);
-            let input_argument = quote! { #varname_ptr: i32, #varname_len: i32 };
+            let input_argument = quote! { #varname_ptr: u32, #varname_len: u32 };
             let transformation = quote! {
                 let #argument_name = {
                     let slice = state_wrapper.wasm_memory().get_mut(
@@ -116,7 +116,7 @@ pub fn transform(
         Transformation::RefSliceIoSlices => {
             let varname_ptr = format_ident!("{}_ptr_", argument_name);
             let varname_len = format_ident!("{}_len_", argument_name);
-            let input_argument = quote! { #varname_ptr: i32, #varname_len: i32 };
+            let input_argument = quote! { #varname_ptr: u32, #varname_len: u32 };
             let transformation = quote! {
                 let #argument_name = {
                     let slice = state_wrapper.wasm_memory().get(
@@ -142,15 +142,15 @@ pub fn transform(
         Transformation::RefMutSliceIoSlicesMut => {
             let varname_ptr = format_ident!("{}_ptr_", argument_name);
             let varname_len = format_ident!("{}_len_", argument_name);
-            let input_argument = quote! { #varname_ptr: i32, #varname_len: i32 };
+            let input_argument = quote! { #varname_ptr: u32, #varname_len: u32 };
             let transformation = quote! {
                 let mut #argument_name = {
                     let slice = state_wrapper.wasm_memory().get_mut(
                         #varname_ptr as usize..(#varname_ptr + #varname_len) as usize);
                     let slice = uptown_funk::Trap::try_option(slice)?;
                     let io_slices: &mut [uptown_funk::IoVecT] = unsafe { std::mem::transmute(slice) };
-                    // If we only need 4 or less slices, don't allocate memory.
-                    let mut vec_of_io_slices = uptown_funk::SmallVec::<[std::io::IoSliceMut; 4]>::with_capacity(io_slices.len());
+                    // Replace with SmallVec once https://github.com/servo/rust-smallvec/issues/217 is fixed.
+                    let mut vec_of_io_slices = Vec::with_capacity(io_slices.len());
                     for io_vec_t in io_slices.into_iter() {
                         let io_slice = state_wrapper.wasm_memory().get_mut(
                             io_vec_t.ptr as usize..(io_vec_t.ptr + io_vec_t.len) as usize);
@@ -172,7 +172,13 @@ pub fn transform(
 fn transform_path(path: &Path) -> Transformation {
     if let Some(ident) = path.get_ident() {
         // i32, i64, ...
-        if ident == "i32" || ident == "i64" || ident == "f32" || ident == "f64" {
+        if ident == "u32"
+            || ident == "i32"
+            || ident == "u64"
+            || ident == "i64"
+            || ident == "f32"
+            || ident == "f64"
+        {
             return Transformation::None;
         } else {
             return Transformation::CustomType;
@@ -186,6 +192,13 @@ fn transform_path(path: &Path) -> Transformation {
 fn transform_reference(reference: &TypeReference) -> Transformation {
     if reference.mutability.is_some() {
         return match &*reference.elem {
+            Type::Path(type_path) => {
+                if let Some(_) = type_path.path.get_ident() {
+                    // Always assume &CustomType
+                    return Transformation::RefCustomType;
+                }
+                Transformation::Unsupported
+            }
             Type::Slice(type_slice) => match &*type_slice.elem {
                 Type::Path(type_path) => {
                     if let Some(last_segment) = type_path.path.segments.last() {

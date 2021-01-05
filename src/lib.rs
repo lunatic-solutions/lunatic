@@ -36,8 +36,7 @@ pub fn run() -> Result<()> {
             smol::future::block_on(async {
                 let result =
                     Process::spawn(module, FunctionLookup::Name("_start"), MemoryChoice::New)
-                        .take_task()
-                        .unwrap()
+                        .join()
                         .await;
                 drop(signal);
                 result

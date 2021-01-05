@@ -7,132 +7,90 @@
 pub mod api;
 
 use std::alloc::{alloc, dealloc, Layout};
-use std::future::Future;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::cell::RefCell;
 use std::{mem, ptr};
 
-use dashmap::DashMap;
+use dashmap::{mapref::entry::Entry, DashMap};
 use lazy_static::lazy_static;
+use rand::{rngs::SmallRng, Rng, SeedableRng};
 use smol::channel::{bounded, unbounded, Receiver, RecvError, Sender};
-use uptown_funk::{FromWasmI32, ToWasmI32};
+use uptown_funk::{FromWasmU32, ToWasmU32};
 
 lazy_static! {
-    // Channels are used to send messages between processes, but they can also be sent themselves
-    // between processes. This causes somewhat of a chicken and egg problem. The only values that
-    // we can easily be pass between processes are WASM primitive types (i32, i64). One solution
-    // to overcome this issue would be to wrap the channel in an wasmtime::Externref and give it
-    // to another process, but Wasmtime's Externref's are not Sync or Send and can't be passed to
-    // other processes safely (that may run on different threads).
-    //
-    // To overcome this issue, when we serialize a Channel it is first added to this collection
-    // and only the id (i64) is passed to the new process. The new process will take it out of the
-    // collection during deserialization.
-    //
-    // Memory leaks:
-    // If a process serializes a channel, but it never gets deserialized (e.g. receiving process dies)
-    // the channel will stay forever in this collection. Causing a memory leak.
-    static ref SERIALIZED_CHANNELS: DashMap<usize, Channel> = DashMap::new();
+    static ref CHANNELS: DashMap<u32, Channel> = DashMap::new();
 }
 
-static mut UNIQUE_ID: AtomicUsize = AtomicUsize::new(0);
+thread_local! {
+    static RNG: RefCell<SmallRng> = RefCell::new(SmallRng::from_entropy());
+}
 
+// Assigns a random id to the `channel` and adds it to the global CHANNELS map.
+fn add_channel(channel: Channel) -> u32 {
+    let id = RNG.with(|rng| rng.borrow_mut().gen());
+    match CHANNELS.entry(id) {
+        Entry::Vacant(ve) => ve.insert(channel),
+        Entry::Occupied(_) => return add_channel(channel), // try another id
+    };
+    id
+}
+
+// Remove channel by id from global CHANNELS map.
+fn remove_channel(id: u32) {
+    CHANNELS.remove(&id);
+}
+
+#[derive(Clone)]
 pub struct Channel {
-    id: usize,
     sender: Sender<ChannelBuffer>,
-    sender_len: Sender<usize>,
     receiver: Receiver<ChannelBuffer>,
-    receiver_len: Receiver<usize>,
 }
 
-impl ToWasmI32 for Channel {
+impl ToWasmU32 for Channel {
     type State = api::ChannelState;
 
-    fn to_i32<ProcessEnvironment>(
-        state: &Self::State,
-        _instance_environment: &ProcessEnvironment,
+    fn to_u32<ProcessEnvironment>(
+        _: &mut Self::State,
+        _: &ProcessEnvironment,
         channel: Self,
-    ) -> Result<i32, uptown_funk::Trap> {
-        Ok(state.add_channel(channel))
+    ) -> Result<u32, uptown_funk::Trap> {
+        Ok(add_channel(channel) as u32)
     }
 }
 
-impl FromWasmI32 for Channel {
+impl FromWasmU32 for Channel {
     type State = api::ChannelState;
 
-    fn from_i32<ProcessEnvironment>(
-        state: &Self::State,
-        _instance_environment: &ProcessEnvironment,
-        id: i32,
+    fn from_u32<ProcessEnvironment>(
+        _: &mut Self::State,
+        _: &ProcessEnvironment,
+        id: u32,
     ) -> Result<Self, uptown_funk::Trap>
     where
         Self: Sized,
     {
-        match state.remove_channel(id) {
-            Some(channel) => Ok(channel),
+        match CHANNELS.get(&id) {
+            Some(channel) => Ok(channel.clone()),
             None => Err(uptown_funk::Trap::new("Channel not found")),
-        }
-    }
-}
-
-impl Clone for Channel {
-    fn clone(&self) -> Self {
-        Self {
-            id: unsafe { UNIQUE_ID.fetch_add(1, Ordering::SeqCst) },
-            sender: self.sender.clone(),
-            receiver: self.receiver.clone(),
-            sender_len: self.sender_len.clone(),
-            receiver_len: self.receiver_len.clone(),
         }
     }
 }
 
 impl Channel {
     pub fn new(bound: Option<usize>) -> Self {
-        let id = unsafe { UNIQUE_ID.fetch_add(1, Ordering::SeqCst) };
         let (sender, receiver) = match bound {
             Some(bound) => bounded(bound),
             None => unbounded(),
         };
-        let (sender_len, receiver_len) = match bound {
-            Some(bound) => bounded(bound),
-            None => unbounded(),
-        };
-        Self {
-            id,
-            sender,
-            sender_len,
-            receiver,
-            receiver_len,
-        }
+        Self { sender, receiver }
     }
 
     pub async fn send(&self, slice: &[u8]) {
         let buffer = ChannelBuffer::new(slice.as_ptr(), slice.len());
-        self.sender_len.send(buffer.len()).await.unwrap();
         self.sender.send(buffer).await.unwrap();
     }
 
-    pub fn receive(&self) -> impl Future<Output = Result<ChannelBuffer, RecvError>> + '_ {
-        self.receiver.recv()
-    }
-
-    // TODO: This must be called right before receive & the same exact number of times.
-    // There should be a better design.
-    pub fn next_message_size(&self) -> impl Future<Output = Result<usize, RecvError>> + '_ {
-        self.receiver_len.recv()
-    }
-
-    pub fn serialize(self) -> usize {
-        let id = self.id;
-        SERIALIZED_CHANNELS.insert(id, self);
-        id
-    }
-
-    pub fn deserialize(id: usize) -> Option<Channel> {
-        match SERIALIZED_CHANNELS.remove(&id) {
-            Some((_id, channel)) => Some(channel),
-            None => None,
-        }
+    pub async fn receive(&self) -> Result<ChannelBuffer, RecvError> {
+        self.receiver.recv().await
     }
 }
 

@@ -38,15 +38,15 @@ struct MyNumber {
     value: i32,
 }
 
-impl uptown_funk::ToWasmI32 for MyNumber {
+impl uptown_funk::ToWasmU32 for MyNumber {
     type State = Empty;
 
-    fn to_i32<InstanceState>(
-        _state: &Self::State,
-        _instance_environment: &InstanceState,
+    fn to_u32<InstanceState>(
+        _: &mut Self::State,
+        _: &InstanceState,
         number: Self,
-    ) -> Result<i32, uptown_funk::Trap> {
-        Ok(number.value)
+    ) -> Result<u32, uptown_funk::Trap> {
+        Ok(number.value as u32)
     }
 }
 

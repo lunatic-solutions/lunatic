@@ -1,5 +1,5 @@
 use criterion::{criterion_group, criterion_main, Criterion};
-use lunatic_vm::linker::{engine, LunaticLinker};
+use lunatic_vm::linker::LunaticLinker;
 use lunatic_vm::module::LunaticModule;
 use lunatic_vm::process::MemoryChoice;
 use wasmtime::{Engine, Linker, Module, Store};

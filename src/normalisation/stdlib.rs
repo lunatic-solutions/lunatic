@@ -7,14 +7,14 @@ pub fn patch(module: &mut Module) {
     if let Some(main_function_table) = module.tables.main_function_table().unwrap() {
         let mut builder = walrus::FunctionBuilder::new(
             &mut module.types,
-            &[ValType::I32, ValType::I32, ValType::I64],
+            &[ValType::I32, ValType::I32, ValType::I32],
             &[],
         );
-        let lunatic_spawn_by_index_type = module.types.add(&[ValType::I32, ValType::I64], &[]);
+        let lunatic_spawn_by_index_type = module.types.add(&[ValType::I32, ValType::I32], &[]);
         // Create the index paramter
         let index = module.locals.add(ValType::I32);
         let argument1 = module.locals.add(ValType::I32);
-        let argument2 = module.locals.add(ValType::I64);
+        let argument2 = module.locals.add(ValType::I32);
         builder
             .func_body()
             .local_get(argument1)

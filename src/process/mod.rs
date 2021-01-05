@@ -5,14 +5,13 @@ use async_wormhole::pool::OneMbAsyncPool;
 use async_wormhole::AsyncYielder;
 use lazy_static::lazy_static;
 use smol::{Executor, Task};
-use uptown_funk::{FromWasmI32, ToWasmI32};
+use uptown_funk::{FromWasmU32, ToWasmU32};
 use wasmtime::Val;
 
 use crate::linker::LunaticLinker;
 use crate::module::LunaticModule;
 
 use log::info;
-use std::cell::RefCell;
 use std::future::Future;
 use std::mem::ManuallyDrop;
 
@@ -26,7 +25,7 @@ pub type AsyncYielderCast<'a> = AsyncYielder<'a, Result<()>>;
 /// Used to look up a function by name or table index inside of an Instance.
 pub enum FunctionLookup {
     /// (table index, argument1, argument2)
-    TableIndex((i32, i32, i64)),
+    TableIndex((u32, u32, u32)),
     Name(&'static str),
 }
 
@@ -82,12 +81,12 @@ impl ProcessEnvironment {
 
 /// A lunatic process represents an actor.
 pub struct Process {
-    task: RefCell<Option<Task<Result<()>>>>,
+    task: Task<Result<()>>,
 }
 
 impl Process {
-    pub fn take_task(&self) -> Option<Task<Result<()>>> {
-        self.task.borrow_mut().take()
+    pub fn join(self) -> Task<Result<()>> {
+        self.task
     }
 
     /// Spawn a new process.
@@ -110,7 +109,7 @@ impl Process {
                     }
                     FunctionLookup::TableIndex((index, argument1, argument2)) => {
                         let func = instance.get_func("lunatic_spawn_by_index").unwrap();
-                        func.call(&[Val::from(index), Val::from(argument1), Val::from(argument2)])?;
+                        func.call(&[Val::from(index as i32), Val::from(argument1 as i32), Val::from(argument2 as i32)])?;
                     }
                 }
 
@@ -125,46 +124,34 @@ impl Process {
             result
         });
 
-        Self {
-            task: RefCell::new(Some(task)),
-        }
+        Self { task }
     }
 }
 
-impl Drop for Process {
-    fn drop(&mut self) {
-        // Don't cancel process on drop if still running
-        match self.take_task() {
-            Some(task) => task.detach(),
-            None => (),
-        };
-    }
-}
-
-impl ToWasmI32 for Process {
+impl ToWasmU32 for Process {
     type State = api::ProcessState;
 
-    fn to_i32<ProcessEnvironment>(
-        state: &Self::State,
-        _instance_environment: &ProcessEnvironment,
+    fn to_u32<ProcessEnvironment>(
+        state: &mut Self::State,
+        _: &ProcessEnvironment,
         process: Self,
-    ) -> Result<i32, uptown_funk::Trap> {
-        Ok(state.add_process(process))
+    ) -> Result<u32, uptown_funk::Trap> {
+        Ok(state.processes.add(process))
     }
 }
 
-impl FromWasmI32 for Process {
+impl FromWasmU32 for Process {
     type State = api::ProcessState;
 
-    fn from_i32<ProcessEnvironment>(
-        state: &Self::State,
-        _instance_environment: &ProcessEnvironment,
-        id: i32,
+    fn from_u32<ProcessEnvironment>(
+        state: &mut Self::State,
+        _: &ProcessEnvironment,
+        process_id: u32,
     ) -> Result<Self, uptown_funk::Trap>
     where
         Self: Sized,
     {
-        match state.remove_process(id) {
+        match state.processes.remove(process_id) {
             Some(process) => Ok(process),
             None => Err(uptown_funk::Trap::new("Process not found")),
         }

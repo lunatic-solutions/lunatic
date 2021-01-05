@@ -4,36 +4,21 @@ use super::{FunctionLookup, MemoryChoice, Process};
 
 use anyhow::Result;
 use smol::{future::yield_now, Timer};
-use uptown_funk::host_functions;
+use uptown_funk::{host_functions, state::HashMapStore};
 
-use std::cell::RefCell;
-use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 pub struct ProcessState {
     module: LunaticModule,
-    count: RefCell<i32>,
-    state: RefCell<HashMap<i32, Process>>,
+    pub processes: HashMapStore<Process>,
 }
 
 impl ProcessState {
     pub fn new(module: LunaticModule) -> Self {
         Self {
             module,
-            count: RefCell::new(0),
-            state: RefCell::new(HashMap::new()),
+            processes: HashMapStore::new(),
         }
-    }
-
-    pub fn add_process(&self, channel: Process) -> i32 {
-        let mut id = self.count.borrow_mut();
-        *id += 1;
-        self.state.borrow_mut().insert(*id, channel);
-        *id
-    }
-
-    pub fn remove_process(&self, id: i32) -> Option<Process> {
-        self.state.borrow_mut().remove(&id)
     }
 }
 
@@ -51,8 +36,8 @@ impl ProcessState {
         Timer::at(when).await;
     }
 
-    // Spawn new process and call a fuction from the function table under the `index` and pass one i32 argument.
-    async fn spawn(&self, index: i32, argument1: i32, argument2: i64) -> Process {
+    // Spawn new process and call a fuction from the function table under the `index` and pass one u32 argument.
+    async fn spawn(&self, index: u32, argument1: u32, argument2: u32) -> Process {
         Process::spawn(
             self.module.clone(),
             FunctionLookup::TableIndex((index, argument1, argument2)),
@@ -62,6 +47,6 @@ impl ProcessState {
 
     // Wait on chaild process to finish.
     async fn join(&self, process: Process) {
-        process.take_task().unwrap().await.unwrap();
+        let _ = process.task.await;
     }
 }

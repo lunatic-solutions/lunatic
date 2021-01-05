@@ -1,3 +1,6 @@
+pub mod state;
+
+use std::cell::{Ref, RefCell, RefMut};
 use std::convert::Into;
 use std::fmt::Debug;
 
@@ -18,58 +21,50 @@ pub trait HostFunctions {
         E: InstanceEnvironment;
 }
 
-pub trait FromWasmI32 {
+pub trait FromWasmU32 {
     type State;
 
-    fn from_i32<I>(
-        state: &Self::State,
+    fn from_u32<I>(
+        state: &mut Self::State,
         instance_environment: &I,
-        wasm_i32: i32,
+        wasm_u32: u32,
     ) -> Result<Self, Trap>
     where
         Self: Sized,
         I: InstanceEnvironment;
 }
 
-pub trait FromWasmI32Borrowed {
+pub trait ToWasmU32 {
     type State;
 
-    fn from_i32_borrowed<'a, I>(
-        state: &'a Self::State,
-        instance_environment: &I,
-        wasm_i32: i32,
-    ) -> Result<&'a Self, Trap>
-    where
-        I: InstanceEnvironment;
-}
-
-pub trait ToWasmI32 {
-    type State;
-
-    fn to_i32<I>(
-        state: &Self::State,
+    fn to_u32<I>(
+        state: &mut Self::State,
         instance_environment: &I,
         host_value: Self,
-    ) -> Result<i32, Trap>
+    ) -> Result<u32, Trap>
     where
         I: InstanceEnvironment;
 }
 
 pub struct StateWrapper<S, E: InstanceEnvironment> {
-    state: S,
+    state: RefCell<S>,
     env: E,
 }
 
 impl<S, E: InstanceEnvironment> StateWrapper<S, E> {
     pub fn new(state: S, instance_environment: E) -> Self {
         Self {
-            state: state,
+            state: RefCell::new(state),
             env: instance_environment,
         }
     }
 
-    pub fn state(&self) -> &S {
-        &self.state
+    pub fn borrow_state(&self) -> Ref<S> {
+        self.state.borrow()
+    }
+
+    pub fn borrow_state_mut(&self) -> RefMut<S> {
+        self.state.borrow_mut()
     }
 
     pub fn instance_environment(&self) -> &E {

@@ -1,62 +1,63 @@
-use super::{TcpListener, TcpStream};
+use super::{TcpListener, TcpListenerResult, TcpStream, TcpStreamResult};
 use anyhow::Result;
-use uptown_funk::host_functions;
+use smol::prelude::*;
+use uptown_funk::{host_functions, state::HashMapStore};
 
-use std::cell::RefCell;
-use std::collections::HashMap;
-use std::sync::atomic::Ordering;
+use std::{
+    io::{IoSlice, IoSliceMut},
+    sync::atomic::Ordering,
+};
 
-pub struct TcpListenerState {
-    count_listener: RefCell<i32>,
-    state_listener: RefCell<HashMap<i32, TcpListener>>,
-    count_stream: RefCell<i32>,
-    state_stream: RefCell<HashMap<i32, TcpStream>>,
+pub struct TcpState {
+    pub listeners: HashMapStore<TcpListener>,
+    pub streams: HashMapStore<TcpStream>,
 }
 
-impl TcpListenerState {
+impl TcpState {
     pub fn new() -> Self {
         Self {
-            count_listener: RefCell::new(0),
-            state_listener: RefCell::new(HashMap::new()),
-            count_stream: RefCell::new(0),
-            state_stream: RefCell::new(HashMap::new()),
+            listeners: HashMapStore::new(),
+            streams: HashMapStore::new(),
         }
-    }
-
-    pub fn add_tcp_listener(&self, listener: TcpListener) -> i32 {
-        let mut id = self.count_listener.borrow_mut();
-        *id += 1;
-        self.state_listener.borrow_mut().insert(*id, listener);
-        *id
-    }
-
-    pub fn remove_tcp_listener(&self, id: i32) -> Option<TcpListener> {
-        self.state_listener.borrow_mut().remove(&id)
-    }
-
-    pub fn add_tcp_stream(&self, stream: TcpStream) -> i32 {
-        let mut id = self.count_stream.borrow_mut();
-        *id += 1;
-        self.state_stream.borrow_mut().insert(*id, stream);
-        *id
-    }
-
-    pub fn remove_tcp_stream(&self, id: i32) -> Option<TcpStream> {
-        self.state_stream.borrow_mut().remove(&id)
     }
 }
 
 #[host_functions(namespace = "lunatic")]
-impl TcpListenerState {
-    async fn tcp_bind_str(&self, address: &str) -> (i32, TcpListener) {
+impl TcpState {
+    async fn tcp_bind_str(&self, address: &str) -> (u32, TcpListenerResult) {
         match TcpListener::bind(address).await {
-            Ok(tcp_listener) => (0, tcp_listener),
-            Err(tcp_listener) => (-1, tcp_listener),
+            Ok(listener) => (0, TcpListenerResult::Ok(listener)),
+            Err(err) => (1, TcpListenerResult::Err(err)),
         }
     }
 
-    async fn tcp_accept(&self, tcp_listener: TcpListener) -> (i32, TcpStream) {
-        (0, tcp_listener.accept().await)
+    async fn tcp_accept(&self, tcp_listener: TcpListener) -> (u32, TcpStreamResult) {
+        match tcp_listener.accept().await {
+            Ok(stream) => (0, TcpStreamResult::Ok(stream)),
+            Err(err) => (1, TcpStreamResult::Err(err)),
+        }
+    }
+
+    async fn tcp_write_vectored(
+        &self,
+        mut tcp_stream: TcpStream,
+        ciovs: &[IoSlice<'_>],
+    ) -> (u32, u32) {
+        match tcp_stream.stream.write_vectored(ciovs).await {
+            Ok(bytes_written) => (0, bytes_written as u32),
+            Err(_) => (1, 0),
+        }
+    }
+
+    async fn tcp_read_vectored<'a>(
+        &self,
+        tcp_stream: &'a mut TcpStream,
+        iovs: &'a mut [IoSliceMut<'a>],
+    ) -> (u32, u32) {
+        match tcp_stream.stream.read_vectored(iovs).await {
+            Ok(bytes_written) => (0, bytes_written as u32),
+            Err(_) => (1, 0),
+        }
     }
 
     // Serializes an Externref containing a tcp_stream as an id.
@@ -67,9 +68,9 @@ impl TcpListenerState {
         id as i64
     }
 
-    async fn tcp_stream_deserialize(&self, serialized_tcp_stream: i64) -> TcpStream {
+    async fn tcp_stream_deserialize(&self, serialized_tcp_stream: i64) -> TcpStreamResult {
         match super::SERIALIZED_TCP_STREAM.remove(&(serialized_tcp_stream as usize)) {
-            Some((_id, tcp_stream)) => tcp_stream,
+            Some((_id, stream)) => TcpStreamResult::Ok(stream),
             None => panic!("Can't deserialize tcp stream"),
         }
     }

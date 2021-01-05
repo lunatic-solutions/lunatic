@@ -26,12 +26,11 @@ pub fn transform(
     TokenStream,
 > {
     let mut input_arguments = signature.inputs.iter();
-    // First element must match exactly `&self`
+    // First element must match exactly `&self or &mut self`
     match input_arguments.next() {
         Some(FnArg::Receiver(receiver)) => {
-            // Must be reference and non-mutable.
-            if receiver.reference.is_none() || receiver.mutability.is_some() {
-                return Err(self_error(signature));
+            if receiver.reference.is_none() {
+                return Err(self_error(receiver));
             }
         }
         None | Some(FnArg::Typed(_)) => return Err(self_error(signature)),
@@ -91,7 +90,7 @@ pub fn transform(
 fn self_error<S: Spanned>(location: S) -> TokenStream {
     (quote_spanned! {
         location.span() =>
-        compile_error!("Only the first argument for `#[uptown_funk::host_functions]` methods must be &self.");
+        compile_error!("The first argument for `#[uptown_funk::host_functions]` methods must be &self or &mut self.");
     })
     .into()
 }

@@ -24,7 +24,7 @@ use super::return_error;
 /// 1. One return value of type **i32, i64, f32 and f64** (WASM guest compatible types) is returned as is.
 /// 2. If there **are multiple return values of type i32, i64, f32 and f64** (WASM guest compatible types),
 ///    the first one is returned as is, but the rest are returned through pinters of input arguments.
-/// 3. **Custom types** need to implement uptown_funk::ToWasmI32 and are transformed to an **i32** wasm type,
+/// 3. **Custom types** need to implement uptown_funk::ToWasmU32 and are transformed to an **i32** wasm type,
 ///    then they also follow rules 1 and 2.
 
 pub fn transform(
@@ -84,7 +84,12 @@ pub fn transform(
                 match return_type {
                     Type::Path(type_path) => {
                         if let Some(ident) = type_path.path.get_ident() {
-                            if ident == "i32" || ident == "i64" || ident == "f32" || ident == "f64"
+                            if ident == "u32"
+                                || ident == "i32"
+                                || ident == "u64"
+                                || ident == "i64"
+                                || ident == "f32"
+                                || ident == "f64"
                             {
                                 // Simple type
                                 return_argument_to_input_transformation.push( quote! {
@@ -96,11 +101,11 @@ pub fn transform(
                             } else {
                                 // Custom type
                                 return_argument_to_input_transformation.push(quote! {
-                                    let memory: &mut [i32] = unsafe { std::mem::transmute(state_wrapper.wasm_memory()) };
-                                    let result_ptr = memory.get_mut(#varname as usize / std::mem::size_of::<i32>());
+                                    let memory: &mut [u32] = unsafe { std::mem::transmute(state_wrapper.wasm_memory()) };
+                                    let result_ptr = memory.get_mut(#varname as usize / std::mem::size_of::<u32>());
                                     let result_ptr = uptown_funk::Trap::try_option(result_ptr)?;
-                                    let result_ = <#type_path as uptown_funk::ToWasmI32>::to_i32(
-                                        state_wrapper.state(),
+                                    let result_ = <#type_path as uptown_funk::ToWasmU32>::to_u32(
+                                        &mut state_wrapper.borrow_state_mut(),
                                         state_wrapper.instance_environment(),
                                         result.#index
                                     )?;
@@ -139,7 +144,13 @@ pub fn transform(
 // First output is always returned as a regular return value.
 fn first_output(type_path: &TypePath) -> Result<(TokenStream2, TokenStream2), TokenStream> {
     if let Some(ident) = type_path.path.get_ident() {
-        if ident == "i32" || ident == "i64" || ident == "f32" || ident == "f64" {
+        if ident == "u32"
+            || ident == "i32"
+            || ident == "u64"
+            || ident == "i64"
+            || ident == "f32"
+            || ident == "f64"
+        {
             // Returning simple type
             let return_argument = quote! { #ident };
             let host_to_guest_transformation =
@@ -148,11 +159,11 @@ fn first_output(type_path: &TypePath) -> Result<(TokenStream2, TokenStream2), To
             return Ok((return_argument, host_to_guest_transformation));
         } else {
             // Returning CustomType
-            let return_argument = quote! { i32 };
+            let return_argument = quote! { u32 };
             let host_to_guest_transformation = quote! {
-                | output: #ident | -> Result<i32, uptown_funk::Trap> {
-                    <#ident as uptown_funk::ToWasmI32>::to_i32(
-                        state_wrapper.state(),
+                | output: #ident | -> Result<u32, uptown_funk::Trap> {
+                    <#ident as uptown_funk::ToWasmU32>::to_u32(
+                        &mut state_wrapper.borrow_state_mut(),
                         state_wrapper.instance_environment(),
                         output
                     )
