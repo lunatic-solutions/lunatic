@@ -1,7 +1,16 @@
 use proc_macro::TokenStream;
-use proc_macro2::TokenStream as TokenStream2;
+use proc_macro2::{Span, TokenStream as TokenStream2};
 use quote::{format_ident, quote};
-use syn::{Pat, PatType, Path, Type, TypeReference};
+use syn::fold::Fold;
+use syn::{Lifetime, Pat, PatType, Path, Type, TypeReference};
+
+struct ReplaceLifetimeName;
+
+impl Fold for ReplaceLifetimeName {
+    fn fold_lifetime(&mut self, _: Lifetime) -> Lifetime {
+        Lifetime::new("'_", Span::call_site())
+    }
+}
 
 use super::arg_error;
 
@@ -43,6 +52,7 @@ pub fn transform(
     };
 
     let pat_type_ty = &*pat_type.ty;
+
     match argument_transformation {
         // i32, i64, ...
         Transformation::None => {
@@ -52,6 +62,7 @@ pub fn transform(
         }
         // CustomStruct, CustomEnum, ...
         Transformation::CustomType => {
+            let pat_type_ty = ReplaceLifetimeName.fold_type(*pat_type.ty.clone());
             let input_argument = quote! { #argument_name: u32 };
             let transformation = quote! {
                 let #argument_name = <#pat_type_ty as uptown_funk::FromWasmU32>::from_u32(
@@ -185,7 +196,7 @@ fn transform_path(path: &Path) -> Transformation {
         }
     }
 
-    Transformation::Unsupported
+    Transformation::CustomType
 }
 
 // Transformation for reference types &i32, &str, &mut [u8], ...
@@ -253,6 +264,7 @@ fn transform_reference(reference: &TypeReference) -> Transformation {
     }
 }
 
+#[derive(Debug)]
 enum Transformation {
     None,
     CustomType,

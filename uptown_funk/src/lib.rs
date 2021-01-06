@@ -21,12 +21,12 @@ pub trait HostFunctions {
         E: InstanceEnvironment;
 }
 
-pub trait FromWasmU32 {
+pub trait FromWasmU32<'a> {
     type State;
 
     fn from_u32<I>(
         state: &mut Self::State,
-        instance_environment: &I,
+        instance_environment: &'a I,
         wasm_u32: u32,
     ) -> Result<Self, Trap>
     where

@@ -49,5 +49,6 @@ pub fn host_functions(attr: TokenStream, item: TokenStream) -> TokenStream {
             }
         }
     };
+
     TokenStream::from(expanded)
 }
