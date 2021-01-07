@@ -25,7 +25,8 @@ fn lunatic_bench(c: &mut Criterion) {
     });
 
     c.bench_function("lunatic instance creation", |b| {
-        let module = LunaticModule::new("(module)".into()).unwrap();
+        let wasm = include_bytes!("start.wasm");
+        let module = LunaticModule::new(wasm.as_ref().into()).unwrap();
 
         b.iter(move || {
             let linker = LunaticLinker::new(module.clone(), 0, MemoryChoice::New).unwrap();
@@ -33,10 +34,10 @@ fn lunatic_bench(c: &mut Criterion) {
         });
     });
 
-    c.bench_function("lunatic instance creation multithreaded", |b| {
+    c.bench_function("lunatic multithreaded instance creation", |b| {
         use rayon::prelude::*;
-
-        let module = LunaticModule::new("(module)".into()).unwrap();
+        let wasm = include_bytes!("start.wasm");
+        let module = LunaticModule::new(wasm.as_ref().into()).unwrap();
 
         b.iter_custom(move |iters| {
             let start = std::time::Instant::now();

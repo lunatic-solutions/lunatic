@@ -6,14 +6,14 @@ use async_wormhole::AsyncYielder;
 use lazy_static::lazy_static;
 use smol::{Executor, Task};
 use uptown_funk::{FromWasmU32, ToWasmU32};
-use wasmtime::Val;
 
 use crate::linker::LunaticLinker;
+use crate::memory::LunaticMemory;
 use crate::module::LunaticModule;
 
 use log::info;
-use std::future::Future;
 use std::mem::ManuallyDrop;
+use std::{future::Future, rc::Rc};
 
 lazy_static! {
     static ref WORMHOLE_POOL: OneMbAsyncPool = OneMbAsyncPool::new(128);
@@ -48,7 +48,7 @@ pub enum MemoryChoice {
 #[derive(Clone)]
 pub struct ProcessEnvironment {
     module: LunaticModule,
-    memory: *mut u8,
+    memory: Rc<Box<dyn LunaticMemory>>,
     yielder: usize,
 }
 
@@ -64,16 +64,15 @@ impl uptown_funk::InstanceEnvironment for ProcessEnvironment {
     }
 
     fn wasm_memory(&self) -> &mut [u8] {
-        // TODO: Make me safe!
-        unsafe { std::slice::from_raw_parts_mut(self.memory, 1024 * 1024 * 1024 * 1024) }
+        self.memory.slice_mut()
     }
 }
 
 impl ProcessEnvironment {
-    pub fn new(module: LunaticModule, memory: *mut u8, yielder: usize) -> Self {
+    pub fn new(module: LunaticModule, memory: Box<dyn LunaticMemory>, yielder: usize) -> Self {
         Self {
             module,
-            memory,
+            memory: Rc::new(memory),
             yielder,
         }
     }
@@ -109,7 +108,7 @@ impl Process {
                     }
                     FunctionLookup::TableIndex((index, argument1, argument2)) => {
                         let func = instance.get_func("lunatic_spawn_by_index").unwrap();
-                        func.call(&[Val::from(index as i32), Val::from(argument1 as i32), Val::from(argument2 as i32)])?;
+                        func.call(&[(index as i32).into(), (argument1 as i32).into(), (argument2 as i32).into()])?;
                     }
                 }
 

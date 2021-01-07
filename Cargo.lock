@@ -349,6 +349,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cd51eab21ab4fd6a3bf889e2d0958c0a6e3a61ad04260325e919e652a2a62826"
 
 [[package]]
+name = "cpp_demangle"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "44919ecaf6f99e8e737bc239408931c9a01e9a6c74814fee8242dd2506b65390"
+dependencies = [
+ "cfg-if 1.0.0",
+ "glob",
+]
+
+[[package]]
 name = "cpuid-bool"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -494,7 +504,7 @@ dependencies = [
  "serde",
  "smallvec",
  "thiserror",
- "wasmparser 0.67.0",
+ "wasmparser 0.71.0",
 ]
 
 [[package]]
@@ -1134,6 +1144,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0ee1c47aaa256ecabcaea351eae4a9b01ef39ed810004e298d2511ed284b1525"
 
 [[package]]
+name = "memmap2"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e73be3b7d04a0123e933fea1d50d126cc7196bbc0362c0ce426694f777194eee"
+dependencies = [
+ "libc",
+]
+
+[[package]]
 name = "memoffset"
 version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1195,7 +1214,6 @@ checksum = "8d3b63360ec3cb337817c2dbd47ab4a0f170d285d8e5a2064600f3def1402397"
 dependencies = [
  "crc32fast",
  "indexmap",
- "wasmparser 0.57.0",
 ]
 
 [[package]]
@@ -2055,7 +2073,7 @@ checksum = "7e7811dd7f9398f14cc76efd356f98f03aa30419dea46aa810d71e819fc97158"
 
 [[package]]
 name = "wasmer"
-version = "1.0.0-beta1"
+version = "1.0.0"
 dependencies = [
  "cfg-if 0.1.10",
  "indexmap",
@@ -2076,7 +2094,7 @@ dependencies = [
 
 [[package]]
 name = "wasmer-compiler"
-version = "1.0.0-beta1"
+version = "1.0.0"
 dependencies = [
  "enumset",
  "raw-cpuid 7.0.4",
@@ -2092,7 +2110,7 @@ dependencies = [
 
 [[package]]
 name = "wasmer-compiler-cranelift"
-version = "1.0.0-beta1"
+version = "1.0.0"
 dependencies = [
  "cranelift-codegen 0.68.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "cranelift-frontend 0.68.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -2109,7 +2127,7 @@ dependencies = [
 
 [[package]]
 name = "wasmer-derive"
-version = "1.0.0-beta1"
+version = "1.0.0"
 dependencies = [
  "proc-macro-error",
  "proc-macro2",
@@ -2119,11 +2137,12 @@ dependencies = [
 
 [[package]]
 name = "wasmer-engine"
-version = "1.0.0-beta1"
+version = "1.0.0"
 dependencies = [
  "backtrace",
  "bincode",
  "lazy_static",
+ "memmap2",
  "more-asserts",
  "rustc-demangle",
  "serde",
@@ -2137,7 +2156,7 @@ dependencies = [
 
 [[package]]
 name = "wasmer-engine-jit"
-version = "1.0.0-beta1"
+version = "1.0.0"
 dependencies = [
  "bincode",
  "cfg-if 0.1.10",
@@ -2153,7 +2172,7 @@ dependencies = [
 
 [[package]]
 name = "wasmer-engine-native"
-version = "1.0.0-beta1"
+version = "1.0.0"
 dependencies = [
  "bincode",
  "cfg-if 0.1.10",
@@ -2172,7 +2191,7 @@ dependencies = [
 
 [[package]]
 name = "wasmer-object"
-version = "1.0.0-beta1"
+version = "1.0.0"
 dependencies = [
  "object",
  "thiserror",
@@ -2182,15 +2201,16 @@ dependencies = [
 
 [[package]]
 name = "wasmer-types"
-version = "1.0.0-beta1"
+version = "1.0.0"
 dependencies = [
  "cranelift-entity 0.68.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde",
+ "thiserror",
 ]
 
 [[package]]
 name = "wasmer-vm"
-version = "1.0.0-beta1"
+version = "1.0.0"
 dependencies = [
  "backtrace",
  "cc",
@@ -2208,12 +2228,6 @@ dependencies = [
 
 [[package]]
 name = "wasmparser"
-version = "0.57.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "32fddd575d477c6e9702484139cf9f23dcd554b06d185ed0f56c857dd3a47aa6"
-
-[[package]]
-name = "wasmparser"
 version = "0.59.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a950e6a618f62147fd514ff445b2a0b53120d382751960797f85f058c7eda9b9"
@@ -2223,12 +2237,6 @@ name = "wasmparser"
 version = "0.65.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "87cc2fe6350834b4e528ba0901e7aa405d78b89dc1fa3145359eb4de0e323fcf"
-
-[[package]]
-name = "wasmparser"
-version = "0.67.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9f091cf3849e5fe76a60255bff169277459f2201435bc583b6656880553f0ad0"
 
 [[package]]
 name = "wasmparser"
@@ -2254,7 +2262,8 @@ dependencies = [
  "backtrace",
  "bincode",
  "cfg-if 1.0.0",
- "lazy_static",
+ "cpp_demangle",
+ "indexmap",
  "libc",
  "log",
  "region",
@@ -2262,7 +2271,7 @@ dependencies = [
  "serde",
  "smallvec",
  "target-lexicon",
- "wasmparser 0.67.0",
+ "wasmparser 0.71.0",
  "wasmtime-cache",
  "wasmtime-environ",
  "wasmtime-jit",
@@ -2312,7 +2321,7 @@ dependencies = [
  "object",
  "target-lexicon",
  "thiserror",
- "wasmparser 0.67.0",
+ "wasmparser 0.71.0",
  "wasmtime-environ",
 ]
 
@@ -2331,13 +2340,14 @@ dependencies = [
  "more-asserts",
  "serde",
  "thiserror",
- "wasmparser 0.67.0",
+ "wasmparser 0.71.0",
 ]
 
 [[package]]
 name = "wasmtime-jit"
 version = "0.21.0"
 dependencies = [
+ "addr2line",
  "anyhow",
  "cfg-if 1.0.0",
  "cranelift-codegen 0.68.0",
@@ -2354,7 +2364,7 @@ dependencies = [
  "serde",
  "target-lexicon",
  "thiserror",
- "wasmparser 0.67.0",
+ "wasmparser 0.71.0",
  "wasmtime-cranelift",
  "wasmtime-debug",
  "wasmtime-environ",
