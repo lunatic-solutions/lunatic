@@ -7,8 +7,12 @@ use syn::{Lifetime, Pat, PatType, Path, Type, TypeReference};
 struct ReplaceLifetimeName;
 
 impl Fold for ReplaceLifetimeName {
-    fn fold_lifetime(&mut self, _: Lifetime) -> Lifetime {
-        Lifetime::new("'_", Span::call_site())
+    fn fold_lifetime(&mut self, l: Lifetime) -> Lifetime {
+        if l.ident == "static" {
+            l
+        } else {
+            Lifetime::new("'_", Span::call_site())
+        }
     }
 }
 
