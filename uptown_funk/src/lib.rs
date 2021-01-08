@@ -1,13 +1,14 @@
 pub mod state;
 pub mod types;
+pub mod wasmer;
 
 use std::cell::{Ref, RefCell, RefMut};
 use std::convert::Into;
 use std::fmt::Debug;
 
 pub use smallvec::SmallVec;
-pub use uptown_funk_macro::host_functions;
 pub use types::Pointer;
+pub use uptown_funk_macro::host_functions;
 
 pub trait InstanceEnvironment {
     #[cfg(feature = "async")]
@@ -20,6 +21,14 @@ pub trait InstanceEnvironment {
 pub trait HostFunctions {
     fn add_to_linker<E: 'static>(self, instance_environment: E, linker: &mut wasmtime::Linker)
     where
+        E: InstanceEnvironment;
+
+    fn add_to_wasmer_linker<E: 'static>(
+        self,
+        instance_environment: E,
+        wasmer_linker: &mut wasmer::WasmerLinker,
+        store: &::wasmer::Store,
+    ) where
         E: InstanceEnvironment;
 }
 

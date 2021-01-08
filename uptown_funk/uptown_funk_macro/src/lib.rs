@@ -1,6 +1,7 @@
 mod attribute;
 mod signature;
 mod state_type;
+mod wasmer_method;
 mod wasmtime_method;
 
 use proc_macro::TokenStream;
@@ -35,10 +36,23 @@ pub fn host_functions(attr: TokenStream, item: TokenStream) -> TokenStream {
         }
     }
 
+    // Create wrapper functions compatible with Wasmer's runtime
+    let mut wasmer_method_wrappers = Vec::with_capacity(implementation.items.len());
+    for item in implementation.items.iter() {
+        match item {
+            Method(method) => match wasmer_method::wrap(namespace, method) {
+                Ok(wrapper) => wasmer_method_wrappers.push(wrapper),
+                Err(error) => return error,
+            },
+            _ => (), // Ignore other items in the implementation
+        }
+    }
+
     let expanded = quote! {
         #implementation
 
         impl uptown_funk::HostFunctions for #self_ty {
+            // Wasmtime
             fn add_to_linker<E: 'static>(self, instance_environment: E, linker: &mut wasmtime::Linker)
             where
                 E: uptown_funk::InstanceEnvironment
@@ -46,6 +60,20 @@ pub fn host_functions(attr: TokenStream, item: TokenStream) -> TokenStream {
                 let state = uptown_funk::StateWrapper::new(self, instance_environment);
                 let state = std::rc::Rc::new(state);
                 #(#wasmtime_method_wrappers)*
+            }
+
+            // Wasmer
+            fn add_to_wasmer_linker<E: 'static>(
+                self,
+                instance_environment: E,
+                wasmer_linker: &mut uptown_funk::wasmer::WasmerLinker,
+                store: &wasmer::Store,
+            ) where
+                E: uptown_funk::InstanceEnvironment,
+            {
+                let state = uptown_funk::StateWrapper::new(self, instance_environment);
+                let state = uptown_funk::wasmer::WasmerStateWrapper::new(state);
+                #(#wasmer_method_wrappers)*
             }
         }
     };
