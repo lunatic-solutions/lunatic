@@ -55,7 +55,7 @@ impl std::ops::Add<MyNumber> for MyNumber {
     }
 }
 
-impl uptown_funk::FromWasmU32 for MyNumber {
+impl uptown_funk::FromWasmU32<'_> for MyNumber {
     type State = ArrayState;
 
     fn from_u32<InstanceState>(

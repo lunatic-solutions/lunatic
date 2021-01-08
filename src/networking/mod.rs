@@ -30,7 +30,7 @@ impl TcpListener {
     }
 }
 
-impl FromWasmU32 for TcpListener {
+impl<'a> FromWasmU32<'a> for TcpListener {
     type State = api::TcpState;
 
     fn from_u32<ProcessEnvironment>(
@@ -74,7 +74,7 @@ pub struct TcpStream {
     address: smol::net::SocketAddr,
 }
 
-impl FromWasmU32 for TcpStream {
+impl<'a> FromWasmU32<'a> for TcpStream {
     type State = api::TcpState;
 
     fn from_u32<ProcessEnvironment>(

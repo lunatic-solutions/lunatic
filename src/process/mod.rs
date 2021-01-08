@@ -139,7 +139,7 @@ impl ToWasmU32 for Process {
     }
 }
 
-impl FromWasmU32 for Process {
+impl<'a> FromWasmU32<'a> for Process {
     type State = api::ProcessState;
 
     fn from_u32<ProcessEnvironment>(

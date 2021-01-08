@@ -202,6 +202,36 @@ impl WasiString {
     }
 }
 
+pub struct WasiEnvVars {
+    bytes: Vec<Vec<u8>>,
+    total_bytes: u32,
+}
+
+impl WasiEnvVars {
+    pub fn new(vars: impl Iterator<Item = (String, String)>) -> Self {
+        let mut bytes = vec![];
+        for (k, v) in vars {
+            bytes.push(format!("{}={}\0", k, v).into_bytes());
+        }
+
+        let total_bytes = bytes.iter().map(|v| v.len() as u32).sum();
+
+        Self { bytes, total_bytes }
+    }
+
+    pub fn len(&self) -> u32 {
+        self.bytes.len() as u32
+    }
+
+    pub fn total_bytes(&self) -> u32 {
+        self.total_bytes
+    }
+
+    pub fn iter(&self) -> std::slice::Iter<Vec<u8>> {
+        self.bytes.iter()
+    }
+}
+
 pub const WASI_ESUCCESS: u32 = 0;
 pub const WASI_E2BIG: u32 = 1;
 pub const WASI_EACCES: u32 = 2;

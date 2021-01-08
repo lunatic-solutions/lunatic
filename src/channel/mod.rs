@@ -57,7 +57,7 @@ impl ToWasmU32 for Channel {
     }
 }
 
-impl FromWasmU32 for Channel {
+impl<'a> FromWasmU32<'a> for Channel {
     type State = api::ChannelState;
 
     fn from_u32<ProcessEnvironment>(
