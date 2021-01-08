@@ -1,5 +1,5 @@
 use uptown_funk::{host_functions, HostFunctions, InstanceEnvironment};
-use wasmer;
+use wasmer::{self, Exportable};
 use wasmtime;
 
 use std::fs::read;
@@ -29,6 +29,10 @@ fn wasmtime_add_test() {
     let module = wasmtime::Module::new(store.engine(), wasm).unwrap();
     let mut linker = wasmtime::Linker::new(&store);
 
+    let memory_ty = wasmtime::MemoryType::new(wasmtime::Limits::new(32, None));
+    let memory = wasmtime::Memory::new(&store, memory_ty);
+    linker.define("env", "memory", memory).unwrap();
+
     let empty = Empty {};
     let instance_state = InstanceState {};
     empty.add_to_linker(instance_state, &mut linker);
@@ -46,6 +50,10 @@ fn wasmer_add_test() {
         .expect("Wasm file not found. Did you run ./build.sh inside the tests/wasm/ folder?");
     let module = wasmer::Module::new(&store, wasm).unwrap();
     let mut wasmer_linker = uptown_funk::wasmer::WasmerLinker::new();
+
+    let memory_ty = wasmer::MemoryType::new(32, None, false);
+    let memory = wasmer::Memory::new(&store, memory_ty).unwrap();
+    wasmer_linker.add("env", "memory", memory.to_export());
 
     let empty = Empty {};
     let instance_state = InstanceState {};
