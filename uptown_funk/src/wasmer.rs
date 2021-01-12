@@ -1,13 +1,13 @@
 //! Wasmer specific definitions
 
-use super::{InstanceEnvironment, StateWrapper};
+use super::{Executor, StateWrapper};
 use std::{collections::HashMap, rc::Rc};
 
-pub struct WasmerStateWrapper<S, E: InstanceEnvironment> {
+pub struct WasmerStateWrapper<S, E: Executor> {
     state_wrapper: Rc<StateWrapper<S, E>>,
 }
 
-impl<S, E: InstanceEnvironment> WasmerStateWrapper<S, E> {
+impl<S, E: Executor> WasmerStateWrapper<S, E> {
     pub fn new(state_wrapper: StateWrapper<S, E>) -> Self {
         Self {
             state_wrapper: Rc::new(state_wrapper),
@@ -19,10 +19,10 @@ impl<S, E: InstanceEnvironment> WasmerStateWrapper<S, E> {
     }
 }
 
-unsafe impl<S, E: InstanceEnvironment> Send for WasmerStateWrapper<S, E> {}
-unsafe impl<S, E: InstanceEnvironment> Sync for WasmerStateWrapper<S, E> {}
+unsafe impl<S, E: Executor> Send for WasmerStateWrapper<S, E> {}
+unsafe impl<S, E: Executor> Sync for WasmerStateWrapper<S, E> {}
 
-impl<S, E: InstanceEnvironment> Clone for WasmerStateWrapper<S, E> {
+impl<S, E: Executor> Clone for WasmerStateWrapper<S, E> {
     fn clone(&self) -> Self {
         WasmerStateWrapper {
             state_wrapper: self.state_wrapper.clone(),
@@ -30,7 +30,7 @@ impl<S, E: InstanceEnvironment> Clone for WasmerStateWrapper<S, E> {
     }
 }
 
-impl<S, E: InstanceEnvironment> wasmer::WasmerEnv for WasmerStateWrapper<S, E> {
+impl<S, E: Executor> wasmer::WasmerEnv for WasmerStateWrapper<S, E> {
     fn init_with_instance(&mut self, _: &wasmer::Instance) -> Result<(), wasmer::HostEnvInitError> {
         Ok(())
     }

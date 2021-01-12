@@ -18,6 +18,15 @@ fn lunatic_bench(c: &mut Criterion) {
         });
     });
 
+    c.bench_function("wasmer instance creation", |b| {
+        let store = wasmer::Store::default();
+        let wasm = include_bytes!("start.wasm");
+        let module = wasmer::Module::new(&store, &wasm).unwrap();
+        let import_object = wasmer::imports! {};
+
+        b.iter(move || wasmer::Instance::new(&module, &import_object).unwrap());
+    });
+
     c.bench_function("spawn thread", |b| {
         b.iter(move || {
             std::thread::spawn(|| 1 + 3);

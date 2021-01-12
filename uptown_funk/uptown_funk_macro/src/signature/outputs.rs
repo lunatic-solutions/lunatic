@@ -24,7 +24,7 @@ use super::return_error;
 /// 1. One return value of type **i32, i64, f32 and f64** (WASM guest compatible types) is returned as is.
 /// 2. If there **are multiple return values of type i32, i64, f32 and f64** (WASM guest compatible types),
 ///    the first one is returned as is, but the rest are returned through pinters of input arguments.
-/// 3. **Custom types** need to implement uptown_funk::ToWasmU32 and are transformed to an **i32** wasm type,
+/// 3. **Custom types** need to implement uptown_funk::ToWasm and are transformed to an **i32** wasm type,
 ///    then they also follow rules 1 and 2.
 
 pub fn transform(
@@ -79,7 +79,7 @@ pub fn transform(
                 let varname = format!("return_argument_as_ptr_{}", i);
                 let varname = Ident::new(&varname, return_type.span());
 
-                input_argument_extensions.push(quote! { #varname: i32 });
+                input_argument_extensions.push(quote! { #varname: u32 });
 
                 match return_type {
                     Type::Path(type_path) => {
@@ -101,12 +101,15 @@ pub fn transform(
                             } else {
                                 // Custom type
                                 return_argument_to_input_transformation.push(quote! {
-                                    let memory: &mut [u32] = unsafe { std::mem::transmute(state_wrapper.wasm_memory()) };
-                                    let result_ptr = memory.get_mut(#varname as usize / std::mem::size_of::<u32>());
+                                    let memory: &mut [<#type_path as uptown_funk::ToWasm>::To]
+                                        = unsafe { std::mem::transmute(state_wrapper.wasm_memory()) };
+                                    let result_ptr = memory.get_mut(
+                                        #varname as usize / std::mem::size_of::<<#type_path as uptown_funk::ToWasm>::To>()
+                                    );
                                     let result_ptr = uptown_funk::Trap::try_option(result_ptr)?;
-                                    let result_ = <#type_path as uptown_funk::ToWasmU32>::to_u32(
+                                    let result_ = <#type_path as uptown_funk::ToWasm>::to(
                                         &mut state_wrapper.borrow_state_mut(),
-                                        state_wrapper.instance_environment(),
+                                        state_wrapper.instance(),
                                         result.#index
                                     )?;
                                     *result_ptr = result_;
@@ -159,12 +162,12 @@ fn first_output(type_path: &TypePath) -> Result<(TokenStream2, TokenStream2), To
             return Ok((return_argument, host_to_guest_transformation));
         } else {
             // Returning CustomType
-            let return_argument = quote! { u32 };
+            let return_argument = quote! { <#ident as uptown_funk::ToWasm>::To };
             let host_to_guest_transformation = quote! {
-                | output: #ident | -> Result<u32, uptown_funk::Trap> {
-                    <#ident as uptown_funk::ToWasmU32>::to_u32(
+                | output: #ident | -> Result<<#ident as uptown_funk::ToWasm>::To, uptown_funk::Trap> {
+                    <#ident as uptown_funk::ToWasm>::to(
                         &mut state_wrapper.borrow_state_mut(),
-                        state_wrapper.instance_environment(),
+                        state_wrapper.instance(),
                         output
                     )
                 }

@@ -4,15 +4,21 @@ use quote::{format_ident, quote};
 use syn::fold::Fold;
 use syn::{Lifetime, Pat, PatType, Path, Type, TypeReference};
 
-struct ReplaceLifetimeName;
-
-impl Fold for ReplaceLifetimeName {
+struct ReplaceArgumentLifetime;
+impl Fold for ReplaceArgumentLifetime {
     fn fold_lifetime(&mut self, l: Lifetime) -> Lifetime {
         if l.ident == "static" {
             l
         } else {
             Lifetime::new("'_", Span::call_site())
         }
+    }
+}
+
+struct ReplaceArgumentLifetimeWithStatic;
+impl Fold for ReplaceArgumentLifetimeWithStatic {
+    fn fold_lifetime(&mut self, _: Lifetime) -> Lifetime {
+        Lifetime::new("'static", Span::call_site())
     }
 }
 
@@ -34,7 +40,7 @@ use super::arg_error;
 ///    ciovec structs and its length.
 /// 5. **&mut [IoSliceMut<'_>]** is split on the guest in two arguments, a pointer to a slice containing WASI
 ///    iovec structs and its length.
-/// 6. **Custom types** need to implement uptown_funk::FromWasmU32 and are created from a **i32** wasm type.
+/// 6. **Custom types** need to implement uptown_funk::FromWasm.
 /// 7. All other patterns will result in a compilation error.
 pub fn transform(
     pat_type: &PatType,
@@ -66,12 +72,14 @@ pub fn transform(
         }
         // CustomStruct, CustomEnum, ...
         Transformation::CustomType => {
-            let pat_type_ty = ReplaceLifetimeName.fold_type(*pat_type.ty.clone());
-            let input_argument = quote! { #argument_name: u32 };
+            let pat_type_ty_static =
+                ReplaceArgumentLifetimeWithStatic.fold_type(*pat_type.ty.clone());
+            let input_argument = quote! { #argument_name: <#pat_type_ty_static as uptown_funk::FromWasm<'static>>::From };
+            let pat_type_ty = ReplaceArgumentLifetime.fold_type(*pat_type.ty.clone());
             let transformation = quote! {
-                let #argument_name = <#pat_type_ty as uptown_funk::FromWasmU32>::from_u32(
+                let #argument_name = <#pat_type_ty as uptown_funk::FromWasm>::from(
                     &mut state_wrapper.borrow_state_mut(),
-                    state_wrapper.instance_environment(),
+                    state_wrapper.instance(),
                     #argument_name
                 )?;
             };
@@ -84,11 +92,11 @@ pub fn transform(
                 Type::Reference(type_ref) => &type_ref.elem,
                 _ => return Err(arg_error(pat_type_ty)),
             };
-            let input_argument = quote! { #argument_name: u32 };
+            let input_argument = quote! { #argument_name: <#pat_type_ty_without_ref as uptown_funk::FromWasm<'static>>::From };
             let transformation = quote! {
-                let mut #argument_name = <#pat_type_ty_without_ref as uptown_funk::FromWasmU32>::from_u32(
+                let mut #argument_name = <#pat_type_ty_without_ref as uptown_funk::FromWasm>::from(
                     &mut state_wrapper.borrow_state_mut(),
-                    state_wrapper.instance_environment(),
+                    state_wrapper.instance(),
                     #argument_name
                 )?;
             };

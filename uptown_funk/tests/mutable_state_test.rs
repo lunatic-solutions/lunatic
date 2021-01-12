@@ -1,12 +1,12 @@
-use uptown_funk::{host_functions, HostFunctions, InstanceEnvironment};
+use uptown_funk::{host_functions, Executor, HostFunctions};
 use wasmer::{self, Exportable};
 use wasmtime;
 
 use std::fs::read;
 
-struct InstanceState {}
+struct SimpleExcutor {}
 
-impl InstanceEnvironment for InstanceState {
+impl Executor for SimpleExcutor {
     fn wasm_memory(&self) -> &mut [u8] {
         &mut []
     }
@@ -56,12 +56,13 @@ impl std::ops::Add<MyNumber> for MyNumber {
     }
 }
 
-impl uptown_funk::FromWasmU32<'_> for MyNumber {
+impl uptown_funk::FromWasm<'_> for MyNumber {
+    type From = u32;
     type State = ArrayState;
 
-    fn from_u32<InstanceState>(
+    fn from(
         state: &mut Self::State,
-        _: &InstanceState,
+        _: &impl Executor,
         index: u32,
     ) -> Result<Self, uptown_funk::Trap> {
         match state.vec.get(index as usize) {
@@ -71,12 +72,13 @@ impl uptown_funk::FromWasmU32<'_> for MyNumber {
     }
 }
 
-impl uptown_funk::ToWasmU32 for MyNumber {
+impl uptown_funk::ToWasm for MyNumber {
+    type To = u32;
     type State = ArrayState;
 
-    fn to_u32<InstanceState>(
+    fn to(
         state: &mut Self::State,
-        _: &InstanceState,
+        _: &impl Executor,
         number: Self,
     ) -> Result<u32, uptown_funk::Trap> {
         let index = state.vec.len();
@@ -98,7 +100,7 @@ fn wasmtime_mutable_state_test() {
     linker.define("env", "memory", memory.clone()).unwrap();
 
     let array_state = ArrayState { vec: Vec::new() };
-    let instance_state = InstanceState {};
+    let instance_state = SimpleExcutor {};
     array_state.add_to_linker(instance_state, &mut linker);
 
     let instance = linker.instantiate(&module).unwrap();
@@ -120,7 +122,7 @@ fn wasmer_mutable_state_test() {
     wasmer_linker.add("env", "memory", memory.to_export());
 
     let array_state = ArrayState { vec: Vec::new() };
-    let instance_state = InstanceState {};
+    let instance_state = SimpleExcutor {};
     array_state.add_to_wasmer_linker(instance_state, &mut wasmer_linker, &store);
 
     let instance = wasmer::Instance::new(&module, &wasmer_linker).unwrap();

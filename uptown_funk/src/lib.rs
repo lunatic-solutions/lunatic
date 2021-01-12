@@ -7,66 +7,68 @@ use std::convert::Into;
 use std::fmt::Debug;
 
 pub use smallvec::SmallVec;
-pub use types::Pointer;
 pub use uptown_funk_macro::host_functions;
 
-pub trait InstanceEnvironment {
+/// Provides access to the instance execution environment.
+pub trait Executor {
+    /// Execute `Future` f.
     #[cfg(feature = "async")]
     fn async_<R, F>(&self, f: F) -> R
     where
         F: std::future::Future<Output = R>;
+
+    /// Get mutable access to instance environment.
     fn wasm_memory(&self) -> &mut [u8];
 }
 
 pub trait HostFunctions {
-    fn add_to_linker<E: 'static>(self, instance_environment: E, linker: &mut wasmtime::Linker)
+    fn add_to_linker<E>(self, instance: E, linker: &mut wasmtime::Linker)
     where
-        E: InstanceEnvironment;
+        E: Executor + 'static;
 
-    fn add_to_wasmer_linker<E: 'static>(
+    fn add_to_wasmer_linker<E>(
         self,
-        instance_environment: E,
-        wasmer_linker: &mut wasmer::WasmerLinker,
+        instance: E,
+        linker: &mut wasmer::WasmerLinker,
         store: &::wasmer::Store,
     ) where
-        E: InstanceEnvironment;
+        E: Executor + 'static;
 }
 
-pub trait FromWasmU32<'a> {
+pub trait FromWasm<'a> {
+    type From: wasmtime::WasmTy + ::wasmer::FromToNativeWasmType + 'static;
     type State;
 
-    fn from_u32<I>(
+    fn from(
         state: &mut Self::State,
-        instance_environment: &'a I,
-        wasm_u32: u32,
+        instance: &'a impl Executor,
+        from: Self::From,
     ) -> Result<Self, Trap>
     where
-        Self: Sized,
-        I: InstanceEnvironment;
+        Self: Sized;
 }
 
-pub trait ToWasmU32 {
+pub trait ToWasm {
+    type To;
     type State;
 
-    fn to_u32<I>(
+    fn to(
         state: &mut Self::State,
-        instance_environment: &I,
+        instance: &impl Executor,
         host_value: Self,
-    ) -> Result<u32, Trap>
-    where
-        I: InstanceEnvironment;
+    ) -> Result<Self::To, Trap>;
 }
 
-pub struct StateWrapper<S, E: InstanceEnvironment> {
+pub struct StateWrapper<S, E: Executor> {
     state: RefCell<S>,
     env: E,
 }
 
-impl<S, E: InstanceEnvironment> StateWrapper<S, E> {
-    pub fn new(state: S, instance_environment: E) -> Self {
+impl<S, E: Executor> StateWrapper<S, E> {
+    pub fn new(state: S, instance: E) -> Self {
         Self {
             state: RefCell::new(state),
-            env: instance_environment,
+            env: instance,
         }
     }
 
@@ -78,7 +80,7 @@ impl<S, E: InstanceEnvironment> StateWrapper<S, E> {
         self.state.borrow_mut()
     }
 
-    pub fn instance_environment(&self) -> &E {
+    pub fn instance(&self) -> &E {
         &self.env
     }
 

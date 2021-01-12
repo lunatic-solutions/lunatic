@@ -5,7 +5,7 @@ use std::sync::atomic::AtomicUsize;
 
 use dashmap::DashMap;
 use lazy_static::lazy_static;
-use uptown_funk::{FromWasmU32, ToWasmU32};
+use uptown_funk::{Executor, FromWasm, ToWasm};
 
 lazy_static! {
     static ref SERIALIZED_TCP_STREAM: DashMap<usize, TcpStream> = DashMap::new();
@@ -30,12 +30,13 @@ impl TcpListener {
     }
 }
 
-impl<'a> FromWasmU32<'a> for TcpListener {
+impl<'a> FromWasm<'a> for TcpListener {
+    type From = u32;
     type State = api::TcpState;
 
-    fn from_u32<ProcessEnvironment>(
+    fn from(
         state: &mut Self::State,
-        _: &ProcessEnvironment,
+        _: &impl Executor,
         tcp_listener_id: u32,
     ) -> Result<Self, uptown_funk::Trap>
     where
@@ -53,12 +54,13 @@ enum TcpListenerResult {
     Err(io::Error),
 }
 
-impl ToWasmU32 for TcpListenerResult {
+impl ToWasm for TcpListenerResult {
+    type To = u32;
     type State = api::TcpState;
 
-    fn to_u32<ProcessEnvironment>(
+    fn to(
         state: &mut Self::State,
-        _: &ProcessEnvironment,
+        _: &impl Executor,
         result: Self,
     ) -> Result<u32, uptown_funk::Trap> {
         match result {
@@ -74,12 +76,13 @@ pub struct TcpStream {
     address: smol::net::SocketAddr,
 }
 
-impl<'a> FromWasmU32<'a> for TcpStream {
+impl FromWasm<'_> for TcpStream {
+    type From = u32;
     type State = api::TcpState;
 
-    fn from_u32<ProcessEnvironment>(
+    fn from(
         state: &mut Self::State,
-        _instance_environment: &ProcessEnvironment,
+        _: &impl Executor,
         tcp_stream_id: u32,
     ) -> Result<Self, uptown_funk::Trap>
     where
@@ -96,12 +99,13 @@ enum TcpStreamResult {
     Err(io::Error),
 }
 
-impl ToWasmU32 for TcpStreamResult {
+impl ToWasm for TcpStreamResult {
+    type To = u32;
     type State = api::TcpState;
 
-    fn to_u32<ProcessEnvironment>(
+    fn to(
         state: &mut Self::State,
-        _instance_environment: &ProcessEnvironment,
+        _: &impl Executor,
         result: Self,
     ) -> Result<u32, uptown_funk::Trap> {
         match result {

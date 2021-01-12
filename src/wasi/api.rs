@@ -1,12 +1,10 @@
 use super::types::*;
 
 use anyhow::Result;
-use uptown_funk::{host_functions, FromWasmU32};
+use uptown_funk::{host_functions, types, Executor, FromWasm};
 
 use log::trace;
-use std::{
-    io::{self, IoSlice, IoSliceMut, Read, Write},
-};
+use std::io::{self, IoSlice, IoSliceMut, Read, Write};
 
 lazy_static::lazy_static! {
     static ref ENV : WasiEnvVars = WasiEnvVars::new(std::env::vars());
@@ -21,18 +19,15 @@ impl WasiState {
 }
 struct ExitCode {}
 
-impl<'a> FromWasmU32<'a> for ExitCode {
+impl<'a> FromWasm<'a> for ExitCode {
+    type From = u32;
     type State = WasiState;
 
-    fn from_u32<I>(
-        _state: &mut Self::State,
-        _instance_environment: &'a I,
+    fn from(
+        _: &mut Self::State,
+        _: &'a impl Executor,
         exit_code: u32,
-    ) -> Result<Self, uptown_funk::Trap>
-    where
-        Self: Sized,
-        I: uptown_funk::InstanceEnvironment,
-    {
+    ) -> Result<Self, uptown_funk::Trap> {
         Err(uptown_funk::Trap::new(format!(
             "proc_exit({}) called",
             exit_code
@@ -40,7 +35,7 @@ impl<'a> FromWasmU32<'a> for ExitCode {
     }
 }
 
-type Ptr<'a, T> = uptown_funk::Pointer<'a, WasiState, T>;
+type Ptr<'a, T> = types::Pointer<'a, WasiState, T>;
 
 #[host_functions(namespace = "wasi_snapshot_preview1")]
 impl WasiState {
@@ -101,13 +96,17 @@ impl WasiState {
         WASI_ESUCCESS
     }
 
-    fn environ_sizes_get(&self, mut var_count: Ptr<u32>, mut total_bytes: Ptr<u32>) -> u32 {
+    fn environ_sizes_get(&self, mut var_count: Ptr<'_, u32>, mut total_bytes: Ptr<'_, u32>) -> u32 {
         var_count.set(&ENV.len());
         total_bytes.set(&ENV.total_bytes());
         WASI_ESUCCESS
     }
 
-    fn environ_get<'a>(&self, mut environ: Ptr<Ptr<'a, u8>>, mut environ_buf: Ptr<'a, u8>) -> u32 {
+    fn environ_get<'a>(
+        &self,
+        mut environ: Ptr<'_, Ptr<'a, u8>>,
+        mut environ_buf: Ptr<'a, u8>,
+    ) -> u32 {
         for kv in ENV.iter() {
             environ.set(&environ_buf);
             environ_buf = environ_buf.copy_slice(&kv).unwrap();

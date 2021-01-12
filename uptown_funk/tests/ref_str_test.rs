@@ -1,4 +1,4 @@
-use uptown_funk::{host_functions, HostFunctions, InstanceEnvironment};
+use uptown_funk::{host_functions, Executor, HostFunctions};
 use wasmer::{self, Exportable};
 use wasmtime;
 
@@ -9,11 +9,11 @@ enum Memory {
     Wasmtime(wasmtime::Memory),
 }
 
-struct InstanceState {
+struct SimpleExcutor {
     memory: Memory,
 }
 
-impl InstanceEnvironment for InstanceState {
+impl Executor for SimpleExcutor {
     fn wasm_memory(&self) -> &mut [u8] {
         match &self.memory {
             Memory::Wasmer(memory) => unsafe { memory.data_unchecked_mut() },
@@ -49,7 +49,7 @@ fn wasmtime_ref_str_test() {
     linker.define("env", "memory", memory.clone()).unwrap();
 
     let empty = Empty {};
-    let instance_state = InstanceState {
+    let instance_state = SimpleExcutor {
         memory: Memory::Wasmtime(memory),
     };
     empty.add_to_linker(instance_state, &mut linker);
@@ -79,7 +79,7 @@ fn wasmer_ref_str_test() {
     wasmer_linker.add("env", "memory", memory.to_export());
 
     let empty = Empty {};
-    let instance_state = InstanceState {
+    let instance_state = SimpleExcutor {
         memory: Memory::Wasmer(memory),
     };
     empty.add_to_wasmer_linker(instance_state, &mut wasmer_linker, &store);

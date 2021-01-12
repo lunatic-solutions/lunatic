@@ -1,12 +1,12 @@
-use uptown_funk::{host_functions, HostFunctions, InstanceEnvironment};
+use uptown_funk::{host_functions, Executor, HostFunctions};
 use wasmer::{self, Exportable};
 use wasmtime;
 
 use std::fs::read;
 
-struct InstanceState {}
+struct SimpleExcutor {}
 
-impl InstanceEnvironment for InstanceState {
+impl Executor for SimpleExcutor {
     fn wasm_memory(&self) -> &mut [u8] {
         &mut []
     }
@@ -33,12 +33,13 @@ impl std::ops::Add<MyNumber> for MyNumber {
     }
 }
 
-impl uptown_funk::FromWasmU32<'_> for MyNumber {
+impl uptown_funk::FromWasm<'_> for MyNumber {
+    type From = u32;
     type State = Empty;
 
-    fn from_u32<InstanceState>(
+    fn from(
         _: &mut Self::State,
-        _: &InstanceState,
+        _: &impl Executor,
         wasm_u32: u32,
     ) -> Result<Self, uptown_funk::Trap> {
         Ok(MyNumber {
@@ -60,7 +61,7 @@ fn wasmtime_custom_type_add_test() {
     linker.define("env", "memory", memory.clone()).unwrap();
 
     let empty = Empty {};
-    let instance_state = InstanceState {};
+    let instance_state = SimpleExcutor {};
     empty.add_to_linker(instance_state, &mut linker);
 
     let instance = linker.instantiate(&module).unwrap();
@@ -82,7 +83,7 @@ fn wasmer_custom_type_add_test() {
     wasmer_linker.add("env", "memory", memory.to_export());
 
     let empty = Empty {};
-    let instance_state = InstanceState {};
+    let instance_state = SimpleExcutor {};
     empty.add_to_wasmer_linker(instance_state, &mut wasmer_linker, &store);
 
     let instance = wasmer::Instance::new(&module, &wasmer_linker).unwrap();

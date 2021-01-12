@@ -12,7 +12,7 @@ pub fn wrap(namespace: &LitStr, method: &ImplItemMethod) -> Result<TokenStream2,
 
     // If it's an async function wrap it in an async block.
     let maybe_async = match signature.asyncness {
-        Some(_) => quote! { state_wrapper.instance_environment().async_ },
+        Some(_) => quote! { state_wrapper.instance().async_ },
         None => quote! { std::convert::identity },
     };
 
@@ -28,7 +28,7 @@ pub fn wrap(namespace: &LitStr, method: &ImplItemMethod) -> Result<TokenStream2,
     };
 
     let result = quote! {
-        let closure = move |state: &uptown_funk::wasmer::WasmerStateWrapper<Self, E>, #guest_signature_input|
+        let closure = |state: &uptown_funk::wasmer::WasmerStateWrapper<Self, E>, #guest_signature_input|
          -> Result<#guest_signature_return, wasmtime::Trap> {
             let state_wrapper = state.state_wrapper();
             #from_guest_input_transformations

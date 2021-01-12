@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use crate::FromWasmU32;
+use crate::{Executor, FromWasm};
 
 pub trait WasmType {
     type Value;
@@ -103,20 +103,17 @@ impl<'a, S> Pointer<'a, S, u8> {
     }
 }
 
-impl<'a, S, T: WasmType> FromWasmU32<'a> for Pointer<'a, S, T> {
+impl<'a, S, T: WasmType> FromWasm<'a> for Pointer<'a, S, T> {
+    type From = u32;
     type State = S;
 
-    fn from_u32<I>(
+    fn from(
         _state: &mut Self::State,
-        instance_environment: &'a I,
+        executor: &'a impl Executor,
         wasm_u32: u32,
-    ) -> Result<Self, crate::Trap>
-    where
-        Self: Sized,
-        I: crate::InstanceEnvironment,
-    {
+    ) -> Result<Self, crate::Trap> {
         // TODO unwrap
-        let mem = instance_environment.wasm_memory().get_mut(..).unwrap();
+        let mem = executor.wasm_memory();
         Ok(Pointer {
             loc: wasm_u32 as usize,
             mem,

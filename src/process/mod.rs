@@ -4,8 +4,8 @@ use anyhow::Result;
 use async_wormhole::pool::OneMbAsyncPool;
 use async_wormhole::AsyncYielder;
 use lazy_static::lazy_static;
-use smol::{Executor, Task};
-use uptown_funk::{FromWasmU32, ToWasmU32};
+use smol::{Executor as TaskExecutor, Task};
+use uptown_funk::{Executor, FromWasm, ToWasm};
 
 use crate::linker::LunaticLinker;
 use crate::memory::LunaticMemory;
@@ -17,7 +17,7 @@ use std::{future::Future, rc::Rc};
 
 lazy_static! {
     static ref WORMHOLE_POOL: OneMbAsyncPool = OneMbAsyncPool::new(128);
-    pub static ref EXECUTOR: Executor<'static> = Executor::new();
+    pub static ref EXECUTOR: TaskExecutor<'static> = TaskExecutor::new();
 }
 
 pub type AsyncYielderCast<'a> = AsyncYielder<'a, Result<()>>;
@@ -52,7 +52,7 @@ pub struct ProcessEnvironment {
     yielder: usize,
 }
 
-impl uptown_funk::InstanceEnvironment for ProcessEnvironment {
+impl uptown_funk::Executor for ProcessEnvironment {
     fn async_<R, F>(&self, f: F) -> R
     where
         F: Future<Output = R>,
@@ -127,24 +127,26 @@ impl Process {
     }
 }
 
-impl ToWasmU32 for Process {
+impl ToWasm for Process {
+    type To = u32;
     type State = api::ProcessState;
 
-    fn to_u32<ProcessEnvironment>(
+    fn to(
         state: &mut Self::State,
-        _: &ProcessEnvironment,
+        _: &impl Executor,
         process: Self,
     ) -> Result<u32, uptown_funk::Trap> {
         Ok(state.processes.add(process))
     }
 }
 
-impl<'a> FromWasmU32<'a> for Process {
+impl FromWasm<'_> for Process {
+    type From = u32;
     type State = api::ProcessState;
 
-    fn from_u32<ProcessEnvironment>(
+    fn from(
         state: &mut Self::State,
-        _: &ProcessEnvironment,
+        _: &impl Executor,
         process_id: u32,
     ) -> Result<Self, uptown_funk::Trap>
     where

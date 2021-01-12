@@ -14,7 +14,7 @@ use dashmap::{mapref::entry::Entry, DashMap};
 use lazy_static::lazy_static;
 use rand::{rngs::SmallRng, Rng, SeedableRng};
 use smol::channel::{bounded, unbounded, Receiver, RecvError, Sender};
-use uptown_funk::{FromWasmU32, ToWasmU32};
+use uptown_funk::{Executor, FromWasm, ToWasm};
 
 lazy_static! {
     static ref CHANNELS: DashMap<u32, Channel> = DashMap::new();
@@ -45,26 +45,20 @@ pub struct Channel {
     receiver: Receiver<ChannelBuffer>,
 }
 
-impl ToWasmU32 for Channel {
+impl ToWasm for Channel {
+    type To = u32;
     type State = api::ChannelState;
 
-    fn to_u32<ProcessEnvironment>(
-        _: &mut Self::State,
-        _: &ProcessEnvironment,
-        channel: Self,
-    ) -> Result<u32, uptown_funk::Trap> {
+    fn to(_: &mut Self::State, _: &impl Executor, channel: Self) -> Result<u32, uptown_funk::Trap> {
         Ok(add_channel(channel) as u32)
     }
 }
 
-impl<'a> FromWasmU32<'a> for Channel {
+impl<'a> FromWasm<'a> for Channel {
+    type From = u32;
     type State = api::ChannelState;
 
-    fn from_u32<ProcessEnvironment>(
-        _: &mut Self::State,
-        _: &ProcessEnvironment,
-        id: u32,
-    ) -> Result<Self, uptown_funk::Trap>
+    fn from(_: &mut Self::State, _: &impl Executor, id: u32) -> Result<Self, uptown_funk::Trap>
     where
         Self: Sized,
     {

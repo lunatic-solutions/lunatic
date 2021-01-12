@@ -12,7 +12,7 @@ pub fn wrap(namespace: &LitStr, method: &ImplItemMethod) -> Result<TokenStream2,
 
     // If it's an async function wrap it in an async block.
     let maybe_async = match signature.asyncness {
-        Some(_) => quote! { state_wrapper.instance_environment().async_ },
+        Some(_) => quote! { state_wrapper.instance().async_ },
         None => quote! { std::convert::identity },
     };
 

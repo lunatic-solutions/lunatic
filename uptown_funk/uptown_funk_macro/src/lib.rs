@@ -53,11 +53,11 @@ pub fn host_functions(attr: TokenStream, item: TokenStream) -> TokenStream {
 
         impl uptown_funk::HostFunctions for #self_ty {
             // Wasmtime
-            fn add_to_linker<E: 'static>(self, instance_environment: E, linker: &mut wasmtime::Linker)
+            fn add_to_linker<E: 'static>(self, instance: E, linker: &mut wasmtime::Linker)
             where
-                E: uptown_funk::InstanceEnvironment
+                E: uptown_funk::Executor
             {
-                let state = uptown_funk::StateWrapper::new(self, instance_environment);
+                let state = uptown_funk::StateWrapper::new(self, instance);
                 let state = std::rc::Rc::new(state);
                 #(#wasmtime_method_wrappers)*
             }
@@ -65,13 +65,13 @@ pub fn host_functions(attr: TokenStream, item: TokenStream) -> TokenStream {
             // Wasmer
             fn add_to_wasmer_linker<E: 'static>(
                 self,
-                instance_environment: E,
+                instance: E,
                 wasmer_linker: &mut uptown_funk::wasmer::WasmerLinker,
                 store: &wasmer::Store,
             ) where
-                E: uptown_funk::InstanceEnvironment,
+                E: uptown_funk::Executor,
             {
-                let state = uptown_funk::StateWrapper::new(self, instance_environment);
+                let state = uptown_funk::StateWrapper::new(self, instance);
                 let state = uptown_funk::wasmer::WasmerStateWrapper::new(state);
                 #(#wasmer_method_wrappers)*
             }
