@@ -93,19 +93,24 @@ pub fn transform(
                             {
                                 // Simple type
                                 return_argument_to_input_transformation.push( quote! {
-                                    let memory: &mut [#ident] = unsafe { std::mem::transmute(state_wrapper.wasm_memory()) };
-                                    let result_ptr = memory.get_mut(#varname as usize / std::mem::size_of::<#ident>());
+                                    let result_ptr = {
+                                        let memory = memory.as_mut_slice();
+                                        let memory: &mut [#ident] = unsafe { std::mem::transmute(memory) };
+                                        memory.get_mut(#varname as usize / std::mem::size_of::<#ident>())
+                                    };
                                     let result_ptr = uptown_funk::Trap::try_option(result_ptr)?;
                                     *result_ptr = result.#index;
                                 });
                             } else {
                                 // Custom type
                                 return_argument_to_input_transformation.push(quote! {
-                                    let memory: &mut [<#type_path as uptown_funk::ToWasm>::To]
-                                        = unsafe { std::mem::transmute(state_wrapper.wasm_memory()) };
-                                    let result_ptr = memory.get_mut(
-                                        #varname as usize / std::mem::size_of::<<#type_path as uptown_funk::ToWasm>::To>()
-                                    );
+                                    let result_ptr = {
+                                        let memory = memory.as_mut_slice();
+                                        let memory: &mut [<#type_path as uptown_funk::ToWasm>::To]
+                                            = unsafe { std::mem::transmute(memory) };
+                                        memory.get_mut(
+                                            #varname as usize / std::mem::size_of::<<#type_path as uptown_funk::ToWasm>::To>())
+                                    };
                                     let result_ptr = uptown_funk::Trap::try_option(result_ptr)?;
                                     let result_ = <#type_path as uptown_funk::ToWasm>::to(
                                         &mut state_wrapper.borrow_state_mut(),

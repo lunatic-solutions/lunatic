@@ -5,15 +5,14 @@ use async_wormhole::pool::OneMbAsyncPool;
 use async_wormhole::AsyncYielder;
 use lazy_static::lazy_static;
 use smol::{Executor as TaskExecutor, Task};
-use uptown_funk::{Executor, FromWasm, ToWasm};
+use uptown_funk::{memory::Memory, Executor, FromWasm, ToWasm};
 
 use crate::linker::LunaticLinker;
-use crate::memory::LunaticMemory;
 use crate::module::LunaticModule;
 
 use log::info;
+use std::future::Future;
 use std::mem::ManuallyDrop;
-use std::{future::Future, rc::Rc};
 
 lazy_static! {
     static ref WORMHOLE_POOL: OneMbAsyncPool = OneMbAsyncPool::new(128);
@@ -48,7 +47,7 @@ pub enum MemoryChoice {
 #[derive(Clone)]
 pub struct ProcessEnvironment {
     module: LunaticModule,
-    memory: Rc<Box<dyn LunaticMemory>>,
+    memory: Memory,
     yielder: usize,
 }
 
@@ -63,16 +62,16 @@ impl uptown_funk::Executor for ProcessEnvironment {
         yielder.async_suspend(f)
     }
 
-    fn wasm_memory(&self) -> &mut [u8] {
-        self.memory.slice_mut()
+    fn memory(&self) -> Memory {
+        self.memory.clone()
     }
 }
 
 impl ProcessEnvironment {
-    pub fn new(module: LunaticModule, memory: Box<dyn LunaticMemory>, yielder: usize) -> Self {
+    pub fn new(module: LunaticModule, memory: Memory, yielder: usize) -> Self {
         Self {
             module,
-            memory: Rc::new(memory),
+            memory,
             yielder,
         }
     }
@@ -140,7 +139,7 @@ impl ToWasm for Process {
     }
 }
 
-impl FromWasm<'_> for Process {
+impl FromWasm for Process {
     type From = u32;
     type State = api::ProcessState;
 

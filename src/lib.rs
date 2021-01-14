@@ -2,7 +2,6 @@
 
 pub mod channel;
 pub mod linker;
-pub mod memory;
 pub mod module;
 pub mod networking;
 pub mod normalisation;

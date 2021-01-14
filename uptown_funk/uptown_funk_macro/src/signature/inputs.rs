@@ -15,13 +15,6 @@ impl Fold for ReplaceArgumentLifetime {
     }
 }
 
-struct ReplaceArgumentLifetimeWithStatic;
-impl Fold for ReplaceArgumentLifetimeWithStatic {
-    fn fold_lifetime(&mut self, _: Lifetime) -> Lifetime {
-        Lifetime::new("'static", Span::call_site())
-    }
-}
-
 use super::arg_error;
 
 /// Takes the input arguments part of the host function's signature and returns wrappers around higher
@@ -72,10 +65,9 @@ pub fn transform(
         }
         // CustomStruct, CustomEnum, ...
         Transformation::CustomType => {
-            let pat_type_ty_static =
-                ReplaceArgumentLifetimeWithStatic.fold_type(*pat_type.ty.clone());
-            let input_argument = quote! { #argument_name: <#pat_type_ty_static as uptown_funk::FromWasm<'static>>::From };
             let pat_type_ty = ReplaceArgumentLifetime.fold_type(*pat_type.ty.clone());
+            let input_argument =
+                quote! { #argument_name: <#pat_type_ty as uptown_funk::FromWasm>::From };
             let transformation = quote! {
                 let #argument_name = <#pat_type_ty as uptown_funk::FromWasm>::from(
                     &mut state_wrapper.borrow_state_mut(),
@@ -92,7 +84,7 @@ pub fn transform(
                 Type::Reference(type_ref) => &type_ref.elem,
                 _ => return Err(arg_error(pat_type_ty)),
             };
-            let input_argument = quote! { #argument_name: <#pat_type_ty_without_ref as uptown_funk::FromWasm<'static>>::From };
+            let input_argument = quote! { #argument_name: <#pat_type_ty_without_ref as uptown_funk::FromWasm>::From };
             let transformation = quote! {
                 let mut #argument_name = <#pat_type_ty_without_ref as uptown_funk::FromWasm>::from(
                     &mut state_wrapper.borrow_state_mut(),
@@ -110,8 +102,11 @@ pub fn transform(
             let input_argument = quote! { #varname_ptr: u32, #varname_len: u32 };
             let transformation = quote! {
                 let #argument_name = {
-                    let slice = state_wrapper.wasm_memory().get(
-                        #varname_ptr as usize..(#varname_ptr + #varname_len) as usize);
+                    let slice = unsafe {
+                        memory
+                            .as_mut_slice()
+                            .get(#varname_ptr as usize..(#varname_ptr + #varname_len) as usize)
+                    };
                     let slice = uptown_funk::Trap::try_option(slice)?;
                     let string = std::str::from_utf8(slice);
                     uptown_funk::Trap::try_result(string)?
@@ -127,8 +122,11 @@ pub fn transform(
             let input_argument = quote! { #varname_ptr: u32, #varname_len: u32 };
             let transformation = quote! {
                 let #argument_name = {
-                    let slice = state_wrapper.wasm_memory().get_mut(
-                        #varname_ptr as usize..(#varname_ptr + #varname_len) as usize);
+                    let slice = unsafe {
+                        memory
+                            .as_mut_slice()
+                            .get_mut(#varname_ptr as usize..(#varname_ptr + #varname_len) as usize)
+                    };
                     uptown_funk::Trap::try_option(slice)?
                 };
             };
@@ -142,15 +140,19 @@ pub fn transform(
             let input_argument = quote! { #varname_ptr: u32, #varname_len: u32 };
             let transformation = quote! {
                 let #argument_name = {
-                    let slice = state_wrapper.wasm_memory().get(
-                        #varname_ptr as usize..(#varname_ptr + #varname_len) as usize);
+                    let slice = unsafe {
+                        memory
+                            .as_mut_slice()
+                            .get(#varname_ptr as usize..(#varname_ptr + #varname_len) as usize)
+                    };
                     let slice = uptown_funk::Trap::try_option(slice)?;
                     let io_slices: &[uptown_funk::IoVecT] = unsafe { std::mem::transmute(slice) };
                     // If we only need 4 or less slices, don't allocate memory.
                     let mut vec_of_io_slices = uptown_funk::SmallVec::<[std::io::IoSlice; 4]>::with_capacity(io_slices.len());
                     for io_vec_t in io_slices.into_iter() {
-                        let io_slice = state_wrapper.wasm_memory().get(
-                            io_vec_t.ptr as usize..(io_vec_t.ptr + io_vec_t.len) as usize);
+                        let io_slice = unsafe {
+                            memory.as_mut_slice().get(io_vec_t.ptr as usize..(io_vec_t.ptr + io_vec_t.len) as usize)
+                        };
                         let io_slice = uptown_funk::Trap::try_option(io_slice)?;
                         let io_slice = std::io::IoSlice::new(io_slice);
                         vec_of_io_slices.push(io_slice);
@@ -168,15 +170,17 @@ pub fn transform(
             let input_argument = quote! { #varname_ptr: u32, #varname_len: u32 };
             let transformation = quote! {
                 let mut #argument_name = {
-                    let slice = state_wrapper.wasm_memory().get_mut(
-                        #varname_ptr as usize..(#varname_ptr + #varname_len) as usize);
+                    let slice = unsafe {
+                        memory.as_mut_slice().get_mut(#varname_ptr as usize..(#varname_ptr + #varname_len) as usize)
+                    };
                     let slice = uptown_funk::Trap::try_option(slice)?;
                     let io_slices: &mut [uptown_funk::IoVecT] = unsafe { std::mem::transmute(slice) };
                     // Replace with SmallVec once https://github.com/servo/rust-smallvec/issues/217 is fixed.
                     let mut vec_of_io_slices = Vec::with_capacity(io_slices.len());
                     for io_vec_t in io_slices.into_iter() {
-                        let io_slice = state_wrapper.wasm_memory().get_mut(
-                            io_vec_t.ptr as usize..(io_vec_t.ptr + io_vec_t.len) as usize);
+                        let io_slice = unsafe {
+                            memory.as_mut_slice().get_mut(io_vec_t.ptr as usize..(io_vec_t.ptr + io_vec_t.len) as usize)
+                        };
                         let io_slice = uptown_funk::Trap::try_option(io_slice)?;
                         let io_slice_mut = std::io::IoSliceMut::new(io_slice);
                         vec_of_io_slices.push(io_slice_mut);

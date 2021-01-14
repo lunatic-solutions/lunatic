@@ -19,13 +19,13 @@ impl WasiState {
 }
 struct ExitCode {}
 
-impl<'a> FromWasm<'a> for ExitCode {
+impl FromWasm for ExitCode {
     type From = u32;
     type State = WasiState;
 
     fn from(
         _: &mut Self::State,
-        _: &'a impl Executor,
+        _: &impl Executor,
         exit_code: u32,
     ) -> Result<Self, uptown_funk::Trap> {
         Err(uptown_funk::Trap::new(format!(
@@ -35,7 +35,7 @@ impl<'a> FromWasm<'a> for ExitCode {
     }
 }
 
-type Ptr<'a, T> = types::Pointer<'a, WasiState, T>;
+type Ptr<T> = types::Pointer<WasiState, T>;
 
 #[host_functions(namespace = "wasi_snapshot_preview1")]
 impl WasiState {
@@ -96,17 +96,13 @@ impl WasiState {
         WASI_ESUCCESS
     }
 
-    fn environ_sizes_get(&self, mut var_count: Ptr<'_, u32>, mut total_bytes: Ptr<'_, u32>) -> u32 {
+    fn environ_sizes_get(&self, mut var_count: Ptr<u32>, mut total_bytes: Ptr<u32>) -> u32 {
         var_count.set(&ENV.len());
         total_bytes.set(&ENV.total_bytes());
         WASI_ESUCCESS
     }
 
-    fn environ_get<'a>(
-        &self,
-        mut environ: Ptr<'_, Ptr<'a, u8>>,
-        mut environ_buf: Ptr<'a, u8>,
-    ) -> u32 {
+    fn environ_get<'a>(&self, mut environ: Ptr<Ptr<u8>>, mut environ_buf: Ptr<u8>) -> u32 {
         for kv in ENV.iter() {
             environ.set(&environ_buf);
             environ_buf = environ_buf.copy_slice(&kv).unwrap();

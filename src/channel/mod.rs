@@ -54,7 +54,7 @@ impl ToWasm for Channel {
     }
 }
 
-impl<'a> FromWasm<'a> for Channel {
+impl FromWasm for Channel {
     type From = u32;
     type State = api::ChannelState;
 

@@ -30,6 +30,7 @@ pub fn wrap(namespace: &LitStr, method: &ImplItemMethod) -> Result<TokenStream2,
     let result = quote! {
         let state_wrapper = state.clone();
         let closure = move |#guest_signature_input| -> Result<#guest_signature_return, wasmtime::Trap> {
+            let memory = state_wrapper.memory();
             #from_guest_input_transformations
             let result = {
                 let mut borrow = state_wrapper.borrow_state_mut();

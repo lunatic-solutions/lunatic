@@ -1,3 +1,4 @@
+pub mod memory;
 pub mod state;
 pub mod types;
 pub mod wasmer;
@@ -17,8 +18,8 @@ pub trait Executor {
     where
         F: std::future::Future<Output = R>;
 
-    /// Get mutable access to instance environment.
-    fn wasm_memory(&self) -> &mut [u8];
+    /// Get mutable access to the instance memory.
+    fn memory(&self) -> memory::Memory;
 }
 
 pub trait HostFunctions {
@@ -35,13 +36,13 @@ pub trait HostFunctions {
         E: Executor + 'static;
 }
 
-pub trait FromWasm<'a> {
+pub trait FromWasm {
     type From: wasmtime::WasmTy + ::wasmer::FromToNativeWasmType + 'static;
     type State;
 
     fn from(
         state: &mut Self::State,
-        instance: &'a impl Executor,
+        instance: &impl Executor,
         from: Self::From,
     ) -> Result<Self, Trap>
     where
@@ -84,8 +85,8 @@ impl<S, E: Executor> StateWrapper<S, E> {
         &self.env
     }
 
-    pub fn wasm_memory(&self) -> &mut [u8] {
-        self.env.wasm_memory()
+    pub fn memory(&self) -> memory::Memory {
+        self.env.memory()
     }
 }
 

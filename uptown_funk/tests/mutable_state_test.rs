@@ -1,17 +1,18 @@
-use uptown_funk::{host_functions, Executor, HostFunctions};
+use uptown_funk::{host_functions, memory::Memory, Executor, HostFunctions};
 use wasmer::{self, Exportable};
 use wasmtime;
 
 use std::fs::read;
 
-struct SimpleExcutor {}
-
-impl Executor for SimpleExcutor {
-    fn wasm_memory(&self) -> &mut [u8] {
-        &mut []
-    }
+struct SimpleExcutor {
+    memory: Memory,
 }
 
+impl Executor for SimpleExcutor {
+    fn memory(&self) -> Memory {
+        self.memory.clone()
+    }
+}
 struct ArrayState {
     vec: Vec<MyNumber>,
 }
@@ -56,7 +57,7 @@ impl std::ops::Add<MyNumber> for MyNumber {
     }
 }
 
-impl uptown_funk::FromWasm<'_> for MyNumber {
+impl uptown_funk::FromWasm for MyNumber {
     type From = u32;
     type State = ArrayState;
 
@@ -100,7 +101,9 @@ fn wasmtime_mutable_state_test() {
     linker.define("env", "memory", memory.clone()).unwrap();
 
     let array_state = ArrayState { vec: Vec::new() };
-    let instance_state = SimpleExcutor {};
+    let instance_state = SimpleExcutor {
+        memory: Memory::from(memory),
+    };
     array_state.add_to_linker(instance_state, &mut linker);
 
     let instance = linker.instantiate(&module).unwrap();
@@ -122,7 +125,9 @@ fn wasmer_mutable_state_test() {
     wasmer_linker.add("env", "memory", memory.to_export());
 
     let array_state = ArrayState { vec: Vec::new() };
-    let instance_state = SimpleExcutor {};
+    let instance_state = SimpleExcutor {
+        memory: Memory::from(memory),
+    };
     array_state.add_to_wasmer_linker(instance_state, &mut wasmer_linker, &store);
 
     let instance = wasmer::Instance::new(&module, &wasmer_linker).unwrap();

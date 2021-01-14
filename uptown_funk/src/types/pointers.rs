@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use crate::{Executor, FromWasm};
+use crate::{memory::Memory, Executor, FromWasm};
 
 pub trait WasmType {
     type Value;
@@ -43,7 +43,7 @@ impl WasmType for u32 {
     }
 }
 
-impl<'a, S, T: WasmType> WasmType for Pointer<'a, S, T> {
+impl<S, T: WasmType> WasmType for Pointer<S, T> {
     type Value = T::Value;
 
     fn copy_to(&self, mem: &mut [u8]) {
@@ -60,25 +60,25 @@ impl<'a, S, T: WasmType> WasmType for Pointer<'a, S, T> {
     }
 }
 
-pub struct Pointer<'a, S, T: WasmType> {
+pub struct Pointer<S, T: WasmType> {
     loc: usize,
-    mem: &'a mut [u8],
+    mem: Memory,
     _state: PhantomData<S>,
     _type: PhantomData<T>,
 }
 
-impl<'a, S, T: WasmType> Pointer<'a, S, T> {
+impl<S, T: WasmType> Pointer<S, T> {
     pub fn set(&mut self, val: &T) {
-        val.copy_to(&mut self.mem[(self.loc as usize)..]);
+        val.copy_to(&mut self.mem.as_mut_slice()[(self.loc as usize)..]);
     }
 
     pub fn value(&self) -> T::Value {
-        T::value_from_memory(&self.mem[self.loc..])
+        T::value_from_memory(&self.mem.as_mut_slice()[self.loc..])
     }
 
     pub fn next(self) -> Option<Self> {
         let loc = self.loc + T::len();
-        if loc >= self.mem.len() {
+        if loc >= self.mem.as_mut_slice().len() {
             None
         } else {
             Some(Self { loc, ..self })
@@ -86,15 +86,15 @@ impl<'a, S, T: WasmType> Pointer<'a, S, T> {
     }
 }
 
-impl<'a, S> Pointer<'a, S, u8> {
+impl<S> Pointer<S, u8> {
     pub fn copy_slice(self, slice: &[u8]) -> Option<Self> {
         let loc = self.loc + slice.len();
-        if loc > self.mem.len() {
+        if loc > self.mem.as_mut_slice().len() {
             None
         } else {
-            self.mem[self.loc..self.loc + slice.len()].copy_from_slice(slice);
+            self.mem.as_mut_slice()[self.loc..self.loc + slice.len()].copy_from_slice(slice);
 
-            if loc == self.mem.len() {
+            if loc == self.mem.as_mut_slice().len() {
                 return None;
             }
 
@@ -103,20 +103,18 @@ impl<'a, S> Pointer<'a, S, u8> {
     }
 }
 
-impl<'a, S, T: WasmType> FromWasm<'a> for Pointer<'a, S, T> {
+impl<S, T: WasmType> FromWasm for Pointer<S, T> {
     type From = u32;
     type State = S;
 
     fn from(
         _state: &mut Self::State,
-        executor: &'a impl Executor,
+        executor: &impl Executor,
         wasm_u32: u32,
     ) -> Result<Self, crate::Trap> {
-        // TODO unwrap
-        let mem = executor.wasm_memory();
         Ok(Pointer {
             loc: wasm_u32 as usize,
-            mem,
+            mem: executor.memory(),
             _state: PhantomData::default(),
             _type: PhantomData::default(),
         })

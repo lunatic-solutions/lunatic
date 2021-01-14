@@ -31,6 +31,7 @@ pub fn wrap(namespace: &LitStr, method: &ImplItemMethod) -> Result<TokenStream2,
         let closure = |state: &uptown_funk::wasmer::WasmerStateWrapper<Self, E>, #guest_signature_input|
          -> Result<#guest_signature_return, wasmtime::Trap> {
             let state_wrapper = state.state_wrapper();
+            let memory = state_wrapper.memory();
             #from_guest_input_transformations
             let result = {
                 let mut borrow = state_wrapper.borrow_state_mut();

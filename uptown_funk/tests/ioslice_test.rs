@@ -1,25 +1,17 @@
-use uptown_funk::{host_functions, Executor, HostFunctions};
+use uptown_funk::{host_functions, memory::Memory, Executor, HostFunctions};
 use wasmer::{self, Exportable};
 use wasmtime;
 
 use std::fs::read;
 use std::io::IoSliceMut;
 
-enum Memory {
-    Wasmer(wasmer::Memory),
-    Wasmtime(wasmtime::Memory),
-}
-
 struct SimpleExcutor {
     memory: Memory,
 }
 
 impl Executor for SimpleExcutor {
-    fn wasm_memory(&self) -> &mut [u8] {
-        match &self.memory {
-            Memory::Wasmer(memory) => unsafe { memory.data_unchecked_mut() },
-            Memory::Wasmtime(memory) => unsafe { memory.data_unchecked_mut() },
-        }
+    fn memory(&self) -> Memory {
+        self.memory.clone()
     }
 }
 
@@ -51,7 +43,7 @@ fn wasmtime_ioslice_test() {
     let empty = Empty {};
 
     let instance_state = SimpleExcutor {
-        memory: Memory::Wasmtime(memory),
+        memory: Memory::from(memory),
     };
     empty.add_to_linker(instance_state, &mut linker);
 
