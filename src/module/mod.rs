@@ -1,4 +1,7 @@
 use anyhow::Result;
+#[cfg(feature = "vm-wasmer")]
+use wasmer::Module;
+#[cfg(feature = "vm-wasmtime")]
 use wasmtime::Module;
 
 use crate::linker::engine;

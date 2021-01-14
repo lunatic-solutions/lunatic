@@ -99,14 +99,22 @@ impl Process {
 
                 match function {
                     FunctionLookup::Name(name) => {
+                        #[cfg(feature = "vm-wasmer")]
+                        let func = instance.exports.get_function(name).unwrap();
+                        #[cfg(feature = "vm-wasmtime")]
                         let func = instance.get_func(name).unwrap();
+    
                         // Measure how long the function takes for named functions.
                         let performance_timer = std::time::Instant::now();
                         func.call(&[])?;
                         info!(target: "performance", "Process {} finished in {} ms.", name, performance_timer.elapsed().as_millis());
                     }
                     FunctionLookup::TableIndex((index, argument1, argument2)) => {
+                        #[cfg(feature = "vm-wasmer")]
+                        let func = instance.exports.get_function("lunatic_spawn_by_index").unwrap();
+                        #[cfg(feature = "vm-wasmtime")]
                         let func = instance.get_func("lunatic_spawn_by_index").unwrap();
+
                         func.call(&[(index as i32).into(), (argument1 as i32).into(), (argument2 as i32).into()])?;
                     }
                 }
