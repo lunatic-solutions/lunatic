@@ -1,7 +1,7 @@
 use super::types::*;
 
 use anyhow::Result;
-use uptown_funk::{host_functions, types, Executor, FromWasm};
+use uptown_funk::{host_functions, types, Trap};
 
 use log::trace;
 use std::io::{self, IoSlice, IoSliceMut, Read, Write};
@@ -17,25 +17,10 @@ impl WasiState {
         Self {}
     }
 }
-struct ExitCode {}
 
-impl FromWasm for ExitCode {
-    type From = u32;
-    type State = WasiState;
-
-    fn from(
-        _: &mut Self::State,
-        _: &impl Executor,
-        exit_code: u32,
-    ) -> Result<Self, uptown_funk::Trap> {
-        Err(uptown_funk::Trap::new(format!(
-            "proc_exit({}) called",
-            exit_code
-        )))
-    }
-}
-
+type ExitCode = super::types::ExitCode<WasiState>;
 type Ptr<T> = types::Pointer<WasiState, T>;
+type Status = Result<types::Status<WasiState>, Trap>;
 
 #[host_functions(namespace = "wasi_snapshot_preview1")]
 impl WasiState {
@@ -102,12 +87,17 @@ impl WasiState {
         WASI_ESUCCESS
     }
 
-    fn environ_get<'a>(&self, mut environ: Ptr<Ptr<u8>>, mut environ_buf: Ptr<u8>) -> u32 {
+    fn environ_get(&self, mut environ: Ptr<Ptr<u8>>, mut environ_buf: Ptr<u8>) -> Status {
         for kv in ENV.iter() {
             environ.set(&environ_buf);
-            environ_buf = environ_buf.copy_slice(&kv).unwrap();
-            environ = environ.next().unwrap();
+            environ_buf = environ_buf
+                .copy_slice(&kv)?
+                .ok_or_else(|| Trap::new("Reached end of the environment variables buffer"))?;
+            environ = environ
+                .next()
+                .ok_or_else(|| Trap::new("Reached end of the environ var pointer buffer"))?;
         }
-        WASI_ESUCCESS
+
+        WasiStatus::Success.into()
     }
 }

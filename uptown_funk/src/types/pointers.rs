@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use crate::{memory::Memory, Executor, FromWasm};
+use crate::{Executor, FromWasm, Trap, memory::Memory};
 
 pub trait WasmType {
     type Value;
@@ -87,18 +87,18 @@ impl<S, T: WasmType> Pointer<S, T> {
 }
 
 impl<S> Pointer<S, u8> {
-    pub fn copy_slice(self, slice: &[u8]) -> Option<Self> {
+    pub fn copy_slice(self, slice: &[u8]) -> Result<Option<Self>, Trap> {
         let loc = self.loc + slice.len();
         if loc > self.mem.as_mut_slice().len() {
-            None
+            Err(Trap::new("Tried to copy slice over memory bounds"))
         } else {
             self.mem.as_mut_slice()[self.loc..self.loc + slice.len()].copy_from_slice(slice);
 
             if loc == self.mem.as_mut_slice().len() {
-                return None;
+                return Ok(None);
             }
 
-            Some(Self { loc, ..self })
+            Ok(Some(Self { loc, ..self }))
         }
     }
 }

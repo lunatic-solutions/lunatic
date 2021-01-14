@@ -2,12 +2,13 @@
 
 #![allow(dead_code)]
 
-use std::io::{IoSlice, IoSliceMut};
+use std::{io::{IoSlice, IoSliceMut}, marker::PhantomData};
 use std::mem::size_of;
 use std::slice::{from_raw_parts, from_raw_parts_mut};
 use std::str;
 
 use smallvec::SmallVec;
+use uptown_funk::{Executor, FromWasm, Trap, types};
 
 /// WASI size (u32) type
 pub struct WasiSize {
@@ -229,6 +230,35 @@ impl WasiEnvVars {
 
     pub fn iter(&self) -> std::slice::Iter<Vec<u8>> {
         self.bytes.iter()
+    }
+}
+pub struct ExitCode<S> { _stats: PhantomData<S> }
+
+impl <S> FromWasm for ExitCode<S> {
+    type From = u32;
+    type State = S;
+
+    fn from(
+        _: &mut Self::State,
+        _: &impl Executor,
+        exit_code: u32,
+    ) -> Result<Self, uptown_funk::Trap> {
+        Err(uptown_funk::Trap::new(format!(
+            "proc_exit({}) called",
+            exit_code
+        )))
+    }
+}
+
+pub enum WasiStatus {
+    Success,
+}
+
+impl<S> Into<Result<types::Status<S>, Trap>> for WasiStatus {
+    fn into(self) -> Result<types::Status<S>, Trap> {
+        match self {
+            WasiStatus::Success => Ok(WASI_ESUCCESS.into()),
+        }
     }
 }
 
