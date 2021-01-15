@@ -11,7 +11,7 @@ use crate::linker::LunaticLinker;
 use crate::module::LunaticModule;
 
 use log::info;
-use std::{future::Future};
+use std::future::Future;
 use std::mem::ManuallyDrop;
 
 lazy_static! {
@@ -90,7 +90,7 @@ impl Clone for ProcessEnvironment {
         Self {
             module: self.module.clone(),
             memory: unsafe { std::ptr::read(&self.memory as *const Memory) },
-            yielder: self.yielder
+            yielder: self.yielder,
         }
     }
 }
@@ -135,7 +135,7 @@ impl Process {
                         let func = instance.exports.get_function(name).unwrap();
                         #[cfg(feature = "vm-wasmtime")]
                         let func = instance.get_func(name).unwrap();
-    
+
                         // Measure how long the function takes for named functions.
                         let performance_timer = std::time::Instant::now();
                         func.call(&[])?;

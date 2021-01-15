@@ -2,13 +2,16 @@
 
 #![allow(dead_code)]
 
-use std::{io::{IoSlice, IoSliceMut}, marker::PhantomData};
 use std::mem::size_of;
 use std::slice::{from_raw_parts, from_raw_parts_mut};
 use std::str;
+use std::{
+    io::{IoSlice, IoSliceMut},
+    marker::PhantomData,
+};
 
 use smallvec::SmallVec;
-use uptown_funk::{Executor, FromWasm, Trap, types};
+use uptown_funk::{types, Executor, FromWasm, Trap};
 
 /// WASI size (u32) type
 pub struct WasiSize {
@@ -232,9 +235,11 @@ impl WasiEnvVars {
         self.bytes.iter()
     }
 }
-pub struct ExitCode<S> { _stats: PhantomData<S> }
+pub struct ExitCode<S> {
+    _stats: PhantomData<S>,
+}
 
-impl <S> FromWasm for ExitCode<S> {
+impl<S> FromWasm for ExitCode<S> {
     type From = u32;
     type State = S;
 

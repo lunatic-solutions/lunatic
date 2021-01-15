@@ -1,11 +1,11 @@
-use std::marker::PhantomData;
 use crate::{ToWasm, Trap};
+use std::marker::PhantomData;
 pub struct Status<S> {
     status: u32,
     _state: PhantomData<S>,
 }
 
-impl <S> ToWasm for Result<Status<S>, Trap> {
+impl<S> ToWasm for Result<Status<S>, Trap> {
     type To = u32;
     type State = S;
 
@@ -18,7 +18,7 @@ impl <S> ToWasm for Result<Status<S>, Trap> {
     }
 }
 
-impl <S> From<u32> for Status<S> {
+impl<S> From<u32> for Status<S> {
     fn from(v: u32) -> Self {
         Self {
             status: v,

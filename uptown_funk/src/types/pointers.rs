@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use crate::{Executor, FromWasm, Trap, memory::Memory};
+use crate::{memory::Memory, Executor, FromWasm, Trap};
 
 pub trait WasmType {
     type Value;
