@@ -2,22 +2,23 @@ use criterion::{criterion_group, criterion_main, Criterion};
 use lunatic_vm::linker::LunaticLinker;
 use lunatic_vm::module::LunaticModule;
 use lunatic_vm::process::MemoryChoice;
-use wasmtime::{Engine, Linker, Module, Store};
 
 fn lunatic_bench(c: &mut Criterion) {
+    #[cfg(feature = "vm-wasmtime")]
     c.bench_function("wasmtime instance creation", |b| {
-        let engine = Engine::default();
+        let engine = wasmtime::Engine::default();
         let wasm = include_bytes!("start.wasm");
-        let module = Module::new(&engine, &wasm).unwrap();
+        let module = wasmtime::Module::new(&engine, &wasm).unwrap();
 
         b.iter(move || {
-            let store = Store::new(&engine);
-            let linker = Linker::new(&store);
+            let store = wasmtime::Store::new(&engine);
+            let linker = wasmtime::Linker::new(&store);
             let _instance = linker.instantiate(&module);
             store
         });
     });
 
+    #[cfg(feature = "vm-wasmer")]
     c.bench_function("wasmer instance creation", |b| {
         let store = wasmer::Store::default();
         let wasm = include_bytes!("start.wasm");

@@ -114,7 +114,7 @@ pub fn transform(
                                     let result_ptr = uptown_funk::Trap::try_option(result_ptr)?;
                                     let result_ = <#type_path as uptown_funk::ToWasm>::to(
                                         &mut state_wrapper.borrow_state_mut(),
-                                        state_wrapper.instance(),
+                                        state_wrapper.executor(),
                                         result.#index
                                     )?;
                                     *result_ptr = result_;
@@ -172,7 +172,7 @@ fn first_output(type_path: &TypePath) -> Result<(TokenStream2, TokenStream2), To
                 | output: #ident | -> Result<<#ident as uptown_funk::ToWasm>::To, uptown_funk::Trap> {
                     <#ident as uptown_funk::ToWasm>::to(
                         &mut state_wrapper.borrow_state_mut(),
-                        state_wrapper.instance(),
+                        state_wrapper.executor(),
                         output
                     )
                 }

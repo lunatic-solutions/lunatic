@@ -11,7 +11,7 @@ use crate::linker::LunaticLinker;
 use crate::module::LunaticModule;
 
 use log::info;
-use std::future::Future;
+use std::{future::Future};
 use std::mem::ManuallyDrop;
 
 lazy_static! {
@@ -29,7 +29,7 @@ pub enum FunctionLookup {
 }
 
 /// For now we always create a new memory per instance, but eventually we will want to support
-/// sharing memories between instances (once the WASM multi-threading proposal is supported in Wasmtime).
+/// sharing memories between instances.
 #[derive(Clone)]
 pub enum MemoryChoice {
     Existing,
@@ -44,7 +44,7 @@ pub enum MemoryChoice {
 ///
 /// Having a mutable slice of Wasmtime's memory is generally unsafe, but Lunatic always uses
 /// static memories and one memory per instance. This makes it somewhat safe?
-#[derive(Clone)]
+#[cfg_attr(feature = "vm-wasmer", derive(Clone))]
 pub struct ProcessEnvironment {
     module: LunaticModule,
     memory: Memory,
@@ -64,6 +64,34 @@ impl uptown_funk::Executor for ProcessEnvironment {
 
     fn memory(&self) -> Memory {
         self.memory.clone()
+    }
+}
+
+// Because of a bug in Wasmtime: https://github.com/bytecodealliance/wasmtime/issues/2583
+// we need to duplicate the Memory in the Linker before storing it in ProcessEnvironment,
+// to not increase the reference count.
+// When we are droping the memory we need to make sure we forget the value to not decrease
+// the reference count.
+// Safety: The ProcessEnvironment has the same lifetime as Memory, so it should be safe to
+// do this.
+#[cfg(feature = "vm-wasmtime")]
+impl Drop for ProcessEnvironment {
+    fn drop(&mut self) {
+        let memory = std::mem::replace(&mut self.memory, Memory::Empty);
+        std::mem::forget(memory)
+    }
+}
+
+// For the same reason mentioned on the Drop trait we can't increase the reference count
+// on the Memory when cloning.
+#[cfg(feature = "vm-wasmtime")]
+impl Clone for ProcessEnvironment {
+    fn clone(&self) -> Self {
+        Self {
+            module: self.module.clone(),
+            memory: unsafe { std::ptr::read(&self.memory as *const Memory) },
+            yielder: self.yielder
+        }
     }
 }
 

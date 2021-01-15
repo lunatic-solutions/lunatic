@@ -19,7 +19,7 @@ pub fn host_functions(attr: TokenStream, item: TokenStream) -> TokenStream {
         Err(error) => return error,
     };
 
-    // Check if type is compatible with Wasm instance state
+    // Check if type is compatible with the state
     let implementation = parse_macro_input!(item as ItemImpl);
     let self_ty = match state_type::check(&implementation.self_ty) {
         Ok(ident) => ident,
@@ -43,11 +43,11 @@ pub fn host_functions(attr: TokenStream, item: TokenStream) -> TokenStream {
     let wasmtime_expanded = quote! {};
     #[cfg(feature = "vm-wasmtime")]
     let wasmtime_expanded = quote! {
-        fn add_to_linker<E: 'static>(self, instance: E, linker: &mut wasmtime::Linker)
+        fn add_to_linker<E: 'static>(self, executor: E, linker: &mut wasmtime::Linker)
             where
                 E: uptown_funk::Executor
             {
-                let state = uptown_funk::StateWrapper::new(self, instance);
+                let state = uptown_funk::StateWrapper::new(self, executor);
                 let state = std::rc::Rc::new(state);
                 #(#wasmtime_method_wrappers)*
             }
@@ -72,13 +72,13 @@ pub fn host_functions(attr: TokenStream, item: TokenStream) -> TokenStream {
     let wasmer_expanded = quote! {
         fn add_to_wasmer_linker<E: 'static>(
             self,
-            instance: E,
+            executor: E,
             wasmer_linker: &mut uptown_funk::wasmer::WasmerLinker,
             store: &wasmer::Store,
         ) where
             E: uptown_funk::Executor,
         {
-            let state = uptown_funk::StateWrapper::new(self, instance);
+            let state = uptown_funk::StateWrapper::new(self, executor);
             let state = uptown_funk::wasmer::WasmerStateWrapper::new(state);
             #(#wasmer_method_wrappers)*
         }

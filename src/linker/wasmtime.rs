@@ -32,8 +32,11 @@ impl LunaticLinker {
             }
         };
 
-        let uptown_funk_memory: uptown_funk::memory::Memory = memory.clone().into();
-        let environment = ProcessEnvironment::new(module.clone(), uptown_funk_memory, yielder_ptr);
+        // Duplicate Memory without cloning to not create a cycle in Wasmtime's runtime.
+        // For a detailed explanation why we do this, read the comment on `impl Drop for ProcessEnvironment`.
+        let memory_duplicate = unsafe { std::ptr::read(&memory as *const Memory) };
+        let memory_duplicate: uptown_funk::memory::Memory = memory_duplicate.into();
+        let environment = ProcessEnvironment::new(module.clone(), memory_duplicate, yielder_ptr);
 
         linker.define("lunatic", "memory", memory)?;
 

@@ -1,5 +1,6 @@
 #[derive(Clone)]
 pub enum Memory {
+    Empty,
     #[cfg(feature = "vm-wasmer")]
     Wasmer(wasmer::Memory),
     #[cfg(feature = "vm-wasmtime")]
@@ -18,6 +19,7 @@ impl Memory {
                 Memory::Wasmer(mem) => mem.data_unchecked_mut(),
                 #[cfg(feature = "vm-wasmtime")]
                 Memory::Wasmtime(mem) => mem.data_unchecked_mut(),
+                Memory::Empty => panic!("Called as_mut_slice() on uptown_funk::Memory::Empty"),
             }
         }
     }

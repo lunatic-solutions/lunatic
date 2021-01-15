@@ -25,14 +25,14 @@ pub trait Executor {
 
 pub trait HostFunctions {
     #[cfg(feature = "vm-wasmtime")]
-    fn add_to_linker<E>(self, instance: E, linker: &mut wasmtime::Linker)
+    fn add_to_linker<E>(self, executor: E, linker: &mut wasmtime::Linker)
     where
         E: Executor + 'static;
 
     #[cfg(feature = "vm-wasmer")]
     fn add_to_wasmer_linker<E>(
         self,
-        instance: E,
+        executor: E,
         linker: &mut wasmer::WasmerLinker,
         store: &::wasmer::Store,
     ) where
@@ -45,7 +45,7 @@ pub trait FromWasm {
 
     fn from(
         state: &mut Self::State,
-        instance: &impl Executor,
+        executor: &impl Executor,
         from: Self::From,
     ) -> Result<Self, Trap>
     where
@@ -58,7 +58,7 @@ pub trait ToWasm {
 
     fn to(
         state: &mut Self::State,
-        instance: &impl Executor,
+        executor: &impl Executor,
         host_value: Self,
     ) -> Result<Self::To, Trap>;
 }
@@ -69,10 +69,10 @@ pub struct StateWrapper<S, E: Executor> {
 }
 
 impl<S, E: Executor> StateWrapper<S, E> {
-    pub fn new(state: S, instance: E) -> Self {
+    pub fn new(state: S, executor: E) -> Self {
         Self {
             state: RefCell::new(state),
-            env: instance,
+            env: executor,
         }
     }
 
@@ -84,7 +84,7 @@ impl<S, E: Executor> StateWrapper<S, E> {
         self.state.borrow_mut()
     }
 
-    pub fn instance(&self) -> &E {
+    pub fn executor(&self) -> &E {
         &self.env
     }
 
