@@ -20,43 +20,27 @@ struct Empty {}
 
 #[host_functions(namespace = "env")]
 impl Empty {
-    fn add(&self, a: MyNumber, b: MyNumber) -> i32 {
-        a + b
+    fn trap(&self) -> Traps {
+        Traps {}
     }
 }
 
-struct MyNumber {
-    value: i32,
-}
+struct Traps {}
 
-impl std::ops::Add<MyNumber> for MyNumber {
-    type Output = i32;
-
-    fn add(self, rhs: MyNumber) -> Self::Output {
-        self.value + rhs.value
-    }
-}
-
-impl uptown_funk::FromWasm for MyNumber {
-    type From = u32;
+impl uptown_funk::ToWasm for Traps {
+    type To = u32;
     type State = Empty;
 
-    fn from(
-        _: &mut Self::State,
-        _: &impl Executor,
-        wasm_u32: u32,
-    ) -> Result<Self, uptown_funk::Trap> {
-        Ok(MyNumber {
-            value: wasm_u32 as i32,
-        })
+    fn to(_: &mut Self::State, _: &impl Executor, _: Self) -> Result<u32, uptown_funk::Trap> {
+        Err(uptown_funk::Trap::new("Execution traped"))
     }
 }
 
 #[cfg(feature = "vm-wasmtime")]
 #[test]
-fn wasmtime_custom_type_add_test() {
+fn wasmtime_trap_test() {
     let store = wasmtime::Store::default();
-    let wasm = read("tests/wasm/custom_types.wasm")
+    let wasm = read("tests/wasm/trap.wasm")
         .expect("Wasm file not found. Did you run ./build.sh inside the tests/wasm/ folder?");
     let module = wasmtime::Module::new(store.engine(), wasm).unwrap();
     let mut linker = wasmtime::Linker::new(&store);
@@ -74,14 +58,17 @@ fn wasmtime_custom_type_add_test() {
     let instance = linker.instantiate(&module).unwrap();
     let test = instance.get_func("test").unwrap().get0::<()>().unwrap();
 
-    assert_eq!(test().is_ok(), true);
+    match test() {
+        Ok(_) => assert_eq!("Did trap", "false"),
+        Err(trap) => assert!(trap.to_string().contains("Execution traped")),
+    };
 }
 
 #[cfg(feature = "vm-wasmer")]
 #[test]
-fn wasmer_custom_type_add_test() {
+fn wasmer_trap_test() {
     let store = wasmer::Store::default();
-    let wasm = read("tests/wasm/custom_types.wasm")
+    let wasm = read("tests/wasm/trap.wasm")
         .expect("Wasm file not found. Did you run ./build.sh inside the tests/wasm/ folder?");
     let module = wasmer::Module::new(&store, wasm).unwrap();
     let mut wasmer_linker = uptown_funk::wasmer::WasmerLinker::new();
@@ -104,5 +91,11 @@ fn wasmer_custom_type_add_test() {
         .native::<(), ()>()
         .unwrap();
 
-    assert_eq!(test.call().is_ok(), true);
+    match test.call() {
+        Ok(_) => assert_eq!("Did trap", "false"),
+        Err(trap) => {
+            println!("{:?}", trap.message());
+            assert!(trap.message().contains("Execution traped"));
+        }
+    };
 }

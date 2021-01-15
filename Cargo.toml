@@ -10,17 +10,17 @@ readme = "Readme.md"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-default = ["vm-wasmer"]
-vm-wasmtime = []
-vm-wasmer = []
+default = ["vm-wasmtime"]
+vm-wasmtime = ["uptown_funk/vm-wasmtime", "wasmtime", "wasmtime-runtime"]
+vm-wasmer = ["uptown_funk/vm-wasmer", "wasmer", "wasmer-vm"]
 
 [dependencies]
 async-wormhole = "0.2"
 uptown_funk = { path = "./uptown_funk", features=["async"] }
-wasmer = {path = "./wasmer/lib/api"}
-wasmer-vm = {path = "./wasmer/lib/vm"}
-wasmtime = {path = "./wasmtime/crates/wasmtime"}
-wasmtime-runtime = {path = "./wasmtime/crates/runtime"}
+wasmer = {path = "./wasmer/lib/api", optional = true}
+wasmer-vm = {path = "./wasmer/lib/vm", optional = true}
+wasmtime = {path = "./wasmtime/crates/wasmtime", optional = true}
+wasmtime-runtime = {path = "./wasmtime/crates/runtime", optional = true}
 walrus = "0.18"
 smol = "1.2"
 easy-parallel = "3"

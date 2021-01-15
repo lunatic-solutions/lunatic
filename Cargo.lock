@@ -1920,6 +1920,7 @@ name = "uptown_funk"
 version = "0.1.1"
 dependencies = [
  "smallvec",
+ "thiserror",
  "uptown_funk_macro",
  "wasmer",
  "wasmtime",

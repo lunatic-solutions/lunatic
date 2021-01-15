@@ -1,5 +1,7 @@
 use uptown_funk::{host_functions, memory::Memory, Executor, HostFunctions};
+#[cfg(feature = "vm-wasmer")]
 use wasmer::{self, Exportable};
+#[cfg(feature = "vm-wasmtime")]
 use wasmtime;
 
 use std::fs::read;
@@ -44,6 +46,7 @@ impl uptown_funk::ToWasm for MyNumber {
     }
 }
 
+#[cfg(feature = "vm-wasmtime")]
 #[test]
 fn wasmtime_custom_type_return_test() {
     let store = wasmtime::Store::default();
@@ -75,6 +78,7 @@ fn wasmtime_custom_type_return_test() {
     assert_eq!(test_mutlivalue().is_ok(), true);
 }
 
+#[cfg(feature = "vm-wasmer")]
 #[test]
 fn wasmer_custom_type_return_test() {
     let store = wasmer::Store::default();

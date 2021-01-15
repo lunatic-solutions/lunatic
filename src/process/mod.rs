@@ -89,8 +89,12 @@ impl Process {
 
     /// Spawn a new process.
     pub fn spawn(module: LunaticModule, function: FunctionLookup, memory: MemoryChoice) -> Self {
+        #[cfg(feature = "vm-wasmer")]
+        let tls = [&wasmer_vm::traphandlers::tls::PTR];
+        #[cfg(feature = "vm-wasmtime")]
+        let tls = [&wasmtime_runtime::traphandlers::tls::PTR];
         let process = WORMHOLE_POOL.with_tls(
-            [&wasmtime_runtime::traphandlers::tls::PTR],
+            tls,
             move |yielder| {
                 let yielder_ptr = &yielder as *const AsyncYielderCast as usize;
 

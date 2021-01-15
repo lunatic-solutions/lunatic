@@ -29,16 +29,22 @@ pub fn wrap(namespace: &LitStr, method: &ImplItemMethod) -> Result<TokenStream2,
 
     let result = quote! {
         let closure = |state: &uptown_funk::wasmer::WasmerStateWrapper<Self, E>, #guest_signature_input|
-         -> Result<#guest_signature_return, wasmtime::Trap> {
-            let state_wrapper = state.state_wrapper();
-            let memory = state_wrapper.memory();
-            #from_guest_input_transformations
-            let result = {
-                let mut borrow = state_wrapper.borrow_state_mut();
-                let result = Self::#method_name(&mut borrow, #host_call_signature);
-                #maybe_async(result)
-            };
-            Ok(#from_host_return_transformations(result)?)
+         -> #guest_signature_return {
+            // Wasmer host functions can only return simple types and we must manually raise a trap.
+            match (|| -> Result<#guest_signature_return, uptown_funk::Trap> {
+                let state_wrapper = state.state_wrapper();
+                let memory = state_wrapper.memory();
+                #from_guest_input_transformations
+                let result = {
+                    let mut borrow = state_wrapper.borrow_state_mut();
+                    let result = Self::#method_name(&mut borrow, #host_call_signature);
+                    #maybe_async(result)
+                };
+                Ok(#from_host_return_transformations(result)?)
+            })() {
+                Ok(result) => result,
+                Err(trap) => unsafe { wasmer::raise_user_trap(Box::new(trap)) }
+            }
         };
 
         let func = wasmer::Function::new_native_with_env(store, state.clone(), closure);

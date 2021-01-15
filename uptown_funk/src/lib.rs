@@ -1,6 +1,7 @@
 pub mod memory;
 pub mod state;
 pub mod types;
+#[cfg(feature = "vm-wasmer")]
 pub mod wasmer;
 
 use std::cell::{Ref, RefCell, RefMut};
@@ -23,10 +24,12 @@ pub trait Executor {
 }
 
 pub trait HostFunctions {
+    #[cfg(feature = "vm-wasmtime")]
     fn add_to_linker<E>(self, instance: E, linker: &mut wasmtime::Linker)
     where
         E: Executor + 'static;
 
+    #[cfg(feature = "vm-wasmer")]
     fn add_to_wasmer_linker<E>(
         self,
         instance: E,
@@ -37,7 +40,7 @@ pub trait HostFunctions {
 }
 
 pub trait FromWasm {
-    type From: wasmtime::WasmTy + ::wasmer::FromToNativeWasmType + 'static;
+    type From;
     type State;
 
     fn from(
@@ -90,6 +93,8 @@ impl<S, E: Executor> StateWrapper<S, E> {
     }
 }
 
+#[cfg_attr(feature = "vm-wasmer", error("{message}"))]
+#[cfg_attr(feature = "vm-wasmer", derive(thiserror::Error))]
 #[derive(Debug)]
 pub struct Trap {
     message: String,
@@ -122,6 +127,7 @@ impl Trap {
     }
 }
 
+#[cfg(feature = "vm-wasmtime")]
 impl From<Trap> for wasmtime::Trap {
     fn from(trap: Trap) -> Self {
         wasmtime::Trap::new(trap.message)

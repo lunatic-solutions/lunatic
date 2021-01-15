@@ -1,5 +1,7 @@
 use uptown_funk::{host_functions, memory::Memory, Executor, HostFunctions};
+#[cfg(feature = "vm-wasmer")]
 use wasmer::{self, Exportable};
+#[cfg(feature = "vm-wasmtime")]
 use wasmtime;
 
 use std::fs::read;
@@ -28,6 +30,7 @@ impl Empty {
     fn vectored_write(&self, _bufs: &[std::io::IoSlice<'_>]) {}
 }
 
+#[cfg(feature = "vm-wasmtime")]
 #[test]
 fn wasmtime_ioslice_test() {
     let store = wasmtime::Store::default();
@@ -57,6 +60,7 @@ fn wasmtime_ioslice_test() {
     assert_eq!(test().is_ok(), true);
 }
 
+#[cfg(feature = "vm-wasmer")]
 #[test]
 fn wasmer_ioslice_test() {
     let store = wasmer::Store::default();
