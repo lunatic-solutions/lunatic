@@ -34,10 +34,13 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
+            target_name: lunatic-runtime
             asset_name: lunatic-linux-amd64.zip
           - os: macos-latest
+            target_name: lunatic-runtime
             asset_name: lunatic-macos-amd64.zip
           - os: windows-latest
+            target_name: lunatic-runtime.exe
             asset_name: lunatic-windows-amd64.zip
     steps:
       - name: Checkout code
@@ -55,7 +58,7 @@ jobs:
       - name: Zip release
         uses: papeloto/action-zip@v1
         with:
-          files: README.md LICENSE-MIT LICENSE-APACHE ./target/release/lunatic-runtime
+          files: README.md LICENSE-MIT LICENSE-APACHE ./target/release/${{ matrix.target_name }}
           dest: ${{ matrix.asset_name }}
       - name: Upload binary to release
         uses: actions/upload-release-asset@v1
