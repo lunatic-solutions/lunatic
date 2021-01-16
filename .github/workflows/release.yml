@@ -44,6 +44,12 @@ jobs:
         uses: actions/checkout@v2
         with:
           submodules: "true"
+      - name: Install latest nightly
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly
+          override: true
+          components: rustfmt, clippy
       - name: Build project
         run: cargo +nightly build --release
       - name: Upload binary to release
