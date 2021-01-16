@@ -58,3 +58,4 @@ jobs:
           upload_url: ${{ needs.release.outputs.upload_url }}
           asset_path: ./target/release/lunatic-runtime
           asset_name: ${{ matrix.asset_name }}
+          asset_content_type: application/octet-stream
