@@ -34,9 +34,11 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            asset_name: lunatic-${{ github.ref }}-linux-amd64
+            asset_name: lunatic-linux-amd64.zip
           - os: macos-latest
-            asset_name: lunatic-${{ github.ref }}-macos-amd64
+            asset_name: lunatic-macos-amd64.zip
+          - os: windows-latest
+            asset_name: lunatic-windows-amd64.zip
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
@@ -50,12 +52,17 @@ jobs:
           components: rustfmt, clippy
       - name: Build project
         run: cargo +nightly build --release
+      - name: Zip release
+        uses: papeloto/action-zip@v1
+        with:
+          files: README.md LICENSE-MIT LICENSE-APACHE ./target/release/lunatic-runtime
+          dest: ${{ matrix.asset_name }}
       - name: Upload binary to release
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ needs.release.outputs.upload_url }}
-          asset_path: ./target/release/lunatic-runtime
+          asset_path: ${{ matrix.asset_name }}
           asset_name: ${{ matrix.asset_name }}
-          asset_content_type: application/octet-stream
+          asset_content_type: application/zip
