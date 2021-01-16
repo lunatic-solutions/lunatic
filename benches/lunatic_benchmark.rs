@@ -1,7 +1,7 @@
 use criterion::{criterion_group, criterion_main, Criterion};
-use lunatic_vm::linker::LunaticLinker;
-use lunatic_vm::module::LunaticModule;
-use lunatic_vm::process::MemoryChoice;
+use lunatic_runtime::linker::LunaticLinker;
+use lunatic_runtime::module::LunaticModule;
+use lunatic_runtime::process::MemoryChoice;
 
 fn lunatic_bench(c: &mut Criterion) {
     #[cfg(feature = "vm-wasmtime")]

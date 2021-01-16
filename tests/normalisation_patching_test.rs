@@ -7,7 +7,7 @@ use pretty_assertions::assert_eq;
 use std::fs::read_to_string;
 use std::path::{Path, PathBuf};
 
-use lunatic_vm::normalisation::patch;
+use lunatic_runtime::normalisation::patch;
 
 fn main() {
     let mut tests = Vec::new();
