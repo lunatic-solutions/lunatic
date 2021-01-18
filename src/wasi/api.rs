@@ -46,9 +46,11 @@ impl WasiState {
         }
     }
 
-    fn clock_time_get(&self, _id: u32, _precision: u64) -> (u32, u64) {
-        // TODO
-        (0, 0)
+    fn clock_time_get(&self, id: Clockid, precision: u64) -> (u32, u64) {
+        match self.ctx.clock_time_get(id.inner, precision) {
+            Ok(time) => (WASI_ESUCCESS, time),
+            Err(_) => (WASI_EINVAL, 0),
+        }
     }
 
     fn path_filestat_get(&self, _fd: u32, _flags: u32, _path: &str) -> (u32, u32) {
@@ -63,6 +65,14 @@ impl WasiState {
 
     fn random_get(&self, _buf: &mut [u8]) -> u32 {
         // TODO
+        0
+    }
+
+    fn fd_readdir(&self, _fd: u32, _buf: &mut [u8], _cookie: u64) -> (u32, u32) {
+        (0, 0)
+    }
+
+    fn path_create_directory(&self, _fd: u32, _path: &str) -> u32 {
         0
     }
 

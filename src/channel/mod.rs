@@ -2,7 +2,7 @@
 //!
 //! Two processes don't share any memory and the only way of communicating with each other is through
 //! messages. All data sent from one process to another is first copied from the heap of the source
-//! process to the `ChannelBuffer` and then from the buffer to the heap of the receiving process.
+//! process into the `ChannelBuffer` and then from the buffer to the heap of the receiving process.
 
 pub mod api;
 
