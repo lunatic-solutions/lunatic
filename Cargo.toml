@@ -9,6 +9,14 @@ readme = "Readme.md"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[lib]
+name = "lunatic_runtime"
+path = "src/lib.rs"
+
+[[bin]]
+name = "lunatic"
+path = "src/main.rs"
+
 [features]
 default = ["vm-wasmer"]
 vm-wasmtime = ["uptown_funk/vm-wasmtime", "wasmtime", "wasmtime-runtime"]
