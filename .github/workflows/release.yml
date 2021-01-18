@@ -57,8 +57,9 @@ jobs:
         run: cargo +nightly build --release
       - name: Tar release on Unix
         if: runner.os != 'Windows'
-        # --xform s:^.*/:: flattens the ./target/release/lunatic to just lunatic
-        run: "tar -caf --xform s:^.*/:: ${{ matrix.asset_name }} README.md LICENSE-MIT LICENSE-APACHE ./target/release/${{ matrix.target_name }}"
+        run: |
+          mv ./target/release/${{ matrix.target_name }} ${{ matrix.target_name }}
+          tar -caf ${{ matrix.asset_name }} README.md LICENSE-MIT LICENSE-APACHE ${{ matrix.target_name }}
       - name: Zip release on Windows
         if: runner.os == 'Windows'
         uses: papeloto/action-zip@v1
