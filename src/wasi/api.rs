@@ -34,6 +34,26 @@ impl WasiState {
         (0, 0, 0)
     }
 
+    fn clock_time_get(&self, _id: u32, _precision: u64) -> (u32, u64) {
+        // TODO
+        (0, 0)
+    }
+
+    fn path_filestat_get(&self, _fd: u32, _flags: u32, _path: &str) -> (u32, u32) {
+        // TODO
+        (0, 0)
+    }
+
+    async fn sched_yield(&self) -> u32 {
+        smol::future::yield_now().await;
+        0
+    }
+
+    fn random_get(&self, _buf: &mut [u8]) -> u32 {
+        // TODO
+        0
+    }
+
     fn proc_exit(&self, _exit_code: ExitCode) {}
 
     fn fd_write(&self, fd: u32, ciovs: &[IoSlice<'_>]) -> (u32, u32) {
