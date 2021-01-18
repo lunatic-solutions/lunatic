@@ -206,16 +206,27 @@ impl WasiString {
     }
 }
 
-pub struct WasiEnvVars {
+pub struct WasiEnv {
     bytes: Vec<Vec<u8>>,
     total_bytes: u32,
 }
 
-impl WasiEnvVars {
-    pub fn new(vars: impl Iterator<Item = (String, String)>) -> Self {
+impl WasiEnv {
+    pub fn env_vars(vars: impl Iterator<Item = (String, String)>) -> Self {
         let mut bytes = vec![];
         for (k, v) in vars {
             bytes.push(format!("{}={}\0", k, v).into_bytes());
+        }
+
+        let total_bytes = bytes.iter().map(|v| v.len() as u32).sum();
+
+        Self { bytes, total_bytes }
+    }
+
+    pub fn args(vars: impl Iterator<Item = String>) -> Self {
+        let mut bytes = vec![];
+        for v in vars {
+            bytes.push(format!("{}\0", v).into_bytes());
         }
 
         let total_bytes = bytes.iter().map(|v| v.len() as u32).sum();
@@ -235,6 +246,7 @@ impl WasiEnvVars {
         self.bytes.iter()
     }
 }
+
 pub struct ExitCode<S> {
     _stats: PhantomData<S>,
 }

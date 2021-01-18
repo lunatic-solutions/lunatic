@@ -7,7 +7,8 @@ use log::trace;
 use std::io::{self, IoSlice, IoSliceMut, Read, Write};
 
 lazy_static::lazy_static! {
-    static ref ENV : WasiEnvVars = WasiEnvVars::new(std::env::vars());
+    static ref ENV : WasiEnv = WasiEnv::env_vars(std::env::vars());
+    static ref ARG : WasiEnv = WasiEnv::args(std::env::args());
 }
 
 pub struct WasiState {}
@@ -24,16 +25,6 @@ type Status = Result<types::Status<WasiState>, Trap>;
 
 #[host_functions(namespace = "wasi_snapshot_preview1")]
 impl WasiState {
-    fn args_sizes_get(&self) -> (u32, u32, u32) {
-        // TODO
-        (0, 0, 0)
-    }
-
-    fn args_get(&self) -> (u32, u32, u32) {
-        // TODO
-        (0, 0, 0)
-    }
-
     fn clock_time_get(&self, _id: u32, _precision: u64) -> (u32, u64) {
         // TODO
         (0, 0)
@@ -111,10 +102,30 @@ impl WasiState {
         WASI_ESUCCESS
     }
 
-    fn environ_sizes_get(&self, mut var_count: Ptr<u32>, mut total_bytes: Ptr<u32>) -> u32 {
+    fn args_sizes_get(&self, mut var_count: Ptr<u32>, mut total_bytes: Ptr<u32>) -> Status {
+        var_count.set(&ARG.len());
+        total_bytes.set(&ARG.total_bytes());
+        WasiStatus::Success.into()
+    }
+
+    fn args_get(&self, mut args: Ptr<Ptr<u8>>, mut args_buf: Ptr<u8>) -> Status {
+        for kv in ARG.iter() {
+            args.set(&args_buf);
+            args_buf = args_buf
+                .copy_slice(&kv)?
+                .ok_or_else(|| Trap::new("Reached end of the args buffer"))?;
+            args = args
+                .next()
+                .ok_or_else(|| Trap::new("Reached end of the args pointer buffer"))?;
+        }
+
+        WasiStatus::Success.into()
+    }
+
+    fn environ_sizes_get(&self, mut var_count: Ptr<u32>, mut total_bytes: Ptr<u32>) -> Status {
         var_count.set(&ENV.len());
         total_bytes.set(&ENV.total_bytes());
-        WASI_ESUCCESS
+        WasiStatus::Success.into()
     }
 
     fn environ_get(&self, mut environ: Ptr<Ptr<u8>>, mut environ_buf: Ptr<u8>) -> Status {
