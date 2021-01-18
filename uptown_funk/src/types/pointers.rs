@@ -43,6 +43,23 @@ impl WasmType for u32 {
     }
 }
 
+impl WasmType for u64 {
+    type Value = u64;
+
+    fn copy_to(&self, mem: &mut [u8]) {
+        mem[..8].copy_from_slice(&self.to_le_bytes());
+    }
+
+    #[inline]
+    fn len() -> usize {
+        8
+    }
+
+    fn value_from_memory(mem: &[u8]) -> Self::Value {
+        u64::from_le_bytes([mem[0], mem[1], mem[2], mem[3], mem[4], mem[5], mem[6], mem[7]])
+    }
+}
+
 impl WasmType for f64 {
     type Value = f64;
 

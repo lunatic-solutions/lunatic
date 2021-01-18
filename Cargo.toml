@@ -29,6 +29,7 @@ wasmer = {path = "./wasmer/lib/api", optional = true}
 wasmer-vm = {path = "./wasmer/lib/vm", optional = true}
 wasmtime = {path = "./wasmtime/crates/wasmtime", optional = true}
 wasmtime-runtime = {path = "./wasmtime/crates/runtime", optional = true}
+wasi-common = "0.22.0"
 walrus = "0.18"
 smol = "1.2"
 easy-parallel = "3"

@@ -2,29 +2,50 @@ use super::types::*;
 
 use anyhow::Result;
 use uptown_funk::{host_functions, types, Trap};
+use wasi_common::wasi::wasi_snapshot_preview1::WasiSnapshotPreview1;
+use wasi_common::WasiCtx;
 
 use log::trace;
-use std::io::{self, IoSlice, IoSliceMut, Read, Write};
+use std::{
+    io::{self, IoSlice, IoSliceMut, Read, Write},
+    u32,
+};
 
 lazy_static::lazy_static! {
     static ref ENV : WasiEnv = WasiEnv::env_vars(std::env::vars());
     static ref ARG : WasiEnv = WasiEnv::args(std::env::args());
 }
 
-pub struct WasiState {}
+pub struct WasiState {
+    ctx: WasiCtx,
+}
 
 impl WasiState {
     pub fn new() -> Self {
-        Self {}
+        let t: Vec<&[u8]> = vec![];
+        Self {
+            ctx: WasiCtx::new(t.into_iter()).unwrap(),
+        }
     }
 }
 
 type ExitCode = super::types::ExitCode<WasiState>;
 type Ptr<T> = types::Pointer<WasiState, T>;
 type Status = Result<types::Status<WasiState>, Trap>;
+type Clockid = Wrap<WasiState, wasi_common::wasi::types::Clockid>;
 
 #[host_functions(namespace = "wasi_snapshot_preview1")]
 impl WasiState {
+    fn clock_res_get(&self, id: Clockid, mut res: Ptr<u64>) -> u32 {
+        match self.ctx.clock_res_get(id.inner) {
+            Ok(c) => {
+                res.set(&c);
+                WASI_ESUCCESS
+            }
+            Err(_) => WASI_EINVAL,
+        }
+    }
+
     fn clock_time_get(&self, _id: u32, _precision: u64) -> (u32, u64) {
         // TODO
         (0, 0)
