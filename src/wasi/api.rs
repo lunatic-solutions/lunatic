@@ -24,6 +24,16 @@ type Status = Result<types::Status<WasiState>, Trap>;
 
 #[host_functions(namespace = "wasi_snapshot_preview1")]
 impl WasiState {
+    fn args_sizes_get(&self) -> (u32, u32, u32) {
+        // TODO
+        (0, 0, 0)
+    }
+
+    fn args_get(&self) -> (u32, u32, u32) {
+        // TODO
+        (0, 0, 0)
+    }
+
     fn proc_exit(&self, _exit_code: ExitCode) {}
 
     fn fd_write(&self, fd: u32, ciovs: &[IoSlice<'_>]) -> (u32, u32) {
