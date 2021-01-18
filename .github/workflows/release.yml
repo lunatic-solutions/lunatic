@@ -35,10 +35,10 @@ jobs:
         include:
           - os: ubuntu-latest
             target_name: lunatic
-            asset_name: lunatic-linux-amd64.zip
+            asset_name: lunatic-linux-amd64.tar.gz
           - os: macos-latest
             target_name: lunatic
-            asset_name: lunatic-macos-amd64.zip
+            asset_name: lunatic-macos-amd64.tar.gz
           - os: windows-latest
             target_name: lunatic.exe
             asset_name: lunatic-windows-amd64.zip
@@ -57,7 +57,8 @@ jobs:
         run: cargo +nightly build --release
       - name: Tar release on Unix
         if: runner.os != 'Windows'
-        run: tar acf ${{ matrix.asset_name }} README.md LICENSE-MIT LICENSE-APACHE ./target/release/${{ matrix.target_name }}
+        # --xform s:^.*/:: flattens the ./target/release/lunatic to just lunatic
+        run: tar -caf --xform s:^.*/:: ${{ matrix.asset_name }} README.md LICENSE-MIT LICENSE-APACHE ./target/release/${{ matrix.target_name }}
       - name: Zip release on Windows
         if: runner.os == 'Windows'
         uses: papeloto/action-zip@v1
