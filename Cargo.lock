@@ -1130,6 +1130,7 @@ dependencies = [
  "dashmap",
  "easy-parallel",
  "env_logger 0.8.2",
+ "getrandom 0.2.0",
  "lazy_static",
  "log",
  "pretty_assertions",

@@ -137,6 +137,11 @@ impl<S> Pointer<S, u8> {
             Ok(Some(Self { loc, ..self }))
         }
     }
+
+    pub fn mut_slice<'a>(&'a self, n: usize) -> &'a mut [u8] {
+        let slice = &mut self.mem.as_mut_slice()[self.loc..self.loc + n];
+        slice
+    }
 }
 
 impl<S, T: WasmType> FromWasm for Pointer<S, T> {

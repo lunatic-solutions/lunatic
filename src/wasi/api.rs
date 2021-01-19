@@ -13,7 +13,7 @@ use std::{
 
 lazy_static::lazy_static! {
     static ref ENV : WasiEnv = WasiEnv::env_vars(std::env::vars());
-    static ref ARG : WasiEnv = WasiEnv::args(std::env::args());
+    static ref ARG : WasiEnv = WasiEnv::args(std::env::args().skip(1));
 }
 
 pub struct WasiState {
@@ -33,6 +33,8 @@ type ExitCode = super::types::ExitCode<WasiState>;
 type Ptr<T> = types::Pointer<WasiState, T>;
 type Status = Result<types::Status<WasiState>, Trap>;
 type Clockid = Wrap<WasiState, wasi_common::wasi::types::Clockid>;
+
+// TODO use correct types for status/error return values
 
 #[host_functions(namespace = "wasi_snapshot_preview1")]
 impl WasiState {
@@ -63,9 +65,10 @@ impl WasiState {
         0
     }
 
-    fn random_get(&self, _buf: &mut [u8]) -> u32 {
-        // TODO
-        0
+    fn random_get(&self, buf: Ptr<u8>, buf_len: u32) -> u32 {
+        // TODO handle error
+        getrandom::getrandom(buf.mut_slice(buf_len as usize)).ok();
+        WASI_ESUCCESS
     }
 
     fn fd_readdir(&self, _fd: u32, _buf: &mut [u8], _cookie: u64) -> (u32, u32) {
