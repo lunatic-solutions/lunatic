@@ -12,7 +12,7 @@ use std::{
 
 use smallvec::SmallVec;
 use uptown_funk::{types, Executor, FromWasm, Trap};
-use wasi_common::wasi::types::Clockid;
+use wasi_common::wasi::types::{Clockid, Fd};
 
 pub struct Wrap<S, T> {
     pub inner: T,
@@ -44,6 +44,22 @@ impl<S> FromWasm for Wrap<S, Clockid> {
         Clockid::try_from(from)
             .map_err(|_| Trap::new("Invalid clock id"))
             .map(|v| Wrap::new(v))
+    }
+}
+
+impl<S> FromWasm for Wrap<S, Fd> {
+    type From = u32;
+    type State = S;
+
+    fn from(
+        _state: &mut Self::State,
+        _executor: &impl Executor,
+        from: Self::From,
+    ) -> Result<Self, Trap>
+    where
+        Self: Sized,
+    {
+        Ok(Wrap::new(Fd::from(from)))
     }
 }
 
