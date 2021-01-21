@@ -62,8 +62,8 @@ jobs:
         if: runner.os != 'Windows'
         run: |
           mv ./target/release/${{ matrix.target_name }} ${{ matrix.target_name }}
-          ls -lah .
           tar czf ${{ matrix.asset_name }} README.md LICENSE-MIT LICENSE-APACHE ${{ matrix.target_name }}
+          ls -lah .
       - name: Zip release on Windows
         if: runner.os == 'Windows'
         uses: papeloto/action-zip@v1
