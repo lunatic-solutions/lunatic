@@ -36,7 +36,7 @@ jobs:
           - os: ubuntu-latest
             target_name: lunatic
             asset_name: lunatic-linux-amd64.tar.gz
-          - os: macos-11.0
+          - os: macos-latest
             target_name: lunatic
             asset_name: lunatic-macos-amd64.tar.gz
           - os: windows-latest
