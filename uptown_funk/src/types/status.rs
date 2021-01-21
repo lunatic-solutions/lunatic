@@ -1,11 +1,11 @@
-use crate::{ToWasm, Trap};
+use crate::{Convert, ToWasm, Trap};
 use std::marker::PhantomData;
 pub struct Status<S> {
     status: u32,
     _state: PhantomData<S>,
 }
 
-impl<S> ToWasm for Result<Status<S>, Trap> {
+impl<S : Convert<S> + Convert<()>> ToWasm for Result<Status<S>, Trap> {
     type To = u32;
     type State = S;
 

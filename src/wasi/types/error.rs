@@ -168,8 +168,8 @@ impl ToWasm for Error {
     type State = ();
 
     fn to(
-        state: &mut Self::State,
-        executor: &impl uptown_funk::Executor,
+        _state: &mut Self::State,
+        _executor: &impl uptown_funk::Executor,
         host_value: Self,
     ) -> Result<Self::To, uptown_funk::Trap> {
         Ok(host_value as u32)

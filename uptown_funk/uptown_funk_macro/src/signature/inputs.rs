@@ -70,7 +70,7 @@ pub fn transform(
                 quote! { #argument_name: <#pat_type_ty as uptown_funk::FromWasm>::From };
             let transformation = quote! {
                 let #argument_name = <#pat_type_ty as uptown_funk::FromWasm>::from(
-                    &mut state_wrapper.borrow_state_mut(),
+                    uptown_funk::Convert::convert(&mut state_wrapper.borrow_state_mut()),
                     state_wrapper.executor(),
                     #argument_name
                 )?;
@@ -87,7 +87,7 @@ pub fn transform(
             let input_argument = quote! { #argument_name: <#pat_type_ty_without_ref as uptown_funk::FromWasm>::From };
             let transformation = quote! {
                 let mut #argument_name = <#pat_type_ty_without_ref as uptown_funk::FromWasm>::from(
-                    &mut state_wrapper.borrow_state_mut(),
+                    uptown_funk::Convert::convert(&mut state_wrapper.borrow_state_mut()),
                     state_wrapper.executor(),
                     #argument_name
                 )?;

@@ -95,7 +95,7 @@ pub trait FromWasm {
 
 pub trait ToWasm {
     type To;
-    type State;
+    type State : Convert<Self::State> + Convert<()>;
 
     fn to(
         state: &mut Self::State,

@@ -19,6 +19,25 @@ use uptown_funk::{types, Executor, FromWasm, StateMarker, Trap};
 // TODO remove dependency
 use wasi_common::wasi::types::{Clockid, Fd};
 
+pub struct MyFd {}
+impl StateMarker for MyFd {}
+
+impl FromWasm for MyFd {
+    type From = u32;
+    type State = ();
+
+    fn from(
+        _state: &mut Self::State,
+        _executor: &impl Executor,
+        from: Self::From,
+    ) -> Result<Self, Trap>
+    where
+        Self: Sized {
+            Ok(MyFd {})
+    }
+}
+
+
 pub struct Wrap<S, T> {
     pub inner: T,
     _state: PhantomData<S>,

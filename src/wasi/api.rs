@@ -332,6 +332,23 @@ impl WasiState {
         0
     }
 
+    fn path_readlink(
+        &self,
+        _fd: Fd,
+        _path: &str,
+        _buf: u32,
+        _buf_len: u32,
+        _bufused_ptr: u32,
+    ) -> u32 {
+        println!("path readlink");
+        0
+    }
+
+    fn path_remove_directory(&self, _fd: MyFd, _path: &str) -> u32 {
+        println!("path remove dir");
+        0
+    }
+
     fn path_rename(&self, _fd: Fd, _path: &str, _new_fd: Fd, _new_path: &str) -> u32 {
         println!("path rename");
         0

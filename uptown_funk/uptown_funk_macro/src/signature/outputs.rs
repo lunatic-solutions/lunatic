@@ -113,7 +113,7 @@ pub fn transform(
                                     };
                                     let result_ptr = uptown_funk::Trap::try_option(result_ptr)?;
                                     let result_ = <#type_path as uptown_funk::ToWasm>::to(
-                                        &mut state_wrapper.borrow_state_mut(),
+                                        uptown_funk::Convert::convert(&mut state_wrapper.borrow_state_mut()),
                                         state_wrapper.executor(),
                                         result.#index
                                     )?;
