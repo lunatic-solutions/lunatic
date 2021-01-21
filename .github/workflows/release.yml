@@ -37,10 +37,10 @@ jobs:
             target_name: lunatic
             asset_name: lunatic-linux-amd64.tar.gz
             content_type: application/gzip
-          - os: macos-latest
-            target_name: lunatic
-            asset_name: lunatic-macos-amd64.tar.gz
-            content_type: application/gzip
+          # - os: macos-latest
+          #   target_name: lunatic
+          #   asset_name: lunatic-macos-amd64.tar.gz
+          #   content_type: application/gzip
           - os: windows-latest
             target_name: lunatic.exe
             asset_name: lunatic-windows-amd64.zip
@@ -63,8 +63,6 @@ jobs:
         run: |
           mv ./target/release/${{ matrix.target_name }} ${{ matrix.target_name }}
           tar czf ${{ matrix.asset_name }} README.md LICENSE-MIT LICENSE-APACHE ${{ matrix.target_name }}
-          ls -lah .
-          tar --help
       - name: Zip release on Windows
         if: runner.os == 'Windows'
         uses: papeloto/action-zip@v1
