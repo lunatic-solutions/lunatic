@@ -22,7 +22,7 @@ struct Empty {}
 #[host_functions(namespace = "env")]
 impl Empty {
     fn write(&self, value: f64, mut destination: Pointer<Empty, f64>) {
-        destination.set(&value);
+        destination.set(value);
     }
 }
 

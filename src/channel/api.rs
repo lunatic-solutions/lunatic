@@ -1,7 +1,7 @@
 use super::{remove_channel, Channel, ChannelBuffer};
 
 use anyhow::Result;
-use uptown_funk::host_functions;
+use uptown_funk::{host_functions, StateMarker};
 
 use std::io::{IoSlice, IoSliceMut};
 
@@ -12,6 +12,8 @@ use std::io::{IoSlice, IoSliceMut};
 pub struct ChannelState {
     last_message: Option<ChannelBuffer>,
 }
+
+impl StateMarker for ChannelState {}
 
 impl ChannelState {
     pub fn new() -> Self {

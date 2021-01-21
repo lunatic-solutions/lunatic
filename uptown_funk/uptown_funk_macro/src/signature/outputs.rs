@@ -171,7 +171,7 @@ fn first_output(type_path: &TypePath) -> Result<(TokenStream2, TokenStream2), To
             let host_to_guest_transformation = quote! {
                 | output: #ident | -> Result<<#ident as uptown_funk::ToWasm>::To, uptown_funk::Trap> {
                     <#ident as uptown_funk::ToWasm>::to(
-                        &mut state_wrapper.borrow_state_mut(),
+                        uptown_funk::Convert::convert(&mut state_wrapper.borrow_state_mut()),
                         state_wrapper.executor(),
                         output
                     )

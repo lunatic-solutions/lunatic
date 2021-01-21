@@ -1,13 +1,19 @@
-use std::marker::PhantomData;
+use std::{cell::Cell, marker::PhantomData, mem};
 
-use crate::{memory::Memory, Executor, FromWasm, Trap};
+use crate::{Executor, FromWasm, StateMarker, Trap, memory::Memory};
 
-pub trait WasmType {
+pub trait WasmType : Sized {
     type Value;
     fn copy_to(&self, mem: &mut [u8]);
     fn len() -> usize;
     fn value_from_memory(mem: &[u8]) -> Self::Value;
+
+    fn move_to(self, mem: &mut [u8]) {
+        self.copy_to(mem);
+    }
 }
+
+pub trait CReprWasmType : Sized {}
 
 impl WasmType for u8 {
     type Value = u8;
@@ -26,58 +32,10 @@ impl WasmType for u8 {
     }
 }
 
-impl WasmType for u32 {
-    type Value = u32;
-
-    fn copy_to(&self, mem: &mut [u8]) {
-        mem[..4].copy_from_slice(&self.to_le_bytes());
-    }
-
-    #[inline]
-    fn len() -> usize {
-        4
-    }
-
-    fn value_from_memory(mem: &[u8]) -> Self::Value {
-        u32::from_le_bytes([mem[0], mem[1], mem[2], mem[3]])
-    }
-}
-
-impl WasmType for u64 {
-    type Value = u64;
-
-    fn copy_to(&self, mem: &mut [u8]) {
-        mem[..8].copy_from_slice(&self.to_le_bytes());
-    }
-
-    #[inline]
-    fn len() -> usize {
-        8
-    }
-
-    fn value_from_memory(mem: &[u8]) -> Self::Value {
-        u64::from_le_bytes([mem[0], mem[1], mem[2], mem[3], mem[4], mem[5], mem[6], mem[7]])
-    }
-}
-
-impl WasmType for f64 {
-    type Value = f64;
-
-    fn copy_to(&self, mem: &mut [u8]) {
-        mem[..8].copy_from_slice(&self.to_le_bytes());
-    }
-
-    #[inline]
-    fn len() -> usize {
-        8
-    }
-
-    fn value_from_memory(mem: &[u8]) -> Self::Value {
-        f64::from_le_bytes([
-            mem[0], mem[1], mem[2], mem[3], mem[4], mem[5], mem[6], mem[7],
-        ])
-    }
-}
+impl CReprWasmType for u32 {}
+impl CReprWasmType for u64 {}
+impl CReprWasmType for f64 {}
+impl CReprWasmType for f32 {}
 
 impl<S, T: WasmType> WasmType for Pointer<S, T> {
     type Value = T::Value;
@@ -104,8 +62,12 @@ pub struct Pointer<S, T: WasmType> {
 }
 
 impl<S, T: WasmType> Pointer<S, T> {
-    pub fn set(&mut self, val: &T) {
+    pub fn copy(&mut self, val: &T) {
         val.copy_to(&mut self.mem.as_mut_slice()[(self.loc as usize)..]);
+    }
+
+    pub fn set(&mut self, val: T) {
+        val.move_to(&mut self.mem.as_mut_slice()[(self.loc as usize)..]);
     }
 
     pub fn value(&self) -> T::Value {
@@ -144,7 +106,7 @@ impl<S> Pointer<S, u8> {
     }
 }
 
-impl<S, T: WasmType> FromWasm for Pointer<S, T> {
+impl<S: StateMarker, T: WasmType> FromWasm for Pointer<S, T> {
     type From = u32;
     type State = S;
 
@@ -161,3 +123,63 @@ impl<S, T: WasmType> FromWasm for Pointer<S, T> {
         })
     }
 }
+
+fn align_pointer(ptr: usize, align: usize) -> usize {
+    // clears bits below aligment amount (assumes power of 2) to align pointer
+    ptr & !(align - 1)
+}
+
+fn deref<T: Sized>(offset: u32, memory: &[u8], index: u32, length: u32) -> Option<&[Cell<T>]> {
+    // gets the size of the item in the array with padding added such that
+    // for any index, we will always result an aligned memory access
+    let item_size = mem::size_of::<T>() + (mem::size_of::<T>() % mem::align_of::<T>());
+    let slice_full_len = index as usize + length as usize;
+    let memory_size = memory.len();
+
+    if (offset as usize) + (item_size * slice_full_len) > memory_size
+        || offset as usize >= memory_size
+        || mem::size_of::<T>() == 0
+    {
+        return None;
+    }
+
+    unsafe {
+        let cell_ptr = align_pointer(
+            memory.as_ptr().add(offset as usize) as usize,
+            mem::align_of::<T>(),
+        ) as *const Cell<T>;
+        let cell_ptrs = &std::slice::from_raw_parts(cell_ptr, slice_full_len)
+            [index as usize..slice_full_len];
+        Some(cell_ptrs)
+    }
+}
+
+impl <T: CReprWasmType + Copy + Clone> WasmType for T {
+    type Value = T;
+
+    fn copy_to(&self, mem: &mut [u8]) {
+        self.clone().move_to(mem);
+    }
+
+    fn move_to(self, mem: &mut [u8]) {
+        // TODO what if it fails?
+        if let Some(cells) = deref::<T>(0, mem, 0, 1) { 
+            cells[0].set(self);
+        }
+    }
+
+    fn len() -> usize {
+        mem::size_of::<T>()
+    }
+
+    fn value_from_memory(mem: &[u8]) -> Self::Value {
+        // TODO unwrap
+        let cells = deref::<T>(0, mem, 0, 1).unwrap();
+        cells[0].get()
+    }
+}
+
+//impl<S, T : CReprWasmType> Pointer<S, T> {
+//    pub fn set_c_repr_type(&self, val: T) {
+//    }
+//}

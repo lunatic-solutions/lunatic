@@ -1,7 +1,7 @@
 use super::{TcpListener, TcpListenerResult, TcpStream, TcpStreamResult};
 use anyhow::Result;
 use smol::prelude::*;
-use uptown_funk::{host_functions, state::HashMapStore};
+use uptown_funk::{host_functions, state::HashMapStore, StateMarker};
 
 use std::{
     io::{IoSlice, IoSliceMut},
@@ -12,6 +12,8 @@ pub struct TcpState {
     pub listeners: HashMapStore<TcpListener>,
     pub streams: HashMapStore<TcpStream>,
 }
+
+impl StateMarker for TcpState {}
 
 impl TcpState {
     pub fn new() -> Self {

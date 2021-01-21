@@ -4,7 +4,7 @@ use super::{FunctionLookup, MemoryChoice, Process};
 
 use anyhow::Result;
 use smol::{future::yield_now, Timer};
-use uptown_funk::{host_functions, state::HashMapStore};
+use uptown_funk::{host_functions, state::HashMapStore, StateMarker};
 
 use std::time::{Duration, Instant};
 
@@ -12,6 +12,8 @@ pub struct ProcessState {
     module: LunaticModule,
     pub processes: HashMapStore<Process>,
 }
+
+impl StateMarker for ProcessState {}
 
 impl ProcessState {
     pub fn new(module: LunaticModule) -> Self {

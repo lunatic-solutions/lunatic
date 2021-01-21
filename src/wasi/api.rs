@@ -1,9 +1,9 @@
 use super::types::*;
 
 use anyhow::Result;
-use uptown_funk::{host_functions, types, Trap};
+use uptown_funk::{host_functions, types, StateMarker, Trap};
 use wasi_common::wasi::wasi_snapshot_preview1::WasiSnapshotPreview1;
-use wasi_common::{WasiCtx, WasiCtxBuilder};
+use wasi_common::{preopen_dir, WasiCtx, WasiCtxBuilder};
 
 use std::{
     fs::File,
@@ -22,20 +22,18 @@ pub struct WasiState {
 
 impl WasiState {
     pub fn new() -> Self {
-        Self {
-            ctx: WasiCtxBuilder::new()
-                .inherit_env()
-                .inherit_stderr()
-                .inherit_stdin()
-                .inherit_stdio()
-                .inherit_stdin()
-                .inherit_args()
-                .preopened_dir(File::open("/").unwrap(), "/")
-                .build()
-                .unwrap(),
-        }
+        let ctx = WasiCtxBuilder::new()
+            .inherit_env()
+            .inherit_stdio()
+            .inherit_args()
+            .preopened_dir(preopen_dir("/").unwrap(), "/")
+            .build()
+            .unwrap();
+        Self { ctx }
     }
 }
+
+impl StateMarker for WasiState {}
 
 type ExitCode = super::types::ExitCode<WasiState>;
 type Ptr<T> = types::Pointer<WasiState, T>;
@@ -50,14 +48,14 @@ impl WasiState {
     // Command line arguments and environment variables
 
     fn args_sizes_get(&self, mut var_count: Ptr<u32>, mut total_bytes: Ptr<u32>) -> Status {
-        var_count.set(&ARG.len());
-        total_bytes.set(&ARG.total_bytes());
+        var_count.set(ARG.len());
+        total_bytes.set(ARG.total_bytes());
         WasiStatus::Success.into()
     }
 
     fn args_get(&self, mut args: Ptr<Ptr<u8>>, mut args_buf: Ptr<u8>) -> Status {
         for kv in ARG.iter() {
-            args.set(&args_buf);
+            args.copy(&args_buf);
             args_buf = args_buf
                 .copy_slice(&kv)?
                 .ok_or_else(|| Trap::new("Reached end of the args buffer"))?;
@@ -70,14 +68,15 @@ impl WasiState {
     }
 
     fn environ_sizes_get(&self, mut var_count: Ptr<u32>, mut total_bytes: Ptr<u32>) -> Status {
-        var_count.set(&ENV.len());
-        total_bytes.set(&ENV.total_bytes());
+        var_count.set(ENV.len());
+        total_bytes.set(ENV.total_bytes());
+        println!("ENV {} = {}", ENV.len(), var_count.value());
         WasiStatus::Success.into()
     }
 
     fn environ_get(&self, mut environ: Ptr<Ptr<u8>>, mut environ_buf: Ptr<u8>) -> Status {
         for kv in ENV.iter() {
-            environ.set(&environ_buf);
+            environ.copy(&environ_buf);
             environ_buf = environ_buf
                 .copy_slice(&kv)?
                 .ok_or_else(|| Trap::new("Reached end of the environment variables buffer"))?;
@@ -91,20 +90,20 @@ impl WasiState {
 
     // Clock, random, yield, exit
 
-    fn clock_res_get(&self, id: Clockid, mut res: Ptr<u64>) -> u32 {
+    fn clock_res_get(&self, id: Clockid, mut res: Ptr<u64>) -> Error {
         match self.ctx.clock_res_get(id.inner) {
             Ok(c) => {
-                res.set(&c);
-                WASI_ESUCCESS
+                res.copy(&c);
+                Error::Success
             }
-            Err(_) => WASI_EINVAL,
+            Err(_) => Error::Inval,
         }
     }
 
-    fn clock_time_get(&self, id: Clockid, precision: u64) -> (u32, u64) {
+    fn clock_time_get(&self, id: Clockid, precision: u64) -> (Error, u64) {
         match self.ctx.clock_time_get(id.inner, precision) {
-            Ok(time) => (WASI_ESUCCESS, time),
-            Err(_) => (WASI_EINVAL, 0),
+            Ok(time) => (Error::Success, time),
+            Err(_) => (Error::Inval, 0),
         }
     }
 
@@ -192,24 +191,35 @@ impl WasiState {
         0
     }
 
-    fn fd_prestat_dir_name(&self, _fd: u32, _path: &str) -> u32 {
-        println!("fd prestat dir name");
+    fn fd_prestat_dir_name(&self, fd: u32, path: Ptr<u8>, path_len: u32) -> u32 {
+        println!("fd prestat dir name {} {}", fd, path_len);
+        path.copy_slice("/".as_bytes()).ok();
         WASI_ESUCCESS
     }
 
-    fn fd_prestat_get(&self, fd: Fd, _prestat_ptr: u32) -> u32 {
-        println!("fd prestat get {}", fd.inner);
+    fn fd_prestat_get(&self, fd: u32, mut prestat: Ptr<Prestat>) -> u32 {
+        println!("fd prestat get {}", fd);
+        if fd == 3 {
+            prestat.set(Prestat::directory(1));
+            return 0;
+        } else {
+            return WASI_EBADF;
+        }
+        /*
         let prestat = self.ctx.fd_prestat_get(fd.inner);
         match prestat {
             Ok(prestat) => {
-                dbg!(prestat);
-                WASI_ESUCCESS
+                use wasi_common::wasi::types::Prestat;
+                match prestat {
+                    Prestat::Dir(d) => (0, dbg!(d.pr_name_len))
+                }
             }
             Err(e) => {
-                dbg!(e);
-                WASI_EBADF
+                dbg!(e.to_string());
+                (WASI_EBADF, 0)
             }
         }
+        */
     }
 
     fn fd_pwrite(&self, _fd: u32, _ciovs: &[IoSlice<'_>], _offset: u64, _nwritten_ptr: u32) -> u32 {
@@ -318,7 +328,7 @@ impl WasiState {
         _fdflags: u32,
         _opened_fd_ptr: u32,
     ) -> u32 {
-        println!("path open");
+        println!("path open {}", _path);
         0
     }
 

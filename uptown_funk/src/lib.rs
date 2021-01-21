@@ -39,9 +39,50 @@ pub trait HostFunctions {
         E: Executor + 'static;
 }
 
+pub trait StateMarker : Sized {}
+pub trait Convert<To: Sized> : Sized {
+    fn convert(&mut self) -> &mut To;
+}
+
+impl <T: StateMarker> Convert<T> for T {
+   fn convert(&mut self) -> &mut T {
+       self
+   } 
+}
+
+impl <'a, T: StateMarker> Convert<T> for RefMut<'a, T> {
+    fn convert(&mut self) -> &mut T {
+        self
+    } 
+}
+
+static mut NOSTATE: () = ();
+
+impl <T: StateMarker> Convert<()> for T {
+    fn convert(&mut self) -> &mut () {
+        unsafe {
+            &mut NOSTATE
+        }
+    }
+}
+
+impl <'a, T: StateMarker> Convert<()> for RefMut<'a, T> {
+    fn convert(&mut self) -> &mut () {
+        unsafe {
+            &mut NOSTATE
+        }
+    }
+}
+
+impl Convert<()> for () {
+    fn convert(&mut self) -> &mut () {
+        self
+    }
+}
+
 pub trait FromWasm {
     type From;
-    type State;
+    type State : Convert<Self::State> + Convert<()>;
 
     fn from(
         state: &mut Self::State,

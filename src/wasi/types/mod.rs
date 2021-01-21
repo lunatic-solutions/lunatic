@@ -1,6 +1,10 @@
-// wasi_snapshot_preview1 types
-
 #![allow(dead_code)]
+
+mod aliases;
+mod error;
+
+pub use aliases::*;
+pub use error::Error;
 
 use std::mem::size_of;
 use std::slice::{from_raw_parts, from_raw_parts_mut};
@@ -11,7 +15,8 @@ use std::{
 };
 
 use smallvec::SmallVec;
-use uptown_funk::{types, Executor, FromWasm, Trap};
+use uptown_funk::{types, Executor, FromWasm, StateMarker, Trap};
+// TODO remove dependency
 use wasi_common::wasi::types::{Clockid, Fd};
 
 pub struct Wrap<S, T> {
@@ -28,7 +33,7 @@ impl<S, T> Wrap<S, T> {
     }
 }
 
-impl<S> FromWasm for Wrap<S, Clockid> {
+impl<S: StateMarker> FromWasm for Wrap<S, Clockid> {
     type From = u32;
     type State = S;
 
@@ -47,7 +52,7 @@ impl<S> FromWasm for Wrap<S, Clockid> {
     }
 }
 
-impl<S> FromWasm for Wrap<S, Fd> {
+impl<S: StateMarker> FromWasm for Wrap<S, Fd> {
     type From = u32;
     type State = S;
 
@@ -301,7 +306,7 @@ pub struct ExitCode<S> {
     _stats: PhantomData<S>,
 }
 
-impl<S> FromWasm for ExitCode<S> {
+impl<S: StateMarker> FromWasm for ExitCode<S> {
     type From = u32;
     type State = S;
 
@@ -327,6 +332,38 @@ impl<S> Into<Result<types::Status<S>, Trap>> for WasiStatus {
             WasiStatus::Success => Ok(WASI_ESUCCESS.into()),
         }
     }
+}
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct Prestat {
+    pr_type: u8,
+    u: PrestatU,
+}
+
+impl Prestat {
+    pub fn directory(len: u32) -> Prestat {
+        Prestat {
+            pr_type: 0,
+            u: PrestatU {
+                dir: PrestatUDir { pr_name_len: len },
+            },
+        }
+    }
+}
+
+impl types::CReprWasmType for Prestat {}
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub union PrestatU {
+    dir: PrestatUDir,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[repr(C)]
+pub struct PrestatUDir {
+    pr_name_len: u32,
 }
 
 pub const WASI_ESUCCESS: u32 = 0;
