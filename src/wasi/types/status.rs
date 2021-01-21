@@ -4,7 +4,7 @@ use crate::wasi::api::WasiState;
 
 #[derive(Copy, Clone)]
 #[repr(u16)]
-pub enum Error {
+pub enum Status {
     /// No error occurred. System call completed successfully.
     Success = 0,
     /// Argument list too long.
@@ -161,9 +161,9 @@ pub enum Error {
     NotCapable = 76,
 }
 
-impl CReprWasmType for Error {}
+impl CReprWasmType for Status {}
 
-impl ToWasm for Error {
+impl ToWasm for Status {
     type To = u32;
     type State = ();
 

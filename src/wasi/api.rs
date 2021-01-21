@@ -1,7 +1,6 @@
 use super::types::*;
 
-use anyhow::Result;
-use uptown_funk::{host_functions, types, StateMarker, Trap};
+use uptown_funk::{host_functions, types, StateMarker, ToWasm, Trap};
 use wasi_common::wasi::wasi_snapshot_preview1::WasiSnapshotPreview1;
 use wasi_common::{preopen_dir, WasiCtx, WasiCtxBuilder};
 
@@ -36,10 +35,10 @@ impl WasiState {
 impl StateMarker for WasiState {}
 
 type ExitCode = super::types::ExitCode<WasiState>;
-type Ptr<T> = types::Pointer<WasiState, T>;
-type Status = Result<types::Status<WasiState>, Trap>;
-type Clockid = Wrap<WasiState, wasi_common::wasi::types::Clockid>;
-type Fd = Wrap<WasiState, wasi_common::wasi::types::Fd>;
+type Ptr<T> = types::Pointer<T>;
+type Clockid = Wrap<wasi_common::wasi::types::Clockid>;
+type Fd = Wrap<wasi_common::wasi::types::Fd>;
+type StatusOrTrap = Result<Status, Trap>;
 
 // TODO use correct types for status/error return values
 
@@ -50,10 +49,10 @@ impl WasiState {
     fn args_sizes_get(&self, mut var_count: Ptr<u32>, mut total_bytes: Ptr<u32>) -> Status {
         var_count.set(ARG.len());
         total_bytes.set(ARG.total_bytes());
-        WasiStatus::Success.into()
+        Status::Success
     }
 
-    fn args_get(&self, mut args: Ptr<Ptr<u8>>, mut args_buf: Ptr<u8>) -> Status {
+    fn args_get(&self, mut args: Ptr<Ptr<u8>>, mut args_buf: Ptr<u8>) -> StatusOrTrap {
         for kv in ARG.iter() {
             args.copy(&args_buf);
             args_buf = args_buf
@@ -64,17 +63,17 @@ impl WasiState {
                 .ok_or_else(|| Trap::new("Reached end of the args pointer buffer"))?;
         }
 
-        WasiStatus::Success.into()
+        Ok(Status::Success)
     }
 
     fn environ_sizes_get(&self, mut var_count: Ptr<u32>, mut total_bytes: Ptr<u32>) -> Status {
         var_count.set(ENV.len());
         total_bytes.set(ENV.total_bytes());
         println!("ENV {} = {}", ENV.len(), var_count.value());
-        WasiStatus::Success.into()
+        Status::Success
     }
 
-    fn environ_get(&self, mut environ: Ptr<Ptr<u8>>, mut environ_buf: Ptr<u8>) -> Status {
+    fn environ_get(&self, mut environ: Ptr<Ptr<u8>>, mut environ_buf: Ptr<u8>) -> StatusOrTrap {
         for kv in ENV.iter() {
             environ.copy(&environ_buf);
             environ_buf = environ_buf
@@ -85,25 +84,25 @@ impl WasiState {
                 .ok_or_else(|| Trap::new("Reached end of the environ var pointer buffer"))?;
         }
 
-        WasiStatus::Success.into()
+        Ok(Status::Success)
     }
 
     // Clock, random, yield, exit
 
-    fn clock_res_get(&self, id: Clockid, mut res: Ptr<u64>) -> Error {
+    fn clock_res_get(&self, id: Clockid, mut res: Ptr<u64>) -> Status {
         match self.ctx.clock_res_get(id.inner) {
             Ok(c) => {
                 res.copy(&c);
-                Error::Success
+                Status::Success
             }
-            Err(_) => Error::Inval,
+            Err(_) => Status::Inval,
         }
     }
 
-    fn clock_time_get(&self, id: Clockid, precision: u64) -> (Error, u64) {
+    fn clock_time_get(&self, id: Clockid, precision: u64) -> (Status, u64) {
         match self.ctx.clock_time_get(id.inner, precision) {
-            Ok(time) => (Error::Success, time),
-            Err(_) => (Error::Inval, 0),
+            Ok(time) => (Status::Success, time),
+            Err(_) => (Status::Inval, 0),
         }
     }
 

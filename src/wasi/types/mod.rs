@@ -1,10 +1,10 @@
 #![allow(dead_code)]
 
 mod aliases;
-mod error;
+mod status;
 
 pub use aliases::*;
-pub use error::Error;
+pub use status::Status;
 
 use std::mem::size_of;
 use std::slice::{from_raw_parts, from_raw_parts_mut};
@@ -32,29 +32,25 @@ impl FromWasm for MyFd {
         from: Self::From,
     ) -> Result<Self, Trap>
     where
-        Self: Sized {
-            Ok(MyFd {})
+        Self: Sized,
+    {
+        Ok(MyFd {})
     }
 }
 
-
-pub struct Wrap<S, T> {
+pub struct Wrap<T> {
     pub inner: T,
-    _state: PhantomData<S>,
 }
 
-impl<S, T> Wrap<S, T> {
+impl<T> Wrap<T> {
     fn new(inner: T) -> Self {
-        Self {
-            inner,
-            _state: PhantomData::default(),
-        }
+        Self { inner }
     }
 }
 
-impl<S: StateMarker> FromWasm for Wrap<S, Clockid> {
+impl FromWasm for Wrap<Clockid> {
     type From = u32;
-    type State = S;
+    type State = ();
 
     fn from(
         _state: &mut Self::State,
@@ -71,9 +67,9 @@ impl<S: StateMarker> FromWasm for Wrap<S, Clockid> {
     }
 }
 
-impl<S: StateMarker> FromWasm for Wrap<S, Fd> {
+impl FromWasm for Wrap<Fd> {
     type From = u32;
-    type State = S;
+    type State = ();
 
     fn from(
         _state: &mut Self::State,
@@ -338,18 +334,6 @@ impl<S: StateMarker> FromWasm for ExitCode<S> {
             "proc_exit({}) called",
             exit_code
         )))
-    }
-}
-
-pub enum WasiStatus {
-    Success,
-}
-
-impl<S> Into<Result<types::Status<S>, Trap>> for WasiStatus {
-    fn into(self) -> Result<types::Status<S>, Trap> {
-        match self {
-            WasiStatus::Success => Ok(WASI_ESUCCESS.into()),
-        }
     }
 }
 

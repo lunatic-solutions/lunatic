@@ -37,7 +37,13 @@ impl CReprWasmType for u64 {}
 impl CReprWasmType for f64 {}
 impl CReprWasmType for f32 {}
 
-impl<S, T: WasmType> WasmType for Pointer<S, T> {
+pub struct Pointer<T: WasmType> {
+    loc: usize,
+    mem: Memory,
+    _type: PhantomData<T>,
+}
+
+impl<T: WasmType> WasmType for Pointer<T> {
     type Value = T::Value;
 
     fn copy_to(&self, mem: &mut [u8]) {
@@ -54,14 +60,7 @@ impl<S, T: WasmType> WasmType for Pointer<S, T> {
     }
 }
 
-pub struct Pointer<S, T: WasmType> {
-    loc: usize,
-    mem: Memory,
-    _state: PhantomData<S>,
-    _type: PhantomData<T>,
-}
-
-impl<S, T: WasmType> Pointer<S, T> {
+impl<T: WasmType> Pointer<T> {
     pub fn copy(&mut self, val: &T) {
         val.copy_to(&mut self.mem.as_mut_slice()[(self.loc as usize)..]);
     }
@@ -84,7 +83,7 @@ impl<S, T: WasmType> Pointer<S, T> {
     }
 }
 
-impl<S> Pointer<S, u8> {
+impl Pointer<u8> {
     pub fn copy_slice(self, slice: &[u8]) -> Result<Option<Self>, Trap> {
         let loc = self.loc + slice.len();
         if loc > self.mem.as_mut_slice().len() {
@@ -106,9 +105,9 @@ impl<S> Pointer<S, u8> {
     }
 }
 
-impl<S: StateMarker, T: WasmType> FromWasm for Pointer<S, T> {
+impl<T: WasmType> FromWasm for Pointer<T> {
     type From = u32;
-    type State = S;
+    type State = ();
 
     fn from(
         _state: &mut Self::State,
@@ -118,7 +117,6 @@ impl<S: StateMarker, T: WasmType> FromWasm for Pointer<S, T> {
         Ok(Pointer {
             loc: wasm_u32 as usize,
             mem: executor.memory(),
-            _state: PhantomData::default(),
             _type: PhantomData::default(),
         })
     }

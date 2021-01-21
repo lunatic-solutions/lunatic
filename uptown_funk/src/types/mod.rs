@@ -1,6 +1,5 @@
 mod pointers;
-mod status;
+mod result;
 
 pub use pointers::Pointer;
 pub use pointers::CReprWasmType;
-pub use status::Status;
