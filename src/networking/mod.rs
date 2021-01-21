@@ -1,32 +1,38 @@
 pub mod api;
 
-use std::io;
-use std::sync::atomic::AtomicUsize;
+use std::{convert::TryInto, io};
 
-use dashmap::DashMap;
-use lazy_static::lazy_static;
 use uptown_funk::{Executor, FromWasm, ToWasm};
-
-lazy_static! {
-    static ref SERIALIZED_TCP_STREAM: DashMap<usize, TcpStream> = DashMap::new();
-}
-
-static mut UNIQUE_ID: AtomicUsize = AtomicUsize::new(0);
 
 #[derive(Clone)]
 pub struct TcpListener(smol::net::TcpListener);
 
 impl TcpListener {
-    pub async fn bind(address: &str) -> Result<Self, io::Error> {
-        match smol::net::TcpListener::bind(address).await {
-            Ok(tcp_listener) => Ok(Self(tcp_listener)),
-            Err(err) => Err(err),
+    pub async fn bind(addr: &[u8], port: u16) -> Result<Self, io::Error> {
+        match addr.len() {
+            4 => {
+                let addr: [u8; 4] = addr.try_into().unwrap();
+                let addr = smol::net::Ipv4Addr::from(addr);
+                match smol::net::TcpListener::bind((addr, port)).await {
+                    Ok(tcp_listener) => Ok(Self(tcp_listener)),
+                    Err(err) => Err(err),
+                }
+            }
+            16 => {
+                let addr: [u8; 16] = addr.try_into().unwrap();
+                let addr = smol::net::Ipv6Addr::from(addr);
+                match smol::net::TcpListener::bind((addr, port)).await {
+                    Ok(tcp_listener) => Ok(Self(tcp_listener)),
+                    Err(err) => Err(err),
+                }
+            }
+            _ => Err(io::Error::from_raw_os_error(22)), // Wrong argument error code.
         }
     }
 
     pub async fn accept(&self) -> Result<TcpStream, io::Error> {
-        let (stream, address) = self.0.accept().await?;
-        Ok(TcpStream { stream, address })
+        let (stream, _address) = self.0.accept().await?;
+        Ok(TcpStream(stream))
     }
 }
 
@@ -51,7 +57,7 @@ impl FromWasm for TcpListener {
 
 enum TcpListenerResult {
     Ok(TcpListener),
-    Err(io::Error),
+    Err(String),
 }
 
 impl ToWasm for TcpListenerResult {
@@ -65,15 +71,36 @@ impl ToWasm for TcpListenerResult {
     ) -> Result<u32, uptown_funk::Trap> {
         match result {
             TcpListenerResult::Ok(listener) => Ok(state.listeners.add(listener)),
-            TcpListenerResult::Err(_) => Ok(0),
+            TcpListenerResult::Err(err) => Err(uptown_funk::Trap::new(err)),
         }
     }
 }
 
 #[derive(Clone)]
-pub struct TcpStream {
-    stream: smol::net::TcpStream,
-    address: smol::net::SocketAddr,
+pub struct TcpStream(smol::net::TcpStream);
+
+impl TcpStream {
+    pub async fn connect(addr: &[u8], port: u16) -> Result<Self, io::Error> {
+        match addr.len() {
+            4 => {
+                let addr: [u8; 4] = addr.try_into().unwrap();
+                let addr = smol::net::Ipv4Addr::from(addr);
+                match smol::net::TcpStream::connect((addr, port)).await {
+                    Ok(tcp_stream) => Ok(Self(tcp_stream)),
+                    Err(err) => Err(err),
+                }
+            }
+            16 => {
+                let addr: [u8; 16] = addr.try_into().unwrap();
+                let addr = smol::net::Ipv6Addr::from(addr);
+                match smol::net::TcpStream::connect((addr, port)).await {
+                    Ok(tcp_stream) => Ok(Self(tcp_stream)),
+                    Err(err) => Err(err),
+                }
+            }
+            _ => Err(io::Error::from_raw_os_error(22)), // Wrong argument error code.
+        }
+    }
 }
 
 impl FromWasm for TcpStream {
@@ -96,7 +123,7 @@ impl FromWasm for TcpStream {
 }
 enum TcpStreamResult {
     Ok(TcpStream),
-    Err(io::Error),
+    Err(String),
 }
 
 impl ToWasm for TcpStreamResult {
@@ -110,7 +137,7 @@ impl ToWasm for TcpStreamResult {
     ) -> Result<u32, uptown_funk::Trap> {
         match result {
             TcpStreamResult::Ok(stream) => Ok(state.streams.add(stream)),
-            TcpStreamResult::Err(_) => Ok(0),
+            TcpStreamResult::Err(err) => Err(uptown_funk::Trap::new(err)),
         }
     }
 }

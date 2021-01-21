@@ -115,7 +115,7 @@ pub fn transform(
             let host_call_argument = quote! { #argument_name };
             Ok((input_argument, transformation, host_call_argument))
         }
-        // &mut [u8]
+        // &(mut) [u8]
         Transformation::RefMutSlice => {
             let varname_ptr = format_ident!("{}_ptr_", argument_name);
             let varname_len = format_ident!("{}_len_", argument_name);
@@ -267,6 +267,10 @@ fn transform_reference(reference: &TypeReference) -> Transformation {
                     // &[std::io::IoSlice]
                     if last_segment.ident == "IoSlice" {
                         Transformation::RefSliceIoSlices
+                    }
+                    // &[u8]
+                    else if last_segment.ident == "u8" {
+                        Transformation::RefMutSlice
                     } else {
                         Transformation::Unsupported
                     }

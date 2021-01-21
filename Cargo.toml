@@ -1,6 +1,6 @@
 [package]
 name = "lunatic-runtime"
-version = "0.1.0"
+version = "0.3.0"
 authors = ["Bernard Kolobara <me@kolobara.com>"]
 edition = "2018"
 description = "An actor platform built on WebAssembly"

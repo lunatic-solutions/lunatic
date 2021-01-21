@@ -1,4 +1,4 @@
-use crate::channel;
+use crate::channel::{self, ChannelReceiver};
 use crate::module::LunaticModule;
 use crate::networking;
 use crate::process::{self, MemoryChoice, ProcessEnvironment};
@@ -17,7 +17,12 @@ pub struct LunaticLinker {
 
 impl LunaticLinker {
     /// Create a new LunaticLinker.
-    pub fn new(module: LunaticModule, yielder_ptr: usize, memory: MemoryChoice) -> Result<Self> {
+    pub fn new(
+        context_receiver: Option<ChannelReceiver>,
+        module: LunaticModule,
+        yielder_ptr: usize,
+        memory: MemoryChoice,
+    ) -> Result<Self> {
         let store = engine();
         let mut linker = WasmerLinker::new();
 
@@ -34,17 +39,18 @@ impl LunaticLinker {
 
         linker.add("lunatic", "memory", memory.to_export());
 
-        let process_state = process::api::ProcessState::new(module.clone());
+        let channel_state = channel::api::ChannelState::new(context_receiver);
+
+        let process_state = process::api::ProcessState::new(module.clone(), channel_state.clone());
         process_state.add_to_wasmer_linker(environment.clone(), &mut linker, &store);
 
-        let channel_state = channel::api::ChannelState::new();
-        channel_state.add_to_wasmer_linker(environment.clone(), &mut linker, &store);
-
-        let networking_state = networking::api::TcpState::new();
+        let networking_state = networking::api::TcpState::new(channel_state.clone());
         networking_state.add_to_wasmer_linker(environment.clone(), &mut linker, &store);
 
         let wasi_state = wasi::api::WasiState::new();
-        wasi_state.add_to_wasmer_linker(environment, &mut linker, &store);
+        wasi_state.add_to_wasmer_linker(environment.clone(), &mut linker, &store);
+
+        channel_state.add_to_wasmer_linker(environment, &mut linker, &store);
 
         Ok(Self { linker, module })
     }

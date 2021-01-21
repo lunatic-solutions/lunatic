@@ -39,7 +39,7 @@ fn lunatic_bench(c: &mut Criterion) {
         let module = LunaticModule::new(wasm.as_ref().into()).unwrap();
 
         b.iter(move || {
-            let linker = LunaticLinker::new(module.clone(), 0, MemoryChoice::New).unwrap();
+            let linker = LunaticLinker::new(None, module.clone(), 0, MemoryChoice::New).unwrap();
             linker.instance().unwrap()
         });
     });
@@ -52,7 +52,8 @@ fn lunatic_bench(c: &mut Criterion) {
         b.iter_custom(move |iters| {
             let start = std::time::Instant::now();
             (0..iters).into_par_iter().for_each(|_i| {
-                let linker = LunaticLinker::new(module.clone(), 0, MemoryChoice::New).unwrap();
+                let linker =
+                    LunaticLinker::new(None, module.clone(), 0, MemoryChoice::New).unwrap();
                 criterion::black_box(linker.instance().unwrap());
             });
             start.elapsed()

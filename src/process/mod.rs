@@ -7,8 +7,8 @@ use lazy_static::lazy_static;
 use smol::{Executor as TaskExecutor, Task};
 use uptown_funk::{memory::Memory, Executor, FromWasm, ToWasm};
 
-use crate::linker::LunaticLinker;
 use crate::module::LunaticModule;
+use crate::{channel::ChannelReceiver, linker::LunaticLinker};
 
 use log::info;
 use std::future::Future;
@@ -23,8 +23,7 @@ pub type AsyncYielderCast<'a> = AsyncYielder<'a, Result<()>>;
 
 /// Used to look up a function by name or table index inside of an Instance.
 pub enum FunctionLookup {
-    /// (table index, argument1, argument2)
-    TableIndex((u32, u32, u32)),
+    TableIndex(u32),
     Name(&'static str),
 }
 
@@ -116,7 +115,12 @@ impl Process {
     }
 
     /// Spawn a new process.
-    pub fn spawn(module: LunaticModule, function: FunctionLookup, memory: MemoryChoice) -> Self {
+    pub fn spawn(
+        context_receiver: Option<ChannelReceiver>,
+        module: LunaticModule,
+        function: FunctionLookup,
+        memory: MemoryChoice,
+    ) -> Self {
         #[cfg(feature = "vm-wasmer")]
         let tls = [&wasmer_vm::traphandlers::tls::PTR];
         #[cfg(feature = "vm-wasmtime")]
@@ -126,7 +130,7 @@ impl Process {
             move |yielder| {
                 let yielder_ptr = &yielder as *const AsyncYielderCast as usize;
 
-                let linker = LunaticLinker::new(module, yielder_ptr, memory)?;
+                let linker = LunaticLinker::new(context_receiver, module, yielder_ptr, memory)?;
                 let instance = linker.instance()?;
 
                 match function {
@@ -141,13 +145,13 @@ impl Process {
                         func.call(&[])?;
                         info!(target: "performance", "Process {} finished in {} ms.", name, performance_timer.elapsed().as_millis());
                     }
-                    FunctionLookup::TableIndex((index, argument1, argument2)) => {
+                    FunctionLookup::TableIndex(index) => {
                         #[cfg(feature = "vm-wasmer")]
                         let func = instance.exports.get_function("lunatic_spawn_by_index").unwrap();
                         #[cfg(feature = "vm-wasmtime")]
                         let func = instance.get_func("lunatic_spawn_by_index").unwrap();
 
-                        func.call(&[(index as i32).into(), (argument1 as i32).into(), (argument2 as i32).into()])?;
+                        func.call(&[(index as i32).into()])?;
                     }
                 }
 

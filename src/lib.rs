@@ -34,10 +34,14 @@ pub fn run() -> Result<()> {
         })
         .finish(|| {
             smol::future::block_on(async {
-                let result =
-                    Process::spawn(module, FunctionLookup::Name("_start"), MemoryChoice::New)
-                        .join()
-                        .await;
+                let result = Process::spawn(
+                    None,
+                    module,
+                    FunctionLookup::Name("_start"),
+                    MemoryChoice::New,
+                )
+                .join()
+                .await;
                 drop(signal);
                 result
             })
