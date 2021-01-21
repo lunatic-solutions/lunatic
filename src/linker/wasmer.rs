@@ -1,4 +1,4 @@
-use crate::channel::{self, ChannelReceiver};
+use crate::channel;
 use crate::module::LunaticModule;
 use crate::networking;
 use crate::process::{self, MemoryChoice, ProcessEnvironment};
@@ -18,7 +18,7 @@ pub struct LunaticLinker {
 impl LunaticLinker {
     /// Create a new LunaticLinker.
     pub fn new(
-        context_receiver: Option<ChannelReceiver>,
+        context_receiver: Option<channel::ChannelReceiver>,
         module: LunaticModule,
         yielder_ptr: usize,
         memory: MemoryChoice,

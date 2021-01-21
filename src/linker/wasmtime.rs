@@ -18,7 +18,12 @@ pub struct LunaticLinker {
 
 impl LunaticLinker {
     /// Create a new LunaticLinker.
-    pub fn new(module: LunaticModule, yielder_ptr: usize, memory: MemoryChoice) -> Result<Self> {
+    pub fn new(
+        context_receiver: Option<channel::ChannelReceiver>,
+        module: LunaticModule,
+        yielder_ptr: usize,
+        memory: MemoryChoice,
+    ) -> Result<Self> {
         let engine = engine();
         let store = Store::new(&engine);
         let mut linker = Linker::new(&store);
@@ -40,17 +45,18 @@ impl LunaticLinker {
 
         linker.define("lunatic", "memory", memory)?;
 
-        let process_state = process::api::ProcessState::new(module.clone());
+        let channel_state = channel::api::ChannelState::new(context_receiver);
+
+        let process_state = process::api::ProcessState::new(module.clone(), channel_state.clone());
         process_state.add_to_linker(environment.clone(), &mut linker);
 
-        let channel_state = channel::api::ChannelState::new();
-        channel_state.add_to_linker(environment.clone(), &mut linker);
-
-        let networking_state = networking::api::TcpState::new();
+        let networking_state = networking::api::TcpState::new(channel_state.clone());
         networking_state.add_to_linker(environment.clone(), &mut linker);
 
         let wasi_state = wasi::api::WasiState::new();
-        wasi_state.add_to_linker(environment, &mut linker);
+        wasi_state.add_to_linker(environment.clone(), &mut linker);
+
+        channel_state.add_to_linker(environment, &mut linker);
 
         Ok(Self { linker, module })
     }
