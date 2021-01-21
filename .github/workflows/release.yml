@@ -36,12 +36,15 @@ jobs:
           - os: ubuntu-latest
             target_name: lunatic
             asset_name: lunatic-linux-amd64.tar.gz
+            content_type: application/gzip
           - os: macos-latest
             target_name: lunatic
             asset_name: lunatic-macos-amd64.tar.gz
+            content_type: application/gzip
           - os: windows-latest
             target_name: lunatic.exe
             asset_name: lunatic-windows-amd64.zip
+            content_type: application/zip
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
@@ -59,7 +62,8 @@ jobs:
         if: runner.os != 'Windows'
         run: |
           mv ./target/release/${{ matrix.target_name }} ${{ matrix.target_name }}
-          tar -czf ${{ matrix.asset_name }} README.md LICENSE-MIT LICENSE-APACHE ${{ matrix.target_name }}
+          ls -lah .
+          tar czf ${{ matrix.asset_name }} README.md LICENSE-MIT LICENSE-APACHE ${{ matrix.target_name }}
       - name: Zip release on Windows
         if: runner.os == 'Windows'
         uses: papeloto/action-zip@v1
@@ -74,4 +78,4 @@ jobs:
           upload_url: ${{ needs.release.outputs.upload_url }}
           asset_path: ${{ matrix.asset_name }}
           asset_name: ${{ matrix.asset_name }}
-          asset_content_type: application/zip
+          asset_content_type: ${{ matrix.content_type }}
