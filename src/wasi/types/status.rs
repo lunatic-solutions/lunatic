@@ -1,7 +1,5 @@
 use uptown_funk::{types::CReprWasmType, ToWasm};
 
-use crate::wasi::api::WasiState;
-
 #[derive(Copy, Clone)]
 #[repr(u16)]
 pub enum Status {

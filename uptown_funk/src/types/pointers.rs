@@ -1,6 +1,6 @@
 use std::{cell::Cell, marker::PhantomData, mem};
 
-use crate::{Executor, FromWasm, StateMarker, Trap, memory::Memory};
+use crate::{Executor, FromWasm, Trap, memory::Memory};
 
 pub trait WasmType : Sized {
     type Value;
