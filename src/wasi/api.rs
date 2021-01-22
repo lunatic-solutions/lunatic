@@ -1,53 +1,16 @@
 use super::types::*;
 
-use uptown_funk::{host_functions, types, Executor, FromWasm, StateMarker, ToWasm, Trap};
+use uptown_funk::{host_functions, types, Trap};
 use wasi_common::wasi::wasi_snapshot_preview1::WasiSnapshotPreview1;
-use wasi_common::{WasiCtx, WasiCtxBuilder};
 
-use std::{
-    io::{self, IoSlice, IoSliceMut, Read, Write},
-    u32,
-};
+use std::io::{self, IoSlice, IoSliceMut, Read, Write};
 
 lazy_static::lazy_static! {
     static ref ENV : WasiEnv = WasiEnv::env_vars(std::env::vars());
     static ref ARG : WasiEnv = WasiEnv::args(std::env::args().skip(1));
 }
 
-pub struct WasiState {
-    ctx: WasiCtx,
-}
-
-impl WasiState {
-    pub fn new() -> Self {
-        let ctx = WasiCtxBuilder::new().build().unwrap();
-        Self { ctx }
-    }
-}
-
-struct Fd {
-    inner: u32,
-}
-
-impl FromWasm for Fd {
-    type From = u32;
-    type State = WasiState;
-
-    fn from(_: &mut WasiState, _: &impl Executor, v: u32) -> Result<Fd, Trap> {
-        Ok(Fd { inner: v })
-    }
-}
-
-impl ToWasm for Fd {
-    type To = u32;
-    type State = WasiState;
-
-    fn to(_: &mut WasiState, _: &impl Executor, fd: Fd) -> Result<u32, Trap> {
-        Ok(fd.inner)
-    }
-}
-
-impl StateMarker for WasiState {}
+pub use super::state::WasiState;
 
 type Ptr<T> = types::Pointer<T>;
 type Clockid = Wrap<wasi_common::wasi::types::Clockid>;
@@ -265,7 +228,7 @@ impl WasiState {
         Status::Success
     }
 
-    fn fd_write(&self, fd: u32, ciovs: &[IoSlice<'_>]) -> (Status, u32) {
+    fn fd_write(&mut self, fd: u32, ciovs: &[IoSlice<'_>]) -> (Status, u32) {
         match fd {
             // Stdin not supported as write destination
             0 => (Status::Inval, 0),
@@ -277,7 +240,10 @@ impl WasiState {
                 let written = io::stderr().write_vectored(ciovs).unwrap();
                 (Status::Success, written as u32)
             }
-            _ => panic!("Unsupported wasi write destination"),
+            fd => {
+                let written = self.write(fd, ciovs).unwrap();
+                (Status::Success, written as u32)
+            }
         }
     }
 
@@ -318,19 +284,24 @@ impl WasiState {
         Status::Success
     }
 
+    /// Open a file or directory.
     fn path_open(
-        &self,
-        _fd: Fd,
-        _dirflags: u32,
-        _path: &str,
-        _oflags: u32,
-        _fs_rights_base: u64,
-        _fs_rights_inheriting: u64,
-        _fdflags: u32,
-        _opened_fd_ptr: u32,
-    ) -> Status {
-        println!("path open {}", _path);
-        Status::Success
+        &mut self,
+        fd: Fd,
+        dirflags: Lookupflags,
+        path: &str,
+        oflags: OpenFlags,
+        _fs_rights_base: Rights,
+        _fs_rights_inheriting: Rights,
+        fdflags: Fdflags,
+    ) -> (Status, Fd) {
+        println!(
+            "path open {} from {:?}: {:?} {:?} {:?}",
+            path, fd, dirflags, oflags, fdflags
+        );
+        let abs_path = self.abs_path(fd, path).unwrap();
+        let fd = self.open(abs_path, oflags);
+        (Status::Success, fd)
     }
 
     fn path_readlink(

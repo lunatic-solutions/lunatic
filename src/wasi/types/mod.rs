@@ -1,10 +1,12 @@
 #![allow(dead_code)]
 
 mod aliases;
+mod flags;
 mod status;
 mod structs;
 
 pub use aliases::*;
+pub use flags::*;
 pub use status::Status;
 pub use structs::*;
 

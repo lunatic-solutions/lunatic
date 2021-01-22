@@ -5,6 +5,7 @@ use smallvec::SmallVec;
 use uptown_funk::types::CReprWasmType;
 
 use super::{aliases::*, Status};
+
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct Dirent {
