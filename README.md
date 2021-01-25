@@ -65,7 +65,7 @@ Some common use cases for processes are:
 
 - HTTP request handling
 - Long running background tasks like email sending
-- Calling untrusted libraries in an isolated environment
+- Calling untrusted libraries in an sandboxed environment
 
 ### Isolation
 
@@ -73,17 +73,16 @@ What makes the last use case possible are the sandboxing capabilities of [WebAss
 originally developed to run in the browser and provides extremely strong sandboxing on multiple levels.
 Lunatic's processes inherit this properties.
 
-Lunatic's processes are completely isolated from each other, they have their own stack, heap and even syscalls.
-If one process fails it will not affect the rest of the system. This allows you to create very powerful and
-fault-tolerant abstraction.
+Each process has their own stack, heap and even syscalls. If one process fails it will not affect the rest
+of the system. This allows you to create very powerful and fault-tolerant abstraction.
 
 This is also true for some other runtimes, but Lunatic goes one step further and makes it possible to use C
 bindings directly in your app without any fear. If the C code contains any security vulnerabilities or crashes
-those issues will only affect the process currently executing this code.
+those issues will only affect the process currently executing the code. The only requirement is that the C
+code can be compiled to WebAssembly.
 
-When spawning a process it is possible to give precise access to resources (filesystem, memory, network connections, ...).
-This is enforced on a syscall level. So even if you use a big C library in your code, you don't need to read through the
-whole code vetting the library. You can express the permissions on the process level.
+It's possible to give per process fine-grained access to resources (filesystem, memory, network connections, ...).
+This is enforced on the syscall level.
 
 ### Scheduling
 
@@ -97,7 +96,9 @@ care of it no matter which programming language you use.
 
 ### Compatibility
 
-We intend to eventually make Lunatic completely compatible with [WASI][10]. Ideally you could just take existing code, compile it to WebAssembly and run on top of Lunatic. Giving the best developer experience possible.
+We intend to eventually make Lunatic completely compatible with [WASI][10]. Ideally you could just take existing code,
+compile it to WebAssembly and run on top of Lunatic; creating the best developer experience possible. We're not
+quite there yet.
 
 ### License
 
