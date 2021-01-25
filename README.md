@@ -1,61 +1,58 @@
 <div align="center">
-    <a href="https://github.com/lunatic-solutions/lunatic">
+    <a href="#">
         <img width="150" src="https://raw.githubusercontent.com/lunatic-solutions/lunatic/readme_update/assets/logo.png" alt="Lunatic logo">
     </a>
     <p>&nbsp;</p>
 </div>
 
-Lunatic is a platform for building actor systems that use [WebAssembly](https://webassembly.org/) instances as actors. It is heavily inspired by Erlang and can be targeted from any language that can compile to WebAssembly. Currently there are only [bindings for Rust](https://crates.io/crates/lunatic) available.
+Lunatic is a universal runtime for **fast**, **robust** and **scalable** server-side applications.
+It's inspired by Erlang and can be used from any language that compiles to [WebAssembly][1].
+You can read more about the motivation behind Lunatic [here][2].
 
-[Read more about the motivation behind Lunatic.](https://kolobara.com/lunatic/index.html#motivation)
+We currently support the following languages:
 
-[Join our discord server!](https://discord.gg/b7zDqpXpB4)
+- [Rust][3]
+- ~AssemblyScript~ (coming soon)
 
-### Example
+If you would like to see other languages supported or just follow the discussions around Lunatic,
+[join our discord server][4].
 
-To get a feeling for Lunatic let's look at a simple example in Rust:
+## Supported features
 
-```rust
-use lunatic::{Channel, Process};
+- [x] Creating, cancelling & waiting on processes
+- [ ] Fine-grained process permissions
+- [ ] Process supervision
+- [x] Channel based message passing
+- [x] TCP networking
+- [/] Filesystem access (partial)
+- [ ] Hot reloading
 
-fn main() {
-    let channel = Channel::new(0);
-    let vec: Vec<i32> = (0..1_000).collect();
+## Installation
 
-    for i in vec.iter() {
-        Process::spawn((*i, vec.clone(), channel.clone()), child).unwrap();
-    }
+We provide pre-built binaries on the [releases page][5].
 
-    for _ in vec.iter() {
-        let (i, sum) = channel.receive();
-        println!("Sum until {}: {}", i, sum);
-    }
-}
+---
 
-// Child process calculates the sum of numbers of context.1 until context.0 index.
-fn child(context: (i32, Vec<i32>, Channel<(i32, i32)>)) {
-    let i = context.0;
-    let vec = context.1;
-    let channel = context.2;
-    let sum_until_i: i32 = vec[..=i as usize].iter().sum();
-    channel.send((i, sum_until_i));
-}
+On MacOs you can also use [Hombrew][6]:
+
+```bash
+brew install ...
 ```
 
-Compile your app to a WebAssembly target:
+---
 
-```
-cargo build --release --target=wasm32-wasi
-```
+To build the project from source yuo will need to have [rustup][7] installed:
 
-and run it with
-
+```bash
+# Install Rust Nightly
+rustup add nightly
+# Clone the repository and all submodules
+git clone --recurse-submodules https://github.com/lunatic-solutions/lunatic.git
+# Jump into the cloned folder
+cd lunatic
+# Build and install lunatic
+cargo +nightly install --path .
 ```
-lunatic target/wasm32-wasi/release/<example>.wasm
-```
-
-This app spawns `1000` child processes and calculates the sum of numbers from 0 to i in each child process,
-then sends the result back to the parent process and prints it. If you wrote some Rust code before this should feel familiar. [Check out the docs for more examples.](https://docs.rs/lunatic/0.2.0/lunatic/)
 
 ## Architecture
 
@@ -77,19 +74,6 @@ Lunatic processes are intended to be really lightweight, therefore it should be 
 
 I intend to eventually make Lunatic completely compatible with [WASI](https://wasi.dev/). Ideally you could just take existing code, compile it to WebAssembly and run on top of Lunatic. Giving the best developer experience possible.
 
-### Help wanted
-
-Even though Lunatic is still early in development I spent a lot of time thinking about the problems in this space and feel like I'm on a good path. But without other contributors I can't get as far as I would like. If you know Rust and are interested in helping out drop me an email (me@kolobara.com) or reach out on [twitter](https://twitter.com/bkolobara).
-
-### Future development
-
-- [ ] Networking
-- [ ] Filesystem access
-- [ ] Permissions
-- [ ] Process supervision
-- [ ] Hot reloading
-- [ ] Support for other WebAssembly languages
-
 ### License
 
 Licensed under either of
@@ -98,3 +82,11 @@ Licensed under either of
 - MIT license ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
 
 at your option.
+
+[1]: https://webassembly.org/
+[2]: https://kolobara.com/lunatic/index.html#motivation
+[3]: https://crates.io/crates/lunatic
+[4]: https://discord.gg/b7zDqpXpB4
+[5]: https://github.com/lunatic-solutions/lunatic/releases
+[6]: https://brew.sh/
+[7]: https://rustup.rs/
