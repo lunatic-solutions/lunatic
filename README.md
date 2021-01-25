@@ -29,11 +29,11 @@ If you would like to see other languages supported or just follow the discussion
 
 ## Installation
 
-We provide pre-built binaries on the [releases page][5].
+We provide pre-built binaries for **Windows**, **Linux** and **MacOs** on the [releases page][5].
 
 ---
 
-On MacOs you can also use [Hombrew][6]:
+On **MacOs** you can also use [Hombrew][6]:
 
 ```bash
 TODO
