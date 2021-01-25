@@ -4,7 +4,7 @@ use std::io::{IoSlice, IoSliceMut};
 use smallvec::SmallVec;
 use uptown_funk::types::CReprWasmType;
 
-use super::{aliases::*, Status};
+use super::{aliases::*, Fdflags, Filetype, Status};
 
 #[derive(Copy, Clone)]
 #[repr(C)]
@@ -37,7 +37,7 @@ pub struct Fdstat {
 
 impl CReprWasmType for Fdstat {}
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 #[repr(C)]
 pub struct Filestat {
     /// Device ID of device containing the file.

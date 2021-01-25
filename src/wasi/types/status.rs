@@ -173,3 +173,34 @@ impl ToWasm for Status {
         Ok(host_value as u32)
     }
 }
+
+impl From<std::io::Result<()>> for Status {
+    fn from(r: std::io::Result<()>) -> Self {
+        match r {
+            Ok(_) => Self::Success,
+            Err(e) => {
+                match e.kind() {
+                    std::io::ErrorKind::NotFound => Status::NoEnt,
+                    std::io::ErrorKind::PermissionDenied => Status::Acces,
+                    std::io::ErrorKind::ConnectionRefused => Status::ConnRefused,
+                    std::io::ErrorKind::ConnectionReset => Status::ConnReset,
+                    std::io::ErrorKind::ConnectionAborted => Status::ConnAborted,
+                    std::io::ErrorKind::NotConnected => Status::NotConn,
+                    std::io::ErrorKind::AddrInUse => Status::AddrInUse,
+                    std::io::ErrorKind::AddrNotAvailable => Status::AddrNotAvail,
+                    std::io::ErrorKind::BrokenPipe => Status::Pipe,
+                    std::io::ErrorKind::AlreadyExists => Status::Exist,
+                    std::io::ErrorKind::WouldBlock => Status::Again, // ??
+                    std::io::ErrorKind::InvalidInput => Status::Inval,
+                    std::io::ErrorKind::InvalidData => Status::Inval, // ??
+                    std::io::ErrorKind::TimedOut => Status::TimedOut,
+                    std::io::ErrorKind::WriteZero => Status::Inval, // ??{}
+                    std::io::ErrorKind::Interrupted => Status::Intr,
+                    std::io::ErrorKind::Other => Status::Inval, // ??
+                    std::io::ErrorKind::UnexpectedEof => Status::Inval, // ??
+                    _ => Status::Inval,                         // ??
+                }
+            }
+        }
+    }
+}

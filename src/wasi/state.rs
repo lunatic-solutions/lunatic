@@ -1,8 +1,15 @@
-use super::types::OpenFlags;
+use super::types::{Filestat, OpenFlags, Status};
 use uptown_funk::StateMarker;
 use wasi_common::{WasiCtx, WasiCtxBuilder};
 
-use std::{fs::{File, OpenOptions}, io::{IoSlice, IoSliceMut, Read, Write}, path::{Path, PathBuf}, u32};
+use std::{
+    fs,
+    fs::{File, OpenOptions},
+    io::{IoSlice, IoSliceMut, Read, Seek, SeekFrom, Write},
+    path::{Path, PathBuf},
+    time::SystemTime,
+    u32,
+};
 
 type Fd = u32;
 
@@ -44,6 +51,103 @@ impl WasiState {
 
     pub fn close(&mut self, fd: Fd) {
         self.fds[fd as usize] = None;
+    }
+
+    pub fn tell(&mut self, fd: Fd) -> Option<u64> {
+        let f = self.fds.get_mut(fd as usize)?.as_mut()?;
+        f.file.seek(SeekFrom::Current(0)).ok()
+    }
+
+    pub fn seek(&mut self, fd: Fd, seek_from: SeekFrom) -> Option<u64> {
+        let f = self.fds.get_mut(fd as usize)?.as_mut()?;
+        f.file.seek(seek_from).ok()
+    }
+
+    pub fn create_directory<P: AsRef<Path>>(&self, abs_path: P) -> Status {
+        fs::create_dir(abs_path).into()
+    }
+
+    pub fn remove_directory<P: AsRef<Path>>(&self, abs_path: P) -> Status {
+        fs::remove_dir(abs_path).into()
+    }
+
+    pub fn rename<P: AsRef<Path>>(&self, abs_from: P, abs_to: P) -> Status {
+        fs::rename(abs_from, abs_to).into()
+    }
+
+    pub fn filestat(&self, fd: Fd) -> Option<Filestat> {
+        if let Some(Some(f)) = self.fds.get(fd as usize) {
+            let metadata = fs::metadata(&f.path).ok()?;
+            // TODO repeated and not sure how timestamp is actually represented
+            let atim = metadata
+                .accessed()
+                .unwrap()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap()
+                .as_secs();
+            let mtim = metadata
+                .modified()
+                .unwrap()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap()
+                .as_secs();
+            let ctim = metadata
+                .created()
+                .unwrap()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap()
+                .as_secs();
+            Some(Filestat {
+                dev: 0,
+                ino: 0,
+                filetype: metadata.file_type().into(),
+                nlink: 0,
+                size: metadata.len(),
+                atim,
+                mtim,
+                ctim,
+            })
+        } else {
+            None
+        }
+    }
+
+    pub fn filestat_path<P: AsRef<Path>>(&self, abs_path: P) -> Option<Filestat> {
+        let metadata = fs::metadata(&abs_path).ok()?;
+        let atim = metadata
+            .accessed()
+            .unwrap()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let mtim = metadata
+            .modified()
+            .unwrap()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let ctim = metadata
+            .created()
+            .unwrap()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        Some(Filestat {
+            dev: 0,
+            ino: 0,
+            filetype: metadata.file_type().into(),
+            nlink: 0,
+            size: metadata.len(),
+            atim,
+            mtim,
+            ctim,
+        })
+    }
+
+    pub fn set_size(&mut self, fd: Fd, len: u64) -> Option<()> {
+        let f = self.fds.get_mut(fd as usize)?.as_mut()?;
+        f.file.set_len(len).ok();
+        Some(())
     }
 }
 

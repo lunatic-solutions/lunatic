@@ -56,6 +56,34 @@ impl ToWasm for u64 {
     }
 }
 
+impl FromWasm for i64 {
+    type From = i64;
+    type State = ();
+
+    fn from(
+        _state: &mut Self::State,
+        _executor: &impl crate::Executor,
+        from: Self::From,
+    ) -> Result<Self, Trap>
+    where
+        Self: Sized {
+        Ok(from)
+    }
+}
+
+impl ToWasm for i64 {
+    type To = i64;
+    type State = ();
+
+    fn to(
+        _state: &mut Self::State,
+        _executor: &impl crate::Executor,
+        host_value: Self,
+    ) -> Result<Self::To, Trap> {
+        Ok(host_value)
+    }
+}
+
 impl FromWasm for u16 {
     type From = u32;
     type State = ();

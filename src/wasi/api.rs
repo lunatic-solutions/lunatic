@@ -3,7 +3,7 @@ use super::types::*;
 use uptown_funk::{host_functions, types, Trap};
 use wasi_common::wasi::wasi_snapshot_preview1::WasiSnapshotPreview1;
 
-use std::io::{self, IoSlice, IoSliceMut, Read, Write};
+use std::io::{self, IoSlice, IoSliceMut, Read, SeekFrom, Write};
 
 lazy_static::lazy_static! {
     static ref ENV : WasiEnv = WasiEnv::env_vars(std::env::vars());
@@ -108,8 +108,8 @@ impl WasiState {
         Status::Success
     }
 
-    fn fd_allocate(&self, _fd: u32, _offset: u64, _len: u64) -> Status {
-        println!("fd allocate");
+    fn fd_allocate(&self, _fd: Fd, _offset: Filesize, _len: Filesize) -> Status {
+        // Ignore for now
         Status::Success
     }
 
@@ -118,33 +118,44 @@ impl WasiState {
         Status::Success
     }
 
-    fn fd_datasync(&self, _fd: u32) -> Status {
-        println!("fd datasync");
+    fn fd_datasync(&self, _fd: Fd) -> Status {
+        // Ignore for now
         Status::Success
     }
 
-    fn fd_fdstat_get(&self, _fd: u32, _stat_ptr: u32) -> Status {
-        println!("fd fdstat get");
+    fn fd_fdstat_get(&self, fd: Fd, mut stat: Ptr<Fdstat>) -> Status {
+        let metadata = self.filestat(fd);
+        stat.set(Fdstat {
+            fs_filetype: metadata.unwrap().filetype,
+            fs_flags: Fdflags::new(),
+            fs_rights_base: 0x600,
+            fs_rights_inheriting: 0x600,
+        });
         Status::Success
     }
 
     fn fd_fdstat_set_flags(&self, _fd: u32, _flags: u32) -> Status {
-        println!("fd fdstat set flags");
+        // Ignore for now
         Status::Success
     }
 
     fn fd_fdstat_set_rights(&self, _fd: u32, _rights_base: u64, _rights_inheriting: u64) -> Status {
-        println!("fd fdstat set rigs");
+        // Ignore for now
         Status::Success
     }
 
-    fn fd_filestat_get(&self, _fd: u32, _filestat_ptr: u32) -> Status {
-        println!("fd filestat get");
-        Status::Success
+    fn fd_filestat_get(&self, fd: Fd, mut filestat: Ptr<Filestat>) -> Status {
+        if let Some(fstat) = self.filestat(fd) {
+            dbg!(fstat);
+            filestat.set(fstat);
+            Status::Success
+        } else {
+            Status::Badf
+        }
     }
 
-    fn fd_filestat_set_size(&self, _fd: u32, _size: u64) -> Status {
-        println!("fd filestat set size");
+    fn fd_filestat_set_size(&mut self, fd: Fd, size: Filesize) -> Status {
+        self.set_size(fd, size);
         Status::Success
     }
 
@@ -155,14 +166,16 @@ impl WasiState {
     }
 
     fn fd_pread(
-        &self,
-        _fd: u32,
-        _iovs: &mut [IoSliceMut<'_>],
-        _offset: u64,
-        _nread_ptr: u32,
-    ) -> Status {
-        println!("fd pread");
-        Status::Success
+        &mut self,
+        fd: u32,
+        iovs: &mut [IoSliceMut<'_>],
+        offset: Filesize,
+    ) -> (Status, u32) {
+        let tell = self.tell(fd).unwrap();
+        self.seek(fd, SeekFrom::Start(offset));
+        let ret = self.fd_read(fd, iovs);
+        self.seek(fd, SeekFrom::Start(tell));
+        ret
     }
 
     fn fd_prestat_dir_name(&self, fd: u32, path: Ptr<u8>, path_len: u32) -> Status {
@@ -181,15 +194,12 @@ impl WasiState {
         }
     }
 
-    fn fd_pwrite(
-        &self,
-        _fd: u32,
-        _ciovs: &[IoSlice<'_>],
-        _offset: u64,
-        _nwritten_ptr: u32,
-    ) -> Status {
-        println!("fd pwrite");
-        Status::Success
+    fn fd_pwrite(&mut self, fd: u32, ciovs: &[IoSlice<'_>], offset: Filesize) -> (Status, u32) {
+        let tell = self.tell(fd).unwrap();
+        self.seek(fd, SeekFrom::Start(offset));
+        let ret = self.fd_write(fd, ciovs);
+        self.seek(fd, SeekFrom::Start(tell));
+        ret
     }
 
     fn fd_read(&mut self, fd: u32, iovs: &mut [IoSliceMut<'_>]) -> (Status, u32) {
@@ -217,9 +227,11 @@ impl WasiState {
         Status::Success
     }
 
-    fn fd_seek(&self, _fd: u32, _delta: i64, _whence: u32, _newoffset_u64ptr: u32) -> Status {
-        println!("fd seek");
-        Status::Success
+    fn fd_seek(&mut self, fd: Fd, delta: Filedelta, whence: Whence) -> (Status, u64) {
+        (
+            Status::Success,
+            self.seek(fd, whence.into_seek_from(delta)).unwrap_or(0),
+        )
     }
 
     fn fd_sync(&self, _fd: u32) -> Status {
@@ -228,12 +240,11 @@ impl WasiState {
         Status::Success
     }
 
-    fn fd_tell(&self, _fd: u32, _offset_u64ptr: u32) -> Status {
-        println!("fd tell");
-        Status::Success
+    fn fd_tell(&mut self, fd: Fd) -> (Status, u64) {
+        (Status::Success, self.tell(fd).unwrap_or(0))
     }
 
-    fn fd_write(&mut self, fd: u32, ciovs: &[IoSlice<'_>]) -> (Status, u32) {
+    fn fd_write(&mut self, fd: Fd, ciovs: &[IoSlice<'_>]) -> (Status, u32) {
         match fd {
             // Stdin not supported as write destination
             0 => (Status::Inval, 0),
@@ -254,14 +265,29 @@ impl WasiState {
 
     // Path
 
-    fn path_create_directory(&self, _fd: u32, _path: &str) -> Status {
-        println!("path create dir");
-        Status::Success
+    fn path_create_directory(&self, fd: Fd, path: &str) -> Status {
+        let abs_path = self.abs_path(fd, path).unwrap();
+        self.create_directory(abs_path)
     }
 
-    fn path_filestat_get(&self, fd: u32, _flags: u32, _path: &str) -> (Status, u32) {
-        println!("path filestat get {}", fd);
-        (Status::Success, 0)
+    fn path_filestat_get(
+        &self,
+        fd: Fd,
+        _flags: u32,
+        path: &str,
+        mut filestat: Ptr<Filestat>,
+    ) -> Status {
+        if let Some(abs_path) = self.abs_path(fd, path) {
+            if let Some(fstat) = self.filestat_path(&abs_path) {
+                dbg!(fstat);
+                filestat.set(fstat);
+                Status::Success
+            } else {
+                Status::Badf
+            }
+        } else {
+            Status::Badf
+        }
     }
 
     fn path_filestat_set_times(
@@ -324,14 +350,15 @@ impl WasiState {
         Status::Success
     }
 
-    fn path_remove_directory(&self, _fd: u32, _path: &str) -> Status {
-        println!("path remove dir");
-        Status::Success
+    fn path_remove_directory(&self, fd: Fd, path: &str) -> Status {
+        let abs_path = self.abs_path(fd, path).unwrap();
+        self.remove_directory(abs_path)
     }
 
-    fn path_rename(&self, _fd: Fd, _path: &str, _new_fd: Fd, _new_path: &str) -> Status {
-        println!("path rename");
-        Status::Success
+    fn path_rename(&self, fd: Fd, path: &str, new_fd: Fd, new_path: &str) -> Status {
+        let from = self.abs_path(fd, path).unwrap();
+        let to = self.abs_path(new_fd, new_path).unwrap();
+        self.rename(from, to)
     }
 
     fn path_symlink(&self, _old_path: &str, _fd: Fd, _new_path: &str) -> Status {
