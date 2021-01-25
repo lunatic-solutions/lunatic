@@ -1,7 +1,6 @@
-## Lunatic
-
-> This project is still experimental and introduces breaking changes on a daily basis.
-> Currently the functionality is rather limited. You will also need Rust Nightly to build it.
+<div align="center">
+    <img width="200" src="https://raw.githubusercontent.com/lunatic-solutions/lunatic/readme_update/assets/logo.png" alt="Lunatic logo">
+</div>
 
 Lunatic is a platform for building actor systems that use [WebAssembly](https://webassembly.org/) instances as actors. It is heavily inspired by Erlang and can be targeted from any language that can compile to WebAssembly. Currently there are only [bindings for Rust](https://crates.io/crates/lunatic) available.
 
