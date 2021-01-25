@@ -2,12 +2,7 @@ use super::types::OpenFlags;
 use uptown_funk::StateMarker;
 use wasi_common::{WasiCtx, WasiCtxBuilder};
 
-use std::{
-    fs::{File, OpenOptions},
-    io::{IoSlice, Write},
-    path::{Path, PathBuf},
-    u32,
-};
+use std::{fs::{File, OpenOptions}, io::{IoSlice, IoSliceMut, Read, Write}, path::{Path, PathBuf}, u32};
 
 type Fd = u32;
 
@@ -38,9 +33,17 @@ impl WasiState {
     }
 
     pub fn write(&mut self, fd: Fd, ciovs: &[IoSlice<'_>]) -> Option<Fd> {
-        dbg!(fd, self.fds.len());
-        let f = dbg!(self.fds.get_mut(fd as usize))?.as_mut()?;
+        let f = self.fds.get_mut(fd as usize)?.as_mut()?;
         Some(f.file.write_vectored(ciovs).unwrap() as u32)
+    }
+
+    pub fn read(&mut self, fd: Fd, iovs: &mut [IoSliceMut<'_>]) -> Option<Fd> {
+        let f = self.fds.get_mut(fd as usize)?.as_mut()?;
+        Some(f.file.read_vectored(iovs).unwrap() as u32)
+    }
+
+    pub fn close(&mut self, fd: Fd) {
+        self.fds[fd as usize] = None;
     }
 }
 

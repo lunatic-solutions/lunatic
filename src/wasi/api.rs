@@ -113,8 +113,8 @@ impl WasiState {
         Status::Success
     }
 
-    fn fd_close(&self, _fd: u32) -> Status {
-        println!("fd close");
+    fn fd_close(&mut self, fd: Fd) -> Status {
+        self.close(fd);
         Status::Success
     }
 
@@ -150,6 +150,7 @@ impl WasiState {
 
     fn fd_filestat_set_times(&self, _fd: u32, _atim: u64, _mtim: u64, _fst_flags: u32) -> Status {
         println!("fd filestat set times");
+        // Ignore for now
         Status::Success
     }
 
@@ -191,7 +192,7 @@ impl WasiState {
         Status::Success
     }
 
-    fn fd_read(&self, fd: u32, iovs: &mut [IoSliceMut<'_>]) -> (Status, u32) {
+    fn fd_read(&mut self, fd: u32, iovs: &mut [IoSliceMut<'_>]) -> (Status, u32) {
         match fd {
             // Stdout & stderr not supported as read destination
             1 | 2 => (Status::Inval, 0),
@@ -199,7 +200,10 @@ impl WasiState {
                 let written = io::stdin().read_vectored(iovs).unwrap();
                 (Status::Success, written as u32)
             }
-            _ => panic!("Unsupported wasi read destination"),
+            fd => {
+                let written = self.read(fd, iovs).unwrap();
+                (Status::Success, written as u32)
+            }
         }
     }
 
@@ -220,6 +224,7 @@ impl WasiState {
 
     fn fd_sync(&self, _fd: u32) -> Status {
         println!("fd sync");
+        // Ignore for now
         Status::Success
     }
 
@@ -269,6 +274,7 @@ impl WasiState {
         _fst_flags: u32,
     ) -> Status {
         println!("path path_filestat_set_times");
+        // Ignore for now
         Status::Success
     }
 
@@ -281,6 +287,7 @@ impl WasiState {
         _new_path: &str,
     ) -> Status {
         println!("path link");
+        // Ignore for now
         Status::Success
     }
 
@@ -313,6 +320,7 @@ impl WasiState {
         _bufused_ptr: u32,
     ) -> Status {
         println!("path readlink");
+        // Ignore for now
         Status::Success
     }
 
@@ -328,11 +336,13 @@ impl WasiState {
 
     fn path_symlink(&self, _old_path: &str, _fd: Fd, _new_path: &str) -> Status {
         println!("path symlink");
+        // Ignore for now
         Status::Success
     }
 
     fn path_unlink_file(&self, _fd: Fd, _path: &str) -> Status {
         println!("path unlink");
+        // Ignore for now
         Status::Success
     }
 
