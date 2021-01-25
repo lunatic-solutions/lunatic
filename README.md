@@ -1,6 +1,8 @@
 <div align="center">
-    <img width="150" src="https://raw.githubusercontent.com/lunatic-solutions/lunatic/readme_update/assets/logo.png" alt="Lunatic logo">
-    &nbsp;
+    <a href="https://github.com/lunatic-solutions/lunatic">
+        <img width="150" src="https://raw.githubusercontent.com/lunatic-solutions/lunatic/readme_update/assets/logo.png" alt="Lunatic logo">
+    </a>
+    <p>&nbsp;</p>
 </div>
 
 Lunatic is a platform for building actor systems that use [WebAssembly](https://webassembly.org/) instances as actors. It is heavily inspired by Erlang and can be targeted from any language that can compile to WebAssembly. Currently there are only [bindings for Rust](https://crates.io/crates/lunatic) available.
