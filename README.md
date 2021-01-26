@@ -36,7 +36,8 @@ We provide pre-built binaries for **Windows**, **Linux** and **MacOs** on the [r
 On **MacOs** you can also use [Hombrew][6]:
 
 ```bash
-TODO
+brew tap lunatic-solutions/lunatic
+brew install lunatic
 ```
 
 ---
