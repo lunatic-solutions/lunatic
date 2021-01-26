@@ -56,15 +56,22 @@ in the [async-wormhole](https://github.com/bkolobara/async-wormhole) crate. Now,
 dropped and the closure didn't yet finish running, a stack unwind will be triggered on the separate stack. This
 will clean up all the resources left behind.
 
-#### 3. Added initial WASI filesystem support
+#### 3. Updated Rust's library
+
+The [Lunatic Rust library](https://crates.io/crates/lunatic) allows you to write Rust applications that can take
+complete advantage of Lunatic's features, not to embed the Lunatic runtime in your Rust application (coming soon).
+The Rust library has seen almost a complete rewrite and takes much better advantage of Rust's ownership model now.
+Especially when sending host resources between processes.
+
+#### 4. Added initial WASI filesystem support
 
 This is still a WIP area, but the basic functionality is there for opening files, reading directories, etc.
 
-#### 4. Added TCP support
+#### 5. Added TCP support
 
 A few APIs are still missing, but we have enough to create a TCP listener/client.
 
-#### 5. Miscellaneous fixes
+#### 6. Miscellaneous fixes
 
 There are too many other small fixes and additions to mention here, but Lunatic is much more stable now than just
 2 months ago and I have removed the experimental warning in the Readme :)
