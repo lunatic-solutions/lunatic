@@ -3,6 +3,8 @@ name = "uptown_funk"
 version = "0.1.1"
 authors = ["Bernard Kolobara <me@kolobara.com>"]
 edition = "2018"
+description = "Define host functions compatible with Wasmer and Wasmtime"
+license = "Apache-2.0/MIT"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -15,6 +17,6 @@ async = []
 [dependencies]
 smallvec = "1.5"
 thiserror = {version = "1.0", optional = true}
-wasmer = {path = "../wasmer/lib/api", optional = true}
-wasmtime = {path = "../wasmtime/crates/wasmtime", optional = true}
-uptown_funk_macro = { path = "./uptown_funk_macro" }
+wasmer = {version = "1.0", path = "../wasmer/lib/api", optional = true}
+wasmtime = {version = "0.22", path = "../wasmtime/crates/wasmtime", optional = true}
+uptown_funk_macro = { version = "0.1", path = "./uptown_funk_macro" }

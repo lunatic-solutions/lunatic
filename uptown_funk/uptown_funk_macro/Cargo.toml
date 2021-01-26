@@ -3,6 +3,8 @@ name = "uptown_funk_macro"
 version = "0.1.1"
 authors = ["Bernard Kolobara <me@kolobara.com>"]
 edition = "2018"
+description = "Helper macro for the uptown_funk crate"
+license = "Apache-2.0/MIT"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [features]
