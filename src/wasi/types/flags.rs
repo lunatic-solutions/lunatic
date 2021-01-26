@@ -32,6 +32,10 @@ impl OpenFlags {
     pub fn truncate(self) -> bool {
         (self.0 & OFLAGS_TRUNC) != 0
     }
+
+    pub fn inner(self) -> u16 {
+        self.0
+    }
 }
 
 impl FromWasm for OpenFlags {

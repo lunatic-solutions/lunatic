@@ -34,6 +34,11 @@ impl WasiState {
         Some(f.path.join(rel_path).into())
     }
 
+    pub fn get_path(&self, from: Fd) -> Option<PathBuf> {
+        let f = self.fds.get(from as usize)?.as_ref()?;
+        Some(f.path.clone())
+    }
+
     pub fn open<P: AsRef<Path>>(&mut self, abs_path: P, flags: OpenFlags) -> Fd {
         self.fds.push(FileDesc::open_with_flags(abs_path, flags));
         self.fds.len() as u32 - 1
@@ -167,6 +172,10 @@ impl FileDesc {
     }
 
     fn open_with_flags<P: AsRef<Path>>(path: P, flags: OpenFlags) -> Option<Self> {
+        if fs::metadata(&path).unwrap().is_dir() {
+            return Self::open(&path);
+        }
+
         let file = OpenOptions::new()
             .read(true)
             .write(true)

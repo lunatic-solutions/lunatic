@@ -43,6 +43,13 @@ pub struct Pointer<T: WasmType> {
     _type: PhantomData<T>,
 }
 
+impl <T: WasmType> core::fmt::Debug for Pointer<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.loc.to_string())?;
+        Ok(())
+    }
+}
+
 impl<T: WasmType> WasmType for Pointer<T> {
     type Value = T::Value;
 
@@ -81,6 +88,15 @@ impl<T: WasmType> Pointer<T> {
             Some(Self { loc, ..self })
         }
     }
+
+    pub fn u8_pointer(self) -> Pointer<u8> {
+        return Pointer {
+            loc: self.loc,
+            mem: self.mem,
+            _type: PhantomData::default(),
+
+        }
+    } 
 }
 
 impl Pointer<u8> {
@@ -102,6 +118,30 @@ impl Pointer<u8> {
     pub fn mut_slice<'a>(&'a self, n: usize) -> &'a mut [u8] {
         let slice = &mut self.mem.as_mut_slice()[self.loc..self.loc + n];
         slice
+    }
+
+    pub fn cast<T: WasmType>(self) -> Option<Pointer<T>> {
+        if T::len() + self.loc <= self.mem.as_mut_slice().len() {
+            Some(Pointer {
+                loc: self.loc,
+                mem: self.mem,
+                _type: PhantomData::default(),
+
+            })
+        } else {
+            None
+        }
+    }
+
+    pub fn set_cast<T: WasmType>(self, val: T) -> Result<Option<Self>, Trap> {
+        let loc = self.loc + T::len();
+        if loc > self.mem.as_mut_slice().len() {
+            Err(Trap::new("Tried to copy slice over memory bounds"))
+        } else {
+            let mut ptr = self.cast::<T>().unwrap();
+            ptr.set(val);
+            Ok(ptr.next().map(|p| p.u8_pointer()))
+        }
     }
 }
 

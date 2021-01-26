@@ -1,5 +1,6 @@
 use super::types::*;
 
+use log::debug;
 use uptown_funk::{host_functions, types, Trap};
 use wasi_common::wasi::wasi_snapshot_preview1::WasiSnapshotPreview1;
 
@@ -43,7 +44,6 @@ impl WasiState {
     fn environ_sizes_get(&self, mut var_count: Ptr<Size>, mut total_bytes: Ptr<Size>) -> Status {
         var_count.set(ENV.len());
         total_bytes.set(ENV.total_bytes());
-        println!("ENV {} = {}", ENV.len(), var_count.value());
         Status::Success
     }
 
@@ -92,11 +92,12 @@ impl WasiState {
     }
 
     fn poll_oneoff(&self, _in: u32, _out: u32, _nsubs: u32, _nevents_ptr: u32) -> Status {
-        println!("poll oneoff");
+        // Ignore for now
         Status::Success
     }
 
     fn proc_exit(&self, _exit_code: ExitCode) {}
+
     fn proc_raise(&self, _signal: Signal) -> Status {
         Status::Success
     }
@@ -104,7 +105,7 @@ impl WasiState {
     // Filesystem fd functions
 
     fn fd_advise(&self, _fd: u32, _offset: u64, _len: u64, _advice: u32) -> Status {
-        // Ignore advise
+        // Ignore for now
         Status::Success
     }
 
@@ -146,7 +147,6 @@ impl WasiState {
 
     fn fd_filestat_get(&self, fd: Fd, mut filestat: Ptr<Filestat>) -> Status {
         if let Some(fstat) = self.filestat(fd) {
-            dbg!(fstat);
             filestat.set(fstat);
             Status::Success
         } else {
@@ -160,7 +160,6 @@ impl WasiState {
     }
 
     fn fd_filestat_set_times(&self, _fd: u32, _atim: u64, _mtim: u64, _fst_flags: u32) -> Status {
-        println!("fd filestat set times");
         // Ignore for now
         Status::Success
     }
@@ -178,14 +177,12 @@ impl WasiState {
         ret
     }
 
-    fn fd_prestat_dir_name(&self, fd: u32, path: Ptr<u8>, path_len: u32) -> Status {
-        println!("fd prestat dir name {} {}", fd, path_len);
+    fn fd_prestat_dir_name(&self, _fd: u32, path: Ptr<u8>, _path_len: u32) -> Status {
         path.copy_slice("/".as_bytes()).ok();
         Status::Success
     }
 
     fn fd_prestat_get(&self, fd: u32, mut prestat: Ptr<Prestat>) -> Status {
-        println!("fd prestat get {}", fd);
         if fd == 3 {
             prestat.set(Prestat::directory(1));
             return Status::Success;
@@ -195,6 +192,7 @@ impl WasiState {
     }
 
     fn fd_pwrite(&mut self, fd: u32, ciovs: &[IoSlice<'_>], offset: Filesize) -> (Status, u32) {
+        debug!("fd_pwrite fd={}, offset={}", fd, offset);
         let tell = self.tell(fd).unwrap();
         self.seek(fd, SeekFrom::Start(offset));
         let ret = self.fd_write(fd, ciovs);
@@ -203,6 +201,7 @@ impl WasiState {
     }
 
     fn fd_read(&mut self, fd: u32, iovs: &mut [IoSliceMut<'_>]) -> (Status, u32) {
+        debug!("fd_read fd={}", fd);
         match fd {
             // Stdout & stderr not supported as read destination
             1 | 2 => (Status::Inval, 0),
@@ -217,13 +216,61 @@ impl WasiState {
         }
     }
 
-    fn fd_readdir(&self, _fd: u32, _buf: &mut [u8], _cookie: u64) -> (Status, u32) {
-        println!("fd readdir");
-        (Status::Success, 0)
+    fn fd_readdir(
+        &self,
+        fd: Fd,
+        mut buf: Ptr<u8>,
+        buf_len: Size,
+        cookie: Dircookie,
+        mut written_ptr: Ptr<Size>,
+    ) -> StatusOrTrap {
+        debug!(
+            "fd_readdir fd={}, buf={:?}, buf_len={}, cookie={}",
+            fd, buf, buf_len, cookie
+        );
+        let path = self.get_path(fd).unwrap();
+        let paths = std::fs::read_dir(path).unwrap();
+        let dirent_size = std::mem::size_of::<Dirent>() as u32;
+        let mut written = 0;
+        // TODO something is broken when multiple entries are sent
+        // check how Rust implements reading from this syscall
+        for (i, dent) in paths
+            .map(|e| e.unwrap())
+            .enumerate()
+            .skip(cookie as usize)
+        {
+            let dpath = dent.file_name();
+            let dpath_bytes = dpath.to_str().unwrap().as_bytes();
+            if written + dpath_bytes.len() as u32 + dirent_size > buf_len {
+                break;
+            }
+
+            let d = Dirent {
+                d_next: (i + 1) as u64,
+                d_ino: 0,
+                d_namlen: dpath_bytes.len() as u32,
+                d_type: dent.file_type().unwrap().into(),
+            };
+            //debug!("Write {} direntzie to {:?}", dirent_size, buf); // WTF
+            buf = buf
+                .set_cast(d)?
+                .ok_or_else(|| Trap::new("Reached end of the readdir buffer"))?;
+            //debug!("Copy {} bytes to {:?}", dpath_bytes.len(), buf);
+            buf = buf
+                .copy_slice(&dpath_bytes)?
+                .ok_or_else(|| Trap::new("Reached end of the readdir buffer"))?;
+            //debug!("Final buf {:?}", buf);
+            written += dirent_size + dpath_bytes.len() as u32;
+            //debug!("Name: {} {:?}", i, dent.path());
+            //debug!("Written {}", written);
+            break;
+        }
+
+        written_ptr.set(written);
+        Ok(Status::Success)
     }
 
     fn fd_renumber(&self, _fd: u32, _to_fd: u32) -> Status {
-        println!("fd renumber");
         Status::Success
     }
 
@@ -235,7 +282,6 @@ impl WasiState {
     }
 
     fn fd_sync(&self, _fd: u32) -> Status {
-        println!("fd sync");
         // Ignore for now
         Status::Success
     }
@@ -266,6 +312,8 @@ impl WasiState {
     // Path
 
     fn path_create_directory(&self, fd: Fd, path: &str) -> Status {
+        debug!("path_create_directory fd={}, path={}", fd, path);
+
         let abs_path = self.abs_path(fd, path).unwrap();
         self.create_directory(abs_path)
     }
@@ -273,13 +321,17 @@ impl WasiState {
     fn path_filestat_get(
         &self,
         fd: Fd,
-        _flags: u32,
+        flags: u32,
         path: &str,
         mut filestat: Ptr<Filestat>,
     ) -> Status {
+        debug!(
+            "path_filestat_get fd={}, offset={:X}, path={}",
+            fd, flags, path
+        );
+
         if let Some(abs_path) = self.abs_path(fd, path) {
             if let Some(fstat) = self.filestat_path(&abs_path) {
-                dbg!(fstat);
                 filestat.set(fstat);
                 Status::Success
             } else {
@@ -299,7 +351,6 @@ impl WasiState {
         _mtim: u64,
         _fst_flags: u32,
     ) -> Status {
-        println!("path path_filestat_set_times");
         // Ignore for now
         Status::Success
     }
@@ -312,7 +363,6 @@ impl WasiState {
         _new_fd: Fd,
         _new_path: &str,
     ) -> Status {
-        println!("path link");
         // Ignore for now
         Status::Success
     }
@@ -326,11 +376,14 @@ impl WasiState {
         oflags: OpenFlags,
         _fs_rights_base: Rights,
         _fs_rights_inheriting: Rights,
-        fdflags: Fdflags,
+        _fdflags: Fdflags,
     ) -> (Status, Fd) {
-        println!(
-            "path open {} from {:?}: {:?} {:?} {:?}",
-            path, fd, dirflags, oflags, fdflags
+        debug!(
+            "path_open fd={}, dirflags={:X}, oflags={:X}, path={}",
+            fd,
+            dirflags,
+            oflags.inner(),
+            path
         );
         let abs_path = self.abs_path(fd, path).unwrap();
         let fd = self.open(abs_path, oflags);
@@ -345,7 +398,6 @@ impl WasiState {
         _buf_len: u32,
         _bufused_ptr: u32,
     ) -> Status {
-        println!("path readlink");
         // Ignore for now
         Status::Success
     }
@@ -362,13 +414,11 @@ impl WasiState {
     }
 
     fn path_symlink(&self, _old_path: &str, _fd: Fd, _new_path: &str) -> Status {
-        println!("path symlink");
         // Ignore for now
         Status::Success
     }
 
     fn path_unlink_file(&self, _fd: Fd, _path: &str) -> Status {
-        println!("path unlink");
         // Ignore for now
         Status::Success
     }
@@ -383,7 +433,7 @@ impl WasiState {
         _ro_datalen_ptr: u32,
         _ro_flags_ptr: u32,
     ) -> Status {
-        println!("sock recv");
+        // Ignore for now
         Status::Success
     }
 
@@ -394,12 +444,12 @@ impl WasiState {
         _si_flags: u32,
         _ro_datalen_ptr: u32,
     ) -> Status {
-        println!("sock send");
+        // Ignore for now
         Status::Success
     }
 
     fn sock_shutdown(&self, _fd: Fd, _how: u32) -> Status {
-        println!("sock shutdown");
+        // Ignore for now
         Status::Inval
     }
 }
