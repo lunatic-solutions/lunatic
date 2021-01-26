@@ -8,9 +8,7 @@ Released 2021-01-26.
 
 ### Changes
 
-#### Created [uptown_funk](https://www.youtube.com/watch?v=OPf0YbXqDm0) (this link leads to a YouTube music video)
-
----
+#### 1. Created [uptown_funk](https://www.youtube.com/watch?v=OPf0YbXqDm0) (this link leads to a YouTube music video)
 
 This is by far the biggest change in this release and one that took up most of the development time.
 [uptown_funk](https://crates.io/crates/uptown_funk) is a crate that lets you elegantly define Wasm
@@ -44,9 +42,7 @@ but if we wanted, we could add support for another runtime in the future by just
 Sadly, `uptown_funk` doesn't have any documentation yet and is not that useful to other projects. But I intend to
 invest more time into this in the future.
 
-#### Fixed Process canceling cleanup
-
----
+#### 2. Fixed Process canceling cleanup
 
 This issue needs a bit context. All Lunatic processes are executed on a separate stack and if they are waiting
 for some I/O they will be moved off the execution thread. Now, you can decide while you are waiting on something
@@ -60,21 +56,15 @@ in the [async-wormhole](https://github.com/bkolobara/async-wormhole) crate. Now,
 dropped and the closure didn't yet finish running, a stack unwind will be triggered on the separate stack. This
 will clean up all the resources left behind.
 
-#### Added initial WASI filesystem support
-
----
+#### 3. Added initial WASI filesystem support
 
 This is still a WIP area, but the basic functionality is there for opening files, reading directories, etc.
 
-#### Added TCP support
-
----
+#### 4. Added TCP support
 
 A few APIs are still missing, but we have enough to create a TCP listener/client.
 
-#### Miscellaneous fixes
-
----
+#### 5. Miscellaneous fixes
 
 There are too many other small fixes and additions to mention here, but Lunatic is much more stable now than just
 2 months ago and I have removed the experimental warning in the Readme :)
