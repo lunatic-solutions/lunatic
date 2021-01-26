@@ -64,7 +64,8 @@ hundreds of thousands of such processes concurrently running in your app.
 Some common use cases for processes are:
 
 - HTTP request handling
-- Long running background tasks like email sending
+- Long running requests, like Websocket connections
+- Long running background tasks, like email sending
 - Calling untrusted libraries in an sandboxed environment
 
 ### Isolation
@@ -100,7 +101,7 @@ We intend to eventually make Lunatic completely compatible with [WASI][10]. Idea
 compile it to WebAssembly and run on top of Lunatic; creating the best developer experience possible. We're not
 quite there yet.
 
-### License
+## License
 
 Licensed under either of
 
