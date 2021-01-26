@@ -29,7 +29,7 @@ wasmer = {path = "./wasmer/lib/api", optional = true}
 wasmer-vm = {path = "./wasmer/lib/vm", optional = true}
 wasmtime = {path = "./wasmtime/crates/wasmtime", optional = true}
 wasmtime-runtime = {path = "./wasmtime/crates/runtime", optional = true}
-# wasi-common = "0.22.0"
+clap = "3.0.0-beta.2"
 wasi-common = {path = "./wasmtime/crates/wasi-common"}
 getrandom = { version = "0.2.0", features = ["std"] }
 walrus = "0.18"
