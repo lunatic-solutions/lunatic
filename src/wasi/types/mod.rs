@@ -8,6 +8,9 @@ mod structs;
 pub use aliases::*;
 pub use flags::*;
 pub use status::Status;
+pub use status::StatusResult;
+pub use status::StatusTrap;
+pub use status::StatusTrapResult;
 pub use structs::*;
 
 use uptown_funk::{Executor, FromWasm, Trap};

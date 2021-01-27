@@ -1,4 +1,7 @@
-use uptown_funk::{types::CReprWasmType, ToWasm};
+use uptown_funk::{
+    types::{CReprWasmType, HasOk},
+    Executor, ToWasm, Trap,
+};
 
 #[derive(Copy, Clone)]
 #[repr(u16)]
@@ -161,6 +164,12 @@ pub enum Status {
 
 impl CReprWasmType for Status {}
 
+impl HasOk for Status {
+    fn ok() -> Self {
+        Status::Success
+    }
+}
+
 impl ToWasm for Status {
     type To = u32;
     type State = ();
@@ -174,33 +183,103 @@ impl ToWasm for Status {
     }
 }
 
+fn convert_io_err(e: std::io::Error) -> Status {
+    match e.kind() {
+        std::io::ErrorKind::NotFound => Status::NoEnt,
+        std::io::ErrorKind::PermissionDenied => Status::Acces,
+        std::io::ErrorKind::ConnectionRefused => Status::ConnRefused,
+        std::io::ErrorKind::ConnectionReset => Status::ConnReset,
+        std::io::ErrorKind::ConnectionAborted => Status::ConnAborted,
+        std::io::ErrorKind::NotConnected => Status::NotConn,
+        std::io::ErrorKind::AddrInUse => Status::AddrInUse,
+        std::io::ErrorKind::AddrNotAvailable => Status::AddrNotAvail,
+        std::io::ErrorKind::BrokenPipe => Status::Pipe,
+        std::io::ErrorKind::AlreadyExists => Status::Exist,
+        std::io::ErrorKind::WouldBlock => Status::Again, // ??
+        std::io::ErrorKind::InvalidInput => Status::Inval,
+        std::io::ErrorKind::InvalidData => Status::Inval, // ??
+        std::io::ErrorKind::TimedOut => Status::TimedOut,
+        std::io::ErrorKind::WriteZero => Status::Inval, // ??{}
+        std::io::ErrorKind::Interrupted => Status::Intr,
+        std::io::ErrorKind::Other => Status::Inval, // ??
+        std::io::ErrorKind::UnexpectedEof => Status::Inval, // ??
+        _ => Status::Inval,                         // ??
+    }
+}
+
 impl From<std::io::Result<()>> for Status {
     fn from(r: std::io::Result<()>) -> Self {
         match r {
             Ok(_) => Self::Success,
-            Err(e) => {
-                match e.kind() {
-                    std::io::ErrorKind::NotFound => Status::NoEnt,
-                    std::io::ErrorKind::PermissionDenied => Status::Acces,
-                    std::io::ErrorKind::ConnectionRefused => Status::ConnRefused,
-                    std::io::ErrorKind::ConnectionReset => Status::ConnReset,
-                    std::io::ErrorKind::ConnectionAborted => Status::ConnAborted,
-                    std::io::ErrorKind::NotConnected => Status::NotConn,
-                    std::io::ErrorKind::AddrInUse => Status::AddrInUse,
-                    std::io::ErrorKind::AddrNotAvailable => Status::AddrNotAvail,
-                    std::io::ErrorKind::BrokenPipe => Status::Pipe,
-                    std::io::ErrorKind::AlreadyExists => Status::Exist,
-                    std::io::ErrorKind::WouldBlock => Status::Again, // ??
-                    std::io::ErrorKind::InvalidInput => Status::Inval,
-                    std::io::ErrorKind::InvalidData => Status::Inval, // ??
-                    std::io::ErrorKind::TimedOut => Status::TimedOut,
-                    std::io::ErrorKind::WriteZero => Status::Inval, // ??{}
-                    std::io::ErrorKind::Interrupted => Status::Intr,
-                    std::io::ErrorKind::Other => Status::Inval, // ??
-                    std::io::ErrorKind::UnexpectedEof => Status::Inval, // ??
-                    _ => Status::Inval,                         // ??
-                }
-            }
+            Err(e) => convert_io_err(e),
+        }
+    }
+}
+
+impl From<std::io::Error> for Status {
+    fn from(e: std::io::Error) -> Self {
+        convert_io_err(e)
+    }
+}
+
+pub enum StatusTrap {
+    Status(Status),
+    Trap(Trap),
+}
+
+impl From<Trap> for StatusTrap {
+    fn from(t: Trap) -> Self {
+        Self::Trap(t)
+    }
+}
+
+impl HasOk for StatusTrap {
+    fn ok() -> Self {
+        Self::Status(Status::Success)
+    }
+}
+
+impl From<std::io::Result<()>> for StatusTrap {
+    fn from(r: std::io::Result<()>) -> Self {
+        match r {
+            Ok(_) => Self::Status(Status::Success),
+            Err(e) => Self::Status(convert_io_err(e)),
+        }
+    }
+}
+
+impl From<std::io::Error> for StatusTrap {
+    fn from(e: std::io::Error) -> Self {
+        Self::Status(convert_io_err(e))
+    }
+}
+
+impl From<Status> for StatusTrap {
+    fn from(s: Status) -> Self {
+        Self::Status(s)
+    }
+}
+
+impl ToWasm for StatusTrap {
+    type To = u32;
+    type State = ();
+
+    fn to(_: &mut (), _: &impl Executor, v: Self) -> Result<Self::To, Trap> {
+        match v {
+            StatusTrap::Status(s) => Ok(s as u32),
+            StatusTrap::Trap(t) => Err(t),
+        }
+    }
+}
+
+pub type StatusResult = Result<(), Status>;
+pub type StatusTrapResult = Result<(), StatusTrap>;
+
+impl Into<StatusResult> for Status {
+    fn into(self) -> StatusResult {
+        match self {
+            Status::Success => Ok(()),
+            s => Err(s),
         }
     }
 }

@@ -2,6 +2,9 @@ use std::{cell::Cell, marker::PhantomData, mem};
 
 use crate::{Executor, FromWasm, Trap, memory::Memory};
 
+
+// TODO maybe writing to memory should always return Result<(), Trap>?
+
 pub trait WasmType : Sized {
     type Value;
     fn copy_to(&self, mem: &mut [u8]);

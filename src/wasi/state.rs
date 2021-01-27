@@ -1,4 +1,4 @@
-use super::types::{Filestat, OpenFlags, Status};
+use super::types::{Filestat, OpenFlags, Status, StatusResult};
 use uptown_funk::StateMarker;
 use wasi_common::{WasiCtx, WasiCtxBuilder};
 
@@ -22,67 +22,85 @@ pub struct WasiState {
 
 impl WasiState {
     pub fn new() -> Self {
+        // TODO cannot trap if open / fails
         let ctx = WasiCtxBuilder::new().build().unwrap();
         Self {
             ctx,
-            fds: vec![None, None, None, FileDesc::open("/")],
+            fds: vec![None, None, None, FileDesc::open("/").ok()],
         }
     }
 
-    pub fn abs_path(&self, from: Fd, rel_path: &str) -> Option<PathBuf> {
-        let f = self.fds.get(from as usize)?.as_ref()?;
-        Some(f.path.join(rel_path).into())
+    fn get_mut_file_desc(&mut self, fd: Fd) -> Result<&mut FileDesc, Status> {
+        self.fds
+            .get_mut(fd as usize)
+            .ok_or(Status::Badf)?
+            .as_mut()
+            .ok_or(Status::Badf)
     }
 
-    pub fn get_path(&self, from: Fd) -> Option<PathBuf> {
-        let f = self.fds.get(from as usize)?.as_ref()?;
-        Some(f.path.clone())
+    fn get_file_desc(&self, fd: Fd) -> Result<&FileDesc, Status> {
+        self.fds
+            .get(fd as usize)
+            .ok_or(Status::Badf)?
+            .as_ref()
+            .ok_or(Status::Badf)
     }
 
-    pub fn open<P: AsRef<Path>>(&mut self, abs_path: P, flags: OpenFlags) -> Fd {
-        self.fds.push(FileDesc::open_with_flags(abs_path, flags));
-        self.fds.len() as u32 - 1
+    pub fn abs_path(&self, from: Fd, rel_path: &str) -> Result<PathBuf, Status> {
+        let f = self.get_file_desc(from)?;
+        Ok(f.path.join(rel_path).into())
     }
 
-    pub fn write(&mut self, fd: Fd, ciovs: &[IoSlice<'_>]) -> Option<Fd> {
-        let f = self.fds.get_mut(fd as usize)?.as_mut()?;
-        Some(f.file.write_vectored(ciovs).unwrap() as u32)
+    pub fn get_path(&self, from: Fd) -> Result<PathBuf, Status> {
+        let f = self.get_file_desc(from)?;
+        Ok(f.path.clone())
     }
 
-    pub fn read(&mut self, fd: Fd, iovs: &mut [IoSliceMut<'_>]) -> Option<Fd> {
-        let f = self.fds.get_mut(fd as usize)?.as_mut()?;
-        Some(f.file.read_vectored(iovs).unwrap() as u32)
+    pub fn open<P: AsRef<Path>>(&mut self, abs_path: P, flags: OpenFlags) -> Result<Fd, Status> {
+        self.fds
+            .push(Some(FileDesc::open_with_flags(abs_path, flags)?));
+        Ok(self.fds.len() as u32 - 1)
+    }
+
+    pub fn write(&mut self, fd: Fd, ciovs: &[IoSlice<'_>]) -> Result<usize, Status> {
+        let f = self.get_mut_file_desc(fd)?;
+        Ok(f.file.write_vectored(ciovs)?)
+    }
+
+    pub fn read(&mut self, fd: Fd, iovs: &mut [IoSliceMut<'_>]) -> Result<usize, Status> {
+        let f = self.get_mut_file_desc(fd)?;
+        Ok(f.file.read_vectored(iovs)?)
     }
 
     pub fn close(&mut self, fd: Fd) {
         self.fds[fd as usize] = None;
     }
 
-    pub fn tell(&mut self, fd: Fd) -> Option<u64> {
-        let f = self.fds.get_mut(fd as usize)?.as_mut()?;
-        f.file.seek(SeekFrom::Current(0)).ok()
+    pub fn tell(&mut self, fd: Fd) -> Result<u64, Status> {
+        let f = self.get_mut_file_desc(fd)?;
+        Ok(f.file.seek(SeekFrom::Current(0))?)
     }
 
-    pub fn seek(&mut self, fd: Fd, seek_from: SeekFrom) -> Option<u64> {
-        let f = self.fds.get_mut(fd as usize)?.as_mut()?;
-        f.file.seek(seek_from).ok()
+    pub fn seek(&mut self, fd: Fd, seek_from: SeekFrom) -> Result<u64, Status> {
+        let f = self.get_mut_file_desc(fd)?;
+        Ok(f.file.seek(seek_from)?)
     }
 
-    pub fn create_directory<P: AsRef<Path>>(&self, abs_path: P) -> Status {
-        fs::create_dir(abs_path).into()
+    pub fn create_directory<P: AsRef<Path>>(&self, abs_path: P) -> StatusResult {
+        Ok(fs::create_dir(abs_path)?)
     }
 
-    pub fn remove_directory<P: AsRef<Path>>(&self, abs_path: P) -> Status {
-        fs::remove_dir(abs_path).into()
+    pub fn remove_directory<P: AsRef<Path>>(&self, abs_path: P) -> StatusResult {
+        Ok(fs::remove_dir(abs_path)?)
     }
 
-    pub fn rename<P: AsRef<Path>>(&self, abs_from: P, abs_to: P) -> Status {
-        fs::rename(abs_from, abs_to).into()
+    pub fn rename<P: AsRef<Path>>(&self, abs_from: P, abs_to: P) -> StatusResult {
+        Ok(fs::rename(abs_from, abs_to)?)
     }
 
-    pub fn filestat(&self, fd: Fd) -> Option<Filestat> {
+    pub fn filestat(&self, fd: Fd) -> Result<Filestat, Status> {
         if let Some(Some(f)) = self.fds.get(fd as usize) {
-            let metadata = fs::metadata(&f.path).ok()?;
+            let metadata = fs::metadata(&f.path)?;
             // TODO repeated and not sure how timestamp is actually represented
             let atim = metadata
                 .accessed()
@@ -102,7 +120,7 @@ impl WasiState {
                 .duration_since(SystemTime::UNIX_EPOCH)
                 .unwrap()
                 .as_secs();
-            Some(Filestat {
+            Ok(Filestat {
                 dev: 0,
                 ino: 0,
                 filetype: metadata.file_type().into(),
@@ -113,12 +131,12 @@ impl WasiState {
                 ctim,
             })
         } else {
-            None
+            Err(Status::Badf)
         }
     }
 
-    pub fn filestat_path<P: AsRef<Path>>(&self, abs_path: P) -> Option<Filestat> {
-        let metadata = fs::metadata(&abs_path).ok()?;
+    pub fn filestat_path<P: AsRef<Path>>(&self, abs_path: P) -> Result<Filestat, Status> {
+        let metadata = fs::metadata(&abs_path)?;
         let atim = metadata
             .accessed()
             .unwrap()
@@ -137,7 +155,7 @@ impl WasiState {
             .duration_since(SystemTime::UNIX_EPOCH)
             .unwrap()
             .as_secs();
-        Some(Filestat {
+        Ok(Filestat {
             dev: 0,
             ino: 0,
             filetype: metadata.file_type().into(),
@@ -149,10 +167,10 @@ impl WasiState {
         })
     }
 
-    pub fn set_size(&mut self, fd: Fd, len: u64) -> Option<()> {
-        let f = self.fds.get_mut(fd as usize)?.as_mut()?;
-        f.file.set_len(len).ok();
-        Some(())
+    pub fn set_size(&mut self, fd: Fd, len: u64) -> Result<(), Status> {
+        let f = self.get_mut_file_desc(fd)?;
+        f.file.set_len(len)?;
+        Ok(())
     }
 }
 
@@ -165,14 +183,14 @@ struct FileDesc {
 }
 
 impl FileDesc {
-    fn open<P: AsRef<Path>>(path: P) -> Option<Self> {
-        let file = File::open(&path).ok()?;
+    fn open<P: AsRef<Path>>(path: P) -> Result<Self, Status> {
+        let file = File::open(&path)?;
         let path = PathBuf::from(path.as_ref());
-        Some(Self { file, path })
+        Ok(Self { file, path })
     }
 
-    fn open_with_flags<P: AsRef<Path>>(path: P, flags: OpenFlags) -> Option<Self> {
-        if fs::metadata(&path).unwrap().is_dir() {
+    fn open_with_flags<P: AsRef<Path>>(path: P, flags: OpenFlags) -> Result<Self, Status> {
+        if fs::metadata(&path)?.is_dir() {
             return Self::open(&path);
         }
 
@@ -181,9 +199,8 @@ impl FileDesc {
             .write(true)
             .create(flags.create())
             .truncate(flags.truncate())
-            .open(&path)
-            .ok()?;
+            .open(&path)?;
         let path = PathBuf::from(path.as_ref());
-        Some(Self { file, path })
+        Ok(Self { file, path })
     }
 }
