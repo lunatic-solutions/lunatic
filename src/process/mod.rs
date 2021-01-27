@@ -5,10 +5,15 @@ use async_wormhole::pool::OneMbAsyncPool;
 use async_wormhole::AsyncYielder;
 use lazy_static::lazy_static;
 use smol::{Executor as TaskExecutor, Task};
-use uptown_funk::{memory::Memory, Executor, FromWasm, ToWasm};
+use uptown_funk::{memory::Memory, Executor, FromWasm, HostFunctions, ToWasm};
 
 use crate::module::LunaticModule;
 use crate::{channel::ChannelReceiver, linker::LunaticLinker};
+
+use crate::channel;
+use crate::networking;
+use crate::process;
+use crate::wasi;
 
 use log::info;
 use std::future::Future;
@@ -45,12 +50,12 @@ pub enum MemoryChoice {
 /// static memories and one memory per instance. This makes it somewhat safe?
 #[cfg_attr(feature = "vm-wasmer", derive(Clone))]
 pub struct ProcessEnvironment {
-    module: LunaticModule,
     memory: Memory,
     yielder: usize,
 }
 
 impl uptown_funk::Executor for ProcessEnvironment {
+    #[inline(always)]
     fn async_<R, F>(&self, f: F) -> R
     where
         F: Future<Output = R>,
@@ -87,7 +92,6 @@ impl Drop for ProcessEnvironment {
 impl Clone for ProcessEnvironment {
     fn clone(&self) -> Self {
         Self {
-            module: self.module.clone(),
             memory: unsafe { std::ptr::read(&self.memory as *const Memory) },
             yielder: self.yielder,
         }
@@ -95,12 +99,8 @@ impl Clone for ProcessEnvironment {
 }
 
 impl ProcessEnvironment {
-    pub fn new(module: LunaticModule, memory: Memory, yielder: usize) -> Self {
-        Self {
-            module,
-            memory,
-            yielder,
-        }
+    pub fn new(memory: Memory, yielder: usize) -> Self {
+        Self { memory, yielder }
     }
 }
 
@@ -114,13 +114,16 @@ impl Process {
         self.task
     }
 
-    /// Spawn a new process.
-    pub fn spawn(
-        context_receiver: Option<ChannelReceiver>,
+    /// Spawns a new process with a custom API.
+    pub fn spawn_with_api<A>(
         module: LunaticModule,
         function: FunctionLookup,
         memory: MemoryChoice,
-    ) -> Self {
+        api: A,
+    ) -> Self
+    where
+        A: HostFunctions + 'static,
+    {
         #[cfg(feature = "vm-wasmer")]
         let tls = [&wasmer_vm::traphandlers::tls::PTR];
         #[cfg(feature = "vm-wasmtime")]
@@ -130,7 +133,8 @@ impl Process {
             move |yielder| {
                 let yielder_ptr = &yielder as *const AsyncYielderCast as usize;
 
-                let linker = LunaticLinker::new(context_receiver, module, yielder_ptr, memory)?;
+                let mut linker = LunaticLinker::new(module, yielder_ptr, memory)?;
+                linker.add_api(api);
                 let instance = linker.instance()?;
 
                 match function {
@@ -167,6 +171,69 @@ impl Process {
         });
 
         Self { task }
+    }
+
+    /// Spawn a new process using the default api.
+    pub fn spawn(
+        context_receiver: Option<ChannelReceiver>,
+        module: LunaticModule,
+        function: FunctionLookup,
+        memory: MemoryChoice,
+    ) -> Self {
+        let api = DefaultApi::new(context_receiver, module.clone());
+        Process::spawn_with_api(module, function, memory, api)
+    }
+}
+
+pub struct DefaultApi {
+    context_receiver: Option<ChannelReceiver>,
+    module: LunaticModule,
+}
+
+impl DefaultApi {
+    pub fn new(context_receiver: Option<ChannelReceiver>, module: LunaticModule) -> Self {
+        Self {
+            context_receiver,
+            module,
+        }
+    }
+}
+
+impl HostFunctions for DefaultApi {
+    #[cfg(feature = "vm-wasmtime")]
+    fn add_to_linker<E>(self, executor: E, linker: &mut wasmtime::Linker)
+    where
+        E: Executor + Clone + 'static,
+    {
+        let channel_state = channel::api::ChannelState::new(self.context_receiver);
+        let process_state = process::api::ProcessState::new(self.module, channel_state.clone());
+        let networking_state = networking::api::TcpState::new(channel_state.clone());
+        let wasi_state = wasi::api::WasiState::new();
+
+        channel_state.add_to_linker(executor.clone(), linker);
+        process_state.add_to_linker(executor.clone(), linker);
+        networking_state.add_to_linker(executor.clone(), linker);
+        wasi_state.add_to_linker(executor, linker);
+    }
+
+    #[cfg(feature = "vm-wasmer")]
+    fn add_to_wasmer_linker<E>(
+        self,
+        executor: E,
+        linker: &mut uptown_funk::wasmer::WasmerLinker,
+        store: &wasmer::Store,
+    ) where
+        E: Executor + Clone + 'static,
+    {
+        let channel_state = channel::api::ChannelState::new(self.context_receiver);
+        let process_state = process::api::ProcessState::new(self.module, channel_state.clone());
+        let networking_state = networking::api::TcpState::new(channel_state.clone());
+        let wasi_state = wasi::api::WasiState::new();
+
+        channel_state.add_to_wasmer_linker(executor.clone(), linker, store);
+        process_state.add_to_wasmer_linker(executor.clone(), linker, store);
+        networking_state.add_to_wasmer_linker(executor.clone(), linker, store);
+        wasi_state.add_to_wasmer_linker(executor, linker, store);
     }
 }
 

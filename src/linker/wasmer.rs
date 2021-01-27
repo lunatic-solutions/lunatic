@@ -1,8 +1,5 @@
-use crate::channel;
 use crate::module::LunaticModule;
-use crate::networking;
-use crate::process::{self, MemoryChoice, ProcessEnvironment};
-use crate::wasi;
+use crate::process::{MemoryChoice, ProcessEnvironment};
 
 use anyhow::Result;
 use uptown_funk::{wasmer::WasmerLinker, HostFunctions};
@@ -12,17 +9,14 @@ use wasmer::{Exportable, Instance, Memory, MemoryType, Store};
 /// Lunatic's instances have their own store, linker and process environment associated with them.
 pub struct LunaticLinker {
     linker: WasmerLinker,
+    store: Store,
     module: LunaticModule,
+    environment: ProcessEnvironment,
 }
 
 impl LunaticLinker {
     /// Create a new LunaticLinker.
-    pub fn new(
-        context_receiver: Option<channel::ChannelReceiver>,
-        module: LunaticModule,
-        yielder_ptr: usize,
-        memory: MemoryChoice,
-    ) -> Result<Self> {
+    pub fn new(module: LunaticModule, yielder_ptr: usize, memory: MemoryChoice) -> Result<Self> {
         let store = engine();
         let mut linker = WasmerLinker::new();
 
@@ -35,24 +29,16 @@ impl LunaticLinker {
         };
 
         let uptown_funk_memory: uptown_funk::memory::Memory = memory.clone().into();
-        let environment = ProcessEnvironment::new(module.clone(), uptown_funk_memory, yielder_ptr);
+        let environment = ProcessEnvironment::new(uptown_funk_memory, yielder_ptr);
 
         linker.add("lunatic", "memory", memory.to_export());
 
-        let channel_state = channel::api::ChannelState::new(context_receiver);
-
-        let process_state = process::api::ProcessState::new(module.clone(), channel_state.clone());
-        process_state.add_to_wasmer_linker(environment.clone(), &mut linker, &store);
-
-        let networking_state = networking::api::TcpState::new(channel_state.clone());
-        networking_state.add_to_wasmer_linker(environment.clone(), &mut linker, &store);
-
-        let wasi_state = wasi::api::WasiState::new();
-        wasi_state.add_to_wasmer_linker(environment.clone(), &mut linker, &store);
-
-        channel_state.add_to_wasmer_linker(environment, &mut linker, &store);
-
-        Ok(Self { linker, module })
+        Ok(Self {
+            linker,
+            store,
+            module,
+            environment,
+        })
     }
 
     /// Create a new instance and set it up.
@@ -60,6 +46,10 @@ impl LunaticLinker {
     pub fn instance(self) -> Result<Instance> {
         let instance = Instance::new(self.module.module(), &self.linker).unwrap();
         Ok(instance)
+    }
+
+    pub fn add_api<S: HostFunctions>(&mut self, state: S) {
+        state.add_to_wasmer_linker(self.environment.clone(), &mut self.linker, &self.store);
     }
 }
 

@@ -27,7 +27,7 @@ pub trait HostFunctions {
     #[cfg(feature = "vm-wasmtime")]
     fn add_to_linker<E>(self, executor: E, linker: &mut wasmtime::Linker)
     where
-        E: Executor + 'static;
+        E: Executor + Clone + 'static;
 
     #[cfg(feature = "vm-wasmer")]
     fn add_to_wasmer_linker<E>(
@@ -36,41 +36,37 @@ pub trait HostFunctions {
         linker: &mut wasmer::WasmerLinker,
         store: &::wasmer::Store,
     ) where
-        E: Executor + 'static;
+        E: Executor + Clone + 'static;
 }
 
-pub trait StateMarker : Sized {}
-pub trait Convert<To: Sized> : Sized {
+pub trait StateMarker: Sized {}
+pub trait Convert<To: Sized>: Sized {
     fn convert(&mut self) -> &mut To;
 }
 
-impl <T: StateMarker> Convert<T> for T {
-   fn convert(&mut self) -> &mut T {
-       self
-   } 
-}
-
-impl <'a, T: StateMarker> Convert<T> for RefMut<'a, T> {
+impl<T: StateMarker> Convert<T> for T {
     fn convert(&mut self) -> &mut T {
         self
-    } 
+    }
+}
+
+impl<'a, T: StateMarker> Convert<T> for RefMut<'a, T> {
+    fn convert(&mut self) -> &mut T {
+        self
+    }
 }
 
 static mut NOSTATE: () = ();
 
-impl <T: StateMarker> Convert<()> for T {
+impl<T: StateMarker> Convert<()> for T {
     fn convert(&mut self) -> &mut () {
-        unsafe {
-            &mut NOSTATE
-        }
+        unsafe { &mut NOSTATE }
     }
 }
 
-impl <'a, T: StateMarker> Convert<()> for RefMut<'a, T> {
+impl<'a, T: StateMarker> Convert<()> for RefMut<'a, T> {
     fn convert(&mut self) -> &mut () {
-        unsafe {
-            &mut NOSTATE
-        }
+        unsafe { &mut NOSTATE }
     }
 }
 
@@ -82,7 +78,7 @@ impl Convert<()> for () {
 
 pub trait FromWasm {
     type From;
-    type State : Convert<Self::State> + Convert<()>;
+    type State: Convert<Self::State> + Convert<()>;
 
     fn from(
         state: &mut Self::State,
@@ -95,7 +91,7 @@ pub trait FromWasm {
 
 pub trait ToWasm {
     type To;
-    type State : Convert<Self::State> + Convert<()>;
+    type State: Convert<Self::State> + Convert<()>;
 
     fn to(
         state: &mut Self::State,
