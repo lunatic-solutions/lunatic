@@ -15,6 +15,9 @@ use std::thread;
 struct Opts {
     /// .wasm file
     input: String,
+    /// All other arguments are forwarded to the .wasm file
+    #[clap(min_values(0))]
+    _args: Vec<String>,
 }
 
 pub fn run() -> Result<()> {
@@ -40,7 +43,7 @@ pub fn run() -> Result<()> {
                     FunctionLookup::Name("_start"),
                     MemoryChoice::New,
                 )
-                .join()
+                .task()
                 .await;
                 drop(signal);
                 result
