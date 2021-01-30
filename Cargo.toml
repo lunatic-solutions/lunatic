@@ -1,6 +1,6 @@
 [package]
 name = "lunatic-runtime"
-version = "0.3.0"
+version = "0.3.1"
 authors = ["Bernard Kolobara <me@kolobara.com>"]
 edition = "2018"
 description = "An actor platform built on WebAssembly"
@@ -24,14 +24,13 @@ vm-wasmer = ["uptown_funk/vm-wasmer", "wasmer", "wasmer-vm"]
 
 [dependencies]
 async-wormhole = "0.3"
-switcheroo = { path = "../async_wormhole/switcheroo" }
 uptown_funk = { path = "./uptown_funk", features=["async"] }
-wasmer = {path = "./wasmer/lib/api", optional = true}
-wasmer-vm = {path = "./wasmer/lib/vm", optional = true}
-wasmtime = {path = "./wasmtime/crates/wasmtime", optional = true}
-wasmtime-runtime = {path = "./wasmtime/crates/runtime", optional = true}
+wasmer = { git = "https://github.com/lunatic-solutions/wasmer.git", branch = "lunatic", optional = true }
+wasmer-vm = { git = "https://github.com/lunatic-solutions/wasmer.git", branch = "lunatic", optional = true }
+wasmtime = { git = "https://github.com/lunatic-solutions/wasmtime.git", branch = "lunatic", optional = true }
+wasmtime-runtime = { git = "https://github.com/lunatic-solutions/wasmtime.git", branch = "lunatic", optional = true }
 clap = "3.0.0-beta.2"
-wasi-common = {path = "./wasmtime/crates/wasi-common"}
+wasi-common = {git = "https://github.com/lunatic-solutions/wasmtime.git", branch = "lunatic" }
 getrandom = { version = "0.2.0", features = ["std"] }
 walrus = "0.18"
 smol = "1.2"

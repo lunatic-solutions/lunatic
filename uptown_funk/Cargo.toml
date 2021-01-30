@@ -17,6 +17,6 @@ async = []
 [dependencies]
 smallvec = "1.5"
 thiserror = {version = "1.0", optional = true}
-wasmer = {version = "1.0", path = "../wasmer/lib/api", optional = true}
-wasmtime = {version = "0.22", path = "../wasmtime/crates/wasmtime", optional = true}
+wasmer = { git = "https://github.com/lunatic-solutions/wasmer.git", branch = "lunatic", optional = true }
+wasmtime = { git = "https://github.com/lunatic-solutions/wasmtime.git", branch = "lunatic", optional = true }
 uptown_funk_macro = { version = "0.1", path = "./uptown_funk_macro" }

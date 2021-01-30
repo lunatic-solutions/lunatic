@@ -1,6 +1,0 @@
-[submodule "wasmtime"]
-	path = wasmtime
-	url = https://github.com/lunatic-lang/wasmtime.git
-[submodule "wasmer"]
-	path = wasmer
-	url = https://github.com/lunatic-lang/wasmer.git
