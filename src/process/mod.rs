@@ -1,8 +1,11 @@
 pub mod api;
+mod tls;
 
 use anyhow::Result;
-use async_wormhole::pool::OneMbAsyncPool;
-use async_wormhole::AsyncYielder;
+use async_wormhole::{
+    stack::{OneMbStack, Stack},
+    AsyncWormhole, AsyncYielder,
+};
 use lazy_static::lazy_static;
 use smol::{Executor as TaskExecutor, Task};
 use uptown_funk::{memory::Memory, Executor, FromWasm, HostFunctions, ToWasm};
@@ -20,7 +23,6 @@ use std::future::Future;
 use std::mem::ManuallyDrop;
 
 lazy_static! {
-    static ref WORMHOLE_POOL: OneMbAsyncPool = OneMbAsyncPool::new(128);
     pub static ref EXECUTOR: TaskExecutor<'static> = TaskExecutor::new();
 }
 
@@ -110,7 +112,7 @@ pub struct Process {
 }
 
 impl Process {
-    pub fn join(self) -> Task<Result<()>> {
+    pub fn task(self) -> Task<Result<()>> {
         self.task
     }
 
@@ -124,49 +126,49 @@ impl Process {
     where
         A: HostFunctions + 'static,
     {
-        #[cfg(feature = "vm-wasmer")]
-        let tls = [&wasmer_vm::traphandlers::tls::PTR];
-        #[cfg(feature = "vm-wasmtime")]
-        let tls = [&wasmtime_runtime::traphandlers::tls::PTR];
-        let process = WORMHOLE_POOL.with_tls(
-            tls,
-            move |yielder| {
-                let yielder_ptr = &yielder as *const AsyncYielderCast as usize;
+        let stack = OneMbStack::new().unwrap();
+        let process = AsyncWormhole::new(stack, move |yielder| {
+            let yielder_ptr = &yielder as *const AsyncYielderCast as usize;
 
-                let mut linker = LunaticLinker::new(module, yielder_ptr, memory)?;
-                linker.add_api(api);
-                let instance = linker.instance()?;
+            let mut linker = LunaticLinker::new(module, yielder_ptr, memory)?;
+            linker.add_api(api);
+            let instance = linker.instance()?;
 
-                match function {
-                    FunctionLookup::Name(name) => {
-                        #[cfg(feature = "vm-wasmer")]
-                        let func = instance.exports.get_function(name).unwrap();
-                        #[cfg(feature = "vm-wasmtime")]
-                        let func = instance.get_func(name).unwrap();
+            match function {
+                FunctionLookup::Name(name) => {
+                    #[cfg(feature = "vm-wasmer")]
+                    let func = instance.exports.get_function(name).unwrap();
+                    #[cfg(feature = "vm-wasmtime")]
+                    let func = instance.get_func(name).unwrap();
 
-                        // Measure how long the function takes for named functions.
-                        let performance_timer = std::time::Instant::now();
-                        func.call(&[])?;
-                        info!(target: "performance", "Process {} finished in {} ms.", name, performance_timer.elapsed().as_millis());
-                    }
-                    FunctionLookup::TableIndex(index) => {
-                        #[cfg(feature = "vm-wasmer")]
-                        let func = instance.exports.get_function("lunatic_spawn_by_index").unwrap();
-                        #[cfg(feature = "vm-wasmtime")]
-                        let func = instance.get_func("lunatic_spawn_by_index").unwrap();
-
-                        func.call(&[(index as i32).into()])?;
-                    }
+                    // Measure how long the function takes for named functions.
+                    let performance_timer = std::time::Instant::now();
+                    func.call(&[])?;
+                    info!(target: "performance", "Process {} finished in {} ms.", name, performance_timer.elapsed().as_millis());
                 }
+                FunctionLookup::TableIndex(index) => {
+                    #[cfg(feature = "vm-wasmer")]
+                    let func = instance
+                        .exports
+                        .get_function("lunatic_spawn_by_index")
+                        .unwrap();
+                    #[cfg(feature = "vm-wasmtime")]
+                    let func = instance.get_func("lunatic_spawn_by_index").unwrap();
 
-                Ok(())
-            },
-        );
+                    func.call(&[(index as i32).into()])?;
+                }
+            }
+
+            Ok(())
+        });
 
         let task = EXECUTOR.spawn(async {
             let mut process = process?;
+
+            let ctss = tls::CallThreadStateSave::new();
+            process.set_pre_post_poll(move || ctss.swap());
+
             let result = (&mut process).await.unwrap();
-            WORMHOLE_POOL.recycle(process);
             result
         });
 

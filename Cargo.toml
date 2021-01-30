@@ -18,12 +18,13 @@ name = "lunatic"
 path = "src/main.rs"
 
 [features]
-default = ["vm-wasmer"]
+default = ["vm-wasmtime"]
 vm-wasmtime = ["uptown_funk/vm-wasmtime", "wasmtime", "wasmtime-runtime"]
 vm-wasmer = ["uptown_funk/vm-wasmer", "wasmer", "wasmer-vm"]
 
 [dependencies]
-async-wormhole = "0.2"
+async-wormhole = "0.3"
+switcheroo = { path = "../async_wormhole/switcheroo" }
 uptown_funk = { path = "./uptown_funk", features=["async"] }
 wasmer = {path = "./wasmer/lib/api", optional = true}
 wasmer-vm = {path = "./wasmer/lib/vm", optional = true}

@@ -149,13 +149,11 @@ checksum = "e91831deabf0d6d7ec49552e489aed63b7456a7a3c46cff62adad428110b0af0"
 
 [[package]]
 name = "async-wormhole"
-version = "0.2.1"
+version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2b80ae4142d2d93d149294a22c0bd185055600b7a126f823bae073dbdd77aa5a"
+checksum = "9510a6ba8d762938c7d513de4b67a139002524c7b816cc50788720ddfd121f12"
 dependencies = [
- "crossbeam",
- "pin-utils",
- "switcheroo",
+ "switcheroo 0.2.3 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -254,9 +252,9 @@ dependencies = [
 
 [[package]]
 name = "bumpalo"
-version = "3.5.0"
+version = "3.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f07aa6688c702439a1be0307b6a94dffe1168569e45b9500c1372bc580740d59"
+checksum = "099e596ef14349721d9016f6b80dd3419ea1bf289ab9b44df8e4dfd3a005d5d9"
 
 [[package]]
 name = "byteorder"
@@ -545,7 +543,7 @@ dependencies = [
  "serde",
  "smallvec",
  "thiserror",
- "wasmparser 0.73.0",
+ "wasmparser 0.73.1",
 ]
 
 [[package]]
@@ -1146,9 +1144,9 @@ checksum = "3576a87f2ba00f6f106fdfcd16db1d698d648a26ad8e0573cad8537c3c362d2a"
 
 [[package]]
 name = "libc"
-version = "0.2.82"
+version = "0.2.84"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "89203f3fba0a3795506acaad8ebce3c80c0af93f994d5a1d7a0b1eeb23271929"
+checksum = "1cca32fa0182e8c0989459524dc356b8f2b5c10f1b9eb521b7d182c03cf8c5ff"
 
 [[package]]
 name = "libloading"
@@ -1189,6 +1187,7 @@ dependencies = [
  "rayon",
  "smallvec",
  "smol",
+ "switcheroo 0.2.3",
  "uptown_funk",
  "walrus",
  "wasi-common",
@@ -1342,12 +1341,6 @@ name = "pin-project-lite"
 version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "439697af366c49a6d0a010c56a0d97685bc140ce0d377b13a2ea2aa42d64a827"
-
-[[package]]
-name = "pin-utils"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8b870d8c151b6f2fb93e84a13146138f05d02ed11c7e7c54f8826aaaf7c9f184"
 
 [[package]]
 name = "plotters"
@@ -1837,6 +1830,14 @@ checksum = "73473c0e59e6d5812c5dfe2a064a6444949f089e20eec9a2e5506596494e4623"
 [[package]]
 name = "switcheroo"
 version = "0.2.3"
+dependencies = [
+ "libc",
+ "winapi",
+]
+
+[[package]]
+name = "switcheroo"
+version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4e03d77381652e1a4b2fcdbf484395fa23e9181b5090c3f1bfe9a3fc2235b56f"
 dependencies = [
@@ -2099,9 +2100,9 @@ dependencies = [
 
 [[package]]
 name = "wasi"
-version = "0.10.1+wasi-snapshot-preview1"
+version = "0.10.2+wasi-snapshot-preview1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "93c6c3420963c5c64bca373b25e77acb562081b9bb4dd5bb864187742186cea9"
+checksum = "fd6fbd9a79829dd1ad0cc20627bf1ed606756a7f77edff7b66b7064f9cb327c6"
 
 [[package]]
 name = "wasi-common"
@@ -2345,18 +2346,18 @@ checksum = "87cc2fe6350834b4e528ba0901e7aa405d78b89dc1fa3145359eb4de0e323fcf"
 
 [[package]]
 name = "wasmparser"
-version = "0.73.0"
+version = "0.73.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a15011eb23c404cdc1f6f60124a15921a11b060cca195486e36f4dc62e83c61d"
+checksum = "b8526ab131cbc49495a483c98954913ae7b83551adacab5e294cf77992e70ee7"
 
 [[package]]
 name = "wasmprinter"
-version = "0.2.20"
+version = "0.2.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c467ab13e60cc347a17ed2c60bf761501eb45314d8916cad0d53ccc31078b20d"
+checksum = "edf67b8f2b3b49a5ca4f8ab6879c1c70057a6b2c14474d6126be912051f2392e"
 dependencies = [
  "anyhow",
- "wasmparser 0.73.0",
+ "wasmparser 0.73.1",
 ]
 
 [[package]]
@@ -2376,7 +2377,7 @@ dependencies = [
  "serde",
  "smallvec",
  "target-lexicon",
- "wasmparser 0.73.0",
+ "wasmparser 0.73.1",
  "wasmtime-cache",
  "wasmtime-environ",
  "wasmtime-jit",
@@ -2426,7 +2427,7 @@ dependencies = [
  "object 0.23.0",
  "target-lexicon",
  "thiserror",
- "wasmparser 0.73.0",
+ "wasmparser 0.73.1",
  "wasmtime-environ",
 ]
 
@@ -2445,7 +2446,7 @@ dependencies = [
  "more-asserts",
  "serde",
  "thiserror",
- "wasmparser 0.73.0",
+ "wasmparser 0.73.1",
 ]
 
 [[package]]
@@ -2469,7 +2470,7 @@ dependencies = [
  "serde",
  "target-lexicon",
  "thiserror",
- "wasmparser 0.73.0",
+ "wasmparser 0.73.1",
  "wasmtime-cranelift",
  "wasmtime-debug",
  "wasmtime-environ",
