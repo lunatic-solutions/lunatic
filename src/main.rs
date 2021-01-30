@@ -10,6 +10,11 @@ use lunatic_runtime::process::{FunctionLookup, MemoryChoice, Process, EXECUTOR};
 use std::fs;
 use std::thread;
 
+#[cfg(feature = "vm-wasmer")]
+use wasmer_vm::traphandlers::setup_unix_sigaltstack;
+#[cfg(feature = "vm-wasmtime")]
+use wasmtime_runtime::traphandlers::setup_unix_sigaltstack;
+
 #[derive(Clap)]
 #[clap(version = crate_version!())]
 struct Opts {
@@ -33,6 +38,8 @@ pub fn run() -> Result<()> {
 
     Parallel::new()
         .each(0..cpus.into(), |_| {
+            // Extend the signal stack on all execution threads
+            setup_unix_sigaltstack().unwrap();
             smol::future::block_on(EXECUTOR.run(shutdown.recv()))
         })
         .finish(|| {

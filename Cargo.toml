@@ -44,6 +44,9 @@ env_logger = "0.8"
 log = "0.4"
 rand = { version="0.8", features=["small_rng"] }
 
+[patch.crates-io]
+backtrace = { git = "https://github.com/lunatic-solutions/backtrace-rs.git", branch = "lunatic" }
+
 [dev-dependencies]
 criterion = "0.3"
 rayon = "1.5"

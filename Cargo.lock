@@ -182,8 +182,7 @@ checksum = "cdb031dd78e28731d87d56cc8ffef4a8f36ca26c38fe2de700543e627f8a464a"
 [[package]]
 name = "backtrace"
 version = "0.3.56"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9d117600f438b1707d4e4ae15d3595657288f8235a0eb593e80ecc98ab34e1bc"
+source = "git+https://github.com/lunatic-solutions/backtrace-rs.git?branch=lunatic#f7b5872e17967f77d08144264778d58d916be116"
 dependencies = [
  "addr2line",
  "cfg-if 1.0.0",
@@ -416,7 +415,7 @@ dependencies = [
 [[package]]
 name = "cranelift-bforest"
 version = "0.69.0"
-source = "git+https://github.com/lunatic-solutions/wasmtime.git?branch=lunatic#113ecb507d67ffc88c1ae98dcfc2740d1eecffdd"
+source = "git+https://github.com/lunatic-solutions/wasmtime.git?branch=lunatic#61a38008ea01f39c9b00b3fd96f3d66d37e13532"
 dependencies = [
  "cranelift-entity 0.69.0",
 ]
@@ -443,7 +442,7 @@ dependencies = [
 [[package]]
 name = "cranelift-codegen"
 version = "0.69.0"
-source = "git+https://github.com/lunatic-solutions/wasmtime.git?branch=lunatic#113ecb507d67ffc88c1ae98dcfc2740d1eecffdd"
+source = "git+https://github.com/lunatic-solutions/wasmtime.git?branch=lunatic#61a38008ea01f39c9b00b3fd96f3d66d37e13532"
 dependencies = [
  "byteorder",
  "cranelift-bforest 0.69.0",
@@ -472,7 +471,7 @@ dependencies = [
 [[package]]
 name = "cranelift-codegen-meta"
 version = "0.69.0"
-source = "git+https://github.com/lunatic-solutions/wasmtime.git?branch=lunatic#113ecb507d67ffc88c1ae98dcfc2740d1eecffdd"
+source = "git+https://github.com/lunatic-solutions/wasmtime.git?branch=lunatic#61a38008ea01f39c9b00b3fd96f3d66d37e13532"
 dependencies = [
  "cranelift-codegen-shared 0.69.0",
  "cranelift-entity 0.69.0",
@@ -487,7 +486,7 @@ checksum = "6759012d6d19c4caec95793f052613e9d4113e925e7f14154defbac0f1d4c938"
 [[package]]
 name = "cranelift-codegen-shared"
 version = "0.69.0"
-source = "git+https://github.com/lunatic-solutions/wasmtime.git?branch=lunatic#113ecb507d67ffc88c1ae98dcfc2740d1eecffdd"
+source = "git+https://github.com/lunatic-solutions/wasmtime.git?branch=lunatic#61a38008ea01f39c9b00b3fd96f3d66d37e13532"
 
 [[package]]
 name = "cranelift-entity"
@@ -501,7 +500,7 @@ dependencies = [
 [[package]]
 name = "cranelift-entity"
 version = "0.69.0"
-source = "git+https://github.com/lunatic-solutions/wasmtime.git?branch=lunatic#113ecb507d67ffc88c1ae98dcfc2740d1eecffdd"
+source = "git+https://github.com/lunatic-solutions/wasmtime.git?branch=lunatic#61a38008ea01f39c9b00b3fd96f3d66d37e13532"
 dependencies = [
  "serde",
 ]
@@ -521,7 +520,7 @@ dependencies = [
 [[package]]
 name = "cranelift-frontend"
 version = "0.69.0"
-source = "git+https://github.com/lunatic-solutions/wasmtime.git?branch=lunatic#113ecb507d67ffc88c1ae98dcfc2740d1eecffdd"
+source = "git+https://github.com/lunatic-solutions/wasmtime.git?branch=lunatic#61a38008ea01f39c9b00b3fd96f3d66d37e13532"
 dependencies = [
  "cranelift-codegen 0.69.0",
  "log",
@@ -532,7 +531,7 @@ dependencies = [
 [[package]]
 name = "cranelift-native"
 version = "0.69.0"
-source = "git+https://github.com/lunatic-solutions/wasmtime.git?branch=lunatic#113ecb507d67ffc88c1ae98dcfc2740d1eecffdd"
+source = "git+https://github.com/lunatic-solutions/wasmtime.git?branch=lunatic#61a38008ea01f39c9b00b3fd96f3d66d37e13532"
 dependencies = [
  "cranelift-codegen 0.69.0",
  "target-lexicon",
@@ -541,7 +540,7 @@ dependencies = [
 [[package]]
 name = "cranelift-wasm"
 version = "0.69.0"
-source = "git+https://github.com/lunatic-solutions/wasmtime.git?branch=lunatic#113ecb507d67ffc88c1ae98dcfc2740d1eecffdd"
+source = "git+https://github.com/lunatic-solutions/wasmtime.git?branch=lunatic#61a38008ea01f39c9b00b3fd96f3d66d37e13532"
 dependencies = [
  "cranelift-codegen 0.69.0",
  "cranelift-entity 0.69.0",
@@ -2097,7 +2096,7 @@ checksum = "fd6fbd9a79829dd1ad0cc20627bf1ed606756a7f77edff7b66b7064f9cb327c6"
 [[package]]
 name = "wasi-common"
 version = "0.22.0"
-source = "git+https://github.com/lunatic-solutions/wasmtime.git?branch=lunatic#113ecb507d67ffc88c1ae98dcfc2740d1eecffdd"
+source = "git+https://github.com/lunatic-solutions/wasmtime.git?branch=lunatic#61a38008ea01f39c9b00b3fd96f3d66d37e13532"
 dependencies = [
  "anyhow",
  "cfg-if 1.0.0",
@@ -2171,7 +2170,7 @@ checksum = "dd4945e4943ae02d15c13962b38a5b1e81eadd4b71214eee75af64a4d6a4fd64"
 [[package]]
 name = "wasmer"
 version = "1.0.1"
-source = "git+https://github.com/lunatic-solutions/wasmer.git?branch=lunatic#4c16b1dde738ff78b687e6d388eb8d29283a1c0c"
+source = "git+https://github.com/lunatic-solutions/wasmer.git?branch=lunatic#e3012bbfdf459fc75dc00cbbdf217f00d3703f37"
 dependencies = [
  "cfg-if 0.1.10",
  "indexmap",
@@ -2193,7 +2192,7 @@ dependencies = [
 [[package]]
 name = "wasmer-compiler"
 version = "1.0.1"
-source = "git+https://github.com/lunatic-solutions/wasmer.git?branch=lunatic#4c16b1dde738ff78b687e6d388eb8d29283a1c0c"
+source = "git+https://github.com/lunatic-solutions/wasmer.git?branch=lunatic#e3012bbfdf459fc75dc00cbbdf217f00d3703f37"
 dependencies = [
  "enumset",
  "serde",
@@ -2209,7 +2208,7 @@ dependencies = [
 [[package]]
 name = "wasmer-compiler-cranelift"
 version = "1.0.1"
-source = "git+https://github.com/lunatic-solutions/wasmer.git?branch=lunatic#4c16b1dde738ff78b687e6d388eb8d29283a1c0c"
+source = "git+https://github.com/lunatic-solutions/wasmer.git?branch=lunatic#e3012bbfdf459fc75dc00cbbdf217f00d3703f37"
 dependencies = [
  "cranelift-codegen 0.68.0",
  "cranelift-frontend 0.68.0",
@@ -2227,7 +2226,7 @@ dependencies = [
 [[package]]
 name = "wasmer-derive"
 version = "1.0.1"
-source = "git+https://github.com/lunatic-solutions/wasmer.git?branch=lunatic#4c16b1dde738ff78b687e6d388eb8d29283a1c0c"
+source = "git+https://github.com/lunatic-solutions/wasmer.git?branch=lunatic#e3012bbfdf459fc75dc00cbbdf217f00d3703f37"
 dependencies = [
  "proc-macro-error",
  "proc-macro2",
@@ -2238,7 +2237,7 @@ dependencies = [
 [[package]]
 name = "wasmer-engine"
 version = "1.0.1"
-source = "git+https://github.com/lunatic-solutions/wasmer.git?branch=lunatic#4c16b1dde738ff78b687e6d388eb8d29283a1c0c"
+source = "git+https://github.com/lunatic-solutions/wasmer.git?branch=lunatic#e3012bbfdf459fc75dc00cbbdf217f00d3703f37"
 dependencies = [
  "backtrace",
  "bincode",
@@ -2258,7 +2257,7 @@ dependencies = [
 [[package]]
 name = "wasmer-engine-jit"
 version = "1.0.1"
-source = "git+https://github.com/lunatic-solutions/wasmer.git?branch=lunatic#4c16b1dde738ff78b687e6d388eb8d29283a1c0c"
+source = "git+https://github.com/lunatic-solutions/wasmer.git?branch=lunatic#e3012bbfdf459fc75dc00cbbdf217f00d3703f37"
 dependencies = [
  "bincode",
  "cfg-if 0.1.10",
@@ -2275,7 +2274,7 @@ dependencies = [
 [[package]]
 name = "wasmer-engine-native"
 version = "1.0.1"
-source = "git+https://github.com/lunatic-solutions/wasmer.git?branch=lunatic#4c16b1dde738ff78b687e6d388eb8d29283a1c0c"
+source = "git+https://github.com/lunatic-solutions/wasmer.git?branch=lunatic#e3012bbfdf459fc75dc00cbbdf217f00d3703f37"
 dependencies = [
  "bincode",
  "cfg-if 0.1.10",
@@ -2295,7 +2294,7 @@ dependencies = [
 [[package]]
 name = "wasmer-object"
 version = "1.0.1"
-source = "git+https://github.com/lunatic-solutions/wasmer.git?branch=lunatic#4c16b1dde738ff78b687e6d388eb8d29283a1c0c"
+source = "git+https://github.com/lunatic-solutions/wasmer.git?branch=lunatic#e3012bbfdf459fc75dc00cbbdf217f00d3703f37"
 dependencies = [
  "object 0.22.0",
  "thiserror",
@@ -2306,7 +2305,7 @@ dependencies = [
 [[package]]
 name = "wasmer-types"
 version = "1.0.1"
-source = "git+https://github.com/lunatic-solutions/wasmer.git?branch=lunatic#4c16b1dde738ff78b687e6d388eb8d29283a1c0c"
+source = "git+https://github.com/lunatic-solutions/wasmer.git?branch=lunatic#e3012bbfdf459fc75dc00cbbdf217f00d3703f37"
 dependencies = [
  "cranelift-entity 0.68.0",
  "serde",
@@ -2316,7 +2315,7 @@ dependencies = [
 [[package]]
 name = "wasmer-vm"
 version = "1.0.1"
-source = "git+https://github.com/lunatic-solutions/wasmer.git?branch=lunatic#4c16b1dde738ff78b687e6d388eb8d29283a1c0c"
+source = "git+https://github.com/lunatic-solutions/wasmer.git?branch=lunatic#e3012bbfdf459fc75dc00cbbdf217f00d3703f37"
 dependencies = [
  "backtrace",
  "cc",
@@ -2363,7 +2362,7 @@ dependencies = [
 [[package]]
 name = "wasmtime"
 version = "0.22.0"
-source = "git+https://github.com/lunatic-solutions/wasmtime.git?branch=lunatic#113ecb507d67ffc88c1ae98dcfc2740d1eecffdd"
+source = "git+https://github.com/lunatic-solutions/wasmtime.git?branch=lunatic#61a38008ea01f39c9b00b3fd96f3d66d37e13532"
 dependencies = [
  "anyhow",
  "backtrace",
@@ -2391,7 +2390,7 @@ dependencies = [
 [[package]]
 name = "wasmtime-cache"
 version = "0.22.0"
-source = "git+https://github.com/lunatic-solutions/wasmtime.git?branch=lunatic#113ecb507d67ffc88c1ae98dcfc2740d1eecffdd"
+source = "git+https://github.com/lunatic-solutions/wasmtime.git?branch=lunatic#61a38008ea01f39c9b00b3fd96f3d66d37e13532"
 dependencies = [
  "anyhow",
  "base64",
@@ -2411,7 +2410,7 @@ dependencies = [
 [[package]]
 name = "wasmtime-cranelift"
 version = "0.22.0"
-source = "git+https://github.com/lunatic-solutions/wasmtime.git?branch=lunatic#113ecb507d67ffc88c1ae98dcfc2740d1eecffdd"
+source = "git+https://github.com/lunatic-solutions/wasmtime.git?branch=lunatic#61a38008ea01f39c9b00b3fd96f3d66d37e13532"
 dependencies = [
  "cranelift-codegen 0.69.0",
  "cranelift-entity 0.69.0",
@@ -2424,7 +2423,7 @@ dependencies = [
 [[package]]
 name = "wasmtime-debug"
 version = "0.22.0"
-source = "git+https://github.com/lunatic-solutions/wasmtime.git?branch=lunatic#113ecb507d67ffc88c1ae98dcfc2740d1eecffdd"
+source = "git+https://github.com/lunatic-solutions/wasmtime.git?branch=lunatic#61a38008ea01f39c9b00b3fd96f3d66d37e13532"
 dependencies = [
  "anyhow",
  "gimli 0.23.0",
@@ -2439,7 +2438,7 @@ dependencies = [
 [[package]]
 name = "wasmtime-environ"
 version = "0.22.0"
-source = "git+https://github.com/lunatic-solutions/wasmtime.git?branch=lunatic#113ecb507d67ffc88c1ae98dcfc2740d1eecffdd"
+source = "git+https://github.com/lunatic-solutions/wasmtime.git?branch=lunatic#61a38008ea01f39c9b00b3fd96f3d66d37e13532"
 dependencies = [
  "anyhow",
  "cfg-if 1.0.0",
@@ -2458,7 +2457,7 @@ dependencies = [
 [[package]]
 name = "wasmtime-jit"
 version = "0.22.0"
-source = "git+https://github.com/lunatic-solutions/wasmtime.git?branch=lunatic#113ecb507d67ffc88c1ae98dcfc2740d1eecffdd"
+source = "git+https://github.com/lunatic-solutions/wasmtime.git?branch=lunatic#61a38008ea01f39c9b00b3fd96f3d66d37e13532"
 dependencies = [
  "addr2line",
  "anyhow",
@@ -2490,7 +2489,7 @@ dependencies = [
 [[package]]
 name = "wasmtime-obj"
 version = "0.22.0"
-source = "git+https://github.com/lunatic-solutions/wasmtime.git?branch=lunatic#113ecb507d67ffc88c1ae98dcfc2740d1eecffdd"
+source = "git+https://github.com/lunatic-solutions/wasmtime.git?branch=lunatic#61a38008ea01f39c9b00b3fd96f3d66d37e13532"
 dependencies = [
  "anyhow",
  "more-asserts",
@@ -2503,7 +2502,7 @@ dependencies = [
 [[package]]
 name = "wasmtime-profiling"
 version = "0.22.0"
-source = "git+https://github.com/lunatic-solutions/wasmtime.git?branch=lunatic#113ecb507d67ffc88c1ae98dcfc2740d1eecffdd"
+source = "git+https://github.com/lunatic-solutions/wasmtime.git?branch=lunatic#61a38008ea01f39c9b00b3fd96f3d66d37e13532"
 dependencies = [
  "anyhow",
  "cfg-if 1.0.0",
@@ -2521,7 +2520,7 @@ dependencies = [
 [[package]]
 name = "wasmtime-runtime"
 version = "0.22.0"
-source = "git+https://github.com/lunatic-solutions/wasmtime.git?branch=lunatic#113ecb507d67ffc88c1ae98dcfc2740d1eecffdd"
+source = "git+https://github.com/lunatic-solutions/wasmtime.git?branch=lunatic#61a38008ea01f39c9b00b3fd96f3d66d37e13532"
 dependencies = [
  "backtrace",
  "cc",
@@ -2598,7 +2597,7 @@ dependencies = [
 [[package]]
 name = "wiggle"
 version = "0.22.0"
-source = "git+https://github.com/lunatic-solutions/wasmtime.git?branch=lunatic#113ecb507d67ffc88c1ae98dcfc2740d1eecffdd"
+source = "git+https://github.com/lunatic-solutions/wasmtime.git?branch=lunatic#61a38008ea01f39c9b00b3fd96f3d66d37e13532"
 dependencies = [
  "bitflags",
  "thiserror",
@@ -2609,7 +2608,7 @@ dependencies = [
 [[package]]
 name = "wiggle-generate"
 version = "0.22.0"
-source = "git+https://github.com/lunatic-solutions/wasmtime.git?branch=lunatic#113ecb507d67ffc88c1ae98dcfc2740d1eecffdd"
+source = "git+https://github.com/lunatic-solutions/wasmtime.git?branch=lunatic#61a38008ea01f39c9b00b3fd96f3d66d37e13532"
 dependencies = [
  "anyhow",
  "heck",
@@ -2623,7 +2622,7 @@ dependencies = [
 [[package]]
 name = "wiggle-macro"
 version = "0.22.0"
-source = "git+https://github.com/lunatic-solutions/wasmtime.git?branch=lunatic#113ecb507d67ffc88c1ae98dcfc2740d1eecffdd"
+source = "git+https://github.com/lunatic-solutions/wasmtime.git?branch=lunatic#61a38008ea01f39c9b00b3fd96f3d66d37e13532"
 dependencies = [
  "quote",
  "syn",
@@ -2665,7 +2664,7 @@ checksum = "712e227841d057c1ee1cd2fb22fa7e5a5461ae8e48fa2ca79ec42cfc1931183f"
 [[package]]
 name = "winx"
 version = "0.22.0"
-source = "git+https://github.com/lunatic-solutions/wasmtime.git?branch=lunatic#113ecb507d67ffc88c1ae98dcfc2740d1eecffdd"
+source = "git+https://github.com/lunatic-solutions/wasmtime.git?branch=lunatic#61a38008ea01f39c9b00b3fd96f3d66d37e13532"
 dependencies = [
  "bitflags",
  "cvt",
@@ -2675,7 +2674,7 @@ dependencies = [
 [[package]]
 name = "witx"
 version = "0.8.8"
-source = "git+https://github.com/lunatic-solutions/wasmtime.git?branch=lunatic#113ecb507d67ffc88c1ae98dcfc2740d1eecffdd"
+source = "git+https://github.com/lunatic-solutions/wasmtime.git?branch=lunatic#61a38008ea01f39c9b00b3fd96f3d66d37e13532"
 dependencies = [
  "anyhow",
  "log",
@@ -2686,7 +2685,7 @@ dependencies = [
 [[package]]
 name = "yanix"
 version = "0.22.0"
-source = "git+https://github.com/lunatic-solutions/wasmtime.git?branch=lunatic#113ecb507d67ffc88c1ae98dcfc2740d1eecffdd"
+source = "git+https://github.com/lunatic-solutions/wasmtime.git?branch=lunatic#61a38008ea01f39c9b00b3fd96f3d66d37e13532"
 dependencies = [
  "bitflags",
  "cfg-if 1.0.0",
