@@ -1,6 +1,6 @@
 [package]
 name = "lunatic-runtime"
-version = "0.3.1"
+version = "0.3.2"
 authors = ["Bernard Kolobara <me@kolobara.com>"]
 edition = "2018"
 description = "An actor platform built on WebAssembly"
@@ -18,7 +18,7 @@ name = "lunatic"
 path = "src/main.rs"
 
 [features]
-default = ["vm-wasmtime"]
+default = ["vm-wasmer"]
 vm-wasmtime = ["uptown_funk/vm-wasmtime", "wasmtime", "wasmtime-runtime"]
 vm-wasmer = ["uptown_funk/vm-wasmer", "wasmer", "wasmer-vm"]
 
@@ -43,9 +43,6 @@ smallvec = "1.5"
 env_logger = "0.8"
 log = "0.4"
 rand = { version="0.8", features=["small_rng"] }
-
-[patch.crates-io]
-backtrace = { git = "https://github.com/lunatic-solutions/backtrace-rs.git", branch = "lunatic" }
 
 [dev-dependencies]
 criterion = "0.3"

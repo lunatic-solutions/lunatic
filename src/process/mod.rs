@@ -116,18 +116,27 @@ impl Process {
         self.task
     }
 
-    /// Spawns a new process with a custom API.
-    pub fn spawn_with_api<A>(
+    /// Creates a new process with a custom API.
+    pub async fn create_with_api<A>(
         module: LunaticModule,
         function: FunctionLookup,
         memory: MemoryChoice,
         api: A,
-    ) -> Self
+    ) -> Result<()>
     where
-        A: HostFunctions + 'static,
+        A: HostFunctions + 'static + Send,
     {
+        // The creation of AsyncWormhole needs to be wrapped in an async function.
+        // AsyncWormhole performs linking between the new and old stack, so that tools like backtrace work correctly.
+        // This linking is performed when AsyncWormhole is created and we want to postpone the creation until the
+        // executor has control.
+        // Otherwise it can happen that the process from which we are creating the stack from dies before the new
+        // process. In this case we would link the new stack to one that gets freed, and backtrace crashes once
+        // it walks into the freed stack.
+        // The executor will never live on a "virtual" stack, so it's safe to create AsyncWormhole there.
+
         let stack = OneMbStack::new().unwrap();
-        let process = AsyncWormhole::new(stack, move |yielder| {
+        let mut process = AsyncWormhole::new(stack, move |yielder| {
             let yielder_ptr = &yielder as *const AsyncYielderCast as usize;
 
             let mut linker = LunaticLinker::new(module, yielder_ptr, memory)?;
@@ -160,30 +169,31 @@ impl Process {
             }
 
             Ok(())
-        });
+        })?;
 
-        let task = EXECUTOR.spawn(async {
-            let mut process = process?;
-
-            let ctss = tls::CallThreadStateSave::new();
-            process.set_pre_post_poll(move || ctss.swap());
-
-            let result = (&mut process).await.unwrap();
-            result
-        });
-
-        Self { task }
+        let cts_saver = tls::CallThreadStateSave::new();
+        process.set_pre_post_poll(move || cts_saver.swap());
+        process.await
     }
 
-    /// Spawn a new process using the default api.
-    pub fn spawn(
+    /// Creates a new process using the default api.
+    pub async fn create(
         context_receiver: Option<ChannelReceiver>,
         module: LunaticModule,
         function: FunctionLookup,
         memory: MemoryChoice,
-    ) -> Self {
+    ) -> Result<()> {
         let api = DefaultApi::new(context_receiver, module.clone());
-        Process::spawn_with_api(module, function, memory, api)
+        Process::create_with_api(module, function, memory, api).await
+    }
+
+    /// Spawns a new process on the `EXECUTOR`
+    pub fn spawn<Fut>(future: Fut) -> Self
+    where
+        Fut: Future<Output = Result<()>> + Send + 'static,
+    {
+        let task = EXECUTOR.spawn(future);
+        Self { task }
     }
 }
 

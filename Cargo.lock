@@ -149,9 +149,9 @@ checksum = "e91831deabf0d6d7ec49552e489aed63b7456a7a3c46cff62adad428110b0af0"
 
 [[package]]
 name = "async-wormhole"
-version = "0.3.1"
+version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9510a6ba8d762938c7d513de4b67a139002524c7b816cc50788720ddfd121f12"
+checksum = "c2141cd1f24bf40098fc0fe80548fc21f391e6d5d25984c2f31ad32038bcfcd8"
 dependencies = [
  "switcheroo",
 ]
@@ -182,7 +182,8 @@ checksum = "cdb031dd78e28731d87d56cc8ffef4a8f36ca26c38fe2de700543e627f8a464a"
 [[package]]
 name = "backtrace"
 version = "0.3.56"
-source = "git+https://github.com/lunatic-solutions/backtrace-rs.git?branch=lunatic#f7b5872e17967f77d08144264778d58d916be116"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9d117600f438b1707d4e4ae15d3595657288f8235a0eb593e80ecc98ab34e1bc"
 dependencies = [
  "addr2line",
  "cfg-if 1.0.0",
@@ -1176,7 +1177,7 @@ dependencies = [
 
 [[package]]
 name = "lunatic-runtime"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "anyhow",
  "async-wormhole",
@@ -1826,9 +1827,9 @@ checksum = "73473c0e59e6d5812c5dfe2a064a6444949f089e20eec9a2e5506596494e4623"
 
 [[package]]
 name = "switcheroo"
-version = "0.2.3"
+version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4e03d77381652e1a4b2fcdbf484395fa23e9181b5090c3f1bfe9a3fc2235b56f"
+checksum = "90e338b3862ead9f437a7419e08dfd8bbfa5bc34ec73f5ee17e3da671808393d"
 dependencies = [
  "libc",
  "winapi",

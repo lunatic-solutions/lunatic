@@ -60,12 +60,13 @@ impl ProcessState {
         let message = Message::new(context.as_ptr(), context.len(), host_resources);
         let _ignore = sender.send(message).await;
 
-        Process::spawn(
+        let future = Process::create(
             Some(ChannelReceiver::from(receiver)),
             self.module.clone(),
             FunctionLookup::TableIndex(index),
             MemoryChoice::New,
-        )
+        );
+        Process::spawn(future)
     }
 
     // Wait on child process to finish.

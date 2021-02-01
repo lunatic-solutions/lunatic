@@ -44,13 +44,12 @@ pub fn run() -> Result<()> {
         })
         .finish(|| {
             smol::future::block_on(async {
-                let result = Process::spawn(
+                let result = Process::create(
                     None,
                     module,
                     FunctionLookup::Name("_start"),
                     MemoryChoice::New,
                 )
-                .task()
                 .await;
                 drop(signal);
                 result
