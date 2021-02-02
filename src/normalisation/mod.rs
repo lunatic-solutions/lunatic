@@ -23,7 +23,7 @@ pub fn patch(module_buffer: &[u8]) -> Result<((u32, Option<u32>), Vec<u8>), Erro
     let mut module = Module::from_buffer(&module_buffer)?;
 
     reduction_counting::patch(&mut module);
-    stdlib::patch(&mut module);
+    stdlib::patch(&mut module)?;
     let memory = shared_memory::patch(&mut module);
 
     Ok((memory, module.emit_wasm()))

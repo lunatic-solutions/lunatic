@@ -135,7 +135,7 @@ impl Process {
         // it walks into the freed stack.
         // The executor will never live on a "virtual" stack, so it's safe to create AsyncWormhole there.
 
-        let stack = OneMbStack::new().unwrap();
+        let stack = OneMbStack::new()?;
         let mut process = AsyncWormhole::new(stack, move |yielder| {
             let yielder_ptr = &yielder as *const AsyncYielderCast as usize;
 
@@ -146,9 +146,11 @@ impl Process {
             match function {
                 FunctionLookup::Name(name) => {
                     #[cfg(feature = "vm-wasmer")]
-                    let func = instance.exports.get_function(name).unwrap();
+                    let func = instance.exports.get_function(name)?;
                     #[cfg(feature = "vm-wasmtime")]
-                    let func = instance.get_func(name).unwrap();
+                    let func = instance.get_func(name).ok_or_else(|| {
+                        anyhow::Error::msg(format!("No function {} in wasmtime instance", name))
+                    })?;
 
                     // Measure how long the function takes for named functions.
                     let performance_timer = std::time::Instant::now();
@@ -157,12 +159,13 @@ impl Process {
                 }
                 FunctionLookup::TableIndex(index) => {
                     #[cfg(feature = "vm-wasmer")]
-                    let func = instance
-                        .exports
-                        .get_function("lunatic_spawn_by_index")
-                        .unwrap();
+                    let func = instance.exports.get_function("lunatic_spawn_by_index")?;
                     #[cfg(feature = "vm-wasmtime")]
-                    let func = instance.get_func("lunatic_spawn_by_index").unwrap();
+                    let func = instance.get_func("lunatic_spawn_by_index").ok_or_else(|| {
+                        anyhow::Error::msg(
+                            "No function lunatic_spawn_by_index in wasmtime instance",
+                        )
+                    })?;
 
                     func.call(&[(index as i32).into()])?;
                 }

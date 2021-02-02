@@ -24,7 +24,7 @@ impl LunaticLinker {
             MemoryChoice::Existing => unimplemented!("No memory sharing yet"),
             MemoryChoice::New => {
                 let memory_ty = MemoryType::new(module.min_memory(), module.max_memory(), false);
-                Memory::new(&store, memory_ty).unwrap()
+                Memory::new(&store, memory_ty)?
             }
         };
 
@@ -44,7 +44,7 @@ impl LunaticLinker {
     /// Create a new instance and set it up.
     /// This consumes the linker, as each of them is bound to one instance (environment).
     pub fn instance(self) -> Result<Instance> {
-        let instance = Instance::new(self.module.module(), &self.linker).unwrap();
+        let instance = Instance::new(self.module.module(), &self.linker)?;
         Ok(instance)
     }
 
