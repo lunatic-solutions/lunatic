@@ -15,7 +15,7 @@ pub struct LunaticModule {
 }
 
 impl LunaticModule {
-    pub fn new(wasm: Vec<u8>) -> Result<Self> {
+    pub fn new(wasm: &[u8]) -> Result<Self> {
         // Transfrom WASM file into a format compatible with Lunatic.
         let ((min_memory, max_memory), wasm) = patch(&wasm)?;
 

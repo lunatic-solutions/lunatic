@@ -30,7 +30,7 @@ pub fn run() -> Result<()> {
 
     let wasm = fs::read(opts.input).expect("Can't open .wasm file");
 
-    let module = module::LunaticModule::new(wasm)?;
+    let module = module::LunaticModule::new(&wasm)?;
 
     // Set up async runtime
     let cpus = thread::available_concurrency().unwrap();
