@@ -59,6 +59,13 @@ impl TcpState {
         }
     }
 
+    async fn tcp_flush(&self, mut tcp_stream: TcpStream) -> u32 {
+        match tcp_stream.0.flush().await {
+            Ok(()) => 0,
+            Err(_) => 1,
+        }
+    }
+
     async fn tcp_read_vectored<'a>(
         &self,
         tcp_stream: &'a mut TcpStream,
