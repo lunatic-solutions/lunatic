@@ -122,7 +122,7 @@ impl Process {
         function: FunctionLookup,
         memory: MemoryChoice,
         api: A,
-    ) -> Result<()>
+    ) -> Result<A::Return>
     where
         A: HostFunctions + 'static + Send,
     {
@@ -137,10 +137,10 @@ impl Process {
 
         let stack = OneMbStack::new()?;
         let mut process = AsyncWormhole::new(stack, move |yielder| {
-            let yielder_ptr = &yielder as *const AsyncYielderCast as usize;
+            let yielder_ptr = &yielder as *const AsyncYielder<Result<A::Return>> as usize;
 
             let mut linker = LunaticLinker::new(module, yielder_ptr, memory)?;
-            linker.add_api(api);
+            let ret = linker.add_api(api);
             let instance = linker.instance()?;
 
             match function {
@@ -171,7 +171,7 @@ impl Process {
                 }
             }
 
-            Ok(())
+            Ok(ret)
         })?;
 
         let cts_saver = tls::CallThreadStateSave::new();
@@ -240,7 +240,8 @@ impl HostFunctions for DefaultApi {
         linker: &mut uptown_funk::wasmer::WasmerLinker,
         store: &wasmer::Store,
     ) -> ()
-    where E: Executor + Clone + 'static,
+    where
+        E: Executor + Clone + 'static,
     {
         let channel_state = channel::api::ChannelState::new(self.context_receiver);
         let process_state = process::api::ProcessState::new(self.module, channel_state.clone());

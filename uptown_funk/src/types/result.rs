@@ -17,7 +17,6 @@ pub trait HasOk {
     fn ok() -> Self;
 }
 
-
 impl<T: ToWasm + HasOk> ToWasm for Result<(), T> {
     type To = T::To;
     type State = T::State;

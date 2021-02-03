@@ -4,9 +4,12 @@ pub mod types;
 #[cfg(feature = "vm-wasmer")]
 pub mod wasmer;
 
-use std::{cell::{Ref, RefCell, RefMut}, rc::Rc};
 use std::convert::Into;
 use std::fmt::Debug;
+use std::{
+    cell::{Ref, RefCell, RefMut},
+    rc::Rc,
+};
 
 pub use smallvec::SmallVec;
 pub use uptown_funk_macro::host_functions;
@@ -27,7 +30,7 @@ pub trait HostFunctions: Sized {
     type Return;
 
     #[cfg(feature = "vm-wasmtime")]
-    fn add_to_linker<E>(self, executor: E, linker: &mut wasmtime::Linker)
+    fn add_to_linker<E>(self, executor: E, linker: &mut wasmtime::Linker) -> Self::Return
     where
         E: Executor + Clone + 'static;
 
@@ -158,7 +161,10 @@ impl<S, E: Executor> Clone for StateWrapper<S, E> {
 
 #[cfg(feature = "vm-wasmer")]
 impl<S, E: Executor> ::wasmer::WasmerEnv for StateWrapper<S, E> {
-    fn init_with_instance(&mut self, _: &::wasmer::Instance) -> Result<(), ::wasmer::HostEnvInitError> {
+    fn init_with_instance(
+        &mut self,
+        _: &::wasmer::Instance,
+    ) -> Result<(), ::wasmer::HostEnvInitError> {
         Ok(())
     }
 }
