@@ -9,13 +9,13 @@ license = "Apache-2.0/MIT"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-default = []
+default = ["vm-wasmer"]
 vm-wasmtime = ["wasmtime", "uptown_funk_macro/vm-wasmtime"]
 vm-wasmer = ["wasmer", "uptown_funk_macro/vm-wasmer", "thiserror"]
 async = []
 
 [dependencies]
-smallvec = "1.5"
+smallvec = "1.6.1"
 thiserror = {version = "1.0", optional = true}
 wasmer = { git = "https://github.com/lunatic-solutions/wasmer.git", branch = "lunatic", optional = true }
 wasmtime = { git = "https://github.com/lunatic-solutions/wasmtime.git", branch = "lunatic", optional = true }

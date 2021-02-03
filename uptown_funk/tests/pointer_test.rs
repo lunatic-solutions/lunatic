@@ -1,4 +1,4 @@
-use uptown_funk::types::Pointer;
+use uptown_funk::{StateMarker, types::Pointer};
 use uptown_funk::{host_functions, memory::Memory, Executor, HostFunctions};
 #[cfg(feature = "vm-wasmer")]
 use wasmer::{self, Exportable};
@@ -7,6 +7,7 @@ use wasmtime;
 
 use std::fs::read;
 
+#[derive(Clone)]
 struct SimpleExcutor {
     memory: Memory,
 }
@@ -19,9 +20,11 @@ impl Executor for SimpleExcutor {
 
 struct Empty {}
 
+impl StateMarker for Empty {}
+
 #[host_functions(namespace = "env")]
 impl Empty {
-    fn write(&self, value: f64, mut destination: Pointer<Empty, f64>) {
+    fn write(&self, value: f64, mut destination: Pointer<f64>) {
         destination.set(value);
     }
 }
