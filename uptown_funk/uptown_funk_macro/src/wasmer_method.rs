@@ -28,11 +28,10 @@ pub fn wrap(namespace: &LitStr, method: &ImplItemMethod) -> Result<TokenStream2,
     };
 
     let result = quote! {
-        let closure = |state: &uptown_funk::StateWrapperRc<Self, E>, #guest_signature_input|
+        let closure = |state_wrapper: &uptown_funk::StateWrapper<Self, E>, #guest_signature_input|
          -> #guest_signature_return {
             // Wasmer host functions can only return simple types and we must manually raise a trap.
             match (|| -> Result<#guest_signature_return, uptown_funk::Trap> {
-                let state_wrapper = state.state_wrapper();
                 let memory = state_wrapper.memory();
                 #from_guest_input_transformations
                 let result = {

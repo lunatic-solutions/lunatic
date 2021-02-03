@@ -48,7 +48,6 @@ pub fn host_functions(attr: TokenStream, item: TokenStream) -> TokenStream {
                 E: uptown_funk::Executor
             {
                 let state = uptown_funk::StateWrapper::new(self, executor);
-                let state = uptown_funk::StateWrapperRc::new(state);
                 #(#wasmtime_method_wrappers)*
             }
     };
@@ -79,7 +78,6 @@ pub fn host_functions(attr: TokenStream, item: TokenStream) -> TokenStream {
             E: uptown_funk::Executor,
         {
             let state = uptown_funk::StateWrapper::new(self, executor);
-            let state = uptown_funk::StateWrapperRc::new(state);
             #(#wasmer_method_wrappers)*
         }
     };

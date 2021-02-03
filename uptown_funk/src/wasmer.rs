@@ -1,7 +1,6 @@
 //! Wasmer specific definitions
 
-use super::{Executor, StateWrapper};
-use std::{collections::HashMap, rc::Rc};
+use std::{collections::HashMap};
 
 pub struct WasmerLinker {
     imports: HashMap<String, HashMap<String, wasmer::Export>>,
