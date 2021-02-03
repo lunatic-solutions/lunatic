@@ -4,7 +4,7 @@ pub mod types;
 #[cfg(feature = "vm-wasmer")]
 pub mod wasmer;
 
-use std::cell::{Ref, RefCell, RefMut};
+use std::{cell::{Ref, RefCell, RefMut}, rc::Rc};
 use std::convert::Into;
 use std::fmt::Debug;
 
@@ -127,6 +127,50 @@ impl<S, E: Executor> StateWrapper<S, E> {
 
     pub fn memory(&self) -> memory::Memory {
         self.env.memory()
+    }
+}
+
+pub struct StateWrapperRc<S, E: Executor>(Rc<StateWrapper<S, E>>);
+
+impl<S, E: Executor> StateWrapperRc<S, E> {
+    pub fn new(state_wrapper: StateWrapper<S, E>) -> Self {
+        Self(Rc::new(state_wrapper))
+    }
+
+    pub fn state_wrapper(&self) -> &StateWrapper<S, E> {
+        &self.0
+    }
+
+    pub fn borrow_state(&self) -> Ref<S> {
+        self.0.state.borrow()
+    }
+
+    pub fn borrow_state_mut(&self) -> RefMut<S> {
+        self.0.state.borrow_mut()
+    }
+
+    pub fn executor(&self) -> &E {
+        &self.0.env
+    }
+
+    pub fn memory(&self) -> memory::Memory {
+        self.0.env.memory()
+    }
+}
+
+unsafe impl<S, E: Executor> Send for StateWrapperRc<S, E> {}
+unsafe impl<S, E: Executor> Sync for StateWrapperRc<S, E> {}
+
+impl<S, E: Executor> Clone for StateWrapperRc<S, E> {
+    fn clone(&self) -> Self {
+        StateWrapperRc(self.0.clone())
+    }
+}
+
+#[cfg(feature = "vm-wasmer")]
+impl<S, E: Executor> ::wasmer::WasmerEnv for StateWrapperRc<S, E> {
+    fn init_with_instance(&mut self, _: &::wasmer::Instance) -> Result<(), ::wasmer::HostEnvInitError> {
+        Ok(())
     }
 }
 

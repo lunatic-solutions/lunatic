@@ -18,7 +18,7 @@ name = "lunatic"
 path = "src/main.rs"
 
 [features]
-default = ["vm-wasmer"]
+default = ["vm-wasmtime"]
 vm-wasmtime = ["uptown_funk/vm-wasmtime", "wasmtime", "wasmtime-runtime"]
 vm-wasmer = ["uptown_funk/vm-wasmer", "wasmer", "wasmer-vm"]
 
