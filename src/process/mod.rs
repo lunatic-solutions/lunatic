@@ -155,7 +155,7 @@ impl Process {
                     // Measure how long the function takes for named functions.
                     let performance_timer = std::time::Instant::now();
                     func.call(&[])?;
-                    info!(target: "performance", "Process {} finished in {} ms.", name, performance_timer.elapsed().as_millis());
+                    info!(target: "performance", "Process {} finished in {:.5} ms.", name, performance_timer.elapsed().as_secs_f64() * 1000.0);
                 }
                 FunctionLookup::TableIndex(index) => {
                     #[cfg(feature = "vm-wasmer")]
