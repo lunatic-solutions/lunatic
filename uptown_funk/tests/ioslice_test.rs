@@ -1,4 +1,4 @@
-use uptown_funk::{host_functions, memory::Memory, Executor, HostFunctions};
+use uptown_funk::{Executor, HostFunctions, StateMarker, host_functions, memory::Memory};
 #[cfg(feature = "vm-wasmer")]
 use wasmer::{self, Exportable};
 #[cfg(feature = "vm-wasmtime")]
@@ -7,6 +7,7 @@ use wasmtime;
 use std::fs::read;
 use std::io::IoSliceMut;
 
+#[derive(Clone)]
 struct SimpleExcutor {
     memory: Memory,
 }
@@ -18,6 +19,8 @@ impl Executor for SimpleExcutor {
 }
 
 struct Empty {}
+
+impl StateMarker for Empty {}
 
 #[host_functions(namespace = "env")]
 impl Empty {
