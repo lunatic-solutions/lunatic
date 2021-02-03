@@ -10,7 +10,8 @@ impl FromWasm for u32 {
         from: Self::From,
     ) -> Result<Self, Trap>
     where
-        Self: Sized {
+        Self: Sized,
+    {
         Ok(from)
     }
 }
@@ -38,7 +39,8 @@ impl FromWasm for u64 {
         from: Self::From,
     ) -> Result<Self, Trap>
     where
-        Self: Sized {
+        Self: Sized,
+    {
         Ok(from)
     }
 }
@@ -66,7 +68,8 @@ impl FromWasm for i64 {
         from: Self::From,
     ) -> Result<Self, Trap>
     where
-        Self: Sized {
+        Self: Sized,
+    {
         Ok(from)
     }
 }
@@ -94,7 +97,8 @@ impl FromWasm for u16 {
         from: Self::From,
     ) -> Result<Self, Trap>
     where
-        Self: Sized {
+        Self: Sized,
+    {
         Ok(from as u16)
     }
 }
@@ -122,7 +126,8 @@ impl FromWasm for u8 {
         from: Self::From,
     ) -> Result<Self, Trap>
     where
-        Self: Sized {
+        Self: Sized,
+    {
         Ok(from as u8)
     }
 }

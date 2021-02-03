@@ -1,11 +1,10 @@
 use std::{cell::Cell, marker::PhantomData, mem};
 
-use crate::{Executor, FromWasm, Trap, memory::Memory};
-
+use crate::{memory::Memory, Executor, FromWasm, Trap};
 
 // TODO maybe writing to memory should always return Result<(), Trap>?
 
-pub trait WasmType : Sized {
+pub trait WasmType: Sized {
     type Value;
     fn copy_to(&self, mem: &mut [u8]);
     fn len() -> usize;
@@ -16,7 +15,7 @@ pub trait WasmType : Sized {
     }
 }
 
-pub trait CReprWasmType : Sized {}
+pub trait CReprWasmType: Sized {}
 
 impl WasmType for u8 {
     type Value = u8;
@@ -46,7 +45,7 @@ pub struct Pointer<T: WasmType> {
     _type: PhantomData<T>,
 }
 
-impl <T: WasmType> core::fmt::Debug for Pointer<T> {
+impl<T: WasmType> core::fmt::Debug for Pointer<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&self.loc.to_string())?;
         Ok(())
@@ -97,9 +96,8 @@ impl<T: WasmType> Pointer<T> {
             loc: self.loc,
             mem: self.mem,
             _type: PhantomData::default(),
-
-        }
-    } 
+        };
+    }
 }
 
 impl Pointer<u8> {
@@ -129,7 +127,6 @@ impl Pointer<u8> {
                 loc: self.loc,
                 mem: self.mem,
                 _type: PhantomData::default(),
-
             })
         } else {
             None
@@ -189,13 +186,13 @@ fn deref<T: Sized>(offset: u32, memory: &[u8], index: u32, length: u32) -> Optio
             memory.as_ptr().add(offset as usize) as usize,
             mem::align_of::<T>(),
         ) as *const Cell<T>;
-        let cell_ptrs = &std::slice::from_raw_parts(cell_ptr, slice_full_len)
-            [index as usize..slice_full_len];
+        let cell_ptrs =
+            &std::slice::from_raw_parts(cell_ptr, slice_full_len)[index as usize..slice_full_len];
         Some(cell_ptrs)
     }
 }
 
-impl <T: CReprWasmType + Copy + Clone> WasmType for T {
+impl<T: CReprWasmType + Copy + Clone> WasmType for T {
     type Value = T;
 
     fn copy_to(&self, mem: &mut [u8]) {
@@ -204,7 +201,7 @@ impl <T: CReprWasmType + Copy + Clone> WasmType for T {
 
     fn move_to(self, mem: &mut [u8]) {
         // TODO what if it fails?
-        if let Some(cells) = deref::<T>(0, mem, 0, 1) { 
+        if let Some(cells) = deref::<T>(0, mem, 0, 1) {
             cells[0].set(self);
         }
     }

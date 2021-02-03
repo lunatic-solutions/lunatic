@@ -1,6 +1,6 @@
 //! Wasmer specific definitions
 
-use std::{collections::HashMap};
+use std::collections::HashMap;
 
 pub struct WasmerLinker {
     imports: HashMap<String, HashMap<String, wasmer::Export>>,

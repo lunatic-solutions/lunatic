@@ -43,12 +43,14 @@ pub fn host_functions(attr: TokenStream, item: TokenStream) -> TokenStream {
     let wasmtime_expanded = quote! {};
     #[cfg(feature = "vm-wasmtime")]
     let wasmtime_expanded = quote! {
-        fn add_to_linker<E: 'static>(self, executor: E, linker: &mut wasmtime::Linker)
+        fn add_to_linker<E: 'static>(self, executor: E, linker: &mut wasmtime::Linker) -> Self::Return
             where
                 E: uptown_funk::Executor
             {
                 let state = uptown_funk::StateWrapper::new(self, executor);
+                let return_state = state.get_state();
                 #(#wasmtime_method_wrappers)*
+                return_state
             }
     };
 
