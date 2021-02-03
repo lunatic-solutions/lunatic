@@ -23,7 +23,9 @@ pub trait Executor {
     fn memory(&self) -> memory::Memory;
 }
 
-pub trait HostFunctions {
+pub trait HostFunctions: Sized {
+    type Return;
+
     #[cfg(feature = "vm-wasmtime")]
     fn add_to_linker<E>(self, executor: E, linker: &mut wasmtime::Linker)
     where
@@ -35,7 +37,8 @@ pub trait HostFunctions {
         executor: E,
         linker: &mut wasmer::WasmerLinker,
         store: &::wasmer::Store,
-    ) where
+    ) -> Self::Return
+    where
         E: Executor + Clone + 'static;
 }
 
@@ -121,12 +124,23 @@ impl<S, E: Executor> StateWrapper<S, E> {
         self.state.borrow_mut()
     }
 
+    pub fn get_state(&self) -> Rc<RefCell<S>> {
+        self.state.clone()
+    }
+
     pub fn executor(&self) -> &E {
         &self.env
     }
 
     pub fn memory(&self) -> memory::Memory {
         self.env.memory()
+    }
+
+    pub fn recover_state(self) -> Result<S, ()> {
+        match Rc::try_unwrap(self.state) {
+            Ok(s) => Ok(s.into_inner()),
+            Err(_) => Err(()),
+        }
     }
 }
 
