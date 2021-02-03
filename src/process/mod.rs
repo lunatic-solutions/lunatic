@@ -215,6 +215,8 @@ impl DefaultApi {
 }
 
 impl HostFunctions for DefaultApi {
+    type Return = ();
+
     #[cfg(feature = "vm-wasmtime")]
     fn add_to_linker<E>(self, executor: E, linker: &mut wasmtime::Linker)
     where
@@ -237,8 +239,8 @@ impl HostFunctions for DefaultApi {
         executor: E,
         linker: &mut uptown_funk::wasmer::WasmerLinker,
         store: &wasmer::Store,
-    ) where
-        E: Executor + Clone + 'static,
+    ) -> ()
+    where E: Executor + Clone + 'static,
     {
         let channel_state = channel::api::ChannelState::new(self.context_receiver);
         let process_state = process::api::ProcessState::new(self.module, channel_state.clone());

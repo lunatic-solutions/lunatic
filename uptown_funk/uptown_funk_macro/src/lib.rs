@@ -74,11 +74,13 @@ pub fn host_functions(attr: TokenStream, item: TokenStream) -> TokenStream {
             executor: E,
             wasmer_linker: &mut uptown_funk::wasmer::WasmerLinker,
             store: &wasmer::Store,
-        ) where
+        ) -> Self::Return where
             E: uptown_funk::Executor,
         {
             let state = uptown_funk::StateWrapper::new(self, executor);
+            let return_state = state.get_state();
             #(#wasmer_method_wrappers)*
+            return_state
         }
     };
 
@@ -86,6 +88,8 @@ pub fn host_functions(attr: TokenStream, item: TokenStream) -> TokenStream {
         #implementation
 
         impl uptown_funk::HostFunctions for #self_ty {
+            type Return = ::std::rc::Rc<::std::cell::RefCell<Self>>;
+
             #wasmtime_expanded
             #wasmer_expanded
         }
