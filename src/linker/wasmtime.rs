@@ -8,13 +8,13 @@ use wasmtime::{Config, Engine, Instance, Limits, Linker, Memory, MemoryType, Sto
 
 /// Contains data necessary to create Wasmtime instances suitable to be used with Lunatic processes.
 /// Lunatic's instances have their own store, linker and process environment associated with them.
-pub struct LunaticLinker {
+pub struct LunaticLinker<T: HostFunctions> {
     linker: Linker,
     module: LunaticModule,
-    environment: ProcessEnvironment,
+    environment: ProcessEnvironment<T::Return>,
 }
 
-impl LunaticLinker {
+impl<T: HostFunctions> LunaticLinker<T> {
     /// Create a new LunaticLinker.
     pub fn new(module: LunaticModule, yielder_ptr: usize, memory: MemoryChoice) -> Result<Self> {
         let engine = engine();
