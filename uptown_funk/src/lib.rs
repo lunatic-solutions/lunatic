@@ -16,6 +16,8 @@ pub use uptown_funk_macro::host_functions;
 
 /// Provides access to the instance execution environment.
 pub trait Executor {
+    type Return: Clone;
+
     /// Execute `Future` f.
     #[cfg(feature = "async")]
     fn async_<R, F>(&self, f: F) -> R
@@ -27,7 +29,7 @@ pub trait Executor {
 }
 
 pub trait HostFunctions: Sized {
-    type Return;
+    type Return: Clone + 'static;
 
     #[cfg(feature = "vm-wasmtime")]
     fn add_to_linker<E>(self, executor: E, linker: &mut wasmtime::Linker) -> Self::Return
