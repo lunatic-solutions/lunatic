@@ -42,7 +42,7 @@ pub fn wrap(namespace: &LitStr, method: &ImplItemMethod) -> Result<TokenStream2,
                 Ok(#from_host_return_transformations(result)?)
             })() {
                 Ok(result) => result,
-                Err(trap) => unsafe { wasmer::raise_user_trap(Box::new(trap)) }
+                Err(trap) => unsafe { wasmer::raise_user_trap(Box::new(trap.with_data(state_wrapper.clone()))) }
             }
         };
 
