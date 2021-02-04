@@ -82,7 +82,7 @@ impl<T: Sized + Clone> uptown_funk::Executor for ProcessEnvironment<T> {
 // Safety: The ProcessEnvironment has the same lifetime as Memory, so it should be safe to
 // do this.
 #[cfg(feature = "vm-wasmtime")]
-impl Drop for ProcessEnvironment {
+impl<T: Sized + Clone> Drop for ProcessEnvironment<T> {
     fn drop(&mut self) {
         let memory = std::mem::replace(&mut self.memory, Memory::Empty);
         std::mem::forget(memory)
@@ -92,11 +92,12 @@ impl Drop for ProcessEnvironment {
 // For the same reason mentioned on the Drop trait we can't increase the reference count
 // on the Memory when cloning.
 #[cfg(feature = "vm-wasmtime")]
-impl Clone for ProcessEnvironment {
+impl<T: Sized + Clone> Clone for ProcessEnvironment<T> {
     fn clone(&self) -> Self {
         Self {
             memory: unsafe { std::ptr::read(&self.memory as *const Memory) },
             yielder: self.yielder,
+            yield_value: PhantomData::default(),
         }
     }
 }
@@ -144,7 +145,7 @@ impl Process {
         let mut process = AsyncWormhole::new(stack, move |yielder| {
             let yielder_ptr = &yielder as *const AsyncYielder<Result<A::Return>> as usize;
 
-            let mut linker = LunaticLinker::new(module, yielder_ptr, memory)?;
+            let mut linker = LunaticLinker::<A>::new(module, yielder_ptr, memory)?;
             let ret = linker.add_api(api);
             let instance = linker.instance()?;
 
