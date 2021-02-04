@@ -19,14 +19,12 @@ use crate::process;
 use crate::wasi;
 
 use log::info;
-use std::future::Future;
 use std::mem::ManuallyDrop;
+use std::{future::Future, marker::PhantomData};
 
 lazy_static! {
     pub static ref EXECUTOR: TaskExecutor<'static> = TaskExecutor::new();
 }
-
-pub type AsyncYielderCast<'a> = AsyncYielder<'a, Result<()>>;
 
 /// Used to look up a function by name or table index inside of an Instance.
 pub enum FunctionLookup {
@@ -51,12 +49,15 @@ pub enum MemoryChoice {
 /// Having a mutable slice of Wasmtime's memory is generally unsafe, but Lunatic always uses
 /// static memories and one memory per instance. This makes it somewhat safe?
 #[cfg_attr(feature = "vm-wasmer", derive(Clone))]
-pub struct ProcessEnvironment {
+pub struct ProcessEnvironment<T: Clone> {
     memory: Memory,
     yielder: usize,
+    yield_value: PhantomData<T>,
 }
 
-impl uptown_funk::Executor for ProcessEnvironment {
+impl<T: Sized + Clone> uptown_funk::Executor for ProcessEnvironment<T> {
+    type Return = T;
+
     #[inline(always)]
     fn async_<R, F>(&self, f: F) -> R
     where
@@ -64,7 +65,7 @@ impl uptown_funk::Executor for ProcessEnvironment {
     {
         // The yielder should not be dropped until this process is done running.
         let mut yielder =
-            unsafe { std::ptr::read(self.yielder as *const ManuallyDrop<AsyncYielderCast>) };
+            unsafe { std::ptr::read(self.yielder as *const ManuallyDrop<AsyncYielder<T>>) };
         yielder.async_suspend(f)
     }
 
@@ -100,9 +101,13 @@ impl Clone for ProcessEnvironment {
     }
 }
 
-impl ProcessEnvironment {
+impl<T: Clone + Sized> ProcessEnvironment<T> {
     pub fn new(memory: Memory, yielder: usize) -> Self {
-        Self { memory, yielder }
+        Self {
+            memory,
+            yielder,
+            yield_value: PhantomData::default(),
+        }
     }
 }
 
