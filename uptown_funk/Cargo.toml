@@ -9,7 +9,7 @@ license = "Apache-2.0/MIT"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-default = ["vm-wasmer"]
+default = []
 vm-wasmtime = ["wasmtime", "uptown_funk_macro/vm-wasmtime"]
 vm-wasmer = ["wasmer", "uptown_funk_macro/vm-wasmer", "thiserror"]
 async = []
