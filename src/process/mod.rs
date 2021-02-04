@@ -65,7 +65,7 @@ impl<T: Sized + Clone> uptown_funk::Executor for ProcessEnvironment<T> {
     {
         // The yielder should not be dropped until this process is done running.
         let mut yielder =
-            unsafe { std::ptr::read(self.yielder as *const ManuallyDrop<AsyncYielder<T>>) };
+            unsafe { std::ptr::read(self.yielder as *const ManuallyDrop<AsyncYielder<Result<T>>>) };
         yielder.async_suspend(f)
     }
 
