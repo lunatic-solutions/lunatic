@@ -140,6 +140,7 @@ impl Process {
         // process. In this case we would link the new stack to one that gets freed, and backtrace crashes once
         // it walks into the freed stack.
         // The executor will never live on a "virtual" stack, so it's safe to create AsyncWormhole there.
+        let created_at = std::time::Instant::now();
 
         let stack = OneMbStack::new()?;
         let mut process = AsyncWormhole::new(stack, move |yielder| {
@@ -182,7 +183,9 @@ impl Process {
 
         let cts_saver = tls::CallThreadStateSave::new();
         process.set_pre_post_poll(move || cts_saver.swap());
-        process.await
+        let ret = process.await;
+        info!(target: "performance", "Total time {:.5} ms.", created_at.elapsed().as_secs_f64() * 1000.0);
+        ret
     }
 
     /// Creates a new process using the default api.
