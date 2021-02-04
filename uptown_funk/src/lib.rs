@@ -147,7 +147,10 @@ impl<S, E: Executor> StateWrapper<S, E> {
     }
 }
 
+// TODO document these
+#[cfg(feature = "vm-wasmer")]
 unsafe impl<S, E: Executor> Send for StateWrapper<S, E> {}
+#[cfg(feature = "vm-wasmer")]
 unsafe impl<S, E: Executor> Sync for StateWrapper<S, E> {}
 
 impl<S, E: Executor> Clone for StateWrapper<S, E> {
