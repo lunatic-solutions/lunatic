@@ -99,7 +99,9 @@ impl WasiState {
         Status::Success
     }
 
-    fn proc_exit(&self, _exit_code: ExitCode) {}
+    fn proc_exit(&self, exit_code: u32) -> Trap {
+        Trap::new(format!("proc_exit({}) called", exit_code))
+    }
 
     fn proc_raise(&self, _signal: Signal) -> Status {
         Status::Success

@@ -86,25 +86,3 @@ impl WasiEnv {
         self.bytes.iter()
     }
 }
-
-pub struct ExitCode {}
-
-impl FromWasm for ExitCode {
-    type From = u32;
-    type State = ();
-
-    fn from(
-        _: &mut Self::State,
-        _: &impl Executor,
-        exit_code: u32,
-    ) -> Result<Self, uptown_funk::Trap> {
-        Err(uptown_funk::Trap::new(format!(
-            "proc_exit({}) called",
-            exit_code
-        )))
-    }
-}
-
-pub const WASI_STDIN_FILENO: u32 = 0;
-pub const WASI_STDOUT_FILENO: u32 = 1;
-pub const WASI_STDERR_FILENO: u32 = 2;

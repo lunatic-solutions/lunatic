@@ -208,6 +208,15 @@ impl Trap {
     }
 }
 
+impl ToWasm for Trap {
+    type To = ();
+    type State = ();
+
+    fn to(_: &mut (), _: &impl Executor, v: Self) -> Result<(), Trap> {
+        Err(v)
+    }
+}
+
 #[cfg(feature = "vm-wasmtime")]
 impl From<Trap> for wasmtime::Trap {
     fn from(trap: Trap) -> Self {
