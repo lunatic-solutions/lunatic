@@ -47,7 +47,9 @@ pub fn wrap(namespace: &LitStr, method: &ImplItemMethod) -> Result<TokenStream2,
         };
 
         let func = wasmer::Function::new_native_with_env(store, state.clone(), closure);
-        wasmer_linker.add(#namespace, #method_name_as_str, wasmer::Exportable::to_export(&func));
+        for namespace in #namespace.split(",") {
+            wasmer_linker.add(namespace, #method_name_as_str, wasmer::Exportable::to_export(&func));
+        }
     };
     Ok(result)
 }

@@ -39,7 +39,10 @@ pub fn wrap(namespace: &LitStr, method: &ImplItemMethod) -> Result<TokenStream2,
             };
             Ok(#from_host_return_transformations(result)?)
         };
-        linker.func(#namespace, #method_name_as_str, closure).unwrap();
+
+        for namespace in #namespace.split(",") {
+            linker.func(namespace, #method_name_as_str, closure.clone()).unwrap();
+        }
     };
     Ok(result)
 }
