@@ -18,6 +18,35 @@
             ;; With import call
             (loop
                 (call $test_import))
+            
+            ;; Loop inside condition
+            (i32.lt_s
+                (i32.const 5)
+                (i32.const 10))
+            (if (then
+                (loop
+                    (br 0))))
+            
+            ;; Loop with calls in both if branches
+            (loop
+                (i32.lt_s
+                    (i32.const 5)
+                    (i32.const 10))
+                (if (then
+                    (call $local_test))
+                (else
+                    (call $local_test))))
+            
+            ;; Complex loop scenario
+            (loop
+                (i32.lt_s
+                    (i32.const 5)
+                    (i32.const 10))
+                (if (then
+                    (loop
+                        (br 0)))
+                (else
+                    (call $test_import))))
         )
     )
 )
@@ -92,6 +121,83 @@
                     end
                 end
                 (call $test_import))
+            
+            ;; Loop inside condition
+            (i32.lt_s
+                (i32.const 5)
+                (i32.const 10))
+            if
+                (loop
+                    block  ;; Reduction counter logic
+                        global.get 0
+                        i32.const 1
+                        i32.add
+                        global.set 0
+                        global.get 0
+                        i32.const 10000
+                        i32.gt_s
+                        if
+                            call 1
+                            i32.const 0
+                            global.set 0
+                        else
+                        end
+                    end
+                    (br 0))
+            else
+            end
+
+            ;; Loop with calls in both if branches
+            (loop
+                (i32.lt_s
+                    (i32.const 5)
+                    (i32.const 10))
+                (if (then
+                    (call $local_test))
+                (else
+                    (call $local_test))))
+            
+
+            ;; Complex loop scenario
+            (loop
+                block  ;; Reduction counter logic
+                    global.get 0
+                    i32.const 1
+                    i32.add
+                    global.set 0
+                    global.get 0
+                    i32.const 10000
+                    i32.gt_s
+                    if
+                        call 1
+                        i32.const 0
+                        global.set 0
+                    else
+                    end
+                end
+                (i32.lt_s
+                    (i32.const 5)
+                    (i32.const 10))
+                (if (then
+                    (loop
+                        block  ;; Reduction counter logic
+                            global.get 0
+                            i32.const 1
+                            i32.add
+                            global.set 0
+                            global.get 0
+                            i32.const 10000
+                            i32.gt_s
+                            if
+                                call 1
+                                i32.const 0
+                                global.set 0
+                            else
+                            end
+                        end
+                        (br 0)))
+                (else
+                    (call $test_import))))
         )
     )
 

@@ -9,7 +9,7 @@ const REDUCTION_LIMIT: i32 = 10_000;
 ///
 /// To achieve this the following things are inserted into the WASM module:
 /// * A global variable to hold the current count
-/// * An import to the host provided `yield` function
+/// * An import to the host provided `lunatic::yield` function
 /// * Instructions on top of each function to check if we reached the `REDUCTION_LIMIT` and yield.
 /// * Instructions on top of tight loops to check if we reached the `REDUCTION_LIMIT` and yield.
 pub fn patch(module: &mut Module) {
@@ -20,7 +20,7 @@ pub fn patch(module: &mut Module) {
     let yield_import = module.add_import_func("lunatic", "yield_", yield_type);
 
     // If a function is called inside a loop we can avoid inserting the reduction count inside of it, because all
-    // function calls will also perform a reduction count. But this is not true for imported host side functions.
+    // function calls will also perform a reduction count. But this is not true for imported functions.
     // To make it easier to check if an imported function is called we keep a list of all of them around.
     let imported_functions: Vec<FunctionId> = module
         .imports
@@ -53,7 +53,38 @@ fn patch_function(
     for (instr, _) in &instr_seq.instrs {
         match instr {
             ir::Instr::Loop(loop_) => {
-                patch_loop(loop_, function, &mut insertion_points, &imported_functions)
+                patch_sequence(
+                    true,
+                    loop_.seq,
+                    function,
+                    &mut insertion_points,
+                    &imported_functions,
+                );
+            }
+            ir::Instr::Block(block) => {
+                patch_sequence(
+                    false,
+                    block.seq,
+                    function,
+                    &mut insertion_points,
+                    &imported_functions,
+                );
+            }
+            ir::Instr::IfElse(if_else) => {
+                patch_sequence(
+                    false,
+                    if_else.consequent,
+                    function,
+                    &mut insertion_points,
+                    &imported_functions,
+                );
+                patch_sequence(
+                    false,
+                    if_else.alternative,
+                    function,
+                    &mut insertion_points,
+                    &imported_functions,
+                );
             }
             _ => (),
         }
@@ -71,25 +102,70 @@ fn patch_function(
 
 // Mark insertion points for reduction counter in loops that:
 // * don't contain any other loops
-// * or calls to local functions
-fn patch_loop(
-    loop_: &ir::Loop,
+// * don't contain calls to local functions
+//
+// Returns true if an insertion occurred in this block or any children, otherwise false.
+fn patch_sequence(
+    insert: bool,
+    seq_id: ir::InstrSeqId,
     function: &LocalFunction,
     insertion_points: &mut Vec<ir::InstrSeqId>,
     imported_functions: &Vec<FunctionId>,
-) {
-    let mut insert_reduction_counter = true;
-    let instr_seq = function.block(loop_.seq);
+) -> bool {
+    let mut child_inserts = false;
+    let mut insert_reduction_counter = insert;
+    let instr_seq = function.block(seq_id);
 
     for (instr, _) in &instr_seq.instrs {
         match instr {
             ir::Instr::Loop(loop_) => {
-                patch_loop(&loop_, function, insertion_points, imported_functions);
+                patch_sequence(
+                    true,
+                    loop_.seq,
+                    function,
+                    insertion_points,
+                    imported_functions,
+                );
                 insert_reduction_counter = false;
+                child_inserts = true;
+            }
+            ir::Instr::Block(block) => {
+                let inserted = patch_sequence(
+                    false,
+                    block.seq,
+                    function,
+                    insertion_points,
+                    &imported_functions,
+                );
+                if inserted {
+                    insert_reduction_counter = false;
+                    child_inserts = true;
+                }
+            }
+            ir::Instr::IfElse(if_else) => {
+                let inserted_then = patch_sequence(
+                    false,
+                    if_else.consequent,
+                    function,
+                    insertion_points,
+                    &imported_functions,
+                );
+                let inserted_else = patch_sequence(
+                    false,
+                    if_else.alternative,
+                    function,
+                    insertion_points,
+                    &imported_functions,
+                );
+                if inserted_then && inserted_else {
+                    insert_reduction_counter = false;
+                    child_inserts = true;
+                }
             }
             ir::Instr::Call(call) => {
                 if !imported_functions.contains(&call.func) {
                     insert_reduction_counter = false;
+                    child_inserts = true;
                 }
             }
             ir::Instr::CallIndirect(_call_indirect) => {
@@ -103,6 +179,7 @@ fn patch_loop(
     if insert_reduction_counter {
         insertion_points.push(instr_seq.id());
     }
+    child_inserts
 }
 
 // Algorithm:
