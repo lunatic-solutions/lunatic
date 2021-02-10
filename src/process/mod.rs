@@ -66,8 +66,9 @@ impl<T: Sized + Clone> uptown_funk::Executor for ProcessEnvironment<T> {
         F: Future<Output = R>,
     {
         // The yielder should not be dropped until this process is done running.
-        let mut yielder =
-            unsafe { std::ptr::read(self.yielder as *const ManuallyDrop<AsyncYielder<Result<T>>>) };
+        let mut yielder = unsafe {
+            std::ptr::read(self.yielder as *const ManuallyDrop<AsyncYielder<Result<T, Error<T>>>>)
+        };
         yielder.async_suspend(f)
     }
 
@@ -114,13 +115,27 @@ impl<T: Clone + Sized> ProcessEnvironment<T> {
     }
 }
 
+pub struct Error<T> {
+    pub error: anyhow::Error,
+    pub value: Option<T>,
+}
+
+impl<T, E: Into<anyhow::Error>> From<E> for Error<T> {
+    fn from(error: E) -> Self {
+        Self {
+            error: error.into(),
+            value: None,
+        }
+    }
+}
+
 /// A lunatic process represents an actor.
 pub struct Process {
-    task: Task<Result<()>>,
+    task: Task<Result<(), Error<()>>>,
 }
 
 impl Process {
-    pub fn task(self) -> Task<Result<()>> {
+    pub fn task(self) -> Task<Result<(), Error<()>>> {
         self.task
     }
 
@@ -130,7 +145,7 @@ impl Process {
         function: FunctionLookup,
         memory: MemoryChoice,
         api: A,
-    ) -> Result<A::Return>
+    ) -> Result<A::Return, Error<A::Return>>
     where
         A: HostFunctions + 'static + Send,
     {
@@ -146,7 +161,8 @@ impl Process {
 
         let stack = OneMbStack::new()?;
         let mut process = AsyncWormhole::new(stack, move |yielder| {
-            let yielder_ptr = &yielder as *const AsyncYielder<Result<A::Return>> as usize;
+            let yielder_ptr =
+                &yielder as *const AsyncYielder<Result<A::Return, Error<A::Return>>> as usize;
 
             let mut linker = LunaticLinker::<A>::new(module, yielder_ptr, memory)?;
             let ret = linker.add_api(api);
@@ -163,7 +179,10 @@ impl Process {
 
                     // Measure how long the function takes for named functions.
                     let performance_timer = std::time::Instant::now();
-                    func.call(&[])?;
+                    func.call(&[]).map_err(|error| Error {
+                        error: error.into(),
+                        value: Some(ret.clone()),
+                    })?;
                     info!(target: "performance", "Process {} finished in {:.5} ms.", name, performance_timer.elapsed().as_secs_f64() * 1000.0);
                 }
                 FunctionLookup::TableIndex(index) => {
@@ -196,7 +215,7 @@ impl Process {
         module: LunaticModule,
         function: FunctionLookup,
         memory: MemoryChoice,
-    ) -> Result<()> {
+    ) -> Result<(), Error<()>> {
         let api = DefaultApi::new(context_receiver, module.clone());
         Process::create_with_api(module, function, memory, api).await
     }
@@ -204,7 +223,7 @@ impl Process {
     /// Spawns a new process on the `EXECUTOR`
     pub fn spawn<Fut>(future: Fut) -> Self
     where
-        Fut: Future<Output = Result<()>> + Send + 'static,
+        Fut: Future<Output = Result<(), Error<()>>> + Send + 'static,
     {
         let task = EXECUTOR.spawn(future);
         Self { task }
