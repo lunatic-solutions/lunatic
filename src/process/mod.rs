@@ -34,10 +34,12 @@ pub enum FunctionLookup {
 
 /// For now we always create a new memory per instance, but eventually we will want to support
 /// sharing memories between instances.
+///
+/// A new memory can enforce a maximum size in Wasm pages, where 1 Wasm page = 64KiB memory.
 #[derive(Clone)]
 pub enum MemoryChoice {
     Existing,
-    New,
+    New(Option<u32>),
 }
 
 /// This structure is captured inside HOST function closures passed to Wasmtime's Linker.

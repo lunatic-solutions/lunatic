@@ -22,8 +22,13 @@ impl<T: HostFunctions> LunaticLinker<T> {
 
         let memory = match memory {
             MemoryChoice::Existing => unimplemented!("No memory sharing yet"),
-            MemoryChoice::New => {
-                let memory_ty = MemoryType::new(module.min_memory(), module.max_memory(), false);
+            MemoryChoice::New(limit) => {
+                let limit = if limit.is_some() {
+                    limit
+                } else {
+                    module.max_memory()
+                };
+                let memory_ty = MemoryType::new(module.min_memory(), limit, false);
                 Memory::new(&store, memory_ty)?
             }
         };

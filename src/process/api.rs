@@ -64,7 +64,7 @@ impl ProcessState {
             Some(ChannelReceiver::from(receiver)),
             self.module.clone(),
             FunctionLookup::TableIndex(index),
-            MemoryChoice::New,
+            MemoryChoice::New(None),
         );
         Process::spawn(future)
     }

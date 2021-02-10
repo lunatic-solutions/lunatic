@@ -48,7 +48,7 @@ pub fn run() -> Result<()> {
                     None,
                     module,
                     FunctionLookup::Name("_start"),
-                    MemoryChoice::New,
+                    MemoryChoice::New(None),
                 )
                 .await;
                 drop(signal);
