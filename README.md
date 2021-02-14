@@ -42,7 +42,7 @@ brew install lunatic
 
 ---
 
-To build the project from source yuo will need to have [rustup][7] installed:
+To build the project from source you will need to have [rustup][7] installed:
 
 ```bash
 # Install Rust Nightly
