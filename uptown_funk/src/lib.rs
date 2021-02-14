@@ -174,8 +174,8 @@ impl<S, E: Executor> ::wasmer::WasmerEnv for StateWrapper<S, E> {
     }
 }
 
-#[cfg_attr(feature = "vm-wasmer", error("{message}"))]
 #[cfg_attr(feature = "vm-wasmer", derive(thiserror::Error))]
+#[cfg_attr(feature = "vm-wasmer", error("{message}"))]
 pub struct Trap<D = ()>
 where
     D: 'static,
