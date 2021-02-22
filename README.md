@@ -71,7 +71,7 @@ Some common use cases for processes are:
 
 ### Isolation
 
-What makes the last use case possible are the sandboxing capabilities of [WebAssembly][1]. WebAssebmly was
+What makes the last use case possible are the sandboxing capabilities of [WebAssembly][1]. WebAssembly was
 originally developed to run in the browser and provides extremely strong sandboxing on multiple levels.
 Lunatic's processes inherit this properties.
 
