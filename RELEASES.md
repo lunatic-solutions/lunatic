@@ -2,6 +2,16 @@
 
 ---
 
+## v0.3.1
+
+Released 2021-02-22.
+
+### Changes
+
+Miscellaneous bug fixes and stability improvements.
+
+---
+
 ## v0.3
 
 Released 2021-01-26.
