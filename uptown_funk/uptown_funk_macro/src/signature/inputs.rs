@@ -221,7 +221,7 @@ fn transform_reference(reference: &TypeReference) -> Transformation {
         return match &*reference.elem {
             Type::Path(type_path) => {
                 if let Some(_) = type_path.path.get_ident() {
-                    // Always assume &CustomType
+                    // Always assume &mut CustomType
                     return Transformation::RefCustomType;
                 }
                 Transformation::Unsupported

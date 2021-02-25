@@ -1,14 +1,17 @@
-use super::{TcpListener, TcpListenerResult, TcpStream, TcpStreamResult};
+use super::{Resolver, ResolverResult, TcpListener, TcpListenerResult, TcpStream, TcpStreamResult};
 use anyhow::Result;
 use smol::prelude::*;
-use uptown_funk::{host_functions, state::HashMapStore, StateMarker};
+use uptown_funk::{host_functions, state::HashMapStore, types, StateMarker};
 
 use crate::channel::api::ChannelState;
 
 use std::io::{IoSlice, IoSliceMut};
 
+type Ptr<T> = types::Pointer<T>;
+
 pub struct TcpState {
     channel_state: ChannelState,
+    pub resolvers: HashMapStore<Resolver>,
     pub listeners: HashMapStore<TcpListener>,
     pub streams: HashMapStore<TcpStream>,
 }
@@ -19,14 +22,62 @@ impl TcpState {
     pub fn new(channel_state: ChannelState) -> Self {
         Self {
             channel_state,
+            resolvers: HashMapStore::new(),
             listeners: HashMapStore::new(),
             streams: HashMapStore::new(),
         }
     }
 }
 
+type OptionTrap = Result<u32, uptown_funk::Trap>;
+
 #[host_functions(namespace = "lunatic")]
 impl TcpState {
+    async fn resolve(&self, name: &str) -> (u32, ResolverResult) {
+        match Resolver::resolve(name).await {
+            Ok(resolver) => (0, ResolverResult::Ok(resolver)),
+            Err(err) => (1, ResolverResult::Err(err.to_string())),
+        }
+    }
+
+    // Result:
+    // 0: Success
+    // 1: No more addresses available
+    fn resolve_next(
+        &self,
+        resolver: Resolver,
+        addr: Ptr<u8>,
+        mut addr_len: Ptr<u32>,
+        mut port: Ptr<u16>,
+        mut flowinfo: Ptr<u32>,
+        mut scope_id: Ptr<u32>,
+    ) -> OptionTrap {
+        if let Some(address) = resolver.next() {
+            match address {
+                smol::net::SocketAddr::V4(v4) => {
+                    let octets = v4.ip().octets();
+                    addr.copy_slice(&octets)?;
+                    addr_len.set(octets.len() as u32);
+                }
+                smol::net::SocketAddr::V6(v6) => {
+                    let octets = v6.ip().octets();
+                    addr.copy_slice(&octets)?;
+                    addr_len.set(octets.len() as u32);
+                    flowinfo.set(v6.flowinfo());
+                    scope_id.set(v6.scope_id());
+                }
+            }
+            port.set(address.port());
+            Ok(0)
+        } else {
+            Ok(1)
+        }
+    }
+
+    fn remove_resolver(&mut self, id: u32) {
+        self.resolvers.remove(id);
+    }
+
     async fn tcp_bind(&self, address: &[u8], port: u32) -> (u32, TcpListenerResult) {
         match TcpListener::bind(address, port as u16).await {
             Ok(listener) => (0, TcpListenerResult::Ok(listener)),

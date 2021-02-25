@@ -34,6 +34,7 @@ impl WasmType for u8 {
     }
 }
 
+impl CReprWasmType for u16 {}
 impl CReprWasmType for u32 {}
 impl CReprWasmType for u64 {}
 impl CReprWasmType for f64 {}
