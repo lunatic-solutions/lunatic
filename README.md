@@ -1,5 +1,5 @@
 <div align="center">
-    <a href="#">
+    <a href="https://lunatic.solutions/">
         <img width="150" src="https://raw.githubusercontent.com/lunatic-solutions/lunatic/readme_update/assets/logo.png" alt="Lunatic logo">
     </a>
     <p>&nbsp;</p>
@@ -29,11 +29,11 @@ If you would like to see other languages supported or just follow the discussion
 
 ## Installation
 
-We provide pre-built binaries for **Windows**, **Linux** and **MacOs** on the [releases page][5].
+We provide pre-built binaries for **Windows**, **Linux** and **macOS** on the [releases page][5].
 
 ---
 
-On **MacOs** you can also use [Hombrew][6]:
+On **macOS** you can also use [Hombrew][6]:
 
 ```bash
 brew tap lunatic-solutions/lunatic
@@ -59,7 +59,7 @@ cargo +nightly install --path .
 
 Lunatic's design is all about spawning _super lightweight_ processes, also known as green threads or
 [go-routines][8] in other runtimes. Lunatic's processes are fast to create, have a small memory footprint
-and a low scheduling overhead. They are designed for **MASSIVE** concurrency. It's not uncommon to have
+and a low scheduling overhead. They are designed for **massive** concurrency. It's not uncommon to have
 hundreds of thousands of such processes concurrently running in your app.
 
 Some common use cases for processes are:
