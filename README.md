@@ -1,6 +1,6 @@
-<div align="center">
-    <a href="https://lunatic.solutions/">
-        <img width="150" src="https://raw.githubusercontent.com/lunatic-solutions/lunatic/readme_update/assets/logo.png" alt="Lunatic logo">
+<div>
+    <a href="https://lunatic.solutions/" target="_blank">
+        <img width="60" src="https://raw.githubusercontent.com/lunatic-solutions/lunatic/main/assets/logo.svg" alt="Lunatic logo">
     </a>
     <p>&nbsp;</p>
 </div>
