@@ -1,4 +1,4 @@
-<div>
+<div align="center">
     <a href="https://lunatic.solutions/" target="_blank">
         <img width="60" src="https://raw.githubusercontent.com/lunatic-solutions/lunatic/main/assets/logo.svg" alt="Lunatic logo">
     </a>
@@ -12,7 +12,7 @@ You can read more about the motivation behind Lunatic [here][2].
 We currently provide libraries to take full advantage of Lunatic's features for:
 
 - [Rust][3]
-- ~AssemblyScript~ (coming soon)
+- [AssemblyScript][11]
 
 If you would like to see other languages supported or just follow the discussions around Lunatic,
 [join our discord server][4].
@@ -121,3 +121,4 @@ at your option.
 [8]: https://golangbot.com/goroutines
 [9]: https://docs.rs/smol
 [10]: https://wasi.dev/
+[11]: https://github.com/lunatic-solutions/as-lunatic
