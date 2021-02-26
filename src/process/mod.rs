@@ -15,7 +15,6 @@ use crate::{channel::ChannelReceiver, linker::LunaticLinker};
 
 use crate::channel;
 use crate::networking;
-use crate::process;
 use crate::wasi;
 
 use log::info;
@@ -253,7 +252,7 @@ impl HostFunctions for DefaultApi {
         E: Executor + Clone + 'static,
     {
         let channel_state = channel::api::ChannelState::new(self.context_receiver);
-        let process_state = process::api::ProcessState::new(self.module, channel_state.clone());
+        let process_state = api::ProcessState::new(self.module, channel_state.clone());
         let networking_state = networking::api::TcpState::new(channel_state.clone());
         let wasi_state = wasi::api::WasiState::new();
 
@@ -274,7 +273,7 @@ impl HostFunctions for DefaultApi {
         E: Executor + Clone + 'static,
     {
         let channel_state = channel::api::ChannelState::new(self.context_receiver);
-        let process_state = process::api::ProcessState::new(self.module, channel_state.clone());
+        let process_state = api::ProcessState::new(self.module, channel_state.clone());
         let networking_state = networking::api::TcpState::new(channel_state.clone());
         let wasi_state = wasi::api::WasiState::new();
 
