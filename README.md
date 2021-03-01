@@ -46,9 +46,9 @@ To build the project from source you will need to have [rustup][7] installed:
 
 ```bash
 # Install Rust Nightly
-rustup add nightly
+rustup toolchain install nightly
 # Clone the repository and all submodules
-git clone --recurse-submodules https://github.com/lunatic-solutions/lunatic.git
+git clone https://github.com/lunatic-solutions/lunatic.git
 # Jump into the cloned folder
 cd lunatic
 # Build and install Lunatic
