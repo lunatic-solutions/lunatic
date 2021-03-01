@@ -11,11 +11,11 @@ use smol::{Executor as TaskExecutor, Task};
 use uptown_funk::{memory::Memory, Executor, FromWasm, HostFunctions, ToWasm};
 
 use crate::module::LunaticModule;
-use crate::{channel::ChannelReceiver, linker::LunaticLinker};
+use crate::{api::channel::ChannelReceiver, linker::LunaticLinker};
 
-use crate::channel;
-use crate::networking;
-use crate::wasi;
+use crate::api::channel;
+use crate::api::networking;
+use crate::api::wasi;
 
 use log::info;
 use std::mem::ManuallyDrop;

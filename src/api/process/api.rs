@@ -1,5 +1,5 @@
 use crate::{
-    channel::{api::ChannelState, ChannelReceiver, Message},
+    api::channel::{api::ChannelState, ChannelReceiver, Message},
     module::LunaticModule,
 };
 

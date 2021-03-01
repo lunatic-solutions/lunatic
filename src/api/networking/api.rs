@@ -3,7 +3,7 @@ use anyhow::Result;
 use smol::prelude::*;
 use uptown_funk::{host_functions, state::HashMapStore, types, StateMarker};
 
-use crate::channel::api::ChannelState;
+use crate::api::channel::api::ChannelState;
 
 use std::io::{IoSlice, IoSliceMut};
 

@@ -1,5 +1,5 @@
+use crate::api::process::{MemoryChoice, ProcessEnvironment};
 use crate::module::LunaticModule;
-use crate::process::{MemoryChoice, ProcessEnvironment};
 
 use anyhow::Result;
 use uptown_funk::{wasmer::WasmerLinker, HostFunctions};
