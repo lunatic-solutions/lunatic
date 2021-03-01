@@ -24,13 +24,13 @@ vm-wasmer = ["uptown_funk/vm-wasmer", "wasmer", "wasmer-vm"]
 
 [dependencies]
 async-wormhole = "0.3"
-uptown_funk = { path = "./uptown_funk", features=["async"] }
-wasmer = { git = "https://github.com/lunatic-solutions/wasmer.git", branch = "lunatic", optional = true }
-wasmer-vm = { git = "https://github.com/lunatic-solutions/wasmer.git", branch = "lunatic", optional = true }
-wasmtime = { git = "https://github.com/lunatic-solutions/wasmtime.git", branch = "lunatic", optional = true }
-wasmtime-runtime = { git = "https://github.com/lunatic-solutions/wasmtime.git", branch = "lunatic", optional = true }
+uptown_funk = { version = "0.1", path = "./uptown_funk", features=["async"] }
+wasmer = { version = "1.0", git = "https://github.com/lunatic-solutions/wasmer.git", branch = "lunatic", optional = true }
+wasmer-vm = { version = "1.0", git = "https://github.com/lunatic-solutions/wasmer.git", branch = "lunatic", optional = true }
+wasmtime = { version = "0.22", git = "https://github.com/lunatic-solutions/wasmtime.git", branch = "lunatic", optional = true }
+wasmtime-runtime = { version = "0.22", git = "https://github.com/lunatic-solutions/wasmtime.git", branch = "lunatic", optional = true }
 clap = "3.0.0-beta.2"
-wasi-common = {git = "https://github.com/lunatic-solutions/wasmtime.git", branch = "lunatic" }
+wasi-common = { version = "0.22", git = "https://github.com/lunatic-solutions/wasmtime.git", branch = "lunatic" }
 getrandom = { version = "0.2.0", features = ["std"] }
 walrus = "0.18"
 smol = "1.2"
