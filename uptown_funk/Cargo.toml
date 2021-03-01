@@ -1,10 +1,11 @@
 [package]
 name = "uptown_funk"
-version = "0.1.1"
+version = "0.1.2"
 authors = ["Bernard Kolobara <me@kolobara.com>"]
 edition = "2018"
 description = "Define host functions compatible with Wasmer and Wasmtime"
 license = "Apache-2.0/MIT"
+readme = "Readme.md"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

@@ -1,6 +1,6 @@
 [package]
 name = "uptown_funk_macro"
-version = "0.1.1"
+version = "0.1.2"
 authors = ["Bernard Kolobara <me@kolobara.com>"]
 edition = "2018"
 description = "Helper macro for the uptown_funk crate"
