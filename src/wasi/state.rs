@@ -1,6 +1,5 @@
 use super::types::{Filestat, OpenFlags, Status, StatusResult};
 use uptown_funk::StateMarker;
-use wasi_common::{WasiCtx, WasiCtxBuilder};
 
 use std::{
     fs,
@@ -14,7 +13,6 @@ use std::{
 type Fd = u32;
 
 pub struct WasiState {
-    pub ctx: WasiCtx,
     fds: Vec<Option<FileDesc>>,
 }
 
@@ -23,9 +21,7 @@ pub struct WasiState {
 impl WasiState {
     pub fn new() -> Self {
         // TODO cannot trap if open / fails
-        let ctx = WasiCtxBuilder::new().build().unwrap();
         Self {
-            ctx,
             fds: vec![None, None, None, FileDesc::open("/").ok()],
         }
     }
