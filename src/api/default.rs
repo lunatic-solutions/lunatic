@@ -28,7 +28,7 @@ impl HostFunctions for DefaultApi {
     {
         let channel_state = channel::api::ChannelState::new(self.context_receiver);
         let process_state = process::api::ProcessState::new(self.module, channel_state.clone());
-        let networking_state = networking::api::TcpState::new(channel_state.clone());
+        let networking_state = networking::TcpState::new(channel_state.clone());
         let wasi_state = wasi::api::WasiState::new();
 
         channel_state.add_to_linker(executor.clone(), linker);
@@ -49,7 +49,7 @@ impl HostFunctions for DefaultApi {
     {
         let channel_state = channel::api::ChannelState::new(self.context_receiver);
         let process_state = process::api::ProcessState::new(self.module, channel_state.clone());
-        let networking_state = networking::api::TcpState::new(channel_state.clone());
+        let networking_state = networking::TcpState::new(channel_state.clone());
         let wasi_state = wasi::api::WasiState::new();
 
         channel_state.add_to_wasmer_linker(executor.clone(), linker, store);

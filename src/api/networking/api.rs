@@ -1,33 +1,8 @@
-use super::{Resolver, ResolverResult, TcpListener, TcpListenerResult, TcpStream, TcpStreamResult};
-use anyhow::Result;
-use smol::prelude::*;
-use uptown_funk::{host_functions, state::HashMapStore, types, StateMarker};
-
-use crate::api::channel::api::ChannelState;
-
+use super::{resolver::*, state::TcpState, tcp::*};
+use smol::io::{AsyncReadExt, AsyncWriteExt};
 use std::io::{IoSlice, IoSliceMut};
-
-type Ptr<T> = types::Pointer<T>;
-
-pub struct TcpState {
-    channel_state: ChannelState,
-    pub resolvers: HashMapStore<Resolver>,
-    pub listeners: HashMapStore<TcpListener>,
-    pub streams: HashMapStore<TcpStream>,
-}
-
-impl StateMarker for TcpState {}
-
-impl TcpState {
-    pub fn new(channel_state: ChannelState) -> Self {
-        Self {
-            channel_state,
-            resolvers: HashMapStore::new(),
-            listeners: HashMapStore::new(),
-            streams: HashMapStore::new(),
-        }
-    }
-}
+use uptown_funk::host_functions;
+use uptown_funk::types::Pointer as Ptr;
 
 type OptionTrap = Result<u32, uptown_funk::Trap>;
 
