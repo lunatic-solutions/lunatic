@@ -1,8 +1,11 @@
 use super::types::*;
+use libc::{
+    clock_getres, clock_gettime, timespec, CLOCK_MONOTONIC, CLOCK_PROCESS_CPUTIME_ID,
+    CLOCK_REALTIME, CLOCK_THREAD_CPUTIME_ID,
+};
 
 use log::debug;
 use uptown_funk::{host_functions, types, Trap};
-use wasi_common::wasi::wasi_snapshot_preview1::WasiSnapshotPreview1;
 
 use std::io::{self, IoSlice, IoSliceMut, Read, SeekFrom, Write};
 
@@ -14,7 +17,6 @@ lazy_static::lazy_static! {
 pub use super::state::WasiState;
 
 type Ptr<T> = types::Pointer<T>;
-type Clockid = Wrap<wasi_common::wasi::types::Clockid>;
 
 #[host_functions(namespace = "wasi_snapshot_preview1")]
 impl WasiState {
@@ -67,20 +69,57 @@ impl WasiState {
     // Clock, random, yield, exit
 
     fn clock_res_get(&self, id: Clockid, mut res: Ptr<Timestamp>) -> Status {
-        match self.ctx.clock_res_get(id.inner) {
-            Ok(c) => {
-                res.copy(&c);
-                Status::Success
-            }
-            Err(_) => Status::Inval,
-        }
+        // FIXME: throw Status::Inval if unsupported clock_id is given
+        let unix_clock_id = match id {
+            Clockid::Realtime => CLOCK_MONOTONIC,
+            Clockid::Monotonic => CLOCK_PROCESS_CPUTIME_ID,
+            Clockid::ProcessCpuTimeId => CLOCK_REALTIME,
+            Clockid::ThreadCpuTimeId => CLOCK_THREAD_CPUTIME_ID,
+        };
+
+        let (output, timespec_out) = unsafe {
+            let mut timespec_out: timespec = timespec {
+                tv_sec: 0,
+                tv_nsec: 0,
+            };
+            (clock_getres(unix_clock_id, &mut timespec_out), timespec_out)
+        };
+
+        let t_out = (timespec_out.tv_sec * 1_000_000_000).wrapping_add(timespec_out.tv_nsec);
+        res.set(t_out as Timestamp);
+
+        unsafe { std::mem::transmute(output as u16) }
     }
 
-    fn clock_time_get(&self, id: Clockid, precision: Timestamp) -> (Status, Timestamp) {
-        match self.ctx.clock_time_get(id.inner, precision) {
-            Ok(time) => (Status::Success, time),
-            Err(_) => (Status::Inval, 0),
-        }
+    fn clock_time_get(
+        &self,
+        id: Clockid,
+        _precision: Timestamp,
+        mut time: Ptr<Timestamp>,
+    ) -> Status {
+        // FIXME: throw Status::Inval if unsupported clock_id is given
+        let unix_clock_id = match id {
+            Clockid::Realtime => CLOCK_MONOTONIC,
+            Clockid::Monotonic => CLOCK_PROCESS_CPUTIME_ID,
+            Clockid::ProcessCpuTimeId => CLOCK_REALTIME,
+            Clockid::ThreadCpuTimeId => CLOCK_THREAD_CPUTIME_ID,
+        };
+
+        let (output, timespec_out) = unsafe {
+            let mut timespec_out: timespec = timespec {
+                tv_sec: 0,
+                tv_nsec: 0,
+            };
+            (
+                clock_gettime(unix_clock_id, &mut timespec_out),
+                timespec_out,
+            )
+        };
+
+        let t_out = (timespec_out.tv_sec * 1_000_000_000).wrapping_add(timespec_out.tv_nsec);
+        time.set(t_out as Timestamp);
+
+        unsafe { std::mem::transmute(output as u16) }
     }
 
     fn random_get(&self, buf: Ptr<u8>, buf_len: Size) -> StatusTrapResult {

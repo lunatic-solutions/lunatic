@@ -1,7 +1,6 @@
 pub type Size = u32;
 pub type Filesize = u64;
 pub type Timestamp = u64;
-pub type Clockid = u32;
 pub type Rights = u64;
 pub type Fd = u32;
 pub type Filedelta = i64;

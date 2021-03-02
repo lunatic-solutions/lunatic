@@ -4,7 +4,7 @@ use std::io::{IoSlice, IoSliceMut};
 use smallvec::SmallVec;
 use uptown_funk::types::CReprWasmType;
 
-use super::{aliases::*, Fdflags, Filetype, Status};
+use super::{aliases::*, Clockid, Fdflags, Filetype, Status};
 
 #[derive(Copy, Clone)]
 #[repr(C)]

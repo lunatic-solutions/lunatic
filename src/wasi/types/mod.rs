@@ -1,21 +1,19 @@
 #![allow(dead_code)]
 
 mod aliases;
+mod clock;
 mod flags;
 mod status;
 mod structs;
 
 pub use aliases::*;
+pub use clock::*;
 pub use flags::*;
 pub use status::Status;
 pub use status::StatusResult;
 pub use status::StatusTrap;
 pub use status::StatusTrapResult;
 pub use structs::*;
-
-use uptown_funk::{Executor, FromWasm, Trap};
-// TODO remove dependency
-use wasi_common::wasi::types::Clockid;
 
 pub struct Wrap<T> {
     pub inner: T,
@@ -24,25 +22,6 @@ pub struct Wrap<T> {
 impl<T> Wrap<T> {
     fn new(inner: T) -> Self {
         Self { inner }
-    }
-}
-
-impl FromWasm for Wrap<Clockid> {
-    type From = u32;
-    type State = ();
-
-    fn from(
-        _state: &mut Self::State,
-        _executor: &impl Executor,
-        from: Self::From,
-    ) -> Result<Self, Trap>
-    where
-        Self: Sized,
-    {
-        use std::convert::TryFrom;
-        Clockid::try_from(from)
-            .map_err(|_| Trap::new("Invalid clock id"))
-            .map(|v| Wrap::new(v))
     }
 }
 

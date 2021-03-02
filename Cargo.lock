@@ -360,16 +360,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "cpu-time"
-version = "1.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e9e393a7668fe1fad3075085b86c781883000b4ede868f43627b34a87c8b7ded"
-dependencies = [
- "libc",
- "winapi",
-]
-
-[[package]]
 name = "cpuid-bool"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -649,15 +639,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "cvt"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "34ac344c7efccb80cd25bc61b2170aec26f2f693fd40e765a539a1243db48c71"
-dependencies = [
- "cfg-if 0.1.10",
-]
-
-[[package]]
 name = "darling"
 version = "0.10.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -712,16 +693,6 @@ name = "directories-next"
 version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "339ee130d97a610ea5a5872d2bbb130fdf68884ff09d3028b81bec8a1ac23bbc"
-dependencies = [
- "cfg-if 1.0.0",
- "dirs-sys-next",
-]
-
-[[package]]
-name = "dirs-next"
-version = "2.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b98cf8ebf19c3d1b223e151f99a4f9f0690dca41414773390fc824184ac833e1"
 dependencies = [
  "cfg-if 1.0.0",
  "dirs-sys-next",
@@ -847,18 +818,6 @@ checksum = "4fdbe0d94371f9ce939b555dd342d0686cc4c0cadbcd4b61d70af5ff97eb4126"
 dependencies = [
  "env_logger 0.7.1",
  "log",
-]
-
-[[package]]
-name = "filetime"
-version = "0.2.14"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1d34cfa13a63ae058bfa601fe9e313bbdb3746427c1459185464ce0fcf62e1e8"
-dependencies = [
- "cfg-if 1.0.0",
- "libc",
- "redox_syscall",
- "winapi",
 ]
 
 [[package]]
@@ -1117,6 +1076,7 @@ dependencies = [
  "env_logger 0.8.2",
  "getrandom",
  "lazy_static",
+ "libc",
  "log",
  "pretty_assertions",
  "rayon",
@@ -1124,7 +1084,6 @@ dependencies = [
  "smol",
  "uptown_funk",
  "walrus",
- "wasi-common",
  "wasmer",
  "wasmer-vm",
  "wasmprinter",
@@ -1677,15 +1636,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "shellexpand"
-version = "2.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "83bdb7831b2d85ddf4a7b148aa19d0587eddbe8671a436b7bd1182eaad0f2829"
-dependencies = [
- "dirs-next",
-]
-
-[[package]]
 name = "signal-hook"
 version = "0.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1869,7 +1819,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f7d40a22fd029e33300d8d89a5cc8ffce18bb7c587662f54629e94c9de5487f3"
 dependencies = [
  "cfg-if 1.0.0",
- "log",
  "pin-project-lite",
  "tracing-attributes",
  "tracing-core",
@@ -2005,26 +1954,6 @@ name = "wasi"
 version = "0.10.2+wasi-snapshot-preview1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fd6fbd9a79829dd1ad0cc20627bf1ed606756a7f77edff7b66b7064f9cb327c6"
-
-[[package]]
-name = "wasi-common"
-version = "0.22.0"
-source = "git+https://github.com/lunatic-solutions/wasmtime.git?branch=lunatic#61a38008ea01f39c9b00b3fd96f3d66d37e13532"
-dependencies = [
- "anyhow",
- "cfg-if 1.0.0",
- "cpu-time",
- "filetime",
- "getrandom",
- "lazy_static",
- "libc",
- "thiserror",
- "tracing",
- "wiggle",
- "winapi",
- "winx",
- "yanix",
-]
 
 [[package]]
 name = "wasm-bindgen"
@@ -2459,15 +2388,6 @@ dependencies = [
 
 [[package]]
 name = "wast"
-version = "22.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fe1220ed7f824992b426a76125a3403d048eaf0f627918e97ade0d9b9d510d20"
-dependencies = [
- "leb128",
-]
-
-[[package]]
-name = "wast"
 version = "33.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1d04fe175c7f78214971293e7d8875673804e736092206a3a4544dbc12811c1b"
@@ -2481,7 +2401,7 @@ version = "1.0.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7ec9c6ee01ae07a26adadcdfed22c7a97e0b8cbee9c06e0e96076ece5aeb5cfe"
 dependencies = [
- "wast 33.0.0",
+ "wast",
 ]
 
 [[package]]
@@ -2514,42 +2434,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "wiggle"
-version = "0.22.0"
-source = "git+https://github.com/lunatic-solutions/wasmtime.git?branch=lunatic#61a38008ea01f39c9b00b3fd96f3d66d37e13532"
-dependencies = [
- "bitflags",
- "thiserror",
- "tracing",
- "wiggle-macro",
-]
-
-[[package]]
-name = "wiggle-generate"
-version = "0.22.0"
-source = "git+https://github.com/lunatic-solutions/wasmtime.git?branch=lunatic#61a38008ea01f39c9b00b3fd96f3d66d37e13532"
-dependencies = [
- "anyhow",
- "heck",
- "proc-macro2",
- "quote",
- "shellexpand",
- "syn",
- "witx",
-]
-
-[[package]]
-name = "wiggle-macro"
-version = "0.22.0"
-source = "git+https://github.com/lunatic-solutions/wasmtime.git?branch=lunatic#61a38008ea01f39c9b00b3fd96f3d66d37e13532"
-dependencies = [
- "quote",
- "syn",
- "wiggle-generate",
- "witx",
-]
-
-[[package]]
 name = "winapi"
 version = "0.3.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2579,39 +2463,6 @@ name = "winapi-x86_64-pc-windows-gnu"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "712e227841d057c1ee1cd2fb22fa7e5a5461ae8e48fa2ca79ec42cfc1931183f"
-
-[[package]]
-name = "winx"
-version = "0.22.0"
-source = "git+https://github.com/lunatic-solutions/wasmtime.git?branch=lunatic#61a38008ea01f39c9b00b3fd96f3d66d37e13532"
-dependencies = [
- "bitflags",
- "cvt",
- "winapi",
-]
-
-[[package]]
-name = "witx"
-version = "0.8.8"
-source = "git+https://github.com/lunatic-solutions/wasmtime.git?branch=lunatic#61a38008ea01f39c9b00b3fd96f3d66d37e13532"
-dependencies = [
- "anyhow",
- "log",
- "thiserror",
- "wast 22.0.0",
-]
-
-[[package]]
-name = "yanix"
-version = "0.22.0"
-source = "git+https://github.com/lunatic-solutions/wasmtime.git?branch=lunatic#61a38008ea01f39c9b00b3fd96f3d66d37e13532"
-dependencies = [
- "bitflags",
- "cfg-if 1.0.0",
- "filetime",
- "libc",
- "tracing",
-]
 
 [[package]]
 name = "zstd"
