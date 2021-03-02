@@ -1,5 +1,6 @@
 use criterion::{criterion_group, criterion_main, Criterion};
-use lunatic_runtime::api::process::{DefaultApi, MemoryChoice};
+use lunatic_runtime::api::default::DefaultApi;
+use lunatic_runtime::api::process::MemoryChoice;
 use lunatic_runtime::linker::LunaticLinker;
 use lunatic_runtime::module::LunaticModule;
 
