@@ -1,7 +1,7 @@
 use std::{convert::TryInto, io};
 use uptown_funk::{Executor, FromWasm, ToWasm};
 
-use super::state::TcpState;
+use super::api::TcpState;
 
 #[derive(Clone)]
 pub struct TcpListener(smol::net::TcpListener);

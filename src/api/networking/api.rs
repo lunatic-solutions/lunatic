@@ -1,10 +1,36 @@
-use super::{resolver::*, state::TcpState, tcp::*};
+use super::{resolver::*, tcp::*};
 use smol::io::{AsyncReadExt, AsyncWriteExt};
 use std::io::{IoSlice, IoSliceMut};
 use uptown_funk::host_functions;
 use uptown_funk::types::Pointer as Ptr;
 
 type OptionTrap = Result<u32, uptown_funk::Trap>;
+
+use super::resolver::Resolver;
+use super::tcp::{TcpListener, TcpStream};
+use uptown_funk::{state::HashMapStore, StateMarker};
+
+use crate::api::channel::api::ChannelState;
+
+pub struct TcpState {
+    channel_state: ChannelState,
+    pub resolvers: HashMapStore<Resolver>,
+    pub listeners: HashMapStore<TcpListener>,
+    pub streams: HashMapStore<TcpStream>,
+}
+
+impl StateMarker for TcpState {}
+
+impl TcpState {
+    pub fn new(channel_state: ChannelState) -> Self {
+        Self {
+            channel_state,
+            resolvers: HashMapStore::new(),
+            listeners: HashMapStore::new(),
+            streams: HashMapStore::new(),
+        }
+    }
+}
 
 #[host_functions(namespace = "lunatic")]
 impl TcpState {

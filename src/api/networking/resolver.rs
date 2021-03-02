@@ -1,7 +1,7 @@
 use std::{cell::RefCell, io, rc::Rc, vec::IntoIter};
 use uptown_funk::{Executor, FromWasm, ToWasm};
 
-use super::state::TcpState;
+use super::api::TcpState;
 
 #[derive(Clone)]
 pub struct Resolver {
