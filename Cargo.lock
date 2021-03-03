@@ -1090,6 +1090,7 @@ dependencies = [
  "wasmtime",
  "wasmtime-runtime",
  "wat",
+ "winapi",
 ]
 
 [[package]]

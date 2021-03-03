@@ -41,6 +41,10 @@ smallvec = "1.5"
 env_logger = "0.8"
 log = "0.4"
 
+[target.'cfg(windows)'.dependencies]
+winapi = "0.3"
+
+
 [dev-dependencies]
 criterion = "0.3"
 rayon = "1.5"
