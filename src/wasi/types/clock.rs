@@ -7,6 +7,17 @@ pub enum Clockid {
     Monotonic = 1,
     ProcessCpuTimeId = 2,
     ThreadCpuTimeId = 3,
+    Unsupported = u32::MAX,
+}
+
+fn to_clockid(num: u32) -> Clockid {
+    match num {
+        0 => Clockid::Realtime,
+        1 => Clockid::Monotonic,
+        2 => Clockid::ProcessCpuTimeId,
+        3 => Clockid::ThreadCpuTimeId,
+        _ => Clockid::Unsupported,
+    }
 }
 
 impl CReprWasmType for Clockid {}
@@ -16,13 +27,6 @@ impl FromWasm for Clockid {
     type State = ();
 
     fn from(_: &mut (), _: &impl Executor, from: u32) -> Result<Self, Trap> {
-        match from {
-            0 => Ok(Clockid::Realtime),
-            1 => Ok(Clockid::Monotonic),
-            2 => Ok(Clockid::ProcessCpuTimeId),
-            3 => Ok(Clockid::ThreadCpuTimeId),
-            // FIXME: can I throw Status::Inval here?
-            _ => Err(Trap::new("Invalid clockid")),
-        }
+        Ok(to_clockid(from))
     }
 }

@@ -283,3 +283,12 @@ impl Into<StatusResult> for Status {
         }
     }
 }
+
+impl Into<StatusTrapResult> for Status {
+    fn into(self) -> StatusTrapResult {
+        match self {
+            Status::Success => Ok(()),
+            s => Err(From::from(s)),
+        }
+    }
+}
