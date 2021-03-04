@@ -1,66 +1,7 @@
-pub mod api;
-
-use std::{cell::RefCell, convert::TryInto, io, rc::Rc, vec::IntoIter};
-
+use std::{convert::TryInto, io};
 use uptown_funk::{Executor, FromWasm, ToWasm};
 
-#[derive(Clone)]
-pub struct Resolver {
-    iter: Rc<RefCell<IntoIter<smol::net::SocketAddr>>>,
-}
-
-impl Resolver {
-    pub async fn resolve(name: &str) -> Result<Self, io::Error> {
-        let resolved = smol::net::resolve(name).await?;
-        Ok(Resolver {
-            iter: Rc::new(RefCell::new(resolved.into_iter())),
-        })
-    }
-
-    pub fn next(&self) -> Option<smol::net::SocketAddr> {
-        self.iter.as_ref().borrow_mut().next()
-    }
-}
-
-impl FromWasm for Resolver {
-    type From = u32;
-    type State = api::TcpState;
-
-    fn from(
-        state: &mut Self::State,
-        _: &impl Executor,
-        resolver_id: u32,
-    ) -> Result<Self, uptown_funk::Trap>
-    where
-        Self: Sized,
-    {
-        match state.resolvers.get(resolver_id) {
-            Some(resolver) => Ok(resolver.clone()),
-            None => Err(uptown_funk::Trap::new("TcpListener not found")),
-        }
-    }
-}
-
-enum ResolverResult {
-    Ok(Resolver),
-    Err(String),
-}
-
-impl ToWasm for ResolverResult {
-    type To = u32;
-    type State = api::TcpState;
-
-    fn to(
-        state: &mut Self::State,
-        _: &impl Executor,
-        result: Self,
-    ) -> Result<u32, uptown_funk::Trap> {
-        match result {
-            ResolverResult::Ok(resolver) => Ok(state.resolvers.add(resolver)),
-            ResolverResult::Err(_err) => Ok(0),
-        }
-    }
-}
+use super::api::TcpState;
 
 #[derive(Clone)]
 pub struct TcpListener(smol::net::TcpListener);
@@ -96,7 +37,7 @@ impl TcpListener {
 
 impl FromWasm for TcpListener {
     type From = u32;
-    type State = api::TcpState;
+    type State = TcpState;
 
     fn from(
         state: &mut Self::State,
@@ -113,14 +54,14 @@ impl FromWasm for TcpListener {
     }
 }
 
-enum TcpListenerResult {
+pub enum TcpListenerResult {
     Ok(TcpListener),
     Err(String),
 }
 
 impl ToWasm for TcpListenerResult {
     type To = u32;
-    type State = api::TcpState;
+    type State = TcpState;
 
     fn to(
         state: &mut Self::State,
@@ -135,7 +76,7 @@ impl ToWasm for TcpListenerResult {
 }
 
 #[derive(Clone)]
-pub struct TcpStream(smol::net::TcpStream);
+pub struct TcpStream(pub smol::net::TcpStream);
 
 impl TcpStream {
     pub async fn connect(addr: &[u8], port: u16) -> Result<Self, io::Error> {
@@ -163,7 +104,7 @@ impl TcpStream {
 
 impl FromWasm for TcpStream {
     type From = u32;
-    type State = api::TcpState;
+    type State = TcpState;
 
     fn from(
         state: &mut Self::State,
@@ -179,14 +120,14 @@ impl FromWasm for TcpStream {
         }
     }
 }
-enum TcpStreamResult {
+pub enum TcpStreamResult {
     Ok(TcpStream),
     Err(String),
 }
 
 impl ToWasm for TcpStreamResult {
     type To = u32;
-    type State = api::TcpState;
+    type State = TcpState;
 
     fn to(
         state: &mut Self::State,

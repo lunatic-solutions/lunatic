@@ -1,6 +1,5 @@
-use crate::networking::TcpListener;
-use crate::networking::TcpStream;
-use crate::process::Process;
+use crate::api::networking::tcp::{TcpListener, TcpStream};
+use crate::api::process::Process;
 
 use std::convert::TryFrom;
 

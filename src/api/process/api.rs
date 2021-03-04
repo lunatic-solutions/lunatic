@@ -1,5 +1,5 @@
 use crate::{
-    channel::{api::ChannelState, ChannelReceiver, Message},
+    api::channel::{api::ChannelState, ChannelReceiver, Message},
     module::LunaticModule,
 };
 
@@ -72,7 +72,7 @@ impl ProcessState {
     // Wait on child process to finish.
     // Returns 0 if process didn't trap, otherwise 1
     async fn join(&self, process: Process) -> u32 {
-        match process.task.await {
+        match process.task().await {
             Ok(_) => 0,
             Err(_) => 1,
         }
@@ -91,6 +91,6 @@ impl ProcessState {
 
     // Detaches process
     async fn detach_process(&self, process: Process) {
-        process.task.detach()
+        process.task().detach()
     }
 }

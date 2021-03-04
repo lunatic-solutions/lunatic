@@ -5,7 +5,9 @@ use wasmer::Module;
 use wasmtime::Module;
 
 use crate::linker::engine;
-use crate::normalisation::patch;
+use normalisation::patch;
+
+pub mod normalisation;
 
 #[derive(Clone)]
 pub struct LunaticModule {

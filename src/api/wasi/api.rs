@@ -20,21 +20,10 @@ type Ptr<T> = types::Pointer<T>;
     target_os = "android",
     target_os = "macos"
 ))]
-mod unix;
+use super::unix::*;
 
 #[cfg(any(target_os = "windows"))]
-mod windows;
-
-#[cfg(any(
-    target_os = "freebsd",
-    target_os = "linux",
-    target_os = "android",
-    target_os = "macos"
-))]
-use unix::*;
-
-#[cfg(any(target_os = "windows"))]
-use windows::*;
+use super::windows::*;
 
 #[host_functions(namespace = "wasi_snapshot_preview1")]
 impl WasiState {

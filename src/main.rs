@@ -4,8 +4,8 @@ use anyhow::Result;
 use easy_parallel::Parallel;
 
 use clap::{crate_version, Clap};
+use lunatic_runtime::api::process::{FunctionLookup, MemoryChoice, Process, EXECUTOR};
 use lunatic_runtime::module;
-use lunatic_runtime::process::{FunctionLookup, MemoryChoice, Process, EXECUTOR};
 
 use std::fs;
 use std::thread;
