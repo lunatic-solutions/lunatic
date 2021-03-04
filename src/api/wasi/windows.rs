@@ -1,6 +1,6 @@
 // NOTE: implementation borrowed from https://github.com/wasmerio/wasmer/blob/0ab8a0de096ffdf89f353dd722a15b5e6255055f/lib/wasi/src/syscalls/windows.rs
 
-use super::super::types::*;
+use super::types::*;
 use std::time::{SystemTime, UNIX_EPOCH};
 use winapi::um::sysinfoapi::GetTickCount64;
 
