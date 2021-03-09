@@ -1,4 +1,5 @@
 use super::types::{Filestat, OpenFlags, Status, StatusResult};
+use std::convert::TryInto;
 use uptown_funk::StateMarker;
 
 use std::{
@@ -98,24 +99,33 @@ impl WasiState {
         if let Some(Some(f)) = self.fds.get(fd as usize) {
             let metadata = fs::metadata(&f.path)?;
             // TODO repeated and not sure how timestamp is actually represented
+            // NOTE try_into cast should work correctly on glibc systems as tv_nsec will be less
+            // than 10^9
+            // see https://www.gnu.org/software/libc/manual/html_node/Time-Types.html
             let atim = metadata
                 .accessed()
                 .unwrap()
                 .duration_since(SystemTime::UNIX_EPOCH)
                 .unwrap()
-                .as_secs();
+                .as_nanos()
+                .try_into()
+                .unwrap();
             let mtim = metadata
                 .modified()
                 .unwrap()
                 .duration_since(SystemTime::UNIX_EPOCH)
                 .unwrap()
-                .as_secs();
+                .as_nanos()
+                .try_into()
+                .unwrap();
             let ctim = metadata
                 .created()
                 .unwrap()
                 .duration_since(SystemTime::UNIX_EPOCH)
                 .unwrap()
-                .as_secs();
+                .as_nanos()
+                .try_into()
+                .unwrap();
             Ok(Filestat {
                 dev: 0,
                 ino: 0,
@@ -133,24 +143,33 @@ impl WasiState {
 
     pub fn filestat_path<P: AsRef<Path>>(&self, abs_path: P) -> Result<Filestat, Status> {
         let metadata = fs::metadata(&abs_path)?;
+        // NOTE try_into cast should work correctly on glibc systems as tv_nsec will be less
+        // than 10^9
+        // see https://www.gnu.org/software/libc/manual/html_node/Time-Types.html
         let atim = metadata
             .accessed()
             .unwrap()
             .duration_since(SystemTime::UNIX_EPOCH)
             .unwrap()
-            .as_secs();
+            .as_nanos()
+            .try_into()
+            .unwrap();
         let mtim = metadata
             .modified()
             .unwrap()
             .duration_since(SystemTime::UNIX_EPOCH)
             .unwrap()
-            .as_secs();
+            .as_nanos()
+            .try_into()
+            .unwrap();
         let ctim = metadata
             .created()
             .unwrap()
             .duration_since(SystemTime::UNIX_EPOCH)
             .unwrap()
-            .as_secs();
+            .as_nanos()
+            .try_into()
+            .unwrap();
         Ok(Filestat {
             dev: 0,
             ino: 0,
