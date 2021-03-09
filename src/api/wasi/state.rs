@@ -205,7 +205,7 @@ impl FileDesc {
     }
 
     fn open_with_flags<P: AsRef<Path>>(path: P, flags: OpenFlags) -> Result<Self, Status> {
-        if fs::metadata(&path)?.is_dir() {
+        if let Ok(true) = fs::metadata(&path).map(|f| f.is_dir()) {
             return Self::open(&path);
         }
 
