@@ -370,14 +370,17 @@ impl WasiState {
 
     fn path_link(
         &self,
-        _fd: Fd,
+        fd: Fd,
         _old_flags: u32,
-        _path: &str,
-        _new_fd: Fd,
-        _new_path: &str,
-    ) -> Status {
-        // Ignore for now
-        Status::Success
+        path: &str,
+        new_fd: Fd,
+        new_path: &str,
+    ) -> StatusResult {
+        // TODO handle flags
+        let old = self.abs_path(fd, path)?;
+        let new = self.abs_path(new_fd, new_path)?;
+        std::fs::hard_link(old, new)?;
+        Status::Success.into()
     }
 
     /// Open a file or directory.
