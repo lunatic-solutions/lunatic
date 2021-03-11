@@ -428,14 +428,17 @@ impl WasiState {
         self.rename(from, to)
     }
 
-    fn path_symlink(&self, _old_path: &str, _fd: Fd, _new_path: &str) -> Status {
-        // Ignore for now
-        Status::Success
+    fn path_symlink(&self, old_path: &str, fd: Fd, new_path: &str) -> StatusResult {
+        let old = self.abs_path(fd, old_path)?;
+        let new = self.abs_path(fd, new_path)?;
+        platform_symlink(old, new)?;
+        Status::Success.into()
     }
 
-    fn path_unlink_file(&self, _fd: Fd, _path: &str) -> Status {
-        // Ignore for now
-        Status::Success
+    fn path_unlink_file(&self, fd: Fd, path: &str) -> StatusResult {
+        let file = self.abs_path(fd, path)?;
+        std::fs::remove_file(file)?;
+        Status::Success.into()
     }
 
     // Socket
