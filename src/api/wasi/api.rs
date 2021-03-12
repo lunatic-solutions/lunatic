@@ -410,14 +410,21 @@ impl WasiState {
 
     fn path_readlink(
         &self,
-        _fd: Fd,
-        _path: &str,
-        _buf: u32,
-        _buf_len: u32,
-        _bufused_ptr: u32,
-    ) -> Status {
-        // Ignore for now
-        Status::Success
+        fd: Fd,
+        path: &str,
+        buf: Ptr<u8>,
+        mut buf_len: Ptr<Size>,
+    ) -> StatusTrapResult {
+        let file = self.abs_path(fd, path)?;
+        let path_buf = std::fs::read_link(file)?;
+        let bytes = path_buf.to_str().unwrap().as_bytes();
+        if bytes.len() >= buf_len.value() as usize {
+            return Status::Overflow.into();
+        }
+        buf.copy_slice(bytes)?;
+        buf_len.set(bytes.len() as u32);
+
+        Status::Success.into()
     }
 
     fn path_remove_directory(&self, fd: Fd, path: &str) -> StatusResult {
