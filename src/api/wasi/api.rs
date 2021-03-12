@@ -370,14 +370,17 @@ impl WasiState {
 
     fn path_link(
         &self,
-        _fd: Fd,
+        fd: Fd,
         _old_flags: u32,
-        _path: &str,
-        _new_fd: Fd,
-        _new_path: &str,
-    ) -> Status {
-        // Ignore for now
-        Status::Success
+        path: &str,
+        new_fd: Fd,
+        new_path: &str,
+    ) -> StatusResult {
+        // TODO handle flags
+        let old = self.abs_path(fd, path)?;
+        let new = self.abs_path(new_fd, new_path)?;
+        std::fs::hard_link(old, new)?;
+        Status::Success.into()
     }
 
     /// Open a file or directory.
@@ -407,14 +410,21 @@ impl WasiState {
 
     fn path_readlink(
         &self,
-        _fd: Fd,
-        _path: &str,
-        _buf: u32,
-        _buf_len: u32,
-        _bufused_ptr: u32,
-    ) -> Status {
-        // Ignore for now
-        Status::Success
+        fd: Fd,
+        path: &str,
+        buf: Ptr<u8>,
+        mut buf_len: Ptr<Size>,
+    ) -> StatusTrapResult {
+        let file = self.abs_path(fd, path)?;
+        let path_buf = std::fs::read_link(file)?;
+        let bytes = path_buf.to_str().unwrap().as_bytes();
+        if bytes.len() >= buf_len.value() as usize {
+            return Status::Overflow.into();
+        }
+        buf.copy_slice(bytes)?;
+        buf_len.set(bytes.len() as u32);
+
+        Status::Success.into()
     }
 
     fn path_remove_directory(&self, fd: Fd, path: &str) -> StatusResult {
@@ -428,14 +438,17 @@ impl WasiState {
         self.rename(from, to)
     }
 
-    fn path_symlink(&self, _old_path: &str, _fd: Fd, _new_path: &str) -> Status {
-        // Ignore for now
-        Status::Success
+    fn path_symlink(&self, old_path: &str, fd: Fd, new_path: &str) -> StatusResult {
+        let old = self.abs_path(fd, old_path)?;
+        let new = self.abs_path(fd, new_path)?;
+        platform_symlink(old, new)?;
+        Status::Success.into()
     }
 
-    fn path_unlink_file(&self, _fd: Fd, _path: &str) -> Status {
-        // Ignore for now
-        Status::Success
+    fn path_unlink_file(&self, fd: Fd, path: &str) -> StatusResult {
+        let file = self.abs_path(fd, path)?;
+        std::fs::remove_file(file)?;
+        Status::Success.into()
     }
 
     // Socket

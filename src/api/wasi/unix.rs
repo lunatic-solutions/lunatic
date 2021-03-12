@@ -5,6 +5,7 @@ use libc::{
     clock_getres, clock_gettime, timespec, CLOCK_MONOTONIC, CLOCK_PROCESS_CPUTIME_ID,
     CLOCK_REALTIME, CLOCK_THREAD_CPUTIME_ID,
 };
+use std::{os::unix::fs::symlink, path::Path};
 
 use uptown_funk::types::Pointer;
 
@@ -67,4 +68,9 @@ pub fn platform_clock_time_get(
     time.set(t_out as Timestamp);
 
     errno_to_status(output).into()
+}
+
+pub fn platform_symlink<P: AsRef<Path>>(old_path: P, new_path: P) -> StatusResult {
+    symlink(old_path, new_path)?;
+    Status::Success.into()
 }

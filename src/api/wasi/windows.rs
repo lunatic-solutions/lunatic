@@ -2,6 +2,11 @@
 
 use super::types::*;
 use std::time::{SystemTime, UNIX_EPOCH};
+use std::{
+    fs::metadata,
+    os::windows::fs::{symlink_dir, symlink_file},
+    path::Path,
+};
 use winapi::um::sysinfoapi::GetTickCount64;
 
 use uptown_funk::{types::Pointer, Trap};
@@ -55,4 +60,13 @@ pub fn platform_clock_time_get(
         };
     time.set(nanos);
     Ok(())
+}
+
+pub fn platform_symlink<P: AsRef<Path>>(old_path: P, new_path: P) -> StatusResult {
+    if metadata(&old_path)?.is_dir() {
+        symlink_dir(old_path, new_path)?
+    } else {
+        symlink_file(old_path, new_path)?
+    };
+    Status::Success.into()
 }
