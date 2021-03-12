@@ -205,13 +205,9 @@ impl FileDesc {
     }
 
     fn open_with_flags<P: AsRef<Path>>(path: P, flags: OpenFlags) -> Result<Self, Status> {
-        if let Ok(true) = fs::metadata(&path).map(|f| f.is_dir()) {
-            return Self::open(&path);
-        }
-
         let file = OpenOptions::new()
             .read(true)
-            .write(true)
+            .write(flags.create())
             .create(flags.create())
             .truncate(flags.truncate())
             .open(&path)?;
