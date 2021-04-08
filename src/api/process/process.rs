@@ -198,7 +198,7 @@ impl Process {
             Ok(ret)
         })?;
 
-        let cts_saver = super::tls::CallThreadStateSave::new();
+        let mut cts_saver = super::tls::CallThreadStateSave::new();
         process.set_pre_post_poll(move || cts_saver.swap());
         let ret = process.await;
         info!(target: "performance", "Total time {:.5} ms.", created_at.elapsed().as_secs_f64() * 1000.0);

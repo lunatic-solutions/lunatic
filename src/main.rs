@@ -12,8 +12,6 @@ use std::thread;
 
 #[cfg(all(feature = "vm-wasmer", target_family = "unix"))]
 use wasmer_vm::traphandlers::setup_unix_sigaltstack;
-#[cfg(all(feature = "vm-wasmtime", target_family = "unix"))]
-use wasmtime_runtime::traphandlers::setup_unix_sigaltstack;
 
 #[derive(Clap)]
 #[clap(version = crate_version!())]
@@ -39,7 +37,7 @@ pub fn run() -> Result<()> {
     Parallel::new()
         .each(0..cpus.into(), |_| {
             // Extend the signal stack on all execution threads
-            #[cfg(target_family = "unix")]
+            #[cfg(all(feature = "vm-wasmer", target_family = "unix"))]
             setup_unix_sigaltstack().unwrap();
             smol::future::block_on(EXECUTOR.run(shutdown.recv()))
         })

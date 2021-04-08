@@ -72,7 +72,7 @@ pub fn engine() -> Engine {
             config.wasm_simd(true);
             config.wasm_reference_types(true);
             config.static_memory_guard_size(8 * 1024 * 1024); // 8 Mb
-            ENGINE = Some(Engine::new(&config));
+            ENGINE = Some(Engine::new(&config).unwrap());
         });
         ENGINE.clone().unwrap()
     }
