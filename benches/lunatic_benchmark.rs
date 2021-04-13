@@ -1,8 +1,8 @@
 use criterion::{criterion_group, criterion_main, Criterion};
 use lunatic_runtime::api::default::DefaultApi;
 use lunatic_runtime::api::process::MemoryChoice;
-use lunatic_runtime::linker::LunaticLinker;
-use lunatic_runtime::module::LunaticModule;
+use lunatic_runtime::linker::*;
+use lunatic_runtime::module::{LunaticModule, Runtime};
 
 fn lunatic_bench(c: &mut Criterion) {
     #[cfg(feature = "vm-wasmtime")]
@@ -35,30 +35,38 @@ fn lunatic_bench(c: &mut Criterion) {
         });
     });
 
-    c.bench_function("lunatic instance creation", |b| {
+    #[cfg(feature = "vm-wasmtime")]
+    c.bench_function("wasmtime lunatic instance creation", |b| {
         let wasm = include_bytes!("start.wasm");
-        let module = LunaticModule::new(wasm.as_ref().into()).unwrap();
+        let module = LunaticModule::new(wasm.as_ref().into(), Runtime::Wasmtime).unwrap();
 
         b.iter(move || {
-            let mut linker =
-                LunaticLinker::<DefaultApi>::new(module.clone(), 0, MemoryChoice::New(None))
-                    .unwrap();
+            let mut linker = WasmtimeLunaticLinker::<DefaultApi>::new(
+                module.clone(),
+                0,
+                MemoryChoice::New(None),
+            )
+            .unwrap();
             linker.add_api(DefaultApi::new(None, module.clone()));
             criterion::black_box(linker.instance().unwrap())
         });
     });
 
-    c.bench_function("lunatic multithreaded instance creation", |b| {
+    #[cfg(feature = "vm-wasmtime")]
+    c.bench_function("wasmtime lunatic multithreaded instance creation", |b| {
         use rayon::prelude::*;
         let wasm = include_bytes!("start.wasm");
-        let module = LunaticModule::new(wasm.as_ref().into()).unwrap();
+        let module = LunaticModule::new(wasm.as_ref().into(), Runtime::Wasmtime).unwrap();
 
         b.iter_custom(move |iters| {
             let start = std::time::Instant::now();
             (0..iters).into_par_iter().for_each(|_i| {
-                let mut linker =
-                    LunaticLinker::<DefaultApi>::new(module.clone(), 0, MemoryChoice::New(None))
-                        .unwrap();
+                let mut linker = WasmtimeLunaticLinker::<DefaultApi>::new(
+                    module.clone(),
+                    0,
+                    MemoryChoice::New(None),
+                )
+                .unwrap();
                 linker.add_api(DefaultApi::new(None, module.clone()));
                 criterion::black_box(linker.instance().unwrap());
             });
