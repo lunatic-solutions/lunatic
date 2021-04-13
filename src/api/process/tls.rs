@@ -2,14 +2,15 @@
 type CallThreadState = wasmer_vm::traphandlers::CallThreadState;
 
 #[cfg(feature = "vm-wasmer")]
-pub struct CallThreadStateSave {
+pub struct CallThreadStateSaveWasmer {
     saved: std::cell::Cell<*const CallThreadState>,
 }
 
-unsafe impl Send for CallThreadStateSave {}
+#[cfg(feature = "vm-wasmer")]
+unsafe impl Send for CallThreadStateSaveWasmer {}
 
 #[cfg(feature = "vm-wasmer")]
-impl CallThreadStateSave {
+impl CallThreadStateSaveWasmer {
     pub fn new() -> Self {
         Self {
             saved: std::cell::Cell::new(std::ptr::null()),
@@ -22,13 +23,13 @@ impl CallThreadStateSave {
 }
 
 #[cfg(feature = "vm-wasmtime")]
-pub struct CallThreadStateSave {
+pub struct CallThreadStateSaveWasmtime {
     saved: Option<wasmtime_runtime::TlsRestore>,
     init: bool,
 }
 
 #[cfg(feature = "vm-wasmtime")]
-impl CallThreadStateSave {
+impl CallThreadStateSaveWasmtime {
     pub fn new() -> Self {
         Self {
             saved: None,
@@ -52,3 +53,6 @@ impl CallThreadStateSave {
         }
     }
 }
+
+#[cfg(feature = "vm-wasmtime")]
+unsafe impl Send for CallThreadStateSaveWasmtime {}

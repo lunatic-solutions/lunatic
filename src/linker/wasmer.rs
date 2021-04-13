@@ -1,5 +1,5 @@
 use crate::api::process::{MemoryChoice, ProcessEnvironment};
-use crate::module::LunaticModule;
+use crate::module::{LunaticModule, Runtime};
 
 use anyhow::Result;
 use uptown_funk::{wasmer::WasmerLinker, HostFunctions};
@@ -34,7 +34,7 @@ impl<T: HostFunctions> LunaticLinker<T> {
         };
 
         let uptown_funk_memory: uptown_funk::memory::Memory = memory.clone().into();
-        let environment = ProcessEnvironment::new(uptown_funk_memory, yielder_ptr);
+        let environment = ProcessEnvironment::new(uptown_funk_memory, yielder_ptr, Runtime::Wasmer);
 
         linker.add("lunatic", "memory", memory.to_export());
 
@@ -49,7 +49,7 @@ impl<T: HostFunctions> LunaticLinker<T> {
     /// Create a new instance and set it up.
     /// This consumes the linker, as each of them is bound to one instance (environment).
     pub fn instance(self) -> Result<Instance> {
-        let instance = Instance::new(self.module.module(), &self.linker)?;
+        let instance = Instance::new(self.module.module().wasmer().unwrap(), &self.linker)?;
         Ok(instance)
     }
 
