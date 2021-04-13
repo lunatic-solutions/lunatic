@@ -74,7 +74,7 @@ impl Process {
             let yielder_ptr =
                 &yielder as *const AsyncYielder<Result<A::Return, Error<A::Return>>> as usize;
 
-            let x: Result<<A as HostFunctions>::Return, Error<A::Return>> = match module.runtime() {
+            match module.runtime() {
                 #[cfg(feature = "vm-wasmtime")]
                 Runtime::Wasmtime => {
                     let mut linker = WasmtimeLunaticLinker::<A>::new(module, yielder_ptr, memory)?;
@@ -138,8 +138,7 @@ impl Process {
 
                     Ok(ret)
                 }
-            };
-            x
+            }
         })?;
 
         #[cfg(feature = "vm-wasmtime")]
