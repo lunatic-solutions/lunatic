@@ -4,8 +4,11 @@ use anyhow::Result;
 use easy_parallel::Parallel;
 
 use clap::{crate_version, Clap};
-use lunatic_runtime::api::process::{FunctionLookup, MemoryChoice, Process, EXECUTOR};
 use lunatic_runtime::module;
+use lunatic_runtime::{
+    api::process::{FunctionLookup, MemoryChoice, Process, EXECUTOR},
+    module::Runtime,
+};
 
 use std::fs;
 use std::thread;
@@ -28,7 +31,7 @@ pub fn run() -> Result<()> {
 
     let wasm = fs::read(opts.input).expect("Can't open .wasm file");
 
-    let module = module::LunaticModule::new(&wasm)?;
+    let module = module::LunaticModule::new(&wasm, Runtime::default())?;
 
     // Set up async runtime
     let cpus = thread::available_concurrency().unwrap();

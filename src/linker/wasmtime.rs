@@ -1,5 +1,5 @@
 use crate::api::process::{MemoryChoice, ProcessEnvironment};
-use crate::module::LunaticModule;
+use crate::module::{LunaticModule, Runtime};
 
 use anyhow::Result;
 use std::sync::Once;
@@ -38,7 +38,7 @@ impl<T: HostFunctions> LunaticLinker<T> {
         // For a detailed explanation why we do this, read the comment on `impl Drop for ProcessEnvironment`.
         let memory_duplicate = unsafe { std::ptr::read(&memory as *const Memory) };
         let memory_duplicate: uptown_funk::memory::Memory = memory_duplicate.into();
-        let environment = ProcessEnvironment::new(memory_duplicate, yielder_ptr);
+        let environment = ProcessEnvironment::new(memory_duplicate, yielder_ptr, Runtime::Wasmtime);
 
         linker.define("lunatic", "memory", memory)?;
 
@@ -52,7 +52,9 @@ impl<T: HostFunctions> LunaticLinker<T> {
     /// Create a new instance and set it up.
     /// This consumes the linker, as each of them is bound to one instance (environment).
     pub fn instance(self) -> Result<Instance> {
-        let instance = self.linker.instantiate(self.module.module())?;
+        let instance = self
+            .linker
+            .instantiate(self.module.module().wasmtime().unwrap())?;
         Ok(instance)
     }
 

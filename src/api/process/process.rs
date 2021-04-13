@@ -5,18 +5,18 @@ use async_wormhole::{
 };
 use lazy_static::lazy_static;
 use smol::{Executor as TaskExecutor, Task};
-use uptown_funk::{memory::Memory, Executor, FromWasm, HostFunctions, ToWasm};
+use uptown_funk::{Executor, FromWasm, HostFunctions, ToWasm};
 
-use crate::module::LunaticModule;
-use crate::{api::channel::ChannelReceiver, linker::LunaticLinker};
+use crate::module::{LunaticModule, Runtime};
+use crate::{api::channel::ChannelReceiver, linker::*};
 
 use log::info;
-use std::mem::ManuallyDrop;
-use std::{future::Future, marker::PhantomData};
+use std::future::Future;
 
 use crate::api::DefaultApi;
 
 use super::api::ProcessState;
+use super::err::*;
 
 lazy_static! {
     pub static ref EXECUTOR: TaskExecutor<'static> = TaskExecutor::new();
@@ -36,93 +36,6 @@ pub enum FunctionLookup {
 pub enum MemoryChoice {
     Existing,
     New(Option<u32>),
-}
-
-/// This structure is captured inside HOST function closures passed to Wasmtime's Linker.
-/// It allows us to expose Lunatic runtime functionalities inside host functions, like
-/// async yields or Instance memory access.
-///
-/// ### Safety
-///
-/// Having a mutable slice of Wasmtime's memory is generally unsafe, but Lunatic always uses
-/// static memories and one memory per instance. This makes it somewhat safe?
-#[cfg_attr(feature = "vm-wasmer", derive(Clone))]
-pub struct ProcessEnvironment<T: Clone> {
-    memory: Memory,
-    yielder: usize,
-    yield_value: PhantomData<T>,
-}
-
-impl<T: Sized + Clone> uptown_funk::Executor for ProcessEnvironment<T> {
-    type Return = T;
-
-    #[inline(always)]
-    fn async_<R, F>(&self, f: F) -> R
-    where
-        F: Future<Output = R>,
-    {
-        // The yielder should not be dropped until this process is done running.
-        let mut yielder = unsafe {
-            std::ptr::read(self.yielder as *const ManuallyDrop<AsyncYielder<Result<T, Error<T>>>>)
-        };
-        yielder.async_suspend(f)
-    }
-
-    fn memory(&self) -> Memory {
-        self.memory.clone()
-    }
-}
-
-// Because of a bug in Wasmtime: https://github.com/bytecodealliance/wasmtime/issues/2583
-// we need to duplicate the Memory in the Linker before storing it in ProcessEnvironment,
-// to not increase the reference count.
-// When we are droping the memory we need to make sure we forget the value to not decrease
-// the reference count.
-// Safety: The ProcessEnvironment has the same lifetime as Memory, so it should be safe to
-// do this.
-#[cfg(feature = "vm-wasmtime")]
-impl<T: Sized + Clone> Drop for ProcessEnvironment<T> {
-    fn drop(&mut self) {
-        let memory = std::mem::replace(&mut self.memory, Memory::Empty);
-        std::mem::forget(memory)
-    }
-}
-
-// For the same reason mentioned on the Drop trait we can't increase the reference count
-// on the Memory when cloning.
-#[cfg(feature = "vm-wasmtime")]
-impl<T: Sized + Clone> Clone for ProcessEnvironment<T> {
-    fn clone(&self) -> Self {
-        Self {
-            memory: unsafe { std::ptr::read(&self.memory as *const Memory) },
-            yielder: self.yielder,
-            yield_value: PhantomData::default(),
-        }
-    }
-}
-
-impl<T: Clone + Sized> ProcessEnvironment<T> {
-    pub fn new(memory: Memory, yielder: usize) -> Self {
-        Self {
-            memory,
-            yielder,
-            yield_value: PhantomData::default(),
-        }
-    }
-}
-
-pub struct Error<T> {
-    pub error: anyhow::Error,
-    pub value: Option<T>,
-}
-
-impl<T, E: Into<anyhow::Error>> From<E> for Error<T> {
-    fn from(error: E) -> Self {
-        Self {
-            error: error.into(),
-            value: None,
-        }
-    }
 }
 
 /// A lunatic process represents an actor.
@@ -154,52 +67,92 @@ impl Process {
         // it walks into the freed stack.
         // The executor will never live on a "virtual" stack, so it's safe to create AsyncWormhole there.
         let created_at = std::time::Instant::now();
+        let runtime = module.runtime();
 
         let stack = OneMbStack::new()?;
         let mut process = AsyncWormhole::new(stack, move |yielder| {
             let yielder_ptr =
                 &yielder as *const AsyncYielder<Result<A::Return, Error<A::Return>>> as usize;
 
-            let mut linker = LunaticLinker::<A>::new(module, yielder_ptr, memory)?;
-            let ret = linker.add_api(api);
-            let instance = linker.instance()?;
+            let x: Result<<A as HostFunctions>::Return, Error<A::Return>> = match module.runtime() {
+                #[cfg(feature = "vm-wasmtime")]
+                Runtime::Wasmtime => {
+                    let mut linker = WasmtimeLunaticLinker::<A>::new(module, yielder_ptr, memory)?;
+                    let ret = linker.add_api(api);
+                    let instance = linker.instance()?;
 
-            match function {
-                FunctionLookup::Name(name) => {
-                    #[cfg(feature = "vm-wasmer")]
-                    let func = instance.exports.get_function(name)?;
-                    #[cfg(feature = "vm-wasmtime")]
-                    let func = instance.get_func(name).ok_or_else(|| {
-                        anyhow::Error::msg(format!("No function {} in wasmtime instance", name))
-                    })?;
+                    match function {
+                        FunctionLookup::Name(name) => {
+                            let func = instance.get_func(name).ok_or_else(|| {
+                                anyhow::Error::msg(format!(
+                                    "No function {} in wasmtime instance",
+                                    name
+                                ))
+                            })?;
 
-                    // Measure how long the function takes for named functions.
-                    let performance_timer = std::time::Instant::now();
-                    func.call(&[]).map_err(|error| Error {
-                        error: error.into(),
-                        value: Some(ret.clone()),
-                    })?;
-                    info!(target: "performance", "Process {} finished in {:.5} ms.", name, performance_timer.elapsed().as_secs_f64() * 1000.0);
+                            // Measure how long the function takes for named functions.
+                            let performance_timer = std::time::Instant::now();
+                            func.call(&[]).map_err(|error| Error {
+                                error: error.into(),
+                                value: Some(ret.clone()),
+                            })?;
+                            info!(target: "performance", "Process {} finished in {:.5} ms.", name, performance_timer.elapsed().as_secs_f64() * 1000.0);
+                        }
+                        FunctionLookup::TableIndex(index) => {
+                            let func =
+                                instance.get_func("lunatic_spawn_by_index").ok_or_else(|| {
+                                    anyhow::Error::msg(
+                                        "No function lunatic_spawn_by_index in wasmtime instance",
+                                    )
+                                })?;
+
+                            func.call(&[(index as i32).into()])?;
+                        }
+                    }
+
+                    Ok(ret)
                 }
-                FunctionLookup::TableIndex(index) => {
-                    #[cfg(feature = "vm-wasmer")]
-                    let func = instance.exports.get_function("lunatic_spawn_by_index")?;
-                    #[cfg(feature = "vm-wasmtime")]
-                    let func = instance.get_func("lunatic_spawn_by_index").ok_or_else(|| {
-                        anyhow::Error::msg(
-                            "No function lunatic_spawn_by_index in wasmtime instance",
-                        )
-                    })?;
+                #[cfg(feature = "vm-wasmer")]
+                Runtime::Wasmer => {
+                    let mut linker = WasmerLunaticLinker::<A>::new(module, yielder_ptr, memory)?;
+                    let ret = linker.add_api(api);
+                    let instance = linker.instance()?;
 
-                    func.call(&[(index as i32).into()])?;
+                    match function {
+                        FunctionLookup::Name(name) => {
+                            let func = instance.exports.get_function(name)?;
+
+                            // Measure how long the function takes for named functions.
+                            let performance_timer = std::time::Instant::now();
+                            func.call(&[]).map_err(|error| Error {
+                                error: error.into(),
+                                value: Some(ret.clone()),
+                            })?;
+                            info!(target: "performance", "Process {} finished in {:.5} ms.", name, performance_timer.elapsed().as_secs_f64() * 1000.0);
+                        }
+                        FunctionLookup::TableIndex(index) => {
+                            let func = instance.exports.get_function("lunatic_spawn_by_index")?;
+                            func.call(&[(index as i32).into()])?;
+                        }
+                    }
+
+                    Ok(ret)
                 }
-            }
-
-            Ok(ret)
+            };
+            x
         })?;
 
-        let mut cts_saver = super::tls::CallThreadStateSave::new();
-        process.set_pre_post_poll(move || cts_saver.swap());
+        #[cfg(feature = "vm-wasmtime")]
+        let mut wasmtime_cts_saver = super::tls::CallThreadStateSaveWasmtime::new();
+        #[cfg(feature = "vm-wasmer")]
+        let wasmer_cts_saver = super::tls::CallThreadStateSaveWasmer::new();
+        process.set_pre_post_poll(move || match runtime {
+            #[cfg(feature = "vm-wasmtime")]
+            Runtime::Wasmtime => wasmtime_cts_saver.swap(),
+            #[cfg(feature = "vm-wasmer")]
+            Runtime::Wasmer => wasmer_cts_saver.swap(),
+        });
+
         let ret = process.await;
         info!(target: "performance", "Total time {:.5} ms.", created_at.elapsed().as_secs_f64() * 1000.0);
         ret
