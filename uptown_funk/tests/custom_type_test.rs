@@ -63,9 +63,9 @@ fn wasmtime_custom_type_add_test() {
     empty.add_to_linker(instance_state, &mut linker);
 
     let instance = linker.instantiate(&module).unwrap();
-    let test = instance.get_func("test").unwrap().get0::<()>().unwrap();
+    let test = instance.get_func("test").unwrap().call(&[]);
 
-    assert_eq!(test().is_ok(), true);
+    assert_eq!(test.is_ok(), true);
 }
 
 #[cfg(feature = "vm-wasmer")]

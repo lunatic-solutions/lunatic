@@ -47,9 +47,9 @@ fn wasmtime_trap_test() {
     empty.add_to_linker(instance_state, &mut linker);
 
     let instance = linker.instantiate(&module).unwrap();
-    let test = instance.get_func("test").unwrap().get0::<()>().unwrap();
+    let test = instance.get_func("test").unwrap().call(&[]);
 
-    match test() {
+    match test {
         Ok(_) => assert_eq!("Did trap", "false"),
         Err(trap) => assert!(trap.to_string().contains("Execution traped")),
     };

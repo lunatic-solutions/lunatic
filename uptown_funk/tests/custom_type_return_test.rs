@@ -58,15 +58,11 @@ fn wasmtime_custom_type_return_test() {
 
     let instance = linker.instantiate(&module).unwrap();
 
-    let test = instance.get_func("test").unwrap().get0::<()>().unwrap();
-    assert_eq!(test().is_ok(), true);
+    let test = instance.get_func("test").unwrap().call(&[]);
+    assert_eq!(test.is_ok(), true);
 
-    let test_mutlivalue = instance
-        .get_func("test_multivalue")
-        .unwrap()
-        .get0::<()>()
-        .unwrap();
-    assert_eq!(test_mutlivalue().is_ok(), true);
+    let test_mutlivalue = instance.get_func("test_multivalue").unwrap().call(&[]);
+    assert_eq!(test_mutlivalue.is_ok(), true);
 }
 
 #[cfg(feature = "vm-wasmer")]

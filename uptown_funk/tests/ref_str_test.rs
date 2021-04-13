@@ -41,15 +41,11 @@ fn wasmtime_ref_str_test() {
     empty.add_to_linker(instance_state, &mut linker);
 
     let instance = linker.instantiate(&module).unwrap();
-    let test_count = instance
-        .get_func("test_count")
-        .unwrap()
-        .get0::<()>()
-        .unwrap();
-    assert_eq!(test_count().is_ok(), true);
+    let test_count = instance.get_func("test_count").unwrap().call(&[]);
+    assert_eq!(test_count.is_ok(), true);
 
-    let test_add = instance.get_func("test_add").unwrap().get0::<()>().unwrap();
-    assert_eq!(test_add().is_ok(), true);
+    let test_add = instance.get_func("test_add").unwrap().call(&[]);
+    assert_eq!(test_add.is_ok(), true);
 }
 
 #[cfg(feature = "vm-wasmer")]

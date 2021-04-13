@@ -42,13 +42,9 @@ fn wasmtime_ioslice_test() {
     empty.add_to_linker(instance_state, &mut linker);
 
     let instance = linker.instantiate(&module).unwrap();
-    let test = instance
-        .get_func("test_mut_ioslice")
-        .unwrap()
-        .get0::<()>()
-        .unwrap();
+    let test = instance.get_func("test_mut_ioslice").unwrap().call(&[]);
 
-    assert_eq!(test().is_ok(), true);
+    assert_eq!(test.is_ok(), true);
 }
 
 #[cfg(feature = "vm-wasmer")]
