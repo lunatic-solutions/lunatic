@@ -1,6 +1,7 @@
 use std::{pin::Pin, rc::Rc, sync::{Arc, RwLock}};
 
 use crate::{FromWasm, HostFunctions, ToWasm};
+use wasmtime::Caller;
 
 #[derive(Debug, Default)]
 pub struct State {
@@ -13,6 +14,11 @@ type CustomReturnType = ();
 
 impl State {
     fn count(&mut self, val: CustomType) -> CustomReturnType {
+        self.counter += val;
+        self.log.push(val);
+    }
+
+    async fn count_async(&mut self, val: CustomType) -> CustomReturnType {
         self.counter += val;
         self.log.push(val);
     }
@@ -35,7 +41,7 @@ impl HostFunctions for State {
 
         let cloned_executor = executor.clone();
         let wrap_state = ret.clone();
-        let closure = move |val| -> Result<(), wasmtime::Trap> {
+        let closure = move |caller: Caller, val| -> Result<(), wasmtime::Trap> {
             //let state = unsafe { std::mem::transmute::<*mut Self, &mut Self>(pointer_self) };
 
             // Transform all closure arguments with `FromWasm`
@@ -50,15 +56,13 @@ impl HostFunctions for State {
                 )?
             };
 
-            wrap_state.write().unwrap().count(2);
-
             // lock read/write depending if &self or &mut self is required
             //let _lock = wrap_state.write().unwrap();
             // Wrap in `executor.async_` if async
             let output = {
                 let mut write_state = wrap_state.write().unwrap();
                 let state = write_state.as_mut().get_mut();
-                Self::count(state, transformed_val)
+                cloned_executor.async_(Self::count_async(state, transformed_val))
             };
             //drop(_lock);
 

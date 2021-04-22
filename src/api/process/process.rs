@@ -81,6 +81,8 @@ impl Process {
                     let ret = linker.add_api(api);
                     let instance = linker.instance()?;
 
+                    instance.store().set(32.0).unwrap();
+
                     match function {
                         FunctionLookup::Name(name) => {
                             let func = instance.get_func(name).ok_or_else(|| {
