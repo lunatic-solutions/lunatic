@@ -13,7 +13,7 @@ use crate::{api::channel::ChannelReceiver, linker::*};
 use log::info;
 use std::future::Future;
 
-use crate::api::DefaultApi;
+//use crate::api::DefaultApi;
 
 use super::api::ProcessState;
 use super::err::*;
@@ -54,7 +54,7 @@ impl Process {
         function: FunctionLookup,
         memory: MemoryChoice,
         api: A,
-    ) -> Result<A::Return, Error<A::Return>>
+    ) -> anyhow::Result<()>
     where
         A: HostFunctions + 'static + Send,
     {
@@ -71,17 +71,16 @@ impl Process {
 
         let stack = OneMbStack::new()?;
         let mut process = AsyncWormhole::new(stack, move |yielder| {
-            let yielder_ptr =
-                &yielder as *const AsyncYielder<Result<A::Return, Error<A::Return>>> as usize;
+            let yielder_ptr = &yielder as *const AsyncYielder<anyhow::Result<()>> as usize;
 
             match module.runtime() {
                 #[cfg(feature = "vm-wasmtime")]
                 Runtime::Wasmtime => {
-                    let mut linker = WasmtimeLunaticLinker::<A>::new(module, yielder_ptr, memory)?;
-                    let ret = linker.add_api(api);
+                    let mut linker = WasmtimeLunaticLinker::new(module, yielder_ptr, memory)?;
+                    let _ret = linker.add_api(api);
                     let instance = linker.instance()?;
 
-                    instance.store().set(32.0).unwrap();
+                    //instance.store().set(32.0).unwrap();
 
                     match function {
                         FunctionLookup::Name(name) => {
@@ -94,10 +93,7 @@ impl Process {
 
                             // Measure how long the function takes for named functions.
                             let performance_timer = std::time::Instant::now();
-                            func.call(&[]).map_err(|error| Error {
-                                error: error.into(),
-                                value: Some(ret.clone()),
-                            })?;
+                            func.call(&[])?;
                             info!(target: "performance", "Process {} finished in {:.5} ms.", name, performance_timer.elapsed().as_secs_f64() * 1000.0);
                         }
                         FunctionLookup::TableIndex(index) => {
@@ -112,7 +108,7 @@ impl Process {
                         }
                     }
 
-                    Ok(ret)
+                    Ok(())
                 }
                 #[cfg(feature = "vm-wasmer")]
                 Runtime::Wasmer => {
@@ -154,9 +150,9 @@ impl Process {
             Runtime::Wasmer => wasmer_cts_saver.swap(),
         });
 
-        let ret = process.await;
+        process.await?;
         info!(target: "performance", "Total time {:.5} ms.", created_at.elapsed().as_secs_f64() * 1000.0);
-        ret
+        Ok(())
     }
 
     /// Creates a new process using the default api.
@@ -166,7 +162,7 @@ impl Process {
         function: FunctionLookup,
         memory: MemoryChoice,
     ) -> Result<(), Error<()>> {
-        let api = DefaultApi::new(context_receiver, module.clone());
+        let api = uptown_funk::wrap::State::default(); //DefaultApi::new(context_receiver, module.clone());
         Process::create_with_api(module, function, memory, api)
             .await
             .ok(); // TODO

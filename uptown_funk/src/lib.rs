@@ -15,11 +15,10 @@ use std::{
 pub use smallvec::SmallVec;
 pub use types::{FromWasm, ToWasm};
 pub use uptown_funk_macro::host_functions;
+use wrap::Wrap;
 
 /// Provides access to the instance execution environment.
 pub trait Executor {
-    type Return: Clone;
-
     /// Execute `Future` f.
     #[cfg(feature = "async")]
     fn async_<R, F>(&self, f: F) -> R
@@ -31,10 +30,8 @@ pub trait Executor {
 }
 
 pub trait HostFunctions: Sized {
-    type Return: Clone + 'static;
-
     #[cfg(feature = "vm-wasmtime")]
-    fn add_to_linker<E>(self, executor: E, linker: &mut wasmtime::Linker) -> Self::Return
+    fn add_to_linker<E>(self, executor: E, linker: &mut wasmtime::Linker) -> Wrap<Self>
     where
         E: Executor + Clone + 'static;
 

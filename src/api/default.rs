@@ -20,10 +20,8 @@ impl DefaultApi {
 }
 
 impl HostFunctions for DefaultApi {
-    type Return = Wrap<State>;
-
     #[cfg(feature = "vm-wasmtime")]
-    fn add_to_linker<E>(self, executor: E, linker: &mut wasmtime::Linker) -> Self::Return
+    fn add_to_linker<E>(self, executor: E, linker: &mut wasmtime::Linker) -> Wrap<Self>
     where
         E: Executor + Clone + 'static,
     {
