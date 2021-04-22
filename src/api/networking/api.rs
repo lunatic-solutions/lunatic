@@ -30,7 +30,7 @@ impl TcpState {
     }
 }
 
-#[host_functions(namespace = "lunatic")]
+//#[host_functions(namespace = "lunatic")]
 impl TcpState {
     async fn resolve(&self, name: &str) -> (u32, ResolverResult) {
         match Resolver::resolve(name).await {

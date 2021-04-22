@@ -1,3 +1,4 @@
+use uptown_funk::wrap::{State, Wrap};
 use uptown_funk::{Executor, HostFunctions};
 
 use crate::api::channel::ChannelReceiver;
@@ -19,22 +20,26 @@ impl DefaultApi {
 }
 
 impl HostFunctions for DefaultApi {
-    type Return = ();
+    type Return = Wrap<State>;
 
     #[cfg(feature = "vm-wasmtime")]
-    fn add_to_linker<E>(self, executor: E, linker: &mut wasmtime::Linker)
+    fn add_to_linker<E>(self, executor: E, linker: &mut wasmtime::Linker) -> Self::Return
     where
         E: Executor + Clone + 'static,
     {
-        let channel_state = channel::api::ChannelState::new(self.context_receiver);
-        let process_state = process::api::ProcessState::new(self.module, channel_state.clone());
-        let networking_state = networking::TcpState::new(channel_state.clone());
-        let wasi_state = wasi::api::WasiState::new();
+        let state = State::default();
+        let s = state.add_to_linker(executor, linker);
+        s
 
-        channel_state.add_to_linker(executor.clone(), linker);
-        process_state.add_to_linker(executor.clone(), linker);
-        networking_state.add_to_linker(executor.clone(), linker);
-        wasi_state.add_to_linker(executor, linker);
+        //let channel_state = channel::api::ChannelState::new(self.context_receiver);
+        //let process_state = process::api::ProcessState::new(self.module, channel_state.clone());
+        //let networking_state = networking::TcpState::new(channel_state.clone());
+        //let wasi_state = wasi::api::WasiState::new();
+
+        //channel_state.add_to_linker(executor.clone(), linker);
+        //process_state.add_to_linker(executor.clone(), linker);
+        //networking_state.add_to_linker(executor.clone(), linker);
+        //wasi_state.add_to_linker(executor, linker);
     }
 
     #[cfg(feature = "vm-wasmer")]
@@ -47,14 +52,14 @@ impl HostFunctions for DefaultApi {
     where
         E: Executor + Clone + 'static,
     {
-        let channel_state = channel::api::ChannelState::new(self.context_receiver);
-        let process_state = process::api::ProcessState::new(self.module, channel_state.clone());
-        let networking_state = networking::TcpState::new(channel_state.clone());
-        let wasi_state = wasi::api::WasiState::new();
+        //let channel_state = channel::api::ChannelState::new(self.context_receiver);
+        //let process_state = process::api::ProcessState::new(self.module, channel_state.clone());
+        //let networking_state = networking::TcpState::new(channel_state.clone());
+        //let wasi_state = wasi::api::WasiState::new();
 
-        channel_state.add_to_wasmer_linker(executor.clone(), linker, store);
-        process_state.add_to_wasmer_linker(executor.clone(), linker, store);
-        networking_state.add_to_wasmer_linker(executor.clone(), linker, store);
-        wasi_state.add_to_wasmer_linker(executor, linker, store);
+        //channel_state.add_to_wasmer_linker(executor.clone(), linker, store);
+        //process_state.add_to_wasmer_linker(executor.clone(), linker, store);
+        //networking_state.add_to_wasmer_linker(executor.clone(), linker, store);
+        //wasi_state.add_to_wasmer_linker(executor, linker, store);
     }
 }

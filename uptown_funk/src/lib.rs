@@ -3,6 +3,7 @@ pub mod state;
 pub mod types;
 #[cfg(feature = "vm-wasmer")]
 pub mod wasmer;
+pub mod wrap;
 
 use std::convert::Into;
 use std::fmt::Debug;

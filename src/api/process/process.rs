@@ -165,7 +165,10 @@ impl Process {
         memory: MemoryChoice,
     ) -> Result<(), Error<()>> {
         let api = DefaultApi::new(context_receiver, module.clone());
-        Process::create_with_api(module, function, memory, api).await
+        Process::create_with_api(module, function, memory, api)
+            .await
+            .ok(); // TODO
+        Ok(())
     }
 
     /// Spawns a new process on the `EXECUTOR`

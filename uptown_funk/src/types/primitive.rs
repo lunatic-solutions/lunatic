@@ -27,6 +27,7 @@ impl FromWasmDirect for u64 {}
 impl FromWasmDirect for i64 {}
 impl FromWasmDirect for f32 {}
 impl FromWasmDirect for f64 {}
+impl FromWasmDirect for () {}
 
 impl ToWasmSimple for bool {
     type To = u32;
@@ -55,3 +56,4 @@ impl ToWasmDirect for u64 {}
 impl ToWasmDirect for i64 {}
 impl ToWasmDirect for f32 {}
 impl ToWasmDirect for f64 {}
+impl ToWasmDirect for () {}
