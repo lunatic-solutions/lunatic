@@ -58,8 +58,8 @@ impl LunaticLinker {
         Ok(instance)
     }
 
-    pub fn add_api<S: HostFunctions>(&mut self, state: S) -> Wrap<S> {
-        state.add_to_linker(self.environment.clone(), &mut self.linker)
+    pub fn add_api<S: HostFunctions>(&mut self, state: Wrap<S>) {
+        S::add_to_linker(state, self.environment.clone(), &mut self.linker);
     }
 }
 

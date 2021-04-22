@@ -87,8 +87,8 @@ impl ProcessEnvironment {
     pub fn new(memory: Memory, yielder: usize, runtime: Runtime) -> Self {
         Self {
             memory,
-            yielder,
             runtime,
+            yielder,
         }
     }
 }

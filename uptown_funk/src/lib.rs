@@ -5,7 +5,9 @@ pub mod types;
 pub mod wasmer;
 pub mod wrap;
 
-use std::convert::Into;
+use wrap::Wrap;
+
+use std::{convert::Into};
 use std::fmt::Debug;
 use std::{
     cell::{Ref, RefCell, RefMut},
@@ -15,7 +17,6 @@ use std::{
 pub use smallvec::SmallVec;
 pub use types::{FromWasm, ToWasm};
 pub use uptown_funk_macro::host_functions;
-use wrap::Wrap;
 
 /// Provides access to the instance execution environment.
 pub trait Executor {
@@ -31,7 +32,7 @@ pub trait Executor {
 
 pub trait HostFunctions: Sized {
     #[cfg(feature = "vm-wasmtime")]
-    fn add_to_linker<E>(self, executor: E, linker: &mut wasmtime::Linker) -> Wrap<Self>
+    fn add_to_linker<E>(api: Wrap<Self>, executor: E, linker: &mut wasmtime::Linker)
     where
         E: Executor + Clone + 'static;
 

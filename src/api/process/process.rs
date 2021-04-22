@@ -54,9 +54,9 @@ impl Process {
         function: FunctionLookup,
         memory: MemoryChoice,
         api: A,
-    ) -> anyhow::Result<()>
+    ) -> anyhow::Result<uptown_funk::wrap::Wrap<A>>
     where
-        A: HostFunctions + 'static + Send,
+        A: HostFunctions + Send + 'static,
     {
         // The creation of AsyncWormhole needs to be wrapped in an async function.
         // AsyncWormhole performs linking between the new and old stack, so that tools like backtrace work correctly.
@@ -69,6 +69,9 @@ impl Process {
         let created_at = std::time::Instant::now();
         let runtime = module.runtime();
 
+        let api = std::sync::Arc::new(std::sync::Mutex::new(api));
+        let ret_api = api.clone();
+
         let stack = OneMbStack::new()?;
         let mut process = AsyncWormhole::new(stack, move |yielder| {
             let yielder_ptr = &yielder as *const AsyncYielder<anyhow::Result<()>> as usize;
@@ -77,7 +80,7 @@ impl Process {
                 #[cfg(feature = "vm-wasmtime")]
                 Runtime::Wasmtime => {
                     let mut linker = WasmtimeLunaticLinker::new(module, yielder_ptr, memory)?;
-                    let _ret = linker.add_api(api);
+                    linker.add_api(api);
                     let instance = linker.instance()?;
 
                     //instance.store().set(32.0).unwrap();
@@ -152,7 +155,7 @@ impl Process {
 
         process.await?;
         info!(target: "performance", "Total time {:.5} ms.", created_at.elapsed().as_secs_f64() * 1000.0);
-        Ok(())
+        Ok(ret_api)
     }
 
     /// Creates a new process using the default api.

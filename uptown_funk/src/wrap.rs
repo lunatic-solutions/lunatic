@@ -1,4 +1,4 @@
-use std::{borrow::BorrowMut, pin::Pin, rc::Rc, sync::{Arc, RwLock}};
+use std::{borrow::BorrowMut, pin::Pin, rc::Rc, sync::{Arc, Mutex, RwLock}};
 
 use crate::{FromWasm, HostFunctions, ToWasm};
 use wasmtime::Caller;
@@ -24,30 +24,28 @@ impl State {
     }
 }
 
-pub type Wrap<T> = Arc<RwLock<Box<T>>>;
+pub type Wrap<T> = Arc<Mutex<T>>;
 
 impl HostFunctions for State {
     #[cfg(feature = "vm-wasmtime")]
-    fn add_to_linker<E>(self, executor: E, linker: &mut wasmtime::Linker) -> Wrap<Self>
+    fn add_to_linker<E>(api: Wrap<Self>, executor: E, linker: &mut wasmtime::Linker)
     where
         E: crate::Executor + Clone + 'static,
     {
         let executor = Rc::new(executor);
-        let boxed = Box::new(self);
-        //let pointer_self = &mut *boxed as *mut Self;
-        let ret = Arc::new(RwLock::new(boxed));
 
         let cloned_executor = executor.clone();
-        let wrap_state = ret.clone();
+
+        let wrap_state = api.clone();
         let closure = move |caller: Caller, val| -> Result<(), wasmtime::Trap> {
+            //caller.store().
             //let state = unsafe { std::mem::transmute::<*mut Self, &mut Self>(pointer_self) };
 
             // Transform all closure arguments with `FromWasm`
             // TODO state needs to be behind the lock
             let transformed_val = {
-                let mut write_state = wrap_state.write().unwrap();
-
-                let state = write_state.as_mut();
+                let mut write_state = wrap_state.lock().unwrap();
+                let state = write_state.borrow_mut();
                 <CustomType as FromWasm<&mut Self>>::from(
                     state,
                     cloned_executor.as_ref(),
@@ -59,17 +57,17 @@ impl HostFunctions for State {
             //let _lock = wrap_state.write().unwrap();
             // Wrap in `executor.async_` if async
             let output = {
-                let mut write_state = wrap_state.write().unwrap();
-                let state = write_state.as_mut();
+                let mut write_state = wrap_state.lock().unwrap();
+                let state = write_state.borrow_mut();
                 cloned_executor.async_(Self::count_async(state, transformed_val))
             };
             //drop(_lock);
 
             let transformed_output = {
-                    let mut write_state = wrap_state.write().unwrap();
-                    let state = write_state.as_mut();
+                    let mut write_state = wrap_state.lock().unwrap();
+                    let state = write_state.borrow_mut();
                     <CustomReturnType as ToWasm<&mut Self>>::to(
-                    state,
+                        state,
                     cloned_executor.as_ref(),
                     output,
                 )?
@@ -79,8 +77,6 @@ impl HostFunctions for State {
         };
 
         linker.func("test", "test", closure).ok();
-
-        ret.clone()
     }
 
     #[cfg(feature = "vm-wasmer")]
