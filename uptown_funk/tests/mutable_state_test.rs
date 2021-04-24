@@ -1,4 +1,4 @@
-use uptown_funk::{host_functions, memory::Memory, Executor, HostFunctions, StateMarker};
+use uptown_funk::{host_functions, memory::Memory, Executor, HostFunctions};
 #[cfg(feature = "vm-wasmer")]
 use wasmer::{self, Exportable};
 #[cfg(feature = "vm-wasmtime")]
@@ -12,8 +12,6 @@ use common::*;
 struct ArrayState {
     vec: Vec<MyNumber>,
 }
-
-impl StateMarker for ArrayState {}
 
 #[host_functions(namespace = "env")]
 impl ArrayState {
@@ -55,12 +53,11 @@ impl std::ops::Add<MyNumber> for MyNumber {
     }
 }
 
-impl uptown_funk::FromWasm for MyNumber {
+impl uptown_funk::FromWasm<&mut ArrayState> for MyNumber {
     type From = u32;
-    type State = ArrayState;
 
     fn from(
-        state: &mut Self::State,
+        state: &mut ArrayState,
         _: &impl Executor,
         index: u32,
     ) -> Result<Self, uptown_funk::Trap> {
@@ -71,12 +68,11 @@ impl uptown_funk::FromWasm for MyNumber {
     }
 }
 
-impl uptown_funk::ToWasm for MyNumber {
+impl uptown_funk::ToWasm<&mut ArrayState> for MyNumber {
     type To = u32;
-    type State = ArrayState;
 
     fn to(
-        state: &mut Self::State,
+        state: &mut ArrayState,
         _: &impl Executor,
         number: Self,
     ) -> Result<u32, uptown_funk::Trap> {

@@ -66,11 +66,16 @@ pub fn transform(
         // CustomStruct, CustomEnum, ...
         Transformation::CustomType => {
             let pat_type_ty = ReplaceArgumentLifetime.fold_type(*pat_type.ty.clone());
-            let input_argument =
-                quote! { #argument_name: <#pat_type_ty as uptown_funk::FromWasm>::From };
+            // Note: for some reason when type is included and it has &Self or &mut Self, closure type
+            // isn't accepeted by Wasmtime. I have removed types.
+            //let input_argument =
+            //    quote! { #argument_name: <#pat_type_ty as uptown_funk::FromWasm<&mut Self>>::From };
+
+            let input_argument = quote! { #argument_name };
+
             let transformation = quote! {
-                let #argument_name = <#pat_type_ty as uptown_funk::FromWasm>::from(
-                    uptown_funk::Convert::convert(&mut state_wrapper.borrow_state_mut()),
+                let #argument_name = <#pat_type_ty as uptown_funk::FromWasm<&mut Self>>::from(
+                    &mut state_wrapper.borrow_state_mut(),
                     state_wrapper.executor(),
                     #argument_name
                 )?;
@@ -84,10 +89,11 @@ pub fn transform(
                 Type::Reference(type_ref) => &type_ref.elem,
                 _ => return Err(arg_error(pat_type_ty)),
             };
-            let input_argument = quote! { #argument_name: <#pat_type_ty_without_ref as uptown_funk::FromWasm>::From };
+            //let input_argument = quote! { #argument_name: <#pat_type_ty_without_ref as uptown_funk::FromWasm<&mut Self>>::From };
+            let input_argument = quote! { #argument_name };
             let transformation = quote! {
-                let mut #argument_name = <#pat_type_ty_without_ref as uptown_funk::FromWasm>::from(
-                    uptown_funk::Convert::convert(&mut state_wrapper.borrow_state_mut()),
+                let mut #argument_name = <#pat_type_ty_without_ref as uptown_funk::FromWasm<&mut Self>>::from(
+                    &mut state_wrapper.borrow_state_mut(),
                     state_wrapper.executor(),
                     #argument_name
                 )?;

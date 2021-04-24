@@ -28,15 +28,10 @@ impl std::ops::Add<MyNumber> for MyNumber {
     }
 }
 
-impl uptown_funk::FromWasm for MyNumber {
+impl uptown_funk::FromWasm<&mut Empty> for MyNumber {
     type From = u32;
-    type State = Empty;
 
-    fn from(
-        _: &mut Self::State,
-        _: &impl Executor,
-        wasm_u32: u32,
-    ) -> Result<Self, uptown_funk::Trap> {
+    fn from(_: &mut Empty, _: &impl Executor, wasm_u32: u32) -> Result<Self, uptown_funk::Trap> {
         Ok(MyNumber {
             value: wasm_u32 as i32,
         })

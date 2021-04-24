@@ -12,6 +12,7 @@ use std::{
 };
 
 pub use smallvec::SmallVec;
+pub use types::{FromWasm, ToWasm};
 pub use uptown_funk_macro::host_functions;
 
 /// Provides access to the instance execution environment.
@@ -45,67 +46,6 @@ pub trait HostFunctions: Sized {
     ) -> Self::Return
     where
         E: Executor + Clone + 'static;
-}
-
-pub trait StateMarker: Sized {}
-pub trait Convert<To: Sized>: Sized {
-    fn convert(&mut self) -> &mut To;
-}
-
-impl<T: StateMarker> Convert<T> for T {
-    fn convert(&mut self) -> &mut T {
-        self
-    }
-}
-
-impl<'a, T: StateMarker> Convert<T> for RefMut<'a, T> {
-    fn convert(&mut self) -> &mut T {
-        self
-    }
-}
-
-static mut NOSTATE: () = ();
-
-impl<T: StateMarker> Convert<()> for T {
-    fn convert(&mut self) -> &mut () {
-        unsafe { &mut NOSTATE }
-    }
-}
-
-impl<'a, T: StateMarker> Convert<()> for RefMut<'a, T> {
-    fn convert(&mut self) -> &mut () {
-        unsafe { &mut NOSTATE }
-    }
-}
-
-impl Convert<()> for () {
-    fn convert(&mut self) -> &mut () {
-        self
-    }
-}
-
-pub trait FromWasm {
-    type From;
-    type State: Convert<Self::State> + Convert<()>;
-
-    fn from(
-        state: &mut Self::State,
-        executor: &impl Executor,
-        from: Self::From,
-    ) -> Result<Self, Trap>
-    where
-        Self: Sized;
-}
-
-pub trait ToWasm {
-    type To;
-    type State: Convert<Self::State> + Convert<()>;
-
-    fn to(
-        state: &mut Self::State,
-        executor: &impl Executor,
-        host_value: Self,
-    ) -> Result<Self::To, Trap>;
 }
 
 pub struct StateWrapper<S, E: Executor> {
@@ -225,11 +165,10 @@ impl Trap<()> {
     }
 }
 
-impl ToWasm for Trap {
+impl<S> ToWasm<S> for Trap {
     type To = ();
-    type State = ();
 
-    fn to(_: &mut (), _: &impl Executor, v: Self) -> Result<(), Trap> {
+    fn to(_: S, _: &impl Executor, v: Self) -> Result<(), Trap> {
         Err(v)
     }
 }

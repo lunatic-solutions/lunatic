@@ -146,15 +146,10 @@ impl Pointer<u8> {
     }
 }
 
-impl<T: WasmType> FromWasm for Pointer<T> {
+impl<T: WasmType, S> FromWasm<S> for Pointer<T> {
     type From = u32;
-    type State = ();
 
-    fn from(
-        _state: &mut Self::State,
-        executor: &impl Executor,
-        wasm_u32: u32,
-    ) -> Result<Self, crate::Trap> {
+    fn from(_: S, executor: &impl Executor, wasm_u32: u32) -> Result<Self, crate::Trap> {
         Ok(Pointer {
             loc: wasm_u32 as usize,
             mem: executor.memory(),

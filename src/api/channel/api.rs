@@ -5,7 +5,7 @@ use super::{
 
 use anyhow::Result;
 use smol::channel::{bounded, unbounded};
-use uptown_funk::{host_functions, state::HashMapStore, StateMarker};
+use uptown_funk::{host_functions, state::HashMapStore};
 
 use std::{
     cell::RefCell,
@@ -33,8 +33,6 @@ pub struct InnerChannelState {
     pub next_message_host_resources: Vec<Resource>,
     last_received_message: Option<Message>,
 }
-
-impl StateMarker for ChannelState {}
 
 impl<'a> ChannelState {
     pub fn new(context_receiver: Option<ChannelReceiver>) -> Self {

@@ -18,11 +18,10 @@ impl Empty {
 
 struct Traps {}
 
-impl uptown_funk::ToWasm for Traps {
+impl uptown_funk::ToWasm<&mut Empty> for Traps {
     type To = u32;
-    type State = Empty;
 
-    fn to(_: &mut Self::State, _: &impl Executor, _: Self) -> Result<u32, uptown_funk::Trap> {
+    fn to(_: &mut Empty, _: &impl Executor, _: Self) -> Result<u32, uptown_funk::Trap> {
         Err(uptown_funk::Trap::new("Execution traped"))
     }
 }

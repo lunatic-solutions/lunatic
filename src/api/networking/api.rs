@@ -8,7 +8,7 @@ type OptionTrap = Result<u32, uptown_funk::Trap>;
 
 use super::resolver::Resolver;
 use super::tcp::{TcpListener, TcpStream};
-use uptown_funk::{state::HashMapStore, StateMarker};
+use uptown_funk::state::HashMapStore;
 
 use crate::api::channel::api::ChannelState;
 
@@ -18,8 +18,6 @@ pub struct TcpState {
     pub listeners: HashMapStore<TcpListener>,
     pub streams: HashMapStore<TcpStream>,
 }
-
-impl StateMarker for TcpState {}
 
 impl TcpState {
     pub fn new(channel_state: ChannelState) -> Self {

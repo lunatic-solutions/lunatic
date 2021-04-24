@@ -1,4 +1,4 @@
-use uptown_funk::{memory::Memory, Executor, StateMarker};
+use uptown_funk::{memory::Memory, Executor};
 
 #[derive(Clone)]
 pub struct SimpleExcutor {
@@ -14,5 +14,3 @@ impl Executor for SimpleExcutor {
 }
 
 pub struct Empty {}
-
-impl StateMarker for Empty {}

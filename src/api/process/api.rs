@@ -7,7 +7,7 @@ use super::{FunctionLookup, MemoryChoice, Process};
 
 use anyhow::Result;
 use smol::{channel::bounded, future::yield_now, Timer};
-use uptown_funk::{host_functions, state::HashMapStore, StateMarker};
+use uptown_funk::{host_functions, state::HashMapStore};
 
 use std::{
     mem::replace,
@@ -19,8 +19,6 @@ pub struct ProcessState {
     channel_state: ChannelState,
     pub processes: HashMapStore<Process>,
 }
-
-impl StateMarker for ProcessState {}
 
 impl ProcessState {
     pub fn new(module: LunaticModule, channel_state: ChannelState) -> Self {

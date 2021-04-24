@@ -170,13 +170,13 @@ impl HasOk for Status {
     }
 }
 
-impl ToWasm for Status {
+impl<S> ToWasm<S> for Status {
     type To = u32;
-    type State = ();
 
+    #[inline]
     fn to(
-        _state: &mut Self::State,
-        _executor: &impl uptown_funk::Executor,
+        _: S,
+        _: &impl uptown_funk::Executor,
         host_value: Self,
     ) -> Result<Self::To, uptown_funk::Trap> {
         Ok(host_value as u32)
@@ -260,11 +260,10 @@ impl From<Status> for StatusTrap {
     }
 }
 
-impl ToWasm for StatusTrap {
+impl<S> ToWasm<S> for StatusTrap {
     type To = u32;
-    type State = ();
 
-    fn to(_: &mut (), _: &impl Executor, v: Self) -> Result<Self::To, Trap> {
+    fn to(_: S, _: &impl Executor, v: Self) -> Result<Self::To, Trap> {
         match v {
             StatusTrap::Status(s) => Ok(s as u32),
             StatusTrap::Trap(t) => Err(t),

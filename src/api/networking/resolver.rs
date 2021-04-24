@@ -21,12 +21,11 @@ impl Resolver {
     }
 }
 
-impl FromWasm for Resolver {
+impl FromWasm<&mut TcpState> for Resolver {
     type From = u32;
-    type State = TcpState;
 
     fn from(
-        state: &mut Self::State,
+        state: &mut TcpState,
         _: &impl Executor,
         resolver_id: u32,
     ) -> Result<Self, uptown_funk::Trap>
@@ -45,15 +44,10 @@ pub enum ResolverResult {
     Err(String),
 }
 
-impl ToWasm for ResolverResult {
+impl ToWasm<&mut TcpState> for ResolverResult {
     type To = u32;
-    type State = TcpState;
 
-    fn to(
-        state: &mut Self::State,
-        _: &impl Executor,
-        result: Self,
-    ) -> Result<u32, uptown_funk::Trap> {
+    fn to(state: &mut TcpState, _: &impl Executor, result: Self) -> Result<u32, uptown_funk::Trap> {
         match result {
             ResolverResult::Ok(resolver) => Ok(state.resolvers.add(resolver)),
             ResolverResult::Err(_err) => Ok(0),

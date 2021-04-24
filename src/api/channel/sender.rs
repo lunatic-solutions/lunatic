@@ -1,4 +1,4 @@
-use super::{api, host_resources::Resource, Message};
+use super::{api::ChannelState, host_resources::Resource, Message};
 
 use smol::channel::{SendError, Sender};
 use uptown_funk::{Executor, FromWasm, ToWasm};
@@ -6,12 +6,11 @@ use uptown_funk::{Executor, FromWasm, ToWasm};
 #[derive(Clone)]
 pub struct ChannelSender(pub Sender<Message>);
 
-impl ToWasm for ChannelSender {
+impl ToWasm<&mut ChannelState> for ChannelSender {
     type To = u32;
-    type State = api::ChannelState;
 
     fn to(
-        state: &mut Self::State,
+        state: &mut ChannelState,
         _: &impl Executor,
         sender: Self,
     ) -> Result<u32, uptown_funk::Trap> {
@@ -19,11 +18,10 @@ impl ToWasm for ChannelSender {
     }
 }
 
-impl FromWasm for ChannelSender {
+impl FromWasm<&mut ChannelState> for ChannelSender {
     type From = u32;
-    type State = api::ChannelState;
 
-    fn from(state: &mut Self::State, _: &impl Executor, id: u32) -> Result<Self, uptown_funk::Trap>
+    fn from(state: &mut ChannelState, _: &impl Executor, id: u32) -> Result<Self, uptown_funk::Trap>
     where
         Self: Sized,
     {
@@ -50,12 +48,11 @@ pub enum ChannelSenderResult {
     Err(String),
 }
 
-impl ToWasm for ChannelSenderResult {
+impl ToWasm<&mut ChannelState> for ChannelSenderResult {
     type To = u32;
-    type State = api::ChannelState;
 
     fn to(
-        state: &mut Self::State,
+        state: &mut ChannelState,
         _: &impl Executor,
         result: Self,
     ) -> Result<u32, uptown_funk::Trap> {

@@ -38,11 +38,10 @@ impl OpenFlags {
     }
 }
 
-impl FromWasm for OpenFlags {
+impl<S> FromWasm<S> for OpenFlags {
     type From = u32;
-    type State = ();
 
-    fn from(_: &mut (), _: &impl Executor, v: u32) -> Result<Self, Trap> {
+    fn from(_: S, _: &impl Executor, v: u32) -> Result<Self, Trap> {
         Ok(OpenFlags(v as u16))
     }
 }
@@ -70,20 +69,18 @@ impl Whence {
 
 impl CReprWasmType for Whence {}
 
-impl ToWasm for Whence {
+impl<S> ToWasm<S> for Whence {
     type To = u32;
-    type State = ();
 
-    fn to(_: &mut (), _: &impl Executor, v: Self) -> Result<u32, Trap> {
+    fn to(_: S, _: &impl Executor, v: Self) -> Result<u32, Trap> {
         Ok(v as u32)
     }
 }
 
-impl FromWasm for Whence {
+impl<S> FromWasm<S> for Whence {
     type From = u32;
-    type State = ();
 
-    fn from(_: &mut (), _: &impl Executor, from: u32) -> Result<Self, Trap> {
+    fn from(_: S, _: &impl Executor, from: u32) -> Result<Self, Trap> {
         match from {
             0 => Ok(Whence::Start),
             1 => Ok(Whence::Current),
@@ -116,20 +113,18 @@ pub enum Filetype {
 
 impl CReprWasmType for Filetype {}
 
-impl ToWasm for Filetype {
+impl<S> ToWasm<S> for Filetype {
     type To = u32;
-    type State = ();
 
-    fn to(_: &mut (), _: &impl Executor, v: Self) -> Result<u32, Trap> {
+    fn to(_: S, _: &impl Executor, v: Self) -> Result<u32, Trap> {
         Ok(v as u32)
     }
 }
 
-impl FromWasm for Filetype {
+impl<S> FromWasm<S> for Filetype {
     type From = u32;
-    type State = ();
 
-    fn from(_: &mut (), _: &impl Executor, from: u32) -> Result<Self, Trap> {
+    fn from(_: S, _: &impl Executor, from: u32) -> Result<Self, Trap> {
         match from {
             0 => Ok(Filetype::Unknown),
             1 => Ok(Filetype::BlockDevice),
@@ -205,20 +200,18 @@ impl Fdflags {
     }
 }
 
-impl FromWasm for Fdflags {
+impl<S> FromWasm<S> for Fdflags {
     type From = u32;
-    type State = ();
 
-    fn from(_: &mut (), _: &impl Executor, v: u32) -> Result<Self, Trap> {
+    fn from(_: S, _: &impl Executor, v: u32) -> Result<Self, Trap> {
         Ok(Fdflags(v as u16))
     }
 }
 
-impl ToWasm for Fdflags {
+impl<S> ToWasm<S> for Fdflags {
     type To = u32;
-    type State = ();
 
-    fn to(_: &mut (), _: &impl Executor, v: Self) -> Result<u32, Trap> {
+    fn to(_: S, _: &impl Executor, v: Self) -> Result<u32, Trap> {
         Ok(v.0 as u32)
     }
 }

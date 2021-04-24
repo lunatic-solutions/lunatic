@@ -22,11 +22,10 @@ fn to_clockid(num: u32) -> Clockid {
 
 impl CReprWasmType for Clockid {}
 
-impl FromWasm for Clockid {
+impl<S> FromWasm<S> for Clockid {
     type From = u32;
-    type State = ();
 
-    fn from(_: &mut (), _: &impl Executor, from: u32) -> Result<Self, Trap> {
+    fn from(_: S, _: &impl Executor, from: u32) -> Result<Self, Trap> {
         Ok(to_clockid(from))
     }
 }

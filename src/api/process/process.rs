@@ -178,12 +178,11 @@ impl Process {
     }
 }
 
-impl ToWasm for Process {
+impl ToWasm<&mut ProcessState> for Process {
     type To = u32;
-    type State = ProcessState;
 
     fn to(
-        state: &mut Self::State,
+        state: &mut ProcessState,
         _: &impl Executor,
         process: Self,
     ) -> Result<u32, uptown_funk::Trap> {
@@ -191,12 +190,11 @@ impl ToWasm for Process {
     }
 }
 
-impl FromWasm for Process {
+impl FromWasm<&mut ProcessState> for Process {
     type From = u32;
-    type State = ProcessState;
 
     fn from(
-        state: &mut Self::State,
+        state: &mut ProcessState,
         _: &impl Executor,
         process_id: u32,
     ) -> Result<Self, uptown_funk::Trap>

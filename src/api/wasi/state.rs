@@ -1,6 +1,5 @@
 use super::types::{Filestat, OpenFlags, Status, StatusResult};
 use std::convert::TryInto;
-use uptown_funk::StateMarker;
 
 use std::{
     fs,
@@ -188,8 +187,6 @@ impl WasiState {
         Ok(())
     }
 }
-
-impl StateMarker for WasiState {}
 
 #[derive(Debug)]
 struct FileDesc {

@@ -28,11 +28,10 @@ struct MyNumber {
     value: i32,
 }
 
-impl uptown_funk::ToWasm for MyNumber {
+impl uptown_funk::ToWasm<&mut Empty> for MyNumber {
     type To = u32;
-    type State = Empty;
 
-    fn to(_: &mut Self::State, _: &impl Executor, number: Self) -> Result<u32, uptown_funk::Trap> {
+    fn to(_: &mut Empty, _: &impl Executor, number: Self) -> Result<u32, uptown_funk::Trap> {
         Ok(number.value as u32)
     }
 }

@@ -106,14 +106,14 @@ pub fn transform(
                                 return_argument_to_input_transformation.push(quote! {
                                     let result_ptr = {
                                         let memory = memory.as_mut_slice();
-                                        let memory: &mut [<#type_path as uptown_funk::ToWasm>::To]
+                                        let memory: &mut [<#type_path as uptown_funk::ToWasm<&mut Self>>::To]
                                             = unsafe { std::mem::transmute(memory) };
                                         memory.get_mut(
-                                            #varname as usize / std::mem::size_of::<<#type_path as uptown_funk::ToWasm>::To>())
+                                            #varname as usize / std::mem::size_of::<<#type_path as uptown_funk::ToWasm<&mut Self>>::To>())
                                     };
                                     let result_ptr = uptown_funk::Trap::try_option(result_ptr)?;
-                                    let result_ = <#type_path as uptown_funk::ToWasm>::to(
-                                        uptown_funk::Convert::convert(&mut state_wrapper.borrow_state_mut()),
+                                    let result_ = <#type_path as uptown_funk::ToWasm<&mut Self>>::to(
+                                        &mut state_wrapper.borrow_state_mut(),
                                         state_wrapper.executor(),
                                         result.#index
                                     )?;
@@ -167,11 +167,11 @@ fn first_output(type_path: &TypePath) -> Result<(TokenStream2, TokenStream2), To
             return Ok((return_argument, host_to_guest_transformation));
         } else {
             // Returning CustomType
-            let return_argument = quote! { <#ident as uptown_funk::ToWasm>::To };
+            let return_argument = quote! { <#ident as uptown_funk::ToWasm<&mut Self>>::To };
             let host_to_guest_transformation = quote! {
-                | output: #ident | -> Result<<#ident as uptown_funk::ToWasm>::To, uptown_funk::Trap> {
-                    <#ident as uptown_funk::ToWasm>::to(
-                        uptown_funk::Convert::convert(&mut state_wrapper.borrow_state_mut()),
+                | output: #ident | -> Result<<#ident as uptown_funk::ToWasm<&mut Self>>::To, uptown_funk::Trap> {
+                    <#ident as uptown_funk::ToWasm<&mut Self>>::to(
+                        &mut state_wrapper.borrow_state_mut(),
                         state_wrapper.executor(),
                         output
                     )
