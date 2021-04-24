@@ -1,6 +1,6 @@
-use std::{borrow::BorrowMut, pin::Pin, rc::Rc, sync::{Arc, Mutex, RwLock}};
+use std::{borrow::BorrowMut, rc::Rc, sync::{Arc, Mutex}};
 
-use crate::{FromWasm, HostFunctions, ToWasm};
+use crate::{Executor, FromWasm, HostFunctions, ToWasm};
 use wasmtime::Caller;
 
 #[derive(Debug, Default)]
@@ -9,18 +9,29 @@ pub struct State {
     log: Vec<u32>,
 }
 
-type CustomType = u32;
+struct CustomType(u32);
+
+impl FromWasm<&Arc<Mutex<State>>> for CustomType {
+    type From = u32;
+
+    fn from(state: &Arc<Mutex<State>>, _: &impl Executor, from: u32) -> Result<Self, crate::Trap>
+    where
+        Self: Sized {
+            Ok(CustomType(from + state.lock().unwrap().log.len() as u32))
+    }
+}
+
 type CustomReturnType = ();
 
 impl State {
     fn count(&mut self, val: CustomType) -> CustomReturnType {
-        self.counter += val;
-        self.log.push(val);
+        self.counter += val.0;
+        self.log.push(val.0);
     }
 
     async fn count_async(&mut self, val: CustomType) -> CustomReturnType {
-        self.counter += val;
-        self.log.push(val);
+        self.counter += val.0;
+        self.log.push(val.0);
     }
 }
 
@@ -37,37 +48,24 @@ impl HostFunctions for State {
         let cloned_executor = executor.clone();
 
         let wrap_state = api.clone();
-        let closure = move |caller: Caller, val| -> Result<(), wasmtime::Trap> {
-            //caller.store().
-            //let state = unsafe { std::mem::transmute::<*mut Self, &mut Self>(pointer_self) };
-
-            // Transform all closure arguments with `FromWasm`
-            // TODO state needs to be behind the lock
+        let closure = move |_caller: Caller, val| -> Result<(), wasmtime::Trap> {
             let transformed_val = {
-                let mut write_state = wrap_state.lock().unwrap();
-                let state = write_state.borrow_mut();
-                <CustomType as FromWasm<&mut Self>>::from(
-                    state,
+                <CustomType as FromWasm<&Wrap<Self>>>::from(
+                    &wrap_state,
                     cloned_executor.as_ref(),
                     val,
                 )?
             };
 
-            // lock read/write depending if &self or &mut self is required
-            //let _lock = wrap_state.write().unwrap();
-            // Wrap in `executor.async_` if async
             let output = {
                 let mut write_state = wrap_state.lock().unwrap();
                 let state = write_state.borrow_mut();
                 cloned_executor.async_(Self::count_async(state, transformed_val))
             };
-            //drop(_lock);
 
             let transformed_output = {
-                    let mut write_state = wrap_state.lock().unwrap();
-                    let state = write_state.borrow_mut();
-                    <CustomReturnType as ToWasm<&mut Self>>::to(
-                        state,
+                    <CustomReturnType as ToWasm<&Wrap<Self>>>::to(
+                        &wrap_state,
                     cloned_executor.as_ref(),
                     output,
                 )?
