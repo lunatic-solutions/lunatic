@@ -1,5 +1,5 @@
 [package]
-name = "channel"
+name = "rust"
 version = "0.1.0"
 edition = "2018"
 
@@ -7,3 +7,4 @@ edition = "2018"
 
 [dependencies]
 lunatic = "0.3"
+easybench = "1.1"
