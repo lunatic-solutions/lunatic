@@ -40,21 +40,31 @@ pub enum MemoryChoice {
 
 /// A lunatic process represents an actor.
 pub struct Process {
-    task: Task<Result<(), Error<()>>>,
+    task: Task<Result<()>>,
+}
+
+pub struct Proc<F>
+where
+    F: Future<Output = Result<()>> + Send + 'static,
+{
+    pub future: F,
 }
 
 impl Process {
-    pub fn task(self) -> Task<Result<(), Error<()>>> {
+    pub fn task(self) -> Task<Result<()>> {
         self.task
     }
 
     /// Creates a new process with a custom API.
-    pub async fn create_with_api<A>(
+    pub fn create_with_api<A>(
         module: LunaticModule,
         function: FunctionLookup,
         memory: MemoryChoice,
         api: A,
-    ) -> anyhow::Result<uptown_funk::wrap::Wrap<A>>
+    ) -> anyhow::Result<(
+        uptown_funk::wrap::Wrap<A>,
+        Proc<impl Future<Output = Result<()>>>,
+    )>
     where
         A: HostFunctions + Send + 'static,
     {
@@ -153,9 +163,9 @@ impl Process {
             Runtime::Wasmer => wasmer_cts_saver.swap(),
         });
 
-        process.await?;
+        let p = Proc { future: process };
         info!(target: "performance", "Total time {:.5} ms.", created_at.elapsed().as_secs_f64() * 1000.0);
-        Ok(ret_api)
+        Ok((ret_api, p))
     }
 
     /// Creates a new process using the default api.
@@ -164,18 +174,16 @@ impl Process {
         module: LunaticModule,
         function: FunctionLookup,
         memory: MemoryChoice,
-    ) -> Result<(), Error<()>> {
+    ) -> Result<()> {
         let api = uptown_funk::wrap::State::default(); //DefaultApi::new(context_receiver, module.clone());
-        Process::create_with_api(module, function, memory, api)
-            .await
-            .ok(); // TODO
-        Ok(())
+        let (s, p) = Process::create_with_api(module, function, memory, api)?;
+        p.future.await
     }
 
     /// Spawns a new process on the `EXECUTOR`
     pub fn spawn<Fut>(future: Fut) -> Self
     where
-        Fut: Future<Output = Result<(), Error<()>>> + Send + 'static,
+        Fut: Future<Output = Result<()>> + Send + 'static,
     {
         let task = EXECUTOR.spawn(future);
         Self { task }
