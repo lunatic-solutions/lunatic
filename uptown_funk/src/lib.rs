@@ -3,9 +3,8 @@ pub mod state;
 pub mod types;
 #[cfg(feature = "vm-wasmer")]
 pub mod wasmer;
-pub mod wrap;
 
-use std::{convert::Into};
+use std::convert::Into;
 use std::fmt::Debug;
 use std::{
     cell::{Ref, RefCell, RefMut},
@@ -179,6 +178,12 @@ impl<S> ToWasm<S> for Trap {
 impl From<Trap> for wasmtime::Trap {
     fn from(trap: Trap) -> Self {
         wasmtime::Trap::new(trap.message)
+    }
+}
+
+impl<S> From<std::sync::PoisonError<S>> for Trap {
+    fn from(_: std::sync::PoisonError<S>) -> Self {
+        Trap::new("Poison error accessing state")
     }
 }
 

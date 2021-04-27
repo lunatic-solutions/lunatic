@@ -1,4 +1,3 @@
-use uptown_funk::wrap::{State, Wrap};
 use uptown_funk::{Executor, HostFunctions};
 
 use crate::api::channel::ChannelReceiver;
@@ -20,24 +19,29 @@ impl DefaultApi {
 }
 
 impl HostFunctions for DefaultApi {
+    type Return = ();
+    type Wrap = Self;
+
+    fn split(self) -> (Self::Return, Self::Wrap) {
+        ((), self)
+    }
+
     #[cfg(feature = "vm-wasmtime")]
-    fn add_to_linker<E>(self, executor: E, linker: &mut wasmtime::Linker) -> Wrap<Self>
+    fn add_to_linker<E>(api: Self, executor: E, linker: &mut wasmtime::Linker)
     where
         E: Executor + Clone + 'static,
     {
-        let state = State::default();
-        let s = state.add_to_linker(executor, linker);
-        s
-
         //let channel_state = channel::api::ChannelState::new(self.context_receiver);
         //let process_state = process::api::ProcessState::new(self.module, channel_state.clone());
         //let networking_state = networking::TcpState::new(channel_state.clone());
-        //let wasi_state = wasi::api::WasiState::new();
 
         //channel_state.add_to_linker(executor.clone(), linker);
         //process_state.add_to_linker(executor.clone(), linker);
         //networking_state.add_to_linker(executor.clone(), linker);
-        //wasi_state.add_to_linker(executor, linker);
+
+        let (_, state) = wasi::api::WasiState::new().split();
+        wasi::api::WasiState::add_to_linker(state, executor, linker);
+
     }
 
     #[cfg(feature = "vm-wasmer")]
@@ -60,4 +64,5 @@ impl HostFunctions for DefaultApi {
         //networking_state.add_to_wasmer_linker(executor.clone(), linker, store);
         //wasi_state.add_to_wasmer_linker(executor, linker, store);
     }
+
 }

@@ -170,7 +170,7 @@ impl Process {
         function: FunctionLookup,
         memory: MemoryChoice,
     ) -> Result<()> {
-        let api = uptown_funk::wrap::State::default(); //DefaultApi::new(context_receiver, module.clone());
+        let api = crate::api::default::DefaultApi::new(context_receiver, module.clone());
         let (_, p) = Process::create_with_api(module, function, memory, api)?;
         p.future.await
     }

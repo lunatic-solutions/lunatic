@@ -15,6 +15,8 @@ impl Fold for ReplaceArgumentLifetime {
     }
 }
 
+use crate::attribute::SyncType;
+
 use super::arg_error;
 
 /// Takes the input arguments part of the host function's signature and returns wrappers around higher
@@ -36,6 +38,7 @@ use super::arg_error;
 /// 6. **Custom types** need to implement uptown_funk::FromWasm.
 /// 7. All other patterns will result in a compilation error.
 pub fn transform(
+    sync: SyncType,
     pat_type: &PatType,
 ) -> Result<(TokenStream2, TokenStream2, TokenStream2), TokenStream> {
     let argument_name = match &*pat_type.pat {
@@ -55,6 +58,15 @@ pub fn transform(
     };
 
     let pat_type_ty = &*pat_type.ty;
+    let from_wasm_generic_type = match sync {
+        SyncType::None => quote! { &mut Self::Wrap },
+        SyncType::Mutex => quote! { &Self::Wrap }
+    };
+
+    let from_wasm_state_param = match sync {
+        SyncType::None => quote! { &mut state.borrow_mut() },
+        SyncType::Mutex => quote! { &state }
+    };
 
     match argument_transformation {
         // i32, i64, ...
@@ -68,15 +80,12 @@ pub fn transform(
             let pat_type_ty = ReplaceArgumentLifetime.fold_type(*pat_type.ty.clone());
             // Note: for some reason when type is included and it has &Self or &mut Self, closure type
             // isn't accepeted by Wasmtime. I have removed types.
-            //let input_argument =
-            //    quote! { #argument_name: <#pat_type_ty as uptown_funk::FromWasm<&mut Self>>::From };
-
             let input_argument = quote! { #argument_name };
 
             let transformation = quote! {
                 let #argument_name = {
-                    <#pat_type_ty as uptown_funk::FromWasm<&Self::Wrap>>::from(
-                        &state,
+                    <#pat_type_ty as uptown_funk::FromWasm<#from_wasm_generic_type>>::from(
+                        #from_wasm_state_param,
                         cloned_executor.as_ref(),
                         #argument_name
                     )?
@@ -86,17 +95,17 @@ pub fn transform(
             Ok((input_argument, transformation, host_call_argument))
         }
         // &CustomStruct, &mut CustomEnum, ...
+        // TODO is this case needed?
         Transformation::RefCustomType => {
             let pat_type_ty_without_ref = match pat_type_ty {
                 Type::Reference(type_ref) => &type_ref.elem,
                 _ => return Err(arg_error(pat_type_ty)),
             };
-            //let input_argument = quote! { #argument_name: <#pat_type_ty_without_ref as uptown_funk::FromWasm<&mut Self>>::From };
             let input_argument = quote! { #argument_name };
             let transformation = quote! {
                 let mut #argument_name = {
-                    <#pat_type_ty_without_ref as uptown_funk::FromWasm<&mut Self>>::from(
-                        &state,
+                    <#pat_type_ty_without_ref as uptown_funk::FromWasm<#from_wasm_generic_type>>::from(
+                        #from_wasm_state_param,
                         cloned_executor.as_ref(),
                         #argument_name
                     )?

@@ -10,12 +10,19 @@ use proc_macro::TokenStream;
 use quote::quote;
 use syn::{parse_macro_input, AttributeArgs, ImplItem::Method, ItemImpl};
 
+use crate::attribute::SyncType;
+
 #[proc_macro_attribute]
 pub fn host_functions(attr: TokenStream, item: TokenStream) -> TokenStream {
     // Figure out namespace from attribute string
     let attribute = parse_macro_input!(attr as AttributeArgs);
     let namespace = match attribute::get_namespace(&attribute) {
         Ok(namespace) => namespace,
+        Err(error) => return error,
+    };
+
+    let sync = match attribute::get_sync(&attribute) {
+        Ok(sync) => sync,
         Err(error) => return error,
     };
 
@@ -32,13 +39,21 @@ pub fn host_functions(attr: TokenStream, item: TokenStream) -> TokenStream {
     #[cfg(feature = "vm-wasmtime")]
     for item in implementation.items.iter() {
         match item {
-            Method(method) => match wasmtime_method::wrap(namespace, method) {
+            Method(method) => match wasmtime_method::wrap(namespace, sync, method) {
                 Ok(wrapper) => wasmtime_method_wrappers.push(wrapper),
                 Err(error) => return error,
             },
             _ => (), // Ignore other items in the implementation
         }
     }
+
+    let prepare_state = match sync {
+        SyncType::None => quote! {
+            let api = ::std::rc::Rc::new(::std::cell::RefCell::new(api));
+        },
+        SyncType::Mutex => quote! {}
+    };
+
     #[allow(unused_variables)]
     let wasmtime_expanded = quote! {};
     #[cfg(feature = "vm-wasmtime")]
@@ -48,6 +63,7 @@ pub fn host_functions(attr: TokenStream, item: TokenStream) -> TokenStream {
                 E: uptown_funk::Executor + 'static
             {
                 let executor = ::std::rc::Rc::new(executor);
+                #prepare_state;
                 #(#wasmtime_method_wrappers)*
             }
     };
@@ -84,10 +100,16 @@ pub fn host_functions(attr: TokenStream, item: TokenStream) -> TokenStream {
         }
     };
 
-    let expanded = quote! {
-        #implementation
- 
-        impl uptown_funk::HostFunctions for #self_ty {
+    let assoc_types_and_split = match sync {
+        SyncType::None => quote! {
+            type Return = ();
+            type Wrap = Self;
+
+            fn split(self) -> (Self::Return, Self::Wrap) {
+                ((), self)
+            }
+        },
+        SyncType::Mutex => quote! {
             type Return = ::std::sync::Arc<::std::sync::Mutex<Self>>;
             type Wrap = ::std::sync::Arc<::std::sync::Mutex<Self>>;
 
@@ -95,6 +117,14 @@ pub fn host_functions(attr: TokenStream, item: TokenStream) -> TokenStream {
                 let s = ::std::sync::Arc::new(::std::sync::Mutex::new(self));
                 (s.clone(), s)
             }
+        }
+    };
+
+    let expanded = quote! {
+        #implementation
+ 
+        impl uptown_funk::HostFunctions for #self_ty {
+            #assoc_types_and_split
 
             #wasmtime_expanded
             #wasmer_expanded

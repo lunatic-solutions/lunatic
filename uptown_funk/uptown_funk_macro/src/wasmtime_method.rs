@@ -3,9 +3,9 @@ use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
 use syn::{ImplItemMethod, LitStr};
 
-use crate::signature::{Transform, transform};
+use crate::{attribute::SyncType, signature::{Transform, transform}};
 
-pub fn wrap(namespace: &LitStr, method: &ImplItemMethod) -> Result<TokenStream2, TokenStream> {
+pub fn wrap(namespace: &LitStr, sync: SyncType, method: &ImplItemMethod) -> Result<TokenStream2, TokenStream> {
     let signature = &method.sig;
     let method_name = &signature.ident;
     let method_name_as_str = LitStr::new(&method_name.to_string(), method_name.span());
@@ -18,9 +18,19 @@ pub fn wrap(namespace: &LitStr, method: &ImplItemMethod) -> Result<TokenStream2,
 
     let Transform {
         input_sig, output_sig, input_trans, call_args, output_trans,
-    } = match transform(&signature) {
+    } = match transform(sync, &signature) {
         Ok(result) => result,
         Err(error) => return Err(error),
+    };
+
+    let lock_state = match sync {
+        SyncType::None => quote! {},
+        SyncType::Mutex => quote! { let mut state = state.lock().map_err(|e| ::wasmtime::Trap::new("State lock poisoned") )?; } // TODO !!!!
+    };
+
+    let pass_state = match sync {
+        SyncType::None => quote! { &mut state.borrow_mut() },
+        SyncType::Mutex => quote! { &mut state }
     };
 
     let result = quote! {
@@ -32,9 +42,8 @@ pub fn wrap(namespace: &LitStr, method: &ImplItemMethod) -> Result<TokenStream2,
             #input_trans;
 
             let output = {
-                // TODO assumes Mutex
-                let state = &mut state.lock().unwrap();
-                let result = Self::#method_name(state, #call_args);
+                #lock_state;
+                let result = Self::#method_name(#pass_state, #call_args);
                 #maybe_async(result)
             };
 
