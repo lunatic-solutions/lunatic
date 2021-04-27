@@ -5,8 +5,6 @@ pub mod types;
 pub mod wasmer;
 pub mod wrap;
 
-use wrap::Wrap;
-
 use std::{convert::Into};
 use std::fmt::Debug;
 use std::{
@@ -31,8 +29,13 @@ pub trait Executor {
 }
 
 pub trait HostFunctions: Sized {
+    type Return;
+    type Wrap: Send + Sync;
+
+    fn split(self) -> (Self::Return, Self::Wrap);
+
     #[cfg(feature = "vm-wasmtime")]
-    fn add_to_linker<E>(api: Wrap<Self>, executor: E, linker: &mut wasmtime::Linker)
+    fn add_to_linker<E>(api: Self::Wrap, executor: E, linker: &mut wasmtime::Linker)
     where
         E: Executor + Clone + 'static;
 

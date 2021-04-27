@@ -3,7 +3,7 @@ use crate::module::{LunaticModule, Runtime};
 
 use anyhow::Result;
 use std::sync::Once;
-use uptown_funk::{wrap::Wrap, HostFunctions};
+use uptown_funk::HostFunctions;
 use wasmtime::{Config, Engine, Instance, Limits, Linker, Memory, MemoryType, Store};
 
 /// Contains data necessary to create Wasmtime instances suitable to be used with Lunatic processes.
@@ -58,7 +58,7 @@ impl LunaticLinker {
         Ok(instance)
     }
 
-    pub fn add_api<S: HostFunctions>(&mut self, state: Wrap<S>) {
+    pub fn add_api<S: HostFunctions>(&mut self, state: S::Wrap) {
         S::add_to_linker(state, self.environment.clone(), &mut self.linker);
     }
 }

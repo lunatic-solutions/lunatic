@@ -20,18 +20,6 @@ pub struct ProcessState {
     pub processes: HashMapStore<Process>,
 }
 
-impl HostFunctions for ProcessState {
-    fn add_to_linker<E>(
-        api: uptown_funk::wrap::Wrap<Self>,
-        executor: E,
-        linker: &mut wasmtime::Linker,
-    ) where
-        E: uptown_funk::Executor + Clone + 'static,
-    {
-        todo!()
-    }
-}
-
 impl ProcessState {
     pub fn new(module: LunaticModule, channel_state: ChannelState) -> Self {
         Self {

@@ -1,4 +1,4 @@
-use std::{borrow::BorrowMut, rc::Rc, sync::{Arc, Mutex}};
+use std::{rc::Rc, sync::{Arc, Mutex}};
 
 use crate::{Executor, FromWasm, HostFunctions, ToWasm};
 use wasmtime::Caller;
@@ -35,11 +35,17 @@ impl State {
     }
 }
 
-pub type Wrap<T> = Arc<Mutex<T>>;
-
 impl HostFunctions for State {
+    type Wrap = Arc<Mutex<Self>>;
+    type Return = Arc<Mutex<Self>>;
+
+    fn split(self) -> (Self::Return, Self::Wrap) {
+        let s =Arc::new(Mutex::new(self));
+        (s.clone(), s)
+    }
+
     #[cfg(feature = "vm-wasmtime")]
-    fn add_to_linker<E>(api: Wrap<Self>, executor: E, linker: &mut wasmtime::Linker)
+    fn add_to_linker<E>(api: Self::Wrap, executor: E, linker: &mut wasmtime::Linker)
     where
         E: crate::Executor + Clone + 'static,
     {
@@ -50,7 +56,7 @@ impl HostFunctions for State {
         let wrap_state = api.clone();
         let closure = move |_caller: Caller, val| -> Result<(), wasmtime::Trap> {
             let transformed_val = {
-                <CustomType as FromWasm<&Wrap<Self>>>::from(
+                <CustomType as FromWasm<&Self::Wrap>>::from(
                     &wrap_state,
                     cloned_executor.as_ref(),
                     val,
@@ -58,13 +64,12 @@ impl HostFunctions for State {
             };
 
             let output = {
-                let mut write_state = wrap_state.lock().unwrap();
-                let state = write_state.borrow_mut();
+                let state = &mut wrap_state.lock().unwrap();
                 cloned_executor.async_(Self::count_async(state, transformed_val))
             };
 
             let transformed_output = {
-                    <CustomReturnType as ToWasm<&Wrap<Self>>>::to(
+                    <CustomReturnType as ToWasm<&Self::Wrap>>::to(
                         &wrap_state,
                     cloned_executor.as_ref(),
                     output,

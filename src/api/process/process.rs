@@ -61,10 +61,7 @@ impl Process {
         function: FunctionLookup,
         memory: MemoryChoice,
         api: A,
-    ) -> anyhow::Result<(
-        uptown_funk::wrap::Wrap<A>,
-        Proc<impl Future<Output = Result<()>>>,
-    )>
+    ) -> anyhow::Result<(A::Return, Proc<impl Future<Output = Result<()>>>)>
     where
         A: HostFunctions + Send + 'static,
     {
@@ -79,8 +76,7 @@ impl Process {
         let created_at = std::time::Instant::now();
         let runtime = module.runtime();
 
-        let api = std::sync::Arc::new(std::sync::Mutex::new(api));
-        let ret_api = api.clone();
+        let (ret, api) = api.split();
 
         let stack = OneMbStack::new()?;
         let mut process = AsyncWormhole::new(stack, move |yielder| {
@@ -90,10 +86,8 @@ impl Process {
                 #[cfg(feature = "vm-wasmtime")]
                 Runtime::Wasmtime => {
                     let mut linker = WasmtimeLunaticLinker::new(module, yielder_ptr, memory)?;
-                    linker.add_api(api);
+                    linker.add_api::<A>(api);
                     let instance = linker.instance()?;
-
-                    //instance.store().set(32.0).unwrap();
 
                     match function {
                         FunctionLookup::Name(name) => {
@@ -165,7 +159,8 @@ impl Process {
 
         let p = Proc { future: process };
         info!(target: "performance", "Total time {:.5} ms.", created_at.elapsed().as_secs_f64() * 1000.0);
-        Ok((ret_api, p))
+
+        Ok((ret, p))
     }
 
     /// Creates a new process using the default api.
@@ -176,7 +171,7 @@ impl Process {
         memory: MemoryChoice,
     ) -> Result<()> {
         let api = uptown_funk::wrap::State::default(); //DefaultApi::new(context_receiver, module.clone());
-        let (s, p) = Process::create_with_api(module, function, memory, api)?;
+        let (_, p) = Process::create_with_api(module, function, memory, api)?;
         p.future.await
     }
 
