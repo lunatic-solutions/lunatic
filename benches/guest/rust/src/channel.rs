@@ -8,6 +8,13 @@ pub fn bench_channel() {
             .send(())
             .unwrap())
     );
+    let (payload, _r): (channel::Sender<()>, _) = channel::bounded(1);
+    println!(
+        "Send 4 bytes + Sender: {}",
+        bench_env(channel::unbounded(), |(sender, _r)| sender
+            .send((1337u32, payload.clone()))
+            .unwrap())
+    );
     println!(
         "Send 8 bytes: {}",
         bench_env(channel::unbounded(), |(sender, _r)| sender
@@ -15,9 +22,27 @@ pub fn bench_channel() {
             .unwrap())
     );
     println!(
+        "Send 8 bytes + 2xSender: {}",
+        bench_env(channel::unbounded(), |(sender, _r)| sender
+            .send((1337u64, payload.clone(), payload.clone()))
+            .unwrap())
+    );
+    println!(
         "Send 16 bytes: {}",
         bench_env(channel::unbounded(), |(sender, _r)| sender
             .send([0u8; 16])
+            .unwrap())
+    );
+    println!(
+        "Send 16 bytes + 4xSender: {}",
+        bench_env(channel::unbounded(), |(sender, _r)| sender
+            .send((
+                [0u8; 16],
+                payload.clone(),
+                payload.clone(),
+                payload.clone(),
+                payload.clone()
+            ))
             .unwrap())
     );
     println!(

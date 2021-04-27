@@ -9,7 +9,10 @@ mod host {
 }
 
 pub fn bench_host_calls() {
-    println!("Call yield_: {}", bench(|| yield_() ));
+    println!("Call yield_: {}", bench(|| yield_()));
     // no-op
-    println!("Call wasi_snapshot_preview1::proc_raise: {}", bench(|| unsafe {host::proc_raise(0)} ));
+    println!(
+        "Call wasi_snapshot_preview1::proc_raise: {}",
+        bench(|| unsafe { host::proc_raise(0) })
+    );
 }
