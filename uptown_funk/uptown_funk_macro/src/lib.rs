@@ -43,14 +43,12 @@ pub fn host_functions(attr: TokenStream, item: TokenStream) -> TokenStream {
     let wasmtime_expanded = quote! {};
     #[cfg(feature = "vm-wasmtime")]
     let wasmtime_expanded = quote! {
-        fn add_to_linker<E: 'static>(self, executor: E, linker: &mut wasmtime::Linker) -> Self::Return
+        fn add_to_linker<E: 'static>(api: Self::Wrap, executor: E, linker: &mut wasmtime::Linker)
             where
-                E: uptown_funk::Executor
+                E: uptown_funk::Executor + 'static
             {
-                let state = uptown_funk::StateWrapper::new(self, executor);
-                let return_state = state.get_state();
+                let executor = ::std::rc::Rc::new(executor);
                 #(#wasmtime_method_wrappers)*
-                return_state
             }
     };
 
@@ -88,9 +86,15 @@ pub fn host_functions(attr: TokenStream, item: TokenStream) -> TokenStream {
 
     let expanded = quote! {
         #implementation
-
+ 
         impl uptown_funk::HostFunctions for #self_ty {
-            type Return = ::std::rc::Rc<::std::cell::RefCell<Self>>;
+            type Return = ::std::sync::Arc<::std::sync::Mutex<Self>>;
+            type Wrap = ::std::sync::Arc<::std::sync::Mutex<Self>>;
+
+            fn split(self) -> (Self::Return, Self::Wrap) {
+                let s = ::std::sync::Arc::new(::std::sync::Mutex::new(self));
+                (s.clone(), s)
+            }
 
             #wasmtime_expanded
             #wasmer_expanded

@@ -47,10 +47,9 @@ impl HostFunctions for State {
     #[cfg(feature = "vm-wasmtime")]
     fn add_to_linker<E>(api: Self::Wrap, executor: E, linker: &mut wasmtime::Linker)
     where
-        E: crate::Executor + Clone + 'static,
+        E: crate::Executor + 'static,
     {
         let executor = Rc::new(executor);
-
         let cloned_executor = executor.clone();
 
         let wrap_state = api.clone();

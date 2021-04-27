@@ -74,11 +74,13 @@ pub fn transform(
             let input_argument = quote! { #argument_name };
 
             let transformation = quote! {
-                let #argument_name = <#pat_type_ty as uptown_funk::FromWasm<&mut Self>>::from(
-                    &mut state_wrapper.borrow_state_mut(),
-                    state_wrapper.executor(),
-                    #argument_name
-                )?;
+                let #argument_name = {
+                    <#pat_type_ty as uptown_funk::FromWasm<&Self::Wrap>>::from(
+                        &state,
+                        cloned_executor.as_ref(),
+                        #argument_name
+                    )?
+                }
             };
             let host_call_argument = quote! { #argument_name };
             Ok((input_argument, transformation, host_call_argument))
@@ -92,11 +94,13 @@ pub fn transform(
             //let input_argument = quote! { #argument_name: <#pat_type_ty_without_ref as uptown_funk::FromWasm<&mut Self>>::From };
             let input_argument = quote! { #argument_name };
             let transformation = quote! {
-                let mut #argument_name = <#pat_type_ty_without_ref as uptown_funk::FromWasm<&mut Self>>::from(
-                    &mut state_wrapper.borrow_state_mut(),
-                    state_wrapper.executor(),
-                    #argument_name
-                )?;
+                let mut #argument_name = {
+                    <#pat_type_ty_without_ref as uptown_funk::FromWasm<&mut Self>>::from(
+                        &state,
+                        cloned_executor.as_ref(),
+                        #argument_name
+                    )?
+                };
             };
             let host_call_argument = quote! { &mut #argument_name };
             Ok((input_argument, transformation, host_call_argument))

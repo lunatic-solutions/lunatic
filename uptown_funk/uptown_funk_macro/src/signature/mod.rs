@@ -7,6 +7,19 @@ use quote::{quote, quote_spanned};
 use syn::spanned::Spanned;
 use syn::{FnArg, ReturnType, Signature};
 
+pub struct Transform {
+    /// Closure's input signature
+    pub input_sig: TokenStream2,
+    /// Closure's output signature
+    pub output_sig: TokenStream2,
+    /// Transform closure inputs to method inputs
+    pub input_trans: TokenStream2,
+    /// Method arguments
+    pub call_args: TokenStream2,
+    /// Transform method output to closure output
+    pub output_trans: TokenStream2,
+}
+
 /// Takes a `signature` and returns a tuple of:
 /// * Input signature of the wasm guest function.
 /// * Return signature of the wasm guest function.
@@ -15,16 +28,7 @@ use syn::{FnArg, ReturnType, Signature};
 /// * Transformation step from host return values to wasm guest returns.
 pub fn transform(
     signature: &Signature,
-) -> Result<
-    (
-        TokenStream2,
-        TokenStream2,
-        TokenStream2,
-        TokenStream2,
-        TokenStream2,
-    ),
-    TokenStream,
-> {
+) -> Result<Transform, TokenStream> {
     let mut input_arguments = signature.inputs.iter();
     // First element must match exactly `&self or &mut self`
     match input_arguments.next() {
@@ -78,13 +82,13 @@ pub fn transform(
     let from_guest_input_transformations = quote! { #(#from_guest_input_transformations);* };
     let host_call_signature = quote! { #(#host_call_signature),* };
 
-    Ok((
-        guest_signature_input,
-        guest_signature_return,
-        from_guest_input_transformations,
-        host_call_signature,
-        from_host_return_transformation,
-    ))
+    Ok(Transform {
+        input_sig: guest_signature_input,
+        output_sig: guest_signature_return,
+        input_trans: from_guest_input_transformations,
+        call_args: host_call_signature,
+        output_trans: from_host_return_transformation,
+    })
 }
 
 fn self_error<S: Spanned>(location: S) -> TokenStream {
