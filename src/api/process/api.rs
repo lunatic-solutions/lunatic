@@ -30,7 +30,7 @@ impl ProcessState {
     }
 }
 
-//#[host_functions(namespace = "lunatic")]
+#[host_functions(namespace = "lunatic")]
 impl ProcessState {
     // Yield this process allowing other to be scheduled on same thread.
     async fn yield_(&self) {

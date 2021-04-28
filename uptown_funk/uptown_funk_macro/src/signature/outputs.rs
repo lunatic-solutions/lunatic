@@ -84,7 +84,7 @@ pub fn transform(
 
                 input_argument_extensions.push(quote! { #varname: u32 });
 
-               let (to_wasm_generic_type, to_wasm_state_param) = to_wasm_tokens(sync);
+               let (to_wasm_generic_type, to_wasm_state_prepare, to_wasm_state_param) = to_wasm_tokens(sync);
  
                 match return_type {
                     Type::Path(type_path) => {
@@ -114,9 +114,10 @@ pub fn transform(
                                         let memory: &mut [<#type_path as uptown_funk::ToWasm<#to_wasm_generic_type>>::To]
                                             = unsafe { std::mem::transmute(memory) };
                                         memory.get_mut(
-                                            #varname as usize / std::mem::size_of::<<#type_path as uptown_funk::ToWasm<$to_wasm_generic_type>>::To>())
+                                            #varname as usize / std::mem::size_of::<<#type_path as uptown_funk::ToWasm<#to_wasm_generic_type>>::To>())
                                     };
                                     let result_ptr = uptown_funk::Trap::try_option(result_ptr)?;
+                                    #to_wasm_state_prepare;
                                     let result_ = <#type_path as uptown_funk::ToWasm<#to_wasm_generic_type>>::to(
                                         #to_wasm_state_param,
                                         cloned_executor.as_ref(),
@@ -172,11 +173,12 @@ fn first_output(sync: SyncType, type_path: &TypePath) -> Result<(TokenStream2, T
             return Ok((return_argument, host_to_guest_transformation));
         } else {
             // Returning CustomType
-            let (to_wasm_generic_type, to_wasm_state_param) = to_wasm_tokens(sync);
-            let return_argument = quote! { <#ident as uptown_funk::ToWasm<&Self::Wrap>>::To };
+            let (to_wasm_generic_type, to_wasm_state_prepare, to_wasm_state_param) = to_wasm_tokens(sync);
+            let return_argument = quote! { <#ident as uptown_funk::ToWasm<#to_wasm_generic_type>>::To };
             let host_to_guest_transformation = quote! {
                 | output: #ident | -> Result<<#ident as uptown_funk::ToWasm<#to_wasm_generic_type>>::To, uptown_funk::Trap> {
-                    <#ident as uptown_funk::ToWasm<&Self::Wrap>>::to(
+                    #to_wasm_state_prepare;
+                    <#ident as uptown_funk::ToWasm<#to_wasm_generic_type>>::to(
                         #to_wasm_state_param,
                         cloned_executor.as_ref(),
                         output
@@ -190,16 +192,21 @@ fn first_output(sync: SyncType, type_path: &TypePath) -> Result<(TokenStream2, T
 }
 
 
-fn to_wasm_tokens(sync: SyncType) -> (TokenStream2, TokenStream2) {
+fn to_wasm_tokens(sync: SyncType) -> (TokenStream2, TokenStream2, TokenStream2) {
     let to_wasm_generic_type = match sync {
         SyncType::None => quote! { &mut Self::Wrap },
         SyncType::Mutex => quote! { &Self::Wrap }
     };
 
+    let to_wasm_state_prepare = match sync {
+        SyncType::None => quote! { let mut pstate = state.borrow_mut() },
+        SyncType::Mutex => quote! { }
+    };
+
     let to_wasm_state_param = match sync {
-        SyncType::None => quote! { &mut state.borrow_mut() },
+        SyncType::None => quote! { &mut pstate },
         SyncType::Mutex => quote! { &state }
     };
 
-    (to_wasm_generic_type, to_wasm_state_param)
+    (to_wasm_generic_type, to_wasm_state_prepare, to_wasm_state_param)
 }

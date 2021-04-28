@@ -64,6 +64,7 @@ impl Process {
     ) -> anyhow::Result<(A::Return, Proc<impl Future<Output = Result<()>>>)>
     where
         A: HostFunctions + Send + 'static,
+        A::Wrap: Send,
     {
         // The creation of AsyncWormhole needs to be wrapped in an async function.
         // AsyncWormhole performs linking between the new and old stack, so that tools like backtrace work correctly.

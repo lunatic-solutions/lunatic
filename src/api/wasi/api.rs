@@ -25,7 +25,7 @@ use super::unix::*;
 #[cfg(any(target_os = "windows"))]
 use super::windows::*;
 
-#[host_functions(namespace="wasi_snapshot_preview1", sync="mutex")]
+#[host_functions(namespace = "wasi_snapshot_preview1", sync = "mutex")]
 impl WasiState {
     // Command line arguments and environment variables
 

@@ -24,13 +24,13 @@ pub fn wrap(namespace: &LitStr, sync: SyncType, method: &ImplItemMethod) -> Resu
     };
 
     let lock_state = match sync {
-        SyncType::None => quote! {},
-        SyncType::Mutex => quote! { let mut state = state.lock().map_err(|e| ::wasmtime::Trap::new("State lock poisoned") )?; } // TODO !!!!
+        SyncType::None => quote! { let mut lstate = state.borrow_mut(); },
+        SyncType::Mutex => quote! { let mut lstate = state.lock().map_err(|e| ::wasmtime::Trap::new("State lock poisoned") )?; }
     };
 
     let pass_state = match sync {
-        SyncType::None => quote! { &mut state.borrow_mut() },
-        SyncType::Mutex => quote! { &mut state }
+        SyncType::None => quote! { &mut lstate },
+        SyncType::Mutex => quote! { &mut lstate }
     };
 
     let result = quote! {

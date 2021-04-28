@@ -31,17 +31,20 @@ impl HostFunctions for DefaultApi {
     where
         E: Executor + Clone + 'static,
     {
-        //let channel_state = channel::api::ChannelState::new(self.context_receiver);
-        //let process_state = process::api::ProcessState::new(self.module, channel_state.clone());
-        //let networking_state = networking::TcpState::new(channel_state.clone());
+        let channel_state = channel::api::ChannelState::new(api.context_receiver);
+        let (_, channel_state) = channel_state.split();
+        channel::api::ChannelState::add_to_linker(channel_state.clone(), executor.clone(), linker);
 
-        //channel_state.add_to_linker(executor.clone(), linker);
-        //process_state.add_to_linker(executor.clone(), linker);
-        //networking_state.add_to_linker(executor.clone(), linker);
+        let process_state = process::api::ProcessState::new(api.module, channel_state.clone());
+        let (_, process_state) = process_state.split();
+        process::api::ProcessState::add_to_linker(process_state, executor.clone(), linker);
+
+        let networking_state = networking::TcpState::new(channel_state);
+        let (_, networking_state) = networking_state.split();
+        networking::TcpState::add_to_linker(networking_state, executor.clone(), linker);
 
         let (_, state) = wasi::api::WasiState::new().split();
         wasi::api::WasiState::add_to_linker(state, executor, linker);
-
     }
 
     #[cfg(feature = "vm-wasmer")]
@@ -64,5 +67,4 @@ impl HostFunctions for DefaultApi {
         //networking_state.add_to_wasmer_linker(executor.clone(), linker, store);
         //wasi_state.add_to_wasmer_linker(executor, linker, store);
     }
-
 }

@@ -91,7 +91,7 @@ impl<'a> ChannelState {
     }
 }
 
-//#[host_functions(namespace = "lunatic")]
+#[host_functions(namespace = "lunatic")]
 impl ChannelState {
     // Create a new channel
     fn channel(&self, bound: u32) -> (ChannelSender, ChannelReceiver) {

@@ -29,7 +29,7 @@ pub trait Executor {
 
 pub trait HostFunctions: Sized {
     type Return;
-    type Wrap: Send + Sync;
+    type Wrap;
 
     fn split(self) -> (Self::Return, Self::Wrap);
 
