@@ -43,13 +43,6 @@ pub struct Process {
     task: Task<Result<()>>,
 }
 
-pub struct Proc<F>
-where
-    F: Future<Output = Result<()>> + Send + 'static,
-{
-    pub future: F,
-}
-
 impl Process {
     pub fn task(self) -> Task<Result<()>> {
         self.task
@@ -61,9 +54,9 @@ impl Process {
         function: FunctionLookup,
         memory: MemoryChoice,
         api: A,
-    ) -> anyhow::Result<(A::Return, Proc<impl Future<Output = Result<()>>>)>
+    ) -> anyhow::Result<(A::Return, impl Future<Output = Result<()>>)>
     where
-        A: HostFunctions + Send + 'static,
+        A: HostFunctions + 'static,
         A::Wrap: Send,
     {
         // The creation of AsyncWormhole needs to be wrapped in an async function.
@@ -158,10 +151,9 @@ impl Process {
             Runtime::Wasmer => wasmer_cts_saver.swap(),
         });
 
-        let p = Proc { future: process };
         info!(target: "performance", "Total time {:.5} ms.", created_at.elapsed().as_secs_f64() * 1000.0);
 
-        Ok((ret, p))
+        Ok((ret, process))
     }
 
     /// Creates a new process using the default api.
@@ -172,8 +164,8 @@ impl Process {
         memory: MemoryChoice,
     ) -> Result<()> {
         let api = crate::api::default::DefaultApi::new(context_receiver, module.clone());
-        let (_, p) = Process::create_with_api(module, function, memory, api)?;
-        p.future.await
+        let (_, fut) = Process::create_with_api(module, function, memory, api)?;
+        fut.await
     }
 
     /// Spawns a new process on the `EXECUTOR`

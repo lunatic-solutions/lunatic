@@ -1,5 +1,3 @@
-use anyhow::Result;
-
 use async_wormhole::AsyncYielder;
 use uptown_funk::memory::Memory;
 

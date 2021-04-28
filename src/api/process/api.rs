@@ -7,7 +7,7 @@ use super::{FunctionLookup, MemoryChoice, Process};
 
 use anyhow::Result;
 use smol::{channel::bounded, future::yield_now, Timer};
-use uptown_funk::{host_functions, state::HashMapStore, HostFunctions};
+use uptown_funk::{host_functions, state::HashMapStore};
 
 use std::{
     mem::replace,
