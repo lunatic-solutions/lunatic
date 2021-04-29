@@ -55,22 +55,40 @@ impl HostFunctions for DefaultApi {
 
     #[cfg(feature = "vm-wasmer")]
     fn add_to_wasmer_linker<E>(
-        self,
+        mut api: Self,
         executor: E,
         linker: &mut uptown_funk::wasmer::WasmerLinker,
         store: &wasmer::Store,
-    ) -> ()
-    where
+    ) where
         E: Executor + Clone + 'static,
     {
-        //let channel_state = channel::api::ChannelState::new(self.context_receiver);
-        //let process_state = process::api::ProcessState::new(self.module, channel_state.clone());
-        //let networking_state = networking::TcpState::new(channel_state.clone());
-        //let wasi_state = wasi::api::WasiState::new();
+        let channel_state = channel::api::ChannelState::new(api.context_receiver);
+        let (_, channel_state) = channel_state.split();
+        channel::api::ChannelState::add_to_wasmer_linker(
+            channel_state.clone(),
+            executor.clone(),
+            linker,
+            store,
+        );
 
-        //channel_state.add_to_wasmer_linker(executor.clone(), linker, store);
-        //process_state.add_to_wasmer_linker(executor.clone(), linker, store);
-        //networking_state.add_to_wasmer_linker(executor.clone(), linker, store);
-        //wasi_state.add_to_wasmer_linker(executor, linker, store);
+        let process_state = process::api::ProcessState::new(api.module, channel_state.clone());
+        let (_, process_state) = process_state.split();
+        process::api::ProcessState::add_to_wasmer_linker(
+            process_state,
+            executor.clone(),
+            linker,
+            store,
+        );
+
+        let networking_state = networking::TcpState::new(channel_state);
+        let (_, networking_state) = networking_state.split();
+        networking::TcpState::add_to_wasmer_linker(
+            networking_state,
+            executor.clone(),
+            linker,
+            store,
+        );
+
+        WasiState::add_to_wasmer_linker(api.wasi_wrap.take().unwrap(), executor, linker, store)
     }
 }

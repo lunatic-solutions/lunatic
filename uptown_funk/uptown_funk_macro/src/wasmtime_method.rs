@@ -3,9 +3,16 @@ use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
 use syn::{ImplItemMethod, LitStr};
 
-use crate::{attribute::SyncType, signature::{Transform, transform}};
+use crate::{
+    attribute::SyncType,
+    signature::{transform, Transform},
+};
 
-pub fn wrap(namespace: &LitStr, sync: SyncType, method: &ImplItemMethod) -> Result<TokenStream2, TokenStream> {
+pub fn wrap(
+    namespace: &LitStr,
+    sync: SyncType,
+    method: &ImplItemMethod,
+) -> Result<TokenStream2, TokenStream> {
     let signature = &method.sig;
     let method_name = &signature.ident;
     let method_name_as_str = LitStr::new(&method_name.to_string(), method_name.span());
@@ -17,7 +24,11 @@ pub fn wrap(namespace: &LitStr, sync: SyncType, method: &ImplItemMethod) -> Resu
     };
 
     let Transform {
-        input_sig, output_sig, input_trans, call_args, output_trans,
+        input_sig,
+        output_sig,
+        input_trans,
+        call_args,
+        output_trans,
     } = match transform(sync, &signature) {
         Ok(result) => result,
         Err(error) => return Err(error),
@@ -25,18 +36,21 @@ pub fn wrap(namespace: &LitStr, sync: SyncType, method: &ImplItemMethod) -> Resu
 
     let lock_state = match sync {
         SyncType::None => quote! { let mut lstate = state.borrow_mut(); },
-        SyncType::Mutex => quote! { let mut lstate = state.lock().map_err(|e| ::wasmtime::Trap::new("State lock poisoned") )?; }
+        SyncType::Mutex => {
+            quote! { let mut lstate = state.lock().map_err(|e| ::wasmtime::Trap::new("State lock poisoned") )?; }
+        }
     };
 
     let pass_state = match sync {
         SyncType::None => quote! { &mut lstate },
-        SyncType::Mutex => quote! { &mut lstate }
+        SyncType::Mutex => quote! { &mut lstate },
     };
 
     let result = quote! {
         let state = api.clone();
         let cloned_executor = executor.clone();
         let closure = move |#input_sig| -> Result<#output_sig, wasmtime::Trap> {
+            let cloned_executor = cloned_executor.as_ref();
             let memory = cloned_executor.memory();
 
             #input_trans;

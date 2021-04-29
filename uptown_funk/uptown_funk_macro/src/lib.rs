@@ -51,7 +51,7 @@ pub fn host_functions(attr: TokenStream, item: TokenStream) -> TokenStream {
         SyncType::None => quote! {
             let api = ::std::rc::Rc::new(::std::cell::RefCell::new(api));
         },
-        SyncType::Mutex => quote! {}
+        SyncType::Mutex => quote! {},
     };
 
     #[allow(unused_variables)]
@@ -74,7 +74,7 @@ pub fn host_functions(attr: TokenStream, item: TokenStream) -> TokenStream {
     #[cfg(feature = "vm-wasmer")]
     for item in implementation.items.iter() {
         match item {
-            Method(method) => match wasmer_method::wrap(namespace, method) {
+            Method(method) => match wasmer_method::wrap(namespace, sync, method) {
                 Ok(wrapper) => wasmer_method_wrappers.push(wrapper),
                 Err(error) => return error,
             },
@@ -86,17 +86,14 @@ pub fn host_functions(attr: TokenStream, item: TokenStream) -> TokenStream {
     #[cfg(feature = "vm-wasmer")]
     let wasmer_expanded = quote! {
         fn add_to_wasmer_linker<E: 'static>(
-            self,
+            api: Self::Wrap,
             executor: E,
             wasmer_linker: &mut uptown_funk::wasmer::WasmerLinker,
             store: &wasmer::Store,
-        ) -> Self::Return where
-            E: uptown_funk::Executor,
-        {
-            let state = uptown_funk::StateWrapper::new(self, executor);
-            let return_state = state.get_state();
+        ) where E: uptown_funk::Executor {
+            #prepare_state;
+            let state_wrapper = ::uptown_funk::StateWrapper::new(api, executor);
             #(#wasmer_method_wrappers)*
-            return_state
         }
     };
 
@@ -117,12 +114,12 @@ pub fn host_functions(attr: TokenStream, item: TokenStream) -> TokenStream {
                 let s = ::std::sync::Arc::new(::std::sync::Mutex::new(self));
                 (s.clone(), s)
             }
-        }
+        },
     };
 
     let expanded = quote! {
         #implementation
- 
+
         impl uptown_funk::HostFunctions for #self_ty {
             #assoc_types_and_split
 

@@ -6,10 +6,7 @@ pub mod wasmer;
 
 use std::convert::Into;
 use std::fmt::Debug;
-use std::{
-    cell::{Ref, RefCell, RefMut},
-    rc::Rc,
-};
+use std::rc::Rc;
 
 pub use smallvec::SmallVec;
 pub use types::{FromWasm, ToWasm};
@@ -40,73 +37,53 @@ pub trait HostFunctions: Sized {
 
     #[cfg(feature = "vm-wasmer")]
     fn add_to_wasmer_linker<E>(
-        self,
+        api: Self::Wrap,
         executor: E,
         linker: &mut wasmer::WasmerLinker,
         store: &::wasmer::Store,
-    ) -> Self::Return
-    where
+    ) where
         E: Executor + Clone + 'static;
 }
 
-pub struct StateWrapper<S, E: Executor> {
-    state: Rc<RefCell<S>>,
-    env: Rc<E>,
+pub struct StateWrapper<S: Clone, E: Executor> {
+    pub state: S,
+    pub executor: Rc<E>,
 }
 
-impl<S, E: Executor> StateWrapper<S, E> {
+impl<S: Clone, E: Executor> StateWrapper<S, E> {
     pub fn new(state: S, executor: E) -> Self {
         Self {
-            state: Rc::new(RefCell::new(state)),
-            env: Rc::new(executor),
+            state,
+            executor: Rc::new(executor),
         }
     }
 
-    pub fn borrow_state(&self) -> Ref<S> {
-        self.state.borrow()
-    }
-
-    pub fn borrow_state_mut(&self) -> RefMut<S> {
-        self.state.borrow_mut()
-    }
-
-    pub fn get_state(&self) -> Rc<RefCell<S>> {
-        self.state.clone()
-    }
-
     pub fn executor(&self) -> &E {
-        &self.env
+        &self.executor
     }
 
     pub fn memory(&self) -> memory::Memory {
-        self.env.memory()
+        self.executor.memory()
     }
+}
 
-    pub fn recover_state(self) -> Result<S, ()> {
-        match Rc::try_unwrap(self.state) {
-            Ok(s) => Ok(s.into_inner()),
-            Err(_) => Err(()),
+impl<S: Clone, E: Executor> Clone for StateWrapper<S, E> {
+    fn clone(&self) -> Self {
+        Self {
+            state: self.state.clone(),
+            executor: self.executor.clone(),
         }
     }
 }
 
 // TODO document these
 #[cfg(feature = "vm-wasmer")]
-unsafe impl<S, E: Executor> Send for StateWrapper<S, E> {}
+unsafe impl<S: Clone, E: Executor> Send for StateWrapper<S, E> {}
 #[cfg(feature = "vm-wasmer")]
-unsafe impl<S, E: Executor> Sync for StateWrapper<S, E> {}
-
-impl<S, E: Executor> Clone for StateWrapper<S, E> {
-    fn clone(&self) -> Self {
-        Self {
-            state: self.state.clone(),
-            env: self.env.clone(),
-        }
-    }
-}
+unsafe impl<S: Clone, E: Executor> Sync for StateWrapper<S, E> {}
 
 #[cfg(feature = "vm-wasmer")]
-impl<S, E: Executor> ::wasmer::WasmerEnv for StateWrapper<S, E> {
+impl<S: Clone, E: Executor> ::wasmer::WasmerEnv for StateWrapper<S, E> {
     fn init_with_instance(
         &mut self,
         _: &::wasmer::Instance,

@@ -16,7 +16,6 @@ use std::future::Future;
 //use crate::api::DefaultApi;
 
 use super::api::ProcessState;
-use super::err::*;
 
 lazy_static! {
     pub static ref EXECUTOR: TaskExecutor<'static> = TaskExecutor::new();
@@ -113,8 +112,8 @@ impl Process {
                 }
                 #[cfg(feature = "vm-wasmer")]
                 Runtime::Wasmer => {
-                    let mut linker = WasmerLunaticLinker::<A>::new(module, yielder_ptr, memory)?;
-                    let ret = linker.add_api(api);
+                    let mut linker = WasmerLunaticLinker::new(module, yielder_ptr, memory)?;
+                    linker.add_api::<A>(api);
                     let instance = linker.instance()?;
 
                     match function {
@@ -123,10 +122,7 @@ impl Process {
 
                             // Measure how long the function takes for named functions.
                             let performance_timer = std::time::Instant::now();
-                            func.call(&[]).map_err(|error| Error {
-                                error: error.into(),
-                                value: Some(ret.clone()),
-                            })?;
+                            func.call(&[])?;
                             info!(target: "performance", "Process {} finished in {:.5} ms.", name, performance_timer.elapsed().as_secs_f64() * 1000.0);
                         }
                         FunctionLookup::TableIndex(index) => {
@@ -135,7 +131,7 @@ impl Process {
                         }
                     }
 
-                    Ok(ret)
+                    Ok(())
                 }
             }
         })?;

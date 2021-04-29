@@ -74,7 +74,6 @@ impl Clone for ProcessEnvironment {
             Runtime::Wasmer => Self {
                 memory: self.memory.clone(),
                 yielder: self.yielder,
-                yield_value: PhantomData::default(),
                 runtime: self.runtime,
             },
         }

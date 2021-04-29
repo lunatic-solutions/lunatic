@@ -60,12 +60,12 @@ pub fn transform(
     let pat_type_ty = &*pat_type.ty;
     let from_wasm_generic_type = match sync {
         SyncType::None => quote! { &mut Self::Wrap },
-        SyncType::Mutex => quote! { &Self::Wrap }
+        SyncType::Mutex => quote! { &Self::Wrap },
     };
 
     let from_wasm_state_param = match sync {
         SyncType::None => quote! { &mut state.borrow_mut() },
-        SyncType::Mutex => quote! { &state }
+        SyncType::Mutex => quote! { &state },
     };
 
     match argument_transformation {
@@ -86,7 +86,7 @@ pub fn transform(
                 let #argument_name = {
                     <#pat_type_ty as uptown_funk::FromWasm<#from_wasm_generic_type>>::from(
                         #from_wasm_state_param,
-                        cloned_executor.as_ref(),
+                        cloned_executor,
                         #argument_name
                     )?
                 }
@@ -106,7 +106,7 @@ pub fn transform(
                 let mut #argument_name = {
                     <#pat_type_ty_without_ref as uptown_funk::FromWasm<#from_wasm_generic_type>>::from(
                         #from_wasm_state_param,
-                        cloned_executor.as_ref(),
+                        cloned_executor,
                         #argument_name
                     )?
                 };

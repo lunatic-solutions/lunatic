@@ -57,12 +57,10 @@ pub fn get_sync(attributes: &AttributeArgs) -> Result<SyncType, TokenStream> {
                     }
 
                     let namespace = match &name_value.lit {
-                        Lit::Str(lit_str) => {
-                            match lit_str.value().as_str() {
-                                "none" => SyncType::None,
-                                "mutex" => SyncType::Mutex,
-                                _ => return Err(sync_error(kv))
-                            }
+                        Lit::Str(lit_str) => match lit_str.value().as_str() {
+                            "none" => SyncType::None,
+                            "mutex" => SyncType::Mutex,
+                            _ => return Err(sync_error(kv)),
                         },
                         _ => return Err(sync_error(kv)),
                     };

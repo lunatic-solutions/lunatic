@@ -7,14 +7,14 @@ use wasmer::{Exportable, Instance, Memory, MemoryType, Store};
 
 /// Contains data necessary to create Wasmtime instances suitable to be used with Lunatic processes.
 /// Lunatic's instances have their own store, linker and process environment associated with them.
-pub struct LunaticLinker<T: HostFunctions> {
+pub struct LunaticLinker {
     linker: WasmerLinker,
     store: Store,
     module: LunaticModule,
-    environment: ProcessEnvironment<T::Return>,
+    environment: ProcessEnvironment,
 }
 
-impl<T: HostFunctions> LunaticLinker<T> {
+impl LunaticLinker {
     /// Create a new LunaticLinker.
     pub fn new(module: LunaticModule, yielder_ptr: usize, memory: MemoryChoice) -> Result<Self> {
         let store = engine();
@@ -53,8 +53,13 @@ impl<T: HostFunctions> LunaticLinker<T> {
         Ok(instance)
     }
 
-    pub fn add_api(&mut self, state: T) -> T::Return {
-        state.add_to_wasmer_linker(self.environment.clone(), &mut self.linker, &self.store)
+    pub fn add_api<S: HostFunctions>(&mut self, state: S::Wrap) {
+        S::add_to_wasmer_linker(
+            state,
+            self.environment.clone(),
+            &mut self.linker,
+            &self.store,
+        );
     }
 }
 

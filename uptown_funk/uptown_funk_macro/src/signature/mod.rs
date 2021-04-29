@@ -28,10 +28,7 @@ pub struct Transform {
 /// * Transformation steps from wasm guest arguments to host arguments.
 /// * Signature of the host function.
 /// * Transformation step from host return values to wasm guest returns.
-pub fn transform(
-    sync: SyncType,
-    signature: &Signature,
-) -> Result<Transform, TokenStream> {
+pub fn transform(sync: SyncType, signature: &Signature) -> Result<Transform, TokenStream> {
     let mut input_arguments = signature.inputs.iter();
     // First element must match exactly `&self or &mut self`
     match input_arguments.next() {
