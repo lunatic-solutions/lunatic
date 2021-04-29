@@ -99,7 +99,7 @@ fn wasmtime_mutable_state_test() {
     let instance_state = SimpleExcutor {
         memory: Memory::from(memory),
     };
-    array_state.add_to_linker(instance_state, &mut linker);
+    ArrayState::add_to_linker(array_state, instance_state, &mut linker);
 
     let instance = linker.instantiate(&module).unwrap();
     let test = instance.get_func("test").unwrap().call(&[]);
@@ -124,7 +124,7 @@ fn wasmer_mutable_state_test() {
     let instance_state = SimpleExcutor {
         memory: Memory::from(memory),
     };
-    array_state.add_to_wasmer_linker(instance_state, &mut wasmer_linker, &store);
+    ArrayState::add_to_wasmer_linker(array_state, instance_state, &mut wasmer_linker, &store);
 
     let instance = wasmer::Instance::new(&module, &wasmer_linker).unwrap();
     let test = instance

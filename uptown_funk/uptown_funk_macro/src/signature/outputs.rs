@@ -118,12 +118,13 @@ pub fn transform(
                                             #varname as usize / std::mem::size_of::<<#type_path as uptown_funk::ToWasm<#to_wasm_generic_type>>::To>())
                                     };
                                     let result_ptr = uptown_funk::Trap::try_option(result_ptr)?;
-                                    #to_wasm_state_prepare;
-                                    let result_ = <#type_path as uptown_funk::ToWasm<#to_wasm_generic_type>>::to(
-                                        #to_wasm_state_param,
-                                        cloned_executor,
-                                        result.#index
-                                    )?;
+                                    let result_ = {
+                                        #to_wasm_state_prepare;
+                                        <#type_path as uptown_funk::ToWasm<#to_wasm_generic_type>>::to(
+                                            #to_wasm_state_param,
+                                            cloned_executor,
+                                            result.#index
+                                    )?};
                                     *result_ptr = result_;
                                 });
                             }

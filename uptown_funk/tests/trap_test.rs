@@ -43,7 +43,7 @@ fn wasmtime_trap_test() {
     let instance_state = SimpleExcutor {
         memory: Memory::from(memory),
     };
-    empty.add_to_linker(instance_state, &mut linker);
+    Empty::add_to_linker(empty, instance_state, &mut linker);
 
     let instance = linker.instantiate(&module).unwrap();
     let test = instance.get_func("test").unwrap().call(&[]);
@@ -71,7 +71,7 @@ fn wasmer_trap_test() {
     let instance_state = SimpleExcutor {
         memory: Memory::from(memory),
     };
-    empty.add_to_wasmer_linker(instance_state, &mut wasmer_linker, &store);
+    Empty::add_to_wasmer_linker(empty, instance_state, &mut wasmer_linker, &store);
 
     let instance = wasmer::Instance::new(&module, &wasmer_linker).unwrap();
     let test = instance

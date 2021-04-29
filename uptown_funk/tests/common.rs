@@ -6,8 +6,6 @@ pub struct SimpleExcutor {
 }
 
 impl Executor for SimpleExcutor {
-    type Return = ();
-
     fn memory(&self) -> Memory {
         self.memory.clone()
     }

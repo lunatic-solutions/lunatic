@@ -38,7 +38,7 @@ fn wasmtime_ref_str_test() {
     let instance_state = SimpleExcutor {
         memory: Memory::from(memory),
     };
-    empty.add_to_linker(instance_state, &mut linker);
+    Empty::add_to_linker(empty, instance_state, &mut linker);
 
     let instance = linker.instantiate(&module).unwrap();
     let test_count = instance.get_func("test_count").unwrap().call(&[]);
@@ -65,7 +65,7 @@ fn wasmer_ref_str_test() {
     let instance_state = SimpleExcutor {
         memory: Memory::Wasmer(memory),
     };
-    empty.add_to_wasmer_linker(instance_state, &mut wasmer_linker, &store);
+    Empty::add_to_wasmer_linker(empty, instance_state, &mut wasmer_linker, &store);
 
     let instance = wasmer::Instance::new(&module, &wasmer_linker).unwrap();
     let test_count = instance
