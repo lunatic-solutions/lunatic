@@ -41,12 +41,8 @@ fn lunatic_bench(c: &mut Criterion) {
         let module = LunaticModule::new(wasm.as_ref().into(), Runtime::Wasmtime).unwrap();
 
         b.iter(move || {
-            let mut linker = WasmtimeLunaticLinker::new(
-                module.clone(),
-                0,
-                MemoryChoice::New(None),
-            )
-            .unwrap();
+            let mut linker =
+                WasmtimeLunaticLinker::new(module.clone(), 0, MemoryChoice::New(None)).unwrap();
             linker.add_api::<DefaultApi>(DefaultApi::new(None, module.clone()));
             criterion::black_box(linker.instance().unwrap())
         });
@@ -61,12 +57,8 @@ fn lunatic_bench(c: &mut Criterion) {
         b.iter_custom(move |iters| {
             let start = std::time::Instant::now();
             (0..iters).into_par_iter().for_each(|_i| {
-                let mut linker = WasmtimeLunaticLinker::new(
-                    module.clone(),
-                    0,
-                    MemoryChoice::New(None),
-                )
-                .unwrap();
+                let mut linker =
+                    WasmtimeLunaticLinker::new(module.clone(), 0, MemoryChoice::New(None)).unwrap();
                 linker.add_api::<DefaultApi>(DefaultApi::new(None, module.clone()));
                 criterion::black_box(linker.instance().unwrap());
             });

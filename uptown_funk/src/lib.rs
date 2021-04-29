@@ -94,32 +94,20 @@ impl<S: Clone, E: Executor> ::wasmer::WasmerEnv for StateWrapper<S, E> {
 
 #[cfg_attr(feature = "vm-wasmer", derive(thiserror::Error))]
 #[cfg_attr(feature = "vm-wasmer", error("{message}"))]
-pub struct Trap<D = ()>
-where
-    D: 'static,
-{
+pub struct Trap {
     message: String,
-    data: Option<D>,
 }
 
-impl<D> Debug for Trap<D> {
+impl Debug for Trap {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         Debug::fmt(&self.message, f)
     }
 }
 
-impl Trap<()> {
+impl Trap {
     pub fn new<I: Into<String>>(message: I) -> Self {
         Self {
             message: message.into(),
-            data: None,
-        }
-    }
-
-    pub fn with_data<D: 'static>(self, data: D) -> Trap<D> {
-        Trap {
-            message: self.message,
-            data: Some(data),
         }
     }
 

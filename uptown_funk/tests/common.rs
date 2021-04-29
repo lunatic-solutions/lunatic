@@ -11,4 +11,4 @@ impl Executor for SimpleExcutor {
     }
 }
 
-pub struct Empty {}
+pub struct Empty;
