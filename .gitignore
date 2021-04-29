@@ -1,2 +1,4 @@
 .DS_Store
 /target
+/benches/guest/*.wasm
+/benches/guest/*/target

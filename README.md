@@ -55,6 +55,14 @@ cd lunatic
 cargo +nightly install --path .
 ```
 
+## Usage
+
+After installation you can use the `lunatic` binary to run WASM modules.
+
+To learn how to build modules, check out language-specific bindings:
+* [Rust](https://github.com/lunatic-solutions/rust-lib) 
+* [AssemblyScript](https://github.com/lunatic-solutions/as-lunatic)
+
 ## Architecture
 
 Lunatic's design is all about spawning _super lightweight_ processes, also known as green threads or
