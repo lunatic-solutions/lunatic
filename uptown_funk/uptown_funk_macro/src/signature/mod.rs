@@ -7,24 +7,28 @@ use quote::{quote, quote_spanned};
 use syn::spanned::Spanned;
 use syn::{FnArg, ReturnType, Signature};
 
+use crate::attribute::SyncType;
+
+pub struct Transform {
+    /// Closure's input signature
+    pub input_sig: TokenStream2,
+    /// Closure's output signature
+    pub output_sig: TokenStream2,
+    /// Transform closure inputs to method inputs
+    pub input_trans: TokenStream2,
+    /// Method arguments
+    pub call_args: TokenStream2,
+    /// Transform method output to closure output
+    pub output_trans: TokenStream2,
+}
+
 /// Takes a `signature` and returns a tuple of:
 /// * Input signature of the wasm guest function.
 /// * Return signature of the wasm guest function.
 /// * Transformation steps from wasm guest arguments to host arguments.
 /// * Signature of the host function.
 /// * Transformation step from host return values to wasm guest returns.
-pub fn transform(
-    signature: &Signature,
-) -> Result<
-    (
-        TokenStream2,
-        TokenStream2,
-        TokenStream2,
-        TokenStream2,
-        TokenStream2,
-    ),
-    TokenStream,
-> {
+pub fn transform(sync: SyncType, signature: &Signature) -> Result<Transform, TokenStream> {
     let mut input_arguments = signature.inputs.iter();
     // First element must match exactly `&self or &mut self`
     match input_arguments.next() {
@@ -43,7 +47,7 @@ pub fn transform(
 
     for input_argument in input_arguments {
         match input_argument {
-            FnArg::Typed(pat_type) => match inputs::transform(pat_type) {
+            FnArg::Typed(pat_type) => match inputs::transform(sync, pat_type) {
                 Ok((i, t, h)) => {
                     guest_signature_input.push(i);
                     from_guest_input_transformations.push(t);
@@ -58,7 +62,7 @@ pub fn transform(
     // Transform return argument
     let return_argument = &signature.output;
     let (guest_signature_return, from_host_return_transformation) = match return_argument {
-        ReturnType::Type(_, return_type) => match outputs::transform(&*return_type) {
+        ReturnType::Type(_, return_type) => match outputs::transform(sync, &*return_type) {
             Ok((i, guest_signature_return, guest_to_host, h, host_to_guest)) => {
                 guest_signature_input.push(i);
                 from_guest_input_transformations.push(guest_to_host);
@@ -78,13 +82,13 @@ pub fn transform(
     let from_guest_input_transformations = quote! { #(#from_guest_input_transformations);* };
     let host_call_signature = quote! { #(#host_call_signature),* };
 
-    Ok((
-        guest_signature_input,
-        guest_signature_return,
-        from_guest_input_transformations,
-        host_call_signature,
-        from_host_return_transformation,
-    ))
+    Ok(Transform {
+        input_sig: guest_signature_input,
+        output_sig: guest_signature_return,
+        input_trans: from_guest_input_transformations,
+        call_args: host_call_signature,
+        output_trans: from_host_return_transformation,
+    })
 }
 
 fn self_error<S: Spanned>(location: S) -> TokenStream {

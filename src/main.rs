@@ -57,9 +57,7 @@ pub fn run() -> Result<()> {
                 result
             })
         })
-        .1
-        .map_err(|e| e.error)?;
-
+        .1?;
     Ok(())
 }
 

@@ -1,12 +1,9 @@
-use anyhow::Result;
-
 use async_wormhole::AsyncYielder;
 use uptown_funk::memory::Memory;
 
+use std::future::Future;
 use std::mem::ManuallyDrop;
-use std::{future::Future, marker::PhantomData};
 
-use super::err::*;
 use crate::module::Runtime;
 
 /// This structure is captured inside HOST function closures passed to Wasmtime's Linker.
@@ -17,16 +14,13 @@ use crate::module::Runtime;
 ///
 /// Having a mutable slice of Wasmtime's memory is generally unsafe, but Lunatic always uses
 /// static memories and one memory per instance. This makes it somewhat safe?
-pub struct ProcessEnvironment<T: Clone> {
+pub struct ProcessEnvironment {
     memory: Memory,
     yielder: usize,
-    yield_value: PhantomData<T>,
     runtime: Runtime,
 }
 
-impl<T: Sized + Clone> uptown_funk::Executor for ProcessEnvironment<T> {
-    type Return = T;
-
+impl uptown_funk::Executor for ProcessEnvironment {
     #[inline(always)]
     fn async_<R, F>(&self, f: F) -> R
     where
@@ -34,7 +28,7 @@ impl<T: Sized + Clone> uptown_funk::Executor for ProcessEnvironment<T> {
     {
         // The yielder should not be dropped until this process is done running.
         let mut yielder = unsafe {
-            std::ptr::read(self.yielder as *const ManuallyDrop<AsyncYielder<Result<T, Error<T>>>>)
+            std::ptr::read(self.yielder as *const ManuallyDrop<AsyncYielder<anyhow::Result<()>>>)
         };
         yielder.async_suspend(f)
     }
@@ -51,7 +45,7 @@ impl<T: Sized + Clone> uptown_funk::Executor for ProcessEnvironment<T> {
 // the reference count.
 // Safety: The ProcessEnvironment has the same lifetime as Memory, so it should be safe to
 // do this.
-impl<T: Sized + Clone> Drop for ProcessEnvironment<T> {
+impl Drop for ProcessEnvironment {
     fn drop(&mut self) {
         match self.runtime {
             #[cfg(feature = "vm-wasmtime")]
@@ -67,34 +61,31 @@ impl<T: Sized + Clone> Drop for ProcessEnvironment<T> {
 
 // For the same reason mentioned on the Drop trait we can't increase the reference count
 // on the Memory when cloning.
-impl<T: Sized + Clone> Clone for ProcessEnvironment<T> {
+impl Clone for ProcessEnvironment {
     fn clone(&self) -> Self {
         match self.runtime {
             #[cfg(feature = "vm-wasmtime")]
             Runtime::Wasmtime => Self {
                 memory: unsafe { std::ptr::read(&self.memory as *const Memory) },
                 yielder: self.yielder,
-                yield_value: PhantomData::default(),
                 runtime: self.runtime,
             },
             #[cfg(feature = "vm-wasmer")]
             Runtime::Wasmer => Self {
                 memory: self.memory.clone(),
                 yielder: self.yielder,
-                yield_value: PhantomData::default(),
                 runtime: self.runtime,
             },
         }
     }
 }
 
-impl<T: Clone + Sized> ProcessEnvironment<T> {
+impl ProcessEnvironment {
     pub fn new(memory: Memory, yielder: usize, runtime: Runtime) -> Self {
         Self {
             memory,
-            yielder,
-            yield_value: PhantomData::default(),
             runtime,
+            yielder,
         }
     }
 }

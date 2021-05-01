@@ -13,10 +13,9 @@ use crate::{api::channel::ChannelReceiver, linker::*};
 use log::info;
 use std::future::Future;
 
-use crate::api::DefaultApi;
+//use crate::api::DefaultApi;
 
 use super::api::ProcessState;
-use super::err::*;
 
 lazy_static! {
     pub static ref EXECUTOR: TaskExecutor<'static> = TaskExecutor::new();
@@ -40,23 +39,24 @@ pub enum MemoryChoice {
 
 /// A lunatic process represents an actor.
 pub struct Process {
-    task: Task<Result<(), Error<()>>>,
+    task: Task<Result<()>>,
 }
 
 impl Process {
-    pub fn task(self) -> Task<Result<(), Error<()>>> {
+    pub fn task(self) -> Task<Result<()>> {
         self.task
     }
 
     /// Creates a new process with a custom API.
-    pub async fn create_with_api<A>(
+    pub fn create_with_api<A>(
         module: LunaticModule,
         function: FunctionLookup,
         memory: MemoryChoice,
         api: A,
-    ) -> Result<A::Return, Error<A::Return>>
+    ) -> anyhow::Result<(A::Return, impl Future<Output = Result<()>>)>
     where
-        A: HostFunctions + 'static + Send,
+        A: HostFunctions + 'static,
+        A::Wrap: Send,
     {
         // The creation of AsyncWormhole needs to be wrapped in an async function.
         // AsyncWormhole performs linking between the new and old stack, so that tools like backtrace work correctly.
@@ -69,16 +69,17 @@ impl Process {
         let created_at = std::time::Instant::now();
         let runtime = module.runtime();
 
+        let (ret, api) = api.split();
+
         let stack = OneMbStack::new()?;
         let mut process = AsyncWormhole::new(stack, move |yielder| {
-            let yielder_ptr =
-                &yielder as *const AsyncYielder<Result<A::Return, Error<A::Return>>> as usize;
+            let yielder_ptr = &yielder as *const AsyncYielder<anyhow::Result<()>> as usize;
 
             match module.runtime() {
                 #[cfg(feature = "vm-wasmtime")]
                 Runtime::Wasmtime => {
-                    let mut linker = WasmtimeLunaticLinker::<A>::new(module, yielder_ptr, memory)?;
-                    let ret = linker.add_api(api);
+                    let mut linker = WasmtimeLunaticLinker::new(module, yielder_ptr, memory)?;
+                    linker.add_api::<A>(api);
                     let instance = linker.instance()?;
 
                     match function {
@@ -92,10 +93,7 @@ impl Process {
 
                             // Measure how long the function takes for named functions.
                             let performance_timer = std::time::Instant::now();
-                            func.call(&[]).map_err(|error| Error {
-                                error: error.into(),
-                                value: Some(ret.clone()),
-                            })?;
+                            func.call(&[])?;
                             info!(target: "performance", "Process {} finished in {:.5} ms.", name, performance_timer.elapsed().as_secs_f64() * 1000.0);
                         }
                         FunctionLookup::TableIndex(index) => {
@@ -110,12 +108,12 @@ impl Process {
                         }
                     }
 
-                    Ok(ret)
+                    Ok(())
                 }
                 #[cfg(feature = "vm-wasmer")]
                 Runtime::Wasmer => {
-                    let mut linker = WasmerLunaticLinker::<A>::new(module, yielder_ptr, memory)?;
-                    let ret = linker.add_api(api);
+                    let mut linker = WasmerLunaticLinker::new(module, yielder_ptr, memory)?;
+                    linker.add_api::<A>(api);
                     let instance = linker.instance()?;
 
                     match function {
@@ -124,10 +122,7 @@ impl Process {
 
                             // Measure how long the function takes for named functions.
                             let performance_timer = std::time::Instant::now();
-                            func.call(&[]).map_err(|error| Error {
-                                error: error.into(),
-                                value: Some(ret.clone()),
-                            })?;
+                            func.call(&[])?;
                             info!(target: "performance", "Process {} finished in {:.5} ms.", name, performance_timer.elapsed().as_secs_f64() * 1000.0);
                         }
                         FunctionLookup::TableIndex(index) => {
@@ -136,7 +131,7 @@ impl Process {
                         }
                     }
 
-                    Ok(ret)
+                    Ok(())
                 }
             }
         })?;
@@ -152,9 +147,9 @@ impl Process {
             Runtime::Wasmer => wasmer_cts_saver.swap(),
         });
 
-        let ret = process.await;
         info!(target: "performance", "Total time {:.5} ms.", created_at.elapsed().as_secs_f64() * 1000.0);
-        ret
+
+        Ok((ret, process))
     }
 
     /// Creates a new process using the default api.
@@ -163,15 +158,16 @@ impl Process {
         module: LunaticModule,
         function: FunctionLookup,
         memory: MemoryChoice,
-    ) -> Result<(), Error<()>> {
-        let api = DefaultApi::new(context_receiver, module.clone());
-        Process::create_with_api(module, function, memory, api).await
+    ) -> Result<()> {
+        let api = crate::api::default::DefaultApi::new(context_receiver, module.clone());
+        let (_, fut) = Process::create_with_api(module, function, memory, api)?;
+        fut.await
     }
 
     /// Spawns a new process on the `EXECUTOR`
     pub fn spawn<Fut>(future: Fut) -> Self
     where
-        Fut: Future<Output = Result<(), Error<()>>> + Send + 'static,
+        Fut: Future<Output = Result<()>> + Send + 'static,
     {
         let task = EXECUTOR.spawn(future);
         Self { task }
