@@ -1,6 +1,4 @@
 use anyhow::Result;
-#[cfg(feature = "vm-wasmer")]
-use wasmer::Module as WasmerModule;
 #[cfg(feature = "vm-wasmtime")]
 use wasmtime::Module as WasmtimeModule;
 
@@ -13,8 +11,6 @@ pub mod normalisation;
 pub enum Runtime {
     #[cfg(feature = "vm-wasmtime")]
     Wasmtime,
-    #[cfg(feature = "vm-wasmer")]
-    Wasmer,
 }
 
 impl Default for Runtime {
@@ -22,19 +18,12 @@ impl Default for Runtime {
     fn default() -> Self {
         Self::Wasmtime
     }
-
-    #[cfg(not(feature = "vm-wasmtime"))]
-    fn default() -> Self {
-        Self::Wasmer
-    }
 }
 
 #[derive(Clone)]
 pub enum Module {
     #[cfg(feature = "vm-wasmtime")]
     Wasmtime(WasmtimeModule),
-    #[cfg(feature = "vm-wasmer")]
-    Wasmer(WasmerModule),
 }
 
 impl Module {
@@ -42,17 +31,6 @@ impl Module {
     pub fn wasmtime(&self) -> Option<&WasmtimeModule> {
         match self {
             Module::Wasmtime(m) => Some(m),
-            #[cfg(feature = "vm-wasmer")]
-            _ => None,
-        }
-    }
-
-    #[cfg(feature = "vm-wasmer")]
-    pub fn wasmer(&self) -> Option<&WasmerModule> {
-        match self {
-            Module::Wasmer(m) => Some(m),
-            #[cfg(feature = "vm-wasmtime")]
-            _ => None,
         }
     }
 
@@ -60,8 +38,6 @@ impl Module {
         match self {
             #[cfg(feature = "vm-wasmtime")]
             Module::Wasmtime(_) => Runtime::Wasmtime,
-            #[cfg(feature = "vm-wasmer")]
-            Module::Wasmer(_) => Runtime::Wasmer,
         }
     }
 }
@@ -81,8 +57,6 @@ impl LunaticModule {
         let module = match runtime {
             #[cfg(feature = "vm-wasmtime")]
             Runtime::Wasmtime => Module::Wasmtime(WasmtimeModule::new(&wasmtime_engine(), wasm)?),
-            #[cfg(feature = "vm-wasmer")]
-            Runtime::Wasmer => Module::Wasmer(WasmerModule::new(&wasmer_engine(), wasm)?),
         };
 
         Ok(Self {

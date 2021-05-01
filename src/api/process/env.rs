@@ -53,8 +53,6 @@ impl Drop for ProcessEnvironment {
                 let memory = std::mem::replace(&mut self.memory, Memory::Empty);
                 std::mem::forget(memory)
             }
-            #[cfg(feature = "vm-wasmer")]
-            _ => {}
         }
     }
 }
@@ -67,12 +65,6 @@ impl Clone for ProcessEnvironment {
             #[cfg(feature = "vm-wasmtime")]
             Runtime::Wasmtime => Self {
                 memory: unsafe { std::ptr::read(&self.memory as *const Memory) },
-                yielder: self.yielder,
-                runtime: self.runtime,
-            },
-            #[cfg(feature = "vm-wasmer")]
-            Runtime::Wasmer => Self {
-                memory: self.memory.clone(),
                 yielder: self.yielder,
                 runtime: self.runtime,
             },
