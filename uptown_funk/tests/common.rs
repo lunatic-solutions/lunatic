@@ -11,4 +11,5 @@ impl Executor for SimpleExcutor {
     }
 }
 
+#[allow(dead_code)]
 pub struct Empty;
