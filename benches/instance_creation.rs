@@ -14,7 +14,7 @@ pub fn instance_creation(c: &mut Criterion) {
     #[cfg(feature = "vm-wasmer")]
     c.bench_function("Wasmer instance creation", |b| {
         let store = wasmer::Store::default();
-        let wasm = include_bytes!("wasm/start.wasm");
+        let wasm = include_bytes!("guest/start.wasm");
         let module = wasmer::Module::new(&store, &wasm).unwrap();
         let import_object = wasmer::imports! {};
 
@@ -23,7 +23,7 @@ pub fn instance_creation(c: &mut Criterion) {
 
     #[cfg(feature = "vm-wasmer")]
     c.bench_function("Wasmer lunatic instance creation", |b| {
-        let wasm = include_bytes!("wasm/start.wasm");
+        let wasm = include_bytes!("guest/start.wasm");
         let module = LunaticModule::new(wasm.as_ref().into(), Runtime::Wasmer).unwrap();
 
         b.iter(move || {
@@ -37,7 +37,7 @@ pub fn instance_creation(c: &mut Criterion) {
     #[cfg(feature = "vm-wasmer")]
     c.bench_function("Wasmer lunatic multithreaded instance creation", |b| {
         use rayon::prelude::*;
-        let wasm = include_bytes!("wasm/start.wasm");
+        let wasm = include_bytes!("guest/start.wasm");
         let module = LunaticModule::new(wasm.as_ref().into(), Runtime::Wasmer).unwrap();
 
         b.iter_custom(move |iters| {
@@ -55,7 +55,7 @@ pub fn instance_creation(c: &mut Criterion) {
     #[cfg(feature = "vm-wasmtime")]
     c.bench_function("Wasmtime instance creation", |b| {
         let engine = wasmtime::Engine::default();
-        let wasm = include_bytes!("wasm/start.wasm");
+        let wasm = include_bytes!("guest/start.wasm");
         let module = wasmtime::Module::new(&engine, &wasm).unwrap();
 
         b.iter(move || {
@@ -68,7 +68,7 @@ pub fn instance_creation(c: &mut Criterion) {
 
     #[cfg(feature = "vm-wasmtime")]
     c.bench_function("Wasmtime lunatic instance creation", |b| {
-        let wasm = include_bytes!("wasm/start.wasm");
+        let wasm = include_bytes!("guest/start.wasm");
         let module = LunaticModule::new(wasm.as_ref().into(), Runtime::Wasmtime).unwrap();
 
         b.iter(move || {
@@ -82,7 +82,7 @@ pub fn instance_creation(c: &mut Criterion) {
     #[cfg(feature = "vm-wasmtime")]
     c.bench_function("Wasmtime lunatic multithreaded instance creation", |b| {
         use rayon::prelude::*;
-        let wasm = include_bytes!("wasm/start.wasm");
+        let wasm = include_bytes!("guest/start.wasm");
         let module = LunaticModule::new(wasm.as_ref().into(), Runtime::Wasmtime).unwrap();
 
         b.iter_custom(move |iters| {
