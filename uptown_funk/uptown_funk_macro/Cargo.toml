@@ -6,9 +6,6 @@ edition = "2018"
 description = "Helper macro for the uptown_funk crate"
 license = "Apache-2.0/MIT"
 
-[features]
-vm-wasmtime = []
-
 [lib]
 proc-macro = true
 

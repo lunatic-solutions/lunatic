@@ -27,7 +27,6 @@ pub trait HostFunctions: Sized {
 
     fn split(self) -> (Self::Return, Self::Wrap);
 
-    #[cfg(feature = "vm-wasmtime")]
     fn add_to_linker<E>(api: Self::Wrap, executor: E, linker: &mut wasmtime::Linker)
     where
         E: Executor + Clone + 'static;
@@ -78,7 +77,6 @@ impl<S> ToWasm<S> for Trap {
     }
 }
 
-#[cfg(feature = "vm-wasmtime")]
 impl From<Trap> for wasmtime::Trap {
     fn from(trap: Trap) -> Self {
         wasmtime::Trap::new(trap.message)

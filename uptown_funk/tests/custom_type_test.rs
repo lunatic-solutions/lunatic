@@ -1,5 +1,4 @@
 use uptown_funk::{host_functions, memory::Memory, Executor, HostFunctions};
-#[cfg(feature = "vm-wasmtime")]
 use wasmtime;
 
 use std::fs::read;
@@ -36,7 +35,6 @@ impl uptown_funk::FromWasm<&mut Empty> for MyNumber {
     }
 }
 
-#[cfg(feature = "vm-wasmtime")]
 #[test]
 fn wasmtime_custom_type_add_test() {
     let store = wasmtime::Store::default();

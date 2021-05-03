@@ -9,10 +9,9 @@ readme = "Readme.md"
 
 [features]
 default = []
-vm-wasmtime = ["wasmtime", "uptown_funk_macro/vm-wasmtime"]
 async = []
 
 [dependencies]
 smallvec = "1.6.1"
-wasmtime = { version = "0.26", optional = true }
+wasmtime = { version = "0.26" }
 uptown_funk_macro = { version = "0.1", path = "./uptown_funk_macro" }

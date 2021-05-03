@@ -1,10 +1,8 @@
-#[cfg(feature = "vm-wasmtime")]
 pub struct CallThreadStateSaveWasmtime {
     saved: Option<wasmtime_runtime::TlsRestore>,
     init: bool,
 }
 
-#[cfg(feature = "vm-wasmtime")]
 impl CallThreadStateSaveWasmtime {
     pub fn new() -> Self {
         Self {
@@ -30,5 +28,4 @@ impl CallThreadStateSaveWasmtime {
     }
 }
 
-#[cfg(feature = "vm-wasmtime")]
 unsafe impl Send for CallThreadStateSaveWasmtime {}

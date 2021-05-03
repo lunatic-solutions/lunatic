@@ -1,7 +1,6 @@
 mod attribute;
 mod signature;
 mod state_type;
-#[cfg(feature = "vm-wasmtime")]
 mod wasmtime_method;
 
 use proc_macro::TokenStream;
@@ -32,9 +31,8 @@ pub fn host_functions(attr: TokenStream, item: TokenStream) -> TokenStream {
     };
 
     // Create wrapper functions compatible with Wasmtime's runtime
-    #[cfg(feature = "vm-wasmtime")]
     let mut wasmtime_method_wrappers = Vec::with_capacity(implementation.items.len());
-    #[cfg(feature = "vm-wasmtime")]
+
     for item in implementation.items.iter() {
         match item {
             Method(method) => match wasmtime_method::wrap(namespace, sync, method) {
@@ -54,7 +52,7 @@ pub fn host_functions(attr: TokenStream, item: TokenStream) -> TokenStream {
 
     #[allow(unused_variables)]
     let wasmtime_expanded = quote! {};
-    #[cfg(feature = "vm-wasmtime")]
+
     let wasmtime_expanded = quote! {
         fn add_to_linker<E: 'static>(api: Self::Wrap, executor: E, linker: &mut wasmtime::Linker)
             where

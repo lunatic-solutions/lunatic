@@ -1,5 +1,4 @@
 use uptown_funk::{host_functions, memory::Memory, HostFunctions};
-#[cfg(feature = "vm-wasmtime")]
 use wasmtime;
 
 use std::fs::read;
@@ -14,7 +13,6 @@ impl Empty {
     }
 }
 
-#[cfg(feature = "vm-wasmtime")]
 #[test]
 fn wasmtime_add_test() {
     let store = wasmtime::Store::default();

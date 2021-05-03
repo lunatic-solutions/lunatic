@@ -1,5 +1,4 @@
 use uptown_funk::{host_functions, memory::Memory, HostFunctions};
-#[cfg(feature = "vm-wasmtime")]
 use wasmtime;
 
 use std::fs::read;
@@ -19,7 +18,6 @@ impl Empty {
     fn vectored_write(&self, _bufs: &[std::io::IoSlice<'_>]) {}
 }
 
-#[cfg(feature = "vm-wasmtime")]
 #[test]
 fn wasmtime_ioslice_test() {
     let store = wasmtime::Store::default();

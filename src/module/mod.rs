@@ -1,5 +1,4 @@
 use anyhow::Result;
-#[cfg(feature = "vm-wasmtime")]
 use wasmtime::Module as WasmtimeModule;
 
 use crate::linker::*;
@@ -9,12 +8,10 @@ pub mod normalisation;
 
 #[derive(Debug, Clone, Copy)]
 pub enum Runtime {
-    #[cfg(feature = "vm-wasmtime")]
     Wasmtime,
 }
 
 impl Default for Runtime {
-    #[cfg(feature = "vm-wasmtime")]
     fn default() -> Self {
         Self::Wasmtime
     }
@@ -22,12 +19,10 @@ impl Default for Runtime {
 
 #[derive(Clone)]
 pub enum Module {
-    #[cfg(feature = "vm-wasmtime")]
     Wasmtime(WasmtimeModule),
 }
 
 impl Module {
-    #[cfg(feature = "vm-wasmtime")]
     pub fn wasmtime(&self) -> Option<&WasmtimeModule> {
         match self {
             Module::Wasmtime(m) => Some(m),
@@ -36,7 +31,6 @@ impl Module {
 
     pub fn runtime(&self) -> Runtime {
         match self {
-            #[cfg(feature = "vm-wasmtime")]
             Module::Wasmtime(_) => Runtime::Wasmtime,
         }
     }
@@ -55,7 +49,6 @@ impl LunaticModule {
         let ((min_memory, max_memory), wasm) = patch(&wasm)?;
 
         let module = match runtime {
-            #[cfg(feature = "vm-wasmtime")]
             Runtime::Wasmtime => Module::Wasmtime(WasmtimeModule::new(&wasmtime_engine(), wasm)?),
         };
 

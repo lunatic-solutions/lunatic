@@ -1,5 +1,4 @@
 use uptown_funk::{host_functions, memory::Memory, Executor, HostFunctions};
-#[cfg(feature = "vm-wasmtime")]
 use wasmtime;
 
 use std::fs::read;
@@ -24,7 +23,6 @@ impl uptown_funk::ToWasm<&mut Empty> for Traps {
     }
 }
 
-#[cfg(feature = "vm-wasmtime")]
 #[test]
 fn wasmtime_trap_test() {
     let store = wasmtime::Store::default();

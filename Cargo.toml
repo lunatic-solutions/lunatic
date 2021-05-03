@@ -17,16 +17,12 @@ path = "src/lib.rs"
 name = "lunatic"
 path = "src/main.rs"
 
-[features]
-default = ["vm-wasmtime"]
-vm-wasmtime = ["uptown_funk/vm-wasmtime", "wasmtime", "wasmtime-runtime"]
-
 [dependencies]
 async-wormhole = "0.3"
 uptown_funk = { version = "0.1", path = "./uptown_funk", features=["async"] }
 libc = { version = "^0.2", default-features = false }
-wasmtime = { version = "0.26", optional = true }
-wasmtime-runtime = { version = "0.26", optional = true }
+wasmtime = { version = "0.26" }
+wasmtime-runtime = { version = "0.26" }
 clap = "3.0.0-beta.2"
 getrandom = { version = "0.2.0", features = ["std"] }
 walrus = "0.18"

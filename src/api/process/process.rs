@@ -76,7 +76,6 @@ impl Process {
             let yielder_ptr = &yielder as *const AsyncYielder<anyhow::Result<()>> as usize;
 
             match module.runtime() {
-                #[cfg(feature = "vm-wasmtime")]
                 Runtime::Wasmtime => {
                     let mut linker = WasmtimeLunaticLinker::new(module, yielder_ptr, memory)?;
                     linker.add_api::<A>(api);
@@ -113,11 +112,9 @@ impl Process {
             }
         })?;
 
-        #[cfg(feature = "vm-wasmtime")]
         let mut wasmtime_cts_saver = super::tls::CallThreadStateSaveWasmtime::new();
 
         process.set_pre_post_poll(move || match runtime {
-            #[cfg(feature = "vm-wasmtime")]
             Runtime::Wasmtime => wasmtime_cts_saver.swap(),
         });
 

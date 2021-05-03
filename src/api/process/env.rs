@@ -48,7 +48,6 @@ impl uptown_funk::Executor for ProcessEnvironment {
 impl Drop for ProcessEnvironment {
     fn drop(&mut self) {
         match self.runtime {
-            #[cfg(feature = "vm-wasmtime")]
             Runtime::Wasmtime => {
                 let memory = std::mem::replace(&mut self.memory, Memory::Empty);
                 std::mem::forget(memory)
@@ -62,7 +61,6 @@ impl Drop for ProcessEnvironment {
 impl Clone for ProcessEnvironment {
     fn clone(&self) -> Self {
         match self.runtime {
-            #[cfg(feature = "vm-wasmtime")]
             Runtime::Wasmtime => Self {
                 memory: unsafe { std::ptr::read(&self.memory as *const Memory) },
                 yielder: self.yielder,

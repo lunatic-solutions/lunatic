@@ -33,7 +33,6 @@ impl HostFunctions for DefaultApi {
         (self.wasi_ret.take().unwrap(), self)
     }
 
-    #[cfg(feature = "vm-wasmtime")]
     fn add_to_linker<E>(mut api: Self, executor: E, linker: &mut wasmtime::Linker)
     where
         E: Executor + Clone + 'static,

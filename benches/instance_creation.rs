@@ -11,7 +11,6 @@ pub fn instance_creation(c: &mut Criterion) {
         });
     });
 
-    #[cfg(feature = "vm-wasmtime")]
     c.bench_function("Wasmtime instance creation", |b| {
         let engine = wasmtime::Engine::default();
         let wasm = include_bytes!("wasm/start.wasm");
@@ -25,7 +24,6 @@ pub fn instance_creation(c: &mut Criterion) {
         });
     });
 
-    #[cfg(feature = "vm-wasmtime")]
     c.bench_function("Wasmtime lunatic instance creation", |b| {
         let wasm = include_bytes!("wasm/start.wasm");
         let module = LunaticModule::new(wasm.as_ref().into(), Runtime::Wasmtime).unwrap();
@@ -38,7 +36,6 @@ pub fn instance_creation(c: &mut Criterion) {
         });
     });
 
-    #[cfg(feature = "vm-wasmtime")]
     c.bench_function("Wasmtime lunatic multithreaded instance creation", |b| {
         use rayon::prelude::*;
         let wasm = include_bytes!("wasm/start.wasm");
