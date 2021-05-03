@@ -21,7 +21,7 @@ pub struct ChannelState {
 
 /// Host resources need to be sent separately to another instance, because they can't be serialized on
 /// the guest. This is done by adding them to `next_message_host_resources` during the serialization
-/// ont the guest and just serializing it as the index of the resource in this array.
+/// on the guest and just serializing it as the index of the resource in this array.
 ///
 /// Smol's channels don't allow you to peek into the message without consuming it, but Lunatic's API
 /// requires us to check the size of the next message, so that the guest side can allocate a big enough
