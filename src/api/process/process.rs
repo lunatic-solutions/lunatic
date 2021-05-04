@@ -76,7 +76,6 @@ impl Process {
             let yielder_ptr = &yielder as *const AsyncYielder<anyhow::Result<()>> as usize;
 
             match module.runtime() {
-                #[cfg(feature = "vm-wasmtime")]
                 Runtime::Wasmtime => {
                     let mut linker = WasmtimeLunaticLinker::new(module, yielder_ptr, memory)?;
                     linker.add_api::<A>(api);
@@ -110,41 +109,13 @@ impl Process {
 
                     Ok(())
                 }
-                #[cfg(feature = "vm-wasmer")]
-                Runtime::Wasmer => {
-                    let mut linker = WasmerLunaticLinker::new(module, yielder_ptr, memory)?;
-                    linker.add_api::<A>(api);
-                    let instance = linker.instance()?;
-
-                    match function {
-                        FunctionLookup::Name(name) => {
-                            let func = instance.exports.get_function(name)?;
-
-                            // Measure how long the function takes for named functions.
-                            let performance_timer = std::time::Instant::now();
-                            func.call(&[])?;
-                            info!(target: "performance", "Process {} finished in {:.5} ms.", name, performance_timer.elapsed().as_secs_f64() * 1000.0);
-                        }
-                        FunctionLookup::TableIndex(index) => {
-                            let func = instance.exports.get_function("lunatic_spawn_by_index")?;
-                            func.call(&[(index as i32).into()])?;
-                        }
-                    }
-
-                    Ok(())
-                }
             }
         })?;
 
-        #[cfg(feature = "vm-wasmtime")]
         let mut wasmtime_cts_saver = super::tls::CallThreadStateSaveWasmtime::new();
-        #[cfg(feature = "vm-wasmer")]
-        let wasmer_cts_saver = super::tls::CallThreadStateSaveWasmer::new();
+
         process.set_pre_post_poll(move || match runtime {
-            #[cfg(feature = "vm-wasmtime")]
             Runtime::Wasmtime => wasmtime_cts_saver.swap(),
-            #[cfg(feature = "vm-wasmer")]
-            Runtime::Wasmer => wasmer_cts_saver.swap(),
         });
 
         info!(target: "performance", "Total time {:.5} ms.", created_at.elapsed().as_secs_f64() * 1000.0);

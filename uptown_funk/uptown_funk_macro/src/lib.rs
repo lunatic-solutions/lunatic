@@ -1,9 +1,6 @@
 mod attribute;
 mod signature;
 mod state_type;
-#[cfg(feature = "vm-wasmer")]
-mod wasmer_method;
-#[cfg(feature = "vm-wasmtime")]
 mod wasmtime_method;
 
 use proc_macro::TokenStream;
@@ -34,9 +31,8 @@ pub fn host_functions(attr: TokenStream, item: TokenStream) -> TokenStream {
     };
 
     // Create wrapper functions compatible with Wasmtime's runtime
-    #[cfg(feature = "vm-wasmtime")]
     let mut wasmtime_method_wrappers = Vec::with_capacity(implementation.items.len());
-    #[cfg(feature = "vm-wasmtime")]
+
     for item in implementation.items.iter() {
         match item {
             Method(method) => match wasmtime_method::wrap(namespace, sync, method) {
@@ -56,7 +52,7 @@ pub fn host_functions(attr: TokenStream, item: TokenStream) -> TokenStream {
 
     #[allow(unused_variables)]
     let wasmtime_expanded = quote! {};
-    #[cfg(feature = "vm-wasmtime")]
+
     let wasmtime_expanded = quote! {
         fn add_to_linker<E: 'static>(api: Self::Wrap, executor: E, linker: &mut wasmtime::Linker)
             where
@@ -66,35 +62,6 @@ pub fn host_functions(attr: TokenStream, item: TokenStream) -> TokenStream {
                 #prepare_state;
                 #(#wasmtime_method_wrappers)*
             }
-    };
-
-    // Create wrapper functions compatible with Wasmer's runtime
-    #[cfg(feature = "vm-wasmer")]
-    let mut wasmer_method_wrappers = Vec::with_capacity(implementation.items.len());
-    #[cfg(feature = "vm-wasmer")]
-    for item in implementation.items.iter() {
-        match item {
-            Method(method) => match wasmer_method::wrap(namespace, sync, method) {
-                Ok(wrapper) => wasmer_method_wrappers.push(wrapper),
-                Err(error) => return error,
-            },
-            _ => (), // Ignore other items in the implementation
-        }
-    }
-    #[allow(unused_variables)]
-    let wasmer_expanded = quote! {};
-    #[cfg(feature = "vm-wasmer")]
-    let wasmer_expanded = quote! {
-        fn add_to_wasmer_linker<E: 'static>(
-            api: Self::Wrap,
-            executor: E,
-            wasmer_linker: &mut uptown_funk::wasmer::WasmerLinker,
-            store: &wasmer::Store,
-        ) where E: uptown_funk::Executor {
-            #prepare_state;
-            let state_wrapper = ::uptown_funk::StateWrapper::new(api, executor);
-            #(#wasmer_method_wrappers)*
-        }
     };
 
     let assoc_types_and_split = match sync {
@@ -124,7 +91,6 @@ pub fn host_functions(attr: TokenStream, item: TokenStream) -> TokenStream {
             #assoc_types_and_split
 
             #wasmtime_expanded
-            #wasmer_expanded
         }
     };
 

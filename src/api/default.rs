@@ -33,7 +33,6 @@ impl HostFunctions for DefaultApi {
         (self.wasi_ret.take().unwrap(), self)
     }
 
-    #[cfg(feature = "vm-wasmtime")]
     fn add_to_linker<E>(mut api: Self, executor: E, linker: &mut wasmtime::Linker)
     where
         E: Executor + Clone + 'static,
@@ -51,44 +50,5 @@ impl HostFunctions for DefaultApi {
         networking::TcpState::add_to_linker(networking_state, executor.clone(), linker);
 
         WasiState::add_to_linker(api.wasi_wrap.take().unwrap(), executor, linker);
-    }
-
-    #[cfg(feature = "vm-wasmer")]
-    fn add_to_wasmer_linker<E>(
-        mut api: Self,
-        executor: E,
-        linker: &mut uptown_funk::wasmer::WasmerLinker,
-        store: &wasmer::Store,
-    ) where
-        E: Executor + Clone + 'static,
-    {
-        let channel_state = channel::api::ChannelState::new(api.context_receiver);
-        let (_, channel_state) = channel_state.split();
-        channel::api::ChannelState::add_to_wasmer_linker(
-            channel_state.clone(),
-            executor.clone(),
-            linker,
-            store,
-        );
-
-        let process_state = process::api::ProcessState::new(api.module, channel_state.clone());
-        let (_, process_state) = process_state.split();
-        process::api::ProcessState::add_to_wasmer_linker(
-            process_state,
-            executor.clone(),
-            linker,
-            store,
-        );
-
-        let networking_state = networking::TcpState::new(channel_state);
-        let (_, networking_state) = networking_state.split();
-        networking::TcpState::add_to_wasmer_linker(
-            networking_state,
-            executor.clone(),
-            linker,
-            store,
-        );
-
-        WasiState::add_to_wasmer_linker(api.wasi_wrap.take().unwrap(), executor, linker, store)
     }
 }

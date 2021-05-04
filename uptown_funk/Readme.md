@@ -1,6 +1,5 @@
-uptown_funk is a crate that lets you elegantly define Wasm host functions that are compatible with both
-[Wasmtime](https://github.com/bytecodealliance/wasmtime) and [Wasmer](https://github.com/wasmerio/wasmer)
-runtimes.
+uptown_funk is a crate that lets you elegantly define Wasm host functions that are compatible with
+[Wasmtime](https://github.com/bytecodealliance/wasmtime).
 
 It consists of a macro and a few structs/traits that let you translate from Wasm primitive types to higher
 level Rust types, and back.
