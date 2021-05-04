@@ -8,10 +8,14 @@ use smol::{Executor as TaskExecutor, Task};
 use uptown_funk::{Executor, FromWasm, HostFunctions, ToWasm};
 
 use crate::module::{LunaticModule, Runtime};
-use crate::{api::channel::ChannelReceiver, linker::*};
+use crate::{
+    api::{channel::ChannelReceiver, heap_profiler::HeapProfilerState},
+    linker::*,
+};
 
 use log::info;
 use std::future::Future;
+use std::sync::Arc;
 
 //use crate::api::DefaultApi;
 
@@ -39,11 +43,11 @@ pub enum MemoryChoice {
 
 /// A lunatic process represents an actor.
 pub struct Process {
-    task: Task<Result<()>>,
+    task: Task<Result<HeapProfilerState>>,
 }
 
 impl Process {
-    pub fn task(self) -> Task<Result<()>> {
+    pub fn task(self) -> Task<Result<HeapProfilerState>> {
         self.task
     }
 
@@ -129,16 +133,31 @@ impl Process {
         module: LunaticModule,
         function: FunctionLookup,
         memory: MemoryChoice,
-    ) -> Result<()> {
+    ) -> Result<HeapProfilerState> {
         let api = crate::api::default::DefaultApi::new(context_receiver, module.clone());
-        let (_, fut) = Process::create_with_api(module, function, memory, api)?;
-        fut.await
+        let (profiler, fut) = Process::create_with_api(module, function, memory, api)?;
+        fut.await?;
+
+        // NOTE it should be safe to unwrap here
+        let mut profiler = Arc::try_unwrap(profiler)
+            .map_err(|_| {
+                anyhow::Error::msg(
+                    "api_process_create: HeapProfilerState referenced multiple times",
+                )
+            })?
+            .into_inner()
+            .unwrap();
+        // free remaining process memory in profiler
+        // NOTE wasm doesn't call free for some objects currently (like for stdout) within Process::spawn
+        profiler.free_all();
+
+        Ok(profiler)
     }
 
     /// Spawns a new process on the `EXECUTOR`
     pub fn spawn<Fut>(future: Fut) -> Self
     where
-        Fut: Future<Output = Result<()>> + Send + 'static,
+        Fut: Future<Output = Result<HeapProfilerState>> + Send + 'static,
     {
         let task = EXECUTOR.spawn(future);
         Self { task }

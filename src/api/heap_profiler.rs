@@ -91,7 +91,7 @@ impl HeapProfilerState {
     }
 }
 
-#[host_functions(namespace = "heap_profiler")]
+#[host_functions(namespace = "heap_profiler", sync = "mutex")]
 impl HeapProfilerState {
     fn aligned_alloc_profiler(&mut self, _self: u32, size: Size, ptr: Ptr) {
         self.malloc_profiler(size, ptr);

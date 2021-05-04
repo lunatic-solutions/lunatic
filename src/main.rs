@@ -42,7 +42,7 @@ pub fn run() -> Result<()> {
     let cpus = thread::available_concurrency().unwrap();
     let (signal, shutdown) = smol::channel::unbounded::<()>();
 
-    Parallel::new()
+    let profiler = Parallel::new()
         .each(0..cpus.into(), |_| {
             smol::future::block_on(EXECUTOR.run(shutdown.recv()))
         })
@@ -60,6 +60,11 @@ pub fn run() -> Result<()> {
             })
         })
         .1?;
+    if is_profile {
+        let mut profile_out = std::fs::File::create("heap.dat")?;
+        profiler.write_dat(&mut profile_out)?;
+    }
+
     Ok(())
 }
 
