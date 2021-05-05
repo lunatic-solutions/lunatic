@@ -43,6 +43,7 @@ rayon = "1.5"
 wat = "1.0"
 wasmprinter = "0.2"
 pretty_assertions = "0.6.1"
+rand = "0.8"
 
 [[bench]]
 name = "lunatic_benchmark"

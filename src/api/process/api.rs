@@ -1,5 +1,6 @@
 use crate::{
     api::channel::{api::ChannelState, ChannelReceiver, Message},
+    api::heap_profiler,
     module::LunaticModule,
 };
 
@@ -7,7 +8,7 @@ use super::{FunctionLookup, MemoryChoice, Process};
 
 use anyhow::Result;
 use smol::{channel::bounded, future::yield_now, Timer};
-use uptown_funk::{host_functions, state::HashMapStore};
+use uptown_funk::{host_functions, state::HashMapStore, HostFunctions};
 
 use std::{
     mem::replace,
@@ -18,14 +19,20 @@ pub struct ProcessState {
     module: LunaticModule,
     channel_state: ChannelState,
     pub processes: HashMapStore<Process>,
+    profiler: <heap_profiler::HeapProfilerState as HostFunctions>::Wrap,
 }
 
 impl ProcessState {
-    pub fn new(module: LunaticModule, channel_state: ChannelState) -> Self {
+    pub fn new(
+        module: LunaticModule,
+        channel_state: ChannelState,
+        profiler: <heap_profiler::HeapProfilerState as HostFunctions>::Wrap,
+    ) -> Self {
         Self {
             module,
             channel_state,
             processes: HashMapStore::new(),
+            profiler,
         }
     }
 }
@@ -71,7 +78,10 @@ impl ProcessState {
     // Returns 0 if process didn't trap, otherwise 1
     async fn join(&self, process: Process) -> u32 {
         match process.task().await {
-            Ok(_) => 0,
+            Ok(profiler) => {
+                self.profiler.lock().unwrap().merge(profiler);
+                0
+            }
             Err(_) => 1,
         }
     }

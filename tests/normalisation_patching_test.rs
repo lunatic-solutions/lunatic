@@ -33,6 +33,7 @@ fn find_tests(path: &Path, tests: &mut Vec<PathBuf>) {
 
 fn run_tests(tests: Vec<PathBuf>) {
     for test in tests {
+        println!("Running test: {}", test.to_str().unwrap());
         let test_content = read_to_string(&test).unwrap();
         let input_expected_output: Vec<_> = test_content.split("EXPECTED-RESULT:").collect();
         let input = input_expected_output.first().unwrap();
@@ -52,10 +53,11 @@ fn run_tests(tests: Vec<PathBuf>) {
         let output_multiline: Vec<&str> = output_wat.split("\n").into_iter().collect();
 
         assert_eq!(expected_output_multiline, output_multiline);
+        println!("Test OK!");
     }
 }
 
 fn run_test(input: &str) -> Vec<u8> {
     let wasm = wat::parse_str(input).unwrap();
-    patch(&wasm).unwrap().1
+    patch(&wasm, true, false).unwrap().1
 }

@@ -44,9 +44,14 @@ pub struct LunaticModule {
 }
 
 impl LunaticModule {
-    pub fn new(wasm: &[u8], runtime: Runtime) -> Result<Self> {
+    pub fn new(
+        wasm: &[u8],
+        runtime: Runtime,
+        is_profile: bool,
+        is_normalisation_out: bool,
+    ) -> Result<Self> {
         // Transfrom WASM file into a format compatible with Lunatic.
-        let ((min_memory, max_memory), wasm) = patch(&wasm)?;
+        let ((min_memory, max_memory), wasm) = patch(&wasm, is_profile, is_normalisation_out)?;
 
         let module = match runtime {
             Runtime::Wasmtime => Module::Wasmtime(WasmtimeModule::new(&wasmtime_engine(), wasm)?),

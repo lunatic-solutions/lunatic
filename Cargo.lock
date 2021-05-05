@@ -923,6 +923,7 @@ dependencies = [
  "libc",
  "log",
  "pretty_assertions",
+ "rand",
  "rayon",
  "smallvec",
  "smol",
