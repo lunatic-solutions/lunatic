@@ -137,21 +137,28 @@ impl HeapProfilerState {
             "heap_profiler: realloc({},{}) -> {}",
             old_ptr, size, new_ptr
         );
-        match self.memory.remove(&old_ptr) {
-            Some(removed_size) => {
-                self.memory.insert(new_ptr, size);
-                let size_delta = size as i32 - removed_size as i32;
-                self.history_push(size_delta);
-            }
-            None => error!(
-                "heap_profiler: can't reallocate, pointer {} doesn't exist",
-                old_ptr
-            ),
-        };
+        // realloc spec: if ptr is null then the call is equivalent  to malloc(size)
+        if old_ptr == 0 {
+            self.memory.insert(new_ptr, size);
+            self.history_push(size as i32);
+        } else {
+            match self.memory.remove(&old_ptr) {
+                Some(removed_size) => {
+                    self.memory.insert(new_ptr, size);
+                    let size_delta = size as i32 - removed_size as i32;
+                    self.history_push(size_delta);
+                }
+                None => error!(
+                    "heap_profiler: can't reallocate, pointer {} doesn't exist",
+                    old_ptr
+                ),
+            };
+        }
     }
 
     fn free_profiler(&mut self, ptr: Ptr) {
         debug!("heap_profiler: free({})", ptr);
+        // free spec: if ptr is null no action is performed
         if ptr != 0 {
             match self.memory.remove(&ptr) {
                 Some(size) => {
