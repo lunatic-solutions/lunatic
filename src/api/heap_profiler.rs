@@ -26,33 +26,55 @@ impl HeapProfilerState {
         }
     }
 
-    // Merge child process profile results into parent process.
+    // Merge child process profile results into parent process profile.
     //
     // Usually this should be called when child process exits.
-    pub fn merge(&mut self, profiler: HeapProfilerState) {
-        self.started = std::cmp::min(self.started, profiler.started);
+    //
+    // It is assumed self is a parrent process profile and profiler is a child
+    // process profile and thus self.started <= profiler.started is assumed.
+    //
+    // It is assumed HeapProfilerHistory.heap_history is sorted ascending by Duration.
+    // This assumption will break if user messes with OS system time (if user reverts system clock
+    // during profiling)
+    pub fn merge(&mut self, mut profiler: HeapProfilerState) {
         let started_delta = profiler.started.duration_since(self.started).unwrap();
-        // TODO sorted state merging of two sorted lists can be done in O(N+M)
-        // currently this runs in O((N+M)*log(N+M)*C)
-        profiler.heap_history.iter().for_each(|(h, d)| {
-            self.heap_history.push_back((*h, *d + started_delta));
-        });
-        self.heap_history
-            .make_contiguous()
-            .sort_unstable_by_key(|&(_, d)| d);
-        // remove oldest extra elements (ringbuffer)
-        if self.heap_history.len() > HISTORY_CAPACITY {
-            self.heap_history
-                .drain(0..(self.heap_history.len() - HISTORY_CAPACITY));
+
+        let merged_size = std::cmp::min(
+            self.heap_history.len() + profiler.heap_history.len(),
+            HISTORY_CAPACITY,
+        );
+        let mut merged = VecDeque::with_capacity(merged_size);
+
+        // Merge two sorted lists with respect to ringbuffer (keep at most HISTORY_CAPACITY bigger
+        // elements)
+        for _ in 0..merged_size {
+            match (self.heap_history.back(), profiler.heap_history.back()) {
+                (Some(_), None) => merged.push_front(self.heap_history.pop_back().unwrap()),
+                (None, Some((h, d))) => {
+                    merged.push_front((*h, *d + started_delta));
+                    profiler.heap_history.pop_back();
+                }
+                (Some((_, d1)), Some((h2, d2))) => {
+                    let d2_delta = *d2 + started_delta;
+                    if d1 > &d2_delta {
+                        merged.push_front(self.heap_history.pop_back().unwrap());
+                    } else {
+                        merged.push_front((*h2, d2_delta));
+                        profiler.heap_history.pop_back();
+                    }
+                }
+                // this line should never be triggered, we could panic instead
+                (None, None) => break,
+            }
         }
+        self.heap_history = merged;
     }
 
     // Deallocate remaining memory. This is invoked when process exits
     pub fn free_all(&mut self) {
         // implicitly deallocate all left over child memory
-        self.memory.clone().iter().for_each(|(k, _)| {
-            self.free_profiler(*k);
-        });
+        self.history_push(-(self.memory.values().sum::<u32>() as i32));
+        self.memory.clear();
     }
 
     // Write heap profile history to a file. Format:
@@ -84,10 +106,10 @@ impl HeapProfilerState {
             // if HISTRY_CAPACITY > 0 this should be safe
             self.heap_history.pop_front().unwrap();
         }
-        // TODO: trap/log error if elapsed failed
-        // very unlikely to happen!
-        self.heap_history
-            .push_back((change, self.started.elapsed().unwrap()));
+        match self.started.elapsed() {
+            Ok(duration) => self.heap_history.push_back((change, duration)),
+            Err(e) => error!("profiler_history_push: {}", e),
+        }
     }
 }
 
@@ -139,4 +161,70 @@ impl HeapProfilerState {
             };
         }
     }
+}
+
+#[test]
+fn merge_profiles() {
+    // TODO use quickcheck crate
+    fn random_memory() -> HashMap<Ptr, Size> {
+        let len = rand::random::<usize>() % (HISTORY_CAPACITY + 1);
+        let mut r = HashMap::with_capacity(len);
+        for _ in 0..len {
+            r.insert(rand::random(), rand::random());
+        }
+        r
+    }
+    fn random_history() -> VecDeque<(i32, Duration)> {
+        let len = rand::random::<usize>() % (HISTORY_CAPACITY + 1);
+        let mut r = VecDeque::with_capacity(len);
+        for _ in 0..len {
+            r.push_back((rand::random(), Duration::from_millis(rand::random())));
+        }
+        // we assume HeapProfilerHistory will keep heap_history sorted
+        // this assumption will break if user messes with system time
+        r.make_contiguous().sort_unstable_by_key(|&(_, d)| d);
+        r
+    }
+    let mut parent = HeapProfilerState {
+        memory: random_memory(),
+        started: std::time::UNIX_EPOCH + Duration::from_millis(rand::random()),
+        heap_history: random_history(),
+    };
+    let child = HeapProfilerState {
+        memory: random_memory(),
+        // we assume child is started after parent process
+        started: parent.started + Duration::from_millis(rand::random()),
+        heap_history: random_history(),
+    };
+    let mut parent_clone = HeapProfilerState {
+        memory: parent.memory.clone(),
+        started: parent.started.clone(),
+        heap_history: parent.heap_history.clone(),
+    };
+    let child_clone = HeapProfilerState {
+        memory: child.memory.clone(),
+        started: child.started.clone(),
+        heap_history: child.heap_history.clone(),
+    };
+    fn merge_simple(parent: &mut HeapProfilerState, child: HeapProfilerState) {
+        let started_delta = child.started.duration_since(parent.started).unwrap();
+        // merge profiles
+        child.heap_history.iter().for_each(|(h, d)| {
+            parent.heap_history.push_back((*h, *d + started_delta));
+        });
+        // sort profiles
+        parent
+            .heap_history
+            .make_contiguous()
+            .sort_unstable_by_key(|&(_, d)| d);
+        // remove oldest extra elements (ringbuffer)
+        if parent.heap_history.len() > HISTORY_CAPACITY {
+            parent
+                .heap_history
+                .drain(0..(parent.heap_history.len() - HISTORY_CAPACITY));
+        }
+    }
+    parent.merge(child);
+    merge_simple(&mut parent_clone, child_clone);
+    assert_eq!(parent.heap_history, parent_clone.heap_history);
 }

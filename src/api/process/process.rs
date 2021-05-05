@@ -135,7 +135,7 @@ impl Process {
         memory: MemoryChoice,
     ) -> Result<HeapProfilerState> {
         let api = crate::api::default::DefaultApi::new(context_receiver, module.clone());
-        let (profiler, fut) = Process::create_with_api(module, function, memory, api)?;
+        let ((profiler, _), fut) = Process::create_with_api(module, function, memory, api)?;
         fut.await?;
 
         // NOTE it should be safe to unwrap here
