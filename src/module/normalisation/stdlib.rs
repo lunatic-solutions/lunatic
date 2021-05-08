@@ -9,6 +9,15 @@ pub fn patch(module: &mut Module) -> Result<()> {
         let lunatic_spawn_by_index_type = module.types.add(&[], &[]);
         // Create the index parameter
         let index = module.locals.add(ValType::I32);
+        // invoke __wasm_call_ctors to properly setup environment
+        // FIXME remove this when wasm adds proper environment initialisation
+        match module.funcs.by_name("__wasm_call_ctors") {
+            Some(ctors) => {
+                builder.func_body().call(ctors);
+            }
+            // ignore if __wasm_call_ctors wasn't found
+            None => log::error!("__wasm_call_ctors wasn't found."),
+        };
         builder
             .func_body()
             .local_get(index)
