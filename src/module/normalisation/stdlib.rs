@@ -16,7 +16,7 @@ pub fn patch(module: &mut Module) -> Result<()> {
                 builder.func_body().call(ctors);
             }
             // ignore if __wasm_call_ctors wasn't found
-            None => log::error!("__wasm_call_ctors wasn't found."),
+            None => log::info!("__wasm_call_ctors wasn't found."),
         };
         builder
             .func_body()
