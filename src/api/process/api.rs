@@ -70,6 +70,7 @@ impl ProcessState {
             self.module.clone(),
             FunctionLookup::TableIndex(index),
             MemoryChoice::New(None),
+            self.profiler.clone(),
         );
         Process::spawn(future)
     }
@@ -78,10 +79,7 @@ impl ProcessState {
     // Returns 0 if process didn't trap, otherwise 1
     async fn join(&self, process: Process) -> u32 {
         match process.task().await {
-            Ok(profiler) => {
-                self.profiler.lock().unwrap().merge(profiler);
-                0
-            }
+            Ok(_) => 0,
             Err(_) => 1,
         }
     }

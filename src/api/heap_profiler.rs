@@ -1,8 +1,9 @@
 use std::collections::{HashMap, VecDeque};
 use std::fs::File;
 use std::io::Write;
+use std::sync::Arc;
 use std::time::{Duration, SystemTime};
-use uptown_funk::host_functions;
+use uptown_funk::{host_functions, HostFunctions};
 
 use log::debug;
 use log::error;
@@ -15,6 +16,7 @@ pub struct HeapProfilerState {
     memory: HashMap<Ptr, Size>,
     started: SystemTime,
     heap_history: VecDeque<(i32, Duration)>,
+    processes: Vec<<Self as HostFunctions>::Wrap>,
 }
 
 impl HeapProfilerState {
@@ -23,12 +25,35 @@ impl HeapProfilerState {
             memory: HashMap::new(),
             started: SystemTime::now(),
             heap_history: VecDeque::new(),
+            processes: vec![],
         }
     }
 
-    // Merge child process profile results into parent process profile.
+    pub fn add_process(&mut self, process: <Self as HostFunctions>::Wrap) {
+        self.processes.push(process);
+    }
+
+    // Collect all process profiles into parent profile and remove them from process list
     //
-    // Usually this should be called when child process exits.
+    // Safety: this is safe to call only when all processes are finished.
+    pub fn collect_data(&mut self) -> anyhow::Result<()> {
+        for _ in 0..self.processes.len() {
+            let mut process = Arc::try_unwrap(self.processes.pop().unwrap())
+                .map_err(|_| {
+                    anyhow::Error::msg(
+                        "heap_profiler_collect_data: HeapProfilerState referenced multiple times",
+                    )
+                })?
+                .into_inner()
+                .unwrap();
+
+            process.collect_data()?;
+            self.merge(process);
+        }
+        Ok(())
+    }
+
+    // Merge child process profile results into parent profile.
     //
     // It is assumed self is a parrent process profile and profiler is a child
     // process profile and thus self.started <= profiler.started is assumed.
@@ -36,7 +61,7 @@ impl HeapProfilerState {
     // It is assumed HeapProfilerHistory.heap_history is sorted ascending by Duration.
     // This assumption will break if user messes with OS system time (if user reverts system clock
     // during profiling)
-    pub fn merge(&mut self, mut profiler: HeapProfilerState) {
+    fn merge(&mut self, mut profiler: HeapProfilerState) {
         let started_delta = profiler.started.duration_since(self.started).unwrap();
 
         let merged_size = std::cmp::min(
