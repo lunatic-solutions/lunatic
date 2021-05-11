@@ -6,11 +6,14 @@ use easy_parallel::Parallel;
 use clap::{crate_version, Clap};
 use lunatic_runtime::module;
 use lunatic_runtime::{
+    api::heap_profiler,
     api::process::{FunctionLookup, MemoryChoice, Process, EXECUTOR},
     module::Runtime,
 };
+use uptown_funk::HostFunctions;
 
 use std::fs;
+use std::sync::Arc;
 use std::thread;
 
 #[derive(Clap)]
@@ -41,8 +44,9 @@ pub fn run() -> Result<()> {
     // Set up async runtime
     let cpus = thread::available_concurrency().unwrap();
     let (signal, shutdown) = smol::channel::unbounded::<()>();
+    let (_, profiler) = heap_profiler::HeapProfilerState::new().split();
 
-    let profiler = Parallel::new()
+    Parallel::new()
         .each(0..cpus.into(), |_| {
             smol::future::block_on(EXECUTOR.run(shutdown.recv()))
         })
@@ -53,6 +57,7 @@ pub fn run() -> Result<()> {
                     module,
                     FunctionLookup::Name("_start"),
                     MemoryChoice::New(None),
+                    profiler.clone(),
                 )
                 .await;
                 drop(signal);
@@ -62,6 +67,14 @@ pub fn run() -> Result<()> {
         .1?;
     if is_profile {
         let mut profile_out = std::fs::File::create("heap.dat")?;
+        let mut profiler = Arc::try_unwrap(profiler)
+            .map_err(|_| {
+                anyhow::Error::msg("heap_profiler: HeapProfilerState referenced multiple times")
+            })?
+            .into_inner()
+            .unwrap();
+
+        profiler.collect_data()?;
         profiler.write_dat(&mut profile_out)?;
     }
 
