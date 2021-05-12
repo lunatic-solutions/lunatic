@@ -221,22 +221,26 @@ fn merge_profiles() {
         memory: random_memory(),
         started: std::time::UNIX_EPOCH + Duration::from_millis(rand::random()),
         heap_history: random_history(),
+        processes: vec![],
     };
     let child = HeapProfilerState {
         memory: random_memory(),
         // we assume child is started after parent process
         started: parent.started + Duration::from_millis(rand::random()),
         heap_history: random_history(),
+        processes: vec![],
     };
     let mut parent_clone = HeapProfilerState {
         memory: parent.memory.clone(),
         started: parent.started.clone(),
         heap_history: parent.heap_history.clone(),
+        processes: vec![],
     };
     let child_clone = HeapProfilerState {
         memory: child.memory.clone(),
         started: child.started.clone(),
         heap_history: child.heap_history.clone(),
+        processes: vec![],
     };
     fn merge_simple(parent: &mut HeapProfilerState, child: HeapProfilerState) {
         let started_delta = child.started.duration_since(parent.started).unwrap();
