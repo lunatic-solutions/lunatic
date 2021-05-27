@@ -26,7 +26,8 @@ pub fn instance_creation(c: &mut Criterion) {
 
     c.bench_function("Wasmtime lunatic instance creation", |b| {
         let wasm = include_bytes!("guest/start.wasm");
-        let module = LunaticModule::new(wasm.as_ref().into(), Runtime::Wasmtime).unwrap();
+        let module =
+            LunaticModule::new(wasm.as_ref().into(), Runtime::Wasmtime, false, false).unwrap();
 
         b.iter(move || {
             let mut linker =
@@ -39,7 +40,8 @@ pub fn instance_creation(c: &mut Criterion) {
     c.bench_function("Wasmtime lunatic multithreaded instance creation", |b| {
         use rayon::prelude::*;
         let wasm = include_bytes!("guest/start.wasm");
-        let module = LunaticModule::new(wasm.as_ref().into(), Runtime::Wasmtime).unwrap();
+        let module =
+            LunaticModule::new(wasm.as_ref().into(), Runtime::Wasmtime, false, false).unwrap();
 
         b.iter_custom(move |iters| {
             let start = std::time::Instant::now();
