@@ -1,5 +1,6 @@
 use super::{resolver::*, tcp::*};
 use smol::io::{AsyncReadExt, AsyncWriteExt};
+use std::io;
 use std::io::{IoSlice, IoSliceMut};
 use uptown_funk::host_functions;
 use uptown_funk::types::Pointer as Ptr;
@@ -35,7 +36,7 @@ impl TcpState {
     async fn resolve(&self, name: &str) -> (u32, ResolverResult) {
         match Resolver::resolve(name).await {
             Ok(resolver) => (0, ResolverResult::Ok(resolver)),
-            Err(err) => (1, ResolverResult::Err(err.to_string())),
+            Err(err) => (int_of_io_error(&err), ResolverResult::Err(err.to_string())),
         }
     }
 
@@ -80,21 +81,21 @@ impl TcpState {
     async fn tcp_bind(&self, address: &[u8], port: u32) -> (u32, TcpListenerResult) {
         match TcpListener::bind(address, port as u16).await {
             Ok(listener) => (0, TcpListenerResult::Ok(listener)),
-            Err(err) => (1, TcpListenerResult::Err(err.to_string())),
+            Err(err) => (int_of_io_error(&e), TcpListenerResult::Err(err.to_string())),
         }
     }
 
     async fn tcp_accept(&self, tcp_listener: TcpListener) -> (u32, TcpStreamResult) {
         match tcp_listener.accept().await {
             Ok(stream) => (0, TcpStreamResult::Ok(stream)),
-            Err(err) => (1, TcpStreamResult::Err(err.to_string())),
+            Err(err) => (int_of_io_error(&err), TcpStreamResult::Err(err.to_string())),
         }
     }
 
     async fn tcp_connect(&self, address: &[u8], port: u32) -> (u32, TcpStreamResult) {
         match TcpStream::connect(address, port as u16).await {
             Ok(tcp_stream) => (0, TcpStreamResult::Ok(tcp_stream)),
-            Err(err) => (1, TcpStreamResult::Err(err.to_string())),
+            Err(err) => (int_of_io_error(&err), TcpStreamResult::Err(err.to_string())),
         }
     }
 
@@ -105,14 +106,14 @@ impl TcpState {
     ) -> (u32, u32) {
         match tcp_stream.0.write_vectored(ciovs).await {
             Ok(bytes_written) => (0, bytes_written as u32),
-            Err(_) => (1, 0),
+            Err(e) => (int_of_io_error(&e), 0),
         }
     }
 
     async fn tcp_flush(&self, mut tcp_stream: TcpStream) -> u32 {
         match tcp_stream.0.flush().await {
             Ok(()) => 0,
-            Err(_) => 1,
+            Err(e) => int_of_io_error(&e),
         }
     }
 
@@ -123,7 +124,7 @@ impl TcpState {
     ) -> (u32, u32) {
         match tcp_stream.0.read_vectored(iovs).await {
             Ok(bytes_written) => (0, bytes_written as u32),
-            Err(_) => (1, 0),
+            Err(e) => (int_of_io_error(&e), 0),
         }
     }
 
@@ -161,5 +162,30 @@ impl TcpState {
                 index
             )),
         }
+    }
+}
+
+/// Returns a number corresponding to the `ErrorKind` of an `io::Error`. Always returns a number greater
+/// than or equal to 1 (0 is used to indicate that the operation was successful.)
+fn int_of_io_error(e: &io::Error) -> u32 {
+    match e.kind() {
+        std::io::ErrorKind::NotFound => 1,
+        std::io::ErrorKind::PermissionDenied => 2,
+        std::io::ErrorKind::ConnectionRefused => 3,
+        std::io::ErrorKind::ConnectionReset => 4,
+        std::io::ErrorKind::ConnectionAborted => 5,
+        std::io::ErrorKind::NotConnected => 6,
+        std::io::ErrorKind::AddrInUse => 7,
+        std::io::ErrorKind::AddrNotAvailable => 8,
+        std::io::ErrorKind::BrokenPipe => 9,
+        std::io::ErrorKind::AlreadyExists => 10,
+        std::io::ErrorKind::WouldBlock => 11,
+        std::io::ErrorKind::InvalidInput => 12,
+        std::io::ErrorKind::InvalidData => 13,
+        std::io::ErrorKind::TimedOut => 14,
+        std::io::ErrorKind::WriteZero => 15,
+        std::io::ErrorKind::Interrupted => 16,
+        std::io::ErrorKind::Other => 18,
+        std::io::ErrorKind::UnexpectedEof => 17,
     }
 }
