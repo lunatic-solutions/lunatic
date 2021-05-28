@@ -55,7 +55,7 @@ impl FromWasm<&mut TcpState> for TcpListener {
 
 pub enum TcpListenerResult {
     Ok(TcpListener),
-    Err(String),
+    Err(()),
 }
 
 impl ToWasm<&mut TcpState> for TcpListenerResult {

@@ -41,7 +41,7 @@ impl FromWasm<&mut TcpState> for Resolver {
 
 pub enum ResolverResult {
     Ok(Resolver),
-    Err(String),
+    Err(()),
 }
 
 impl ToWasm<&mut TcpState> for ResolverResult {
