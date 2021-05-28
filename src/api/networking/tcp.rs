@@ -55,7 +55,7 @@ impl FromWasm<&mut TcpState> for TcpListener {
 
 pub enum TcpListenerResult {
     Ok(TcpListener),
-    Err(()),
+    Err,
 }
 
 impl ToWasm<&mut TcpState> for TcpListenerResult {
@@ -64,7 +64,7 @@ impl ToWasm<&mut TcpState> for TcpListenerResult {
     fn to(state: &mut TcpState, _: &impl Executor, result: Self) -> Result<u32, uptown_funk::Trap> {
         match result {
             TcpListenerResult::Ok(listener) => Ok(state.listeners.add(listener)),
-            TcpListenerResult::Err(_err) => Ok(0),
+            TcpListenerResult::Err => Ok(0),
         }
     }
 }
@@ -115,7 +115,7 @@ impl FromWasm<&mut TcpState> for TcpStream {
 }
 pub enum TcpStreamResult {
     Ok(TcpStream),
-    Err(String),
+    Err,
 }
 
 impl ToWasm<&mut TcpState> for TcpStreamResult {
@@ -124,7 +124,7 @@ impl ToWasm<&mut TcpState> for TcpStreamResult {
     fn to(state: &mut TcpState, _: &impl Executor, result: Self) -> Result<u32, uptown_funk::Trap> {
         match result {
             TcpStreamResult::Ok(stream) => Ok(state.streams.add(stream)),
-            TcpStreamResult::Err(_err) => Ok(0),
+            TcpStreamResult::Err => Ok(0),
         }
     }
 }

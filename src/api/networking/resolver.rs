@@ -41,7 +41,7 @@ impl FromWasm<&mut TcpState> for Resolver {
 
 pub enum ResolverResult {
     Ok(Resolver),
-    Err(()),
+    Err,
 }
 
 impl ToWasm<&mut TcpState> for ResolverResult {
@@ -50,7 +50,7 @@ impl ToWasm<&mut TcpState> for ResolverResult {
     fn to(state: &mut TcpState, _: &impl Executor, result: Self) -> Result<u32, uptown_funk::Trap> {
         match result {
             ResolverResult::Ok(resolver) => Ok(state.resolvers.add(resolver)),
-            ResolverResult::Err(_err) => Ok(0),
+            ResolverResult::Err => Ok(0),
         }
     }
 }

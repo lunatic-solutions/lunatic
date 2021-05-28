@@ -1,7 +1,6 @@
 use super::{resolver::*, tcp::*};
 use smol::io::{AsyncReadExt, AsyncWriteExt};
-use std::io;
-use std::io::{IoSlice, IoSliceMut};
+use std::io::{self, IoSlice, IoSliceMut};
 use uptown_funk::host_functions;
 use uptown_funk::types::Pointer as Ptr;
 
@@ -36,7 +35,7 @@ impl TcpState {
     async fn resolve(&self, name: &str) -> (u32, ResolverResult) {
         match Resolver::resolve(name).await {
             Ok(resolver) => (0, ResolverResult::Ok(resolver)),
-            Err(err) => (int_of_io_error(&err), ResolverResult::Err(())),
+            Err(err) => (int_of_io_error(&err), ResolverResult::Err),
         }
     }
 
@@ -81,21 +80,21 @@ impl TcpState {
     async fn tcp_bind(&self, address: &[u8], port: u32) -> (u32, TcpListenerResult) {
         match TcpListener::bind(address, port as u16).await {
             Ok(listener) => (0, TcpListenerResult::Ok(listener)),
-            Err(err) => (int_of_io_error(&e), TcpListenerResult::Err(())),
+            Err(err) => (int_of_io_error(&err), TcpListenerResult::Err),
         }
     }
 
     async fn tcp_accept(&self, tcp_listener: TcpListener) -> (u32, TcpStreamResult) {
         match tcp_listener.accept().await {
             Ok(stream) => (0, TcpStreamResult::Ok(stream)),
-            Err(err) => (int_of_io_error(&err), TcpStreamResult::Err(())),
+            Err(err) => (int_of_io_error(&err), TcpStreamResult::Err),
         }
     }
 
     async fn tcp_connect(&self, address: &[u8], port: u32) -> (u32, TcpStreamResult) {
         match TcpStream::connect(address, port as u16).await {
             Ok(tcp_stream) => (0, TcpStreamResult::Ok(tcp_stream)),
-            Err(err) => (int_of_io_error(&err), TcpStreamResult::Err(())),
+            Err(err) => (int_of_io_error(&err), TcpStreamResult::Err),
         }
     }
 
@@ -143,10 +142,7 @@ impl TcpState {
     fn tcp_stream_deserialize(&self, index: u32) -> TcpStreamResult {
         match self.channel_state.deserialize_host_resource(index as usize) {
             Some(tcp_stream) => TcpStreamResult::Ok(tcp_stream),
-            None => TcpStreamResult::Err(format!(
-                "No TcpStream found under index: {}, while deserializing",
-                index
-            )),
+            None => TcpStreamResult::Err,
         }
     }
 
@@ -157,10 +153,7 @@ impl TcpState {
     fn tcp_listener_deserialize(&self, index: u32) -> TcpListenerResult {
         match self.channel_state.deserialize_host_resource(index as usize) {
             Some(tcp_listener) => TcpListenerResult::Ok(tcp_listener),
-            None => TcpListenerResult::Err(format!(
-                "No TcpStream found under index: {}, while deserializing",
-                index
-            )),
+            None => TcpListenerResult::Err,
         }
     }
 }
@@ -189,5 +182,6 @@ fn int_of_io_error(e: &io::Error) -> u32 {
         io::ErrorKind::Unsupported => 18,
         io::ErrorKind::OutOfMemory => 19,
         io::ErrorKind::Other => 20,
+        _ => 99,
     }
 }
