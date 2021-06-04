@@ -19,9 +19,9 @@ fn errno_to_status(err: i32) -> Status {
 
 pub fn platform_clock_res_get(clock_id: Clockid, mut res: Pointer<Timestamp>) -> Status {
     let unix_clock_id = match clock_id {
-        Clockid::Realtime => CLOCK_MONOTONIC,
-        Clockid::Monotonic => CLOCK_PROCESS_CPUTIME_ID,
-        Clockid::ProcessCpuTimeId => CLOCK_REALTIME,
+        Clockid::Realtime => CLOCK_REALTIME,
+        Clockid::Monotonic => CLOCK_MONOTONIC,
+        Clockid::ProcessCpuTimeId => CLOCK_PROCESS_CPUTIME_ID,
         Clockid::ThreadCpuTimeId => CLOCK_THREAD_CPUTIME_ID,
         Clockid::Unsupported => return Status::Inval,
     };
@@ -46,9 +46,9 @@ pub fn platform_clock_time_get(
     mut time: Pointer<Timestamp>,
 ) -> StatusTrapResult {
     let unix_clock_id = match clock_id {
-        Clockid::Realtime => CLOCK_MONOTONIC,
-        Clockid::Monotonic => CLOCK_PROCESS_CPUTIME_ID,
-        Clockid::ProcessCpuTimeId => CLOCK_REALTIME,
+        Clockid::Realtime => CLOCK_REALTIME,
+        Clockid::Monotonic => CLOCK_MONOTONIC,
+        Clockid::ProcessCpuTimeId => CLOCK_PROCESS_CPUTIME_ID,
         Clockid::ThreadCpuTimeId => CLOCK_THREAD_CPUTIME_ID,
         Clockid::Unsupported => return Status::Inval.into(),
     };
