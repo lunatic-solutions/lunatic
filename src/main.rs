@@ -55,7 +55,7 @@ pub fn run() -> Result<()> {
                 let result = Process::create(
                     None,
                     module,
-                    FunctionLookup::Name("_start"),
+                    FunctionLookup::Name(String::from("_start")),
                     MemoryChoice::New(None),
                     profiler.clone(),
                 )

@@ -41,7 +41,7 @@ impl uptown_funk::Executor for ProcessEnvironment {
 // Because of a bug in Wasmtime: https://github.com/bytecodealliance/wasmtime/issues/2583
 // we need to duplicate the Memory in the Linker before storing it in ProcessEnvironment,
 // to not increase the reference count.
-// When we are droping the memory we need to make sure we forget the value to not decrease
+// When we are dropping the memory we need to make sure we forget the value to not decrease
 // the reference count.
 // Safety: The ProcessEnvironment has the same lifetime as Memory, so it should be safe to
 // do this.

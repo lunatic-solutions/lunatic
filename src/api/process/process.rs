@@ -27,7 +27,7 @@ lazy_static! {
 /// Used to look up a function by name or table index inside of an Instance.
 pub enum FunctionLookup {
     TableIndex(u32),
-    Name(&'static str),
+    Name(String),
 }
 
 /// For now we always create a new memory per instance, but eventually we will want to support
@@ -86,7 +86,7 @@ impl Process {
 
                     match function {
                         FunctionLookup::Name(name) => {
-                            let func = instance.get_func(name).ok_or_else(|| {
+                            let func = instance.get_func(&name).ok_or_else(|| {
                                 anyhow::Error::msg(format!(
                                     "No function {} in wasmtime instance",
                                     name

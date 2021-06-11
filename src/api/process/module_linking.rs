@@ -1,5 +1,6 @@
-use crate::{api::default::DefaultApi, linker::wasmtime_engine, module::LunaticModule};
+use crate::{api::default::DefaultApi, module::LunaticModule};
 use uptown_funk::{Executor, FromWasm, HostFunctions, ToWasm};
+use wasmtime::{Limits, Memory, MemoryType};
 
 use super::api::ProcessState;
 
@@ -21,12 +22,12 @@ impl FromWasm<&mut ProcessState> for LunaticModule {
     }
 }
 
-pub enum LunaticModuleResult {
+pub enum ModuleResult {
     Ok(LunaticModule),
-    Err(String),
+    Err,
 }
 
-impl ToWasm<&mut ProcessState> for LunaticModuleResult {
+impl ToWasm<&mut ProcessState> for ModuleResult {
     type To = u32;
 
     fn to(
@@ -35,12 +36,13 @@ impl ToWasm<&mut ProcessState> for LunaticModuleResult {
         result: Self,
     ) -> Result<u32, uptown_funk::Trap> {
         match result {
-            LunaticModuleResult::Ok(listener) => Ok(state.modules.add(listener)),
-            LunaticModuleResult::Err(_err) => Ok(0),
+            ModuleResult::Ok(listener) => Ok(state.modules.add(listener)),
+            ModuleResult::Err => Ok(0),
         }
     }
 }
 
+#[derive(Clone)]
 pub struct Import(pub String, pub LunaticModule);
 
 impl ToWasm<&mut ProcessState> for Import {
@@ -55,9 +57,18 @@ impl ToWasm<&mut ProcessState> for Import {
     }
 }
 
-pub struct Imports<'a>(pub Vec<Option<&'a Import>>);
+pub struct Imports {
+    module: LunaticModule,
+    imports: Vec<Option<Import>>,
+}
 
-impl<'a> HostFunctions for Imports<'a> {
+impl Imports {
+    pub fn new(module: LunaticModule, imports: Vec<Option<Import>>) -> Self {
+        Self { module, imports }
+    }
+}
+
+impl HostFunctions for Imports {
     type Return = ();
     type Wrap = Self;
 
@@ -69,16 +80,26 @@ impl<'a> HostFunctions for Imports<'a> {
     where
         E: Executor + Clone + 'static,
     {
+        // Include default API
+        let default_api = DefaultApi::new(None, imports.module.clone());
+        DefaultApi::add_to_linker(default_api, executor.clone(), linker);
+
         // Allow overriding default imports
         linker.allow_shadowing(true);
 
         // For each import create a separate instance that will be used as an import namespace.
-        for import in imports.0 {
+        for import in imports.imports {
             match import {
                 Some(import) => {
-                    let engine = wasmtime_engine();
-                    let store = wasmtime::Store::new(&engine);
+                    let store = linker.store();
                     let mut parent_linker = wasmtime::Linker::new(&store);
+
+                    // Create memory for parent
+                    let memory_ty =
+                        MemoryType::new(Limits::new(import.1.min_memory(), import.1.max_memory()));
+                    let memory = Memory::new(&store, memory_ty);
+                    parent_linker.define("lunatic", "memory", memory).unwrap();
+
                     let default_api = DefaultApi::new(None, import.1.clone());
                     DefaultApi::add_to_linker(default_api, executor.clone(), &mut parent_linker);
                     let instance = parent_linker

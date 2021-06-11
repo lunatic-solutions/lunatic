@@ -50,7 +50,7 @@ impl LunaticModule {
         is_profile: bool,
         is_normalisation_out: bool,
     ) -> Result<Self> {
-        // Transfrom WASM file into a format compatible with Lunatic.
+        // Transform WASM file into a format compatible with Lunatic.
         let ((min_memory, max_memory), wasm) = patch(&wasm, is_profile, is_normalisation_out)?;
 
         let module = match runtime {
