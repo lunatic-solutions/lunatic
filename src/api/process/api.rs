@@ -94,11 +94,6 @@ impl ProcessState {
     }
 
     // Drops the Task and cancels the process
-    //
-    // It's currently not safe to cancel a process in Lunatic.
-    // All processes are executed on a separate stack, but if we cancel it the stack memory
-    // will be freed without actually unwinding it. This means that values and references
-    // living on the separate stack will never be freed.
     async fn cancel_process(&self, _process: Process) {
         // _process will take ownership here of the underlying task and drop it.
         // See: https://docs.rs/smol/latest/smol/struct.Task.html
