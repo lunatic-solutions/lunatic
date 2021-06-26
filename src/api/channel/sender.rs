@@ -38,7 +38,7 @@ impl ChannelSender {
         slice: &[u8],
         host_resources: Vec<Resource>,
     ) -> Result<(), SendError<Message>> {
-        let buffer = Message::new(slice.as_ptr(), slice.len(), host_resources);
+        let buffer = unsafe { Message::new(slice.as_ptr(), slice.len(), host_resources) };
         self.0.send(buffer).await
     }
 }

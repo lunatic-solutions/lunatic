@@ -127,7 +127,7 @@ impl ChannelState {
     /// Returns 0 if successful, otherwise 1
     async fn channel_send(&self, channel: ChannelSender, buffer: &[u8]) -> u32 {
         let resources = &mut self.inner.borrow_mut().next_message_host_resources;
-        let host_resources = replace(resources, Vec::new());
+        let host_resources = std::mem::take(resources);
         match channel.send(buffer, host_resources).await {
             Ok(_) => 0,
             Err(_) => 1,
@@ -141,7 +141,7 @@ impl ChannelState {
     async fn channel_receive(&mut self, buffer: &mut [u8]) -> u32 {
         match &mut self.inner.borrow_mut().last_received_message {
             Some(channel_buffer) => {
-                channel_buffer.write_to(buffer.as_mut_ptr());
+                unsafe { channel_buffer.write_to(buffer.as_mut_ptr()) };
                 0
             }
             None => 1,

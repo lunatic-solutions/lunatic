@@ -58,13 +58,9 @@ pub fn patch(module: &mut Module) {
 // function if such exists.
 fn add_profiler_to(module: &mut Module, name: &str) -> Result<()> {
     // find local function in module
-    let fn_id = module
-        .funcs
-        .by_name(name)
-        .ok_or(anyhow::Error::msg(format!(
-            "heap_profiler: '{}' was not found in wasm",
-            name
-        )))?;
+    let fn_id = module.funcs.by_name(name).ok_or_else(|| {
+        anyhow::Error::msg(format!("heap_profiler: '{}' was not found in wasm", name))
+    })?;
     let types = module.types.params_results(module.funcs.get(fn_id).ty());
     let (params, results) = (types.0.to_vec(), types.1.to_vec());
 

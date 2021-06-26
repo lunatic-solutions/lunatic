@@ -10,10 +10,7 @@ use anyhow::Result;
 use smol::{channel::bounded, future::yield_now, Timer};
 use uptown_funk::{host_functions, state::HashMapStore, HostFunctions};
 
-use std::{
-    mem::replace,
-    time::{Duration, Instant},
-};
+use std::time::{Duration, Instant};
 
 pub struct ProcessState {
     module: LunaticModule,
@@ -61,8 +58,8 @@ impl ProcessState {
             .inner
             .borrow_mut()
             .next_message_host_resources;
-        let host_resources = replace(host_resources, Vec::new());
-        let message = Message::new(context.as_ptr(), context.len(), host_resources);
+        let host_resources = std::mem::take(host_resources);
+        let message = unsafe { Message::new(context.as_ptr(), context.len(), host_resources) };
         let _ignore = sender.send(message).await;
 
         let future = Process::create(

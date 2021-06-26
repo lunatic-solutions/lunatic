@@ -16,6 +16,12 @@ pub struct WasiState {
     fds: Vec<Option<FileDesc>>,
 }
 
+impl Default for WasiState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 // TODO: create AbsPath
 
 impl WasiState {
@@ -44,7 +50,7 @@ impl WasiState {
 
     pub fn abs_path(&self, from: Fd, rel_path: &str) -> Result<PathBuf, Status> {
         let f = self.get_file_desc(from)?;
-        Ok(f.path.join(rel_path).into())
+        Ok(f.path.join(rel_path))
     }
 
     pub fn get_path(&self, from: Fd) -> Result<PathBuf, Status> {

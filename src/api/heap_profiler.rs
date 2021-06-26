@@ -19,6 +19,12 @@ pub struct HeapProfilerState {
     processes: Vec<<Self as HostFunctions>::Wrap>,
 }
 
+impl Default for HeapProfilerState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl HeapProfilerState {
     pub fn new() -> Self {
         Self {
@@ -140,6 +146,7 @@ impl HeapProfilerState {
 
 #[host_functions(namespace = "heap_profiler", sync = "mutex")]
 impl HeapProfilerState {
+    #[allow(clippy::duplicate_underscore_argument)]
     fn aligned_alloc_profiler(&mut self, _self: u32, size: Size, ptr: Ptr) {
         self.malloc_profiler(size, ptr);
     }
@@ -232,13 +239,13 @@ fn merge_profiles() {
     };
     let mut parent_clone = HeapProfilerState {
         memory: parent.memory.clone(),
-        started: parent.started.clone(),
+        started: parent.started,
         heap_history: parent.heap_history.clone(),
         processes: vec![],
     };
     let child_clone = HeapProfilerState {
         memory: child.memory.clone(),
-        started: child.started.clone(),
+        started: child.started,
         heap_history: child.heap_history.clone(),
         processes: vec![],
     };
