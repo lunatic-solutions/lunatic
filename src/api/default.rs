@@ -58,6 +58,6 @@ impl HostFunctions for DefaultApi {
 
         heap_profiler::HeapProfilerState::add_to_linker(api.profiler, executor.clone(), linker);
 
-        wasi::state::WasiState::add_to_linker(api.wasi, executor.clone(), linker);
+        wasi::state::WasiState::add_to_linker(api.wasi, executor, linker);
     }
 }

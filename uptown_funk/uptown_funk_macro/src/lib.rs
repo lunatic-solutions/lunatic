@@ -87,6 +87,7 @@ pub fn host_functions(attr: TokenStream, item: TokenStream) -> TokenStream {
     let expanded = quote! {
         #implementation
 
+        #[allow(clippy::unnecessary_mut_passed)]
         impl uptown_funk::HostFunctions for #self_ty {
             #assoc_types_and_split
 

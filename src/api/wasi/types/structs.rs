@@ -188,14 +188,13 @@ pub struct WasiConstIoVec<'a> {
 
 impl<'a> WasiConstIoVec<'a> {
     #[inline(always)]
-    pub fn from(memory: *mut u8, ptr: usize) -> Self {
-        unsafe {
-            let wasi_iovec = memory.add(ptr) as *const _wasi_iovec_t;
-            let slice_ptr = memory.add((*wasi_iovec).buf as usize);
-            let slice_len = (*wasi_iovec).buf_len as usize;
-            let slice = slice::from_raw_parts(slice_ptr, slice_len);
-            Self { slice }
-        }
+    #[allow(clippy::missing_safety_doc)]
+    pub unsafe fn from(memory: *mut u8, ptr: usize) -> Self {
+        let wasi_iovec = memory.add(ptr) as *const _wasi_iovec_t;
+        let slice_ptr = memory.add((*wasi_iovec).buf as usize);
+        let slice_len = (*wasi_iovec).buf_len as usize;
+        let slice = slice::from_raw_parts(slice_ptr, slice_len);
+        Self { slice }
     }
 
     pub fn as_slice(&self) -> &[u8] {
@@ -216,23 +215,21 @@ pub struct WasiIoVec<'a> {
 
 impl<'a> WasiIoVec<'a> {
     #[inline(always)]
-    pub fn from(memory: *mut u8, ptr: usize) -> Self {
-        unsafe {
-            let wasi_iovec = memory.add(ptr) as *mut _wasi_iovec_t;
-            let slice_ptr = memory.add((*wasi_iovec).buf as usize);
-            let slice_len = (*wasi_iovec).buf_len as usize;
-            let slice = slice::from_raw_parts_mut(slice_ptr, slice_len);
-            Self { slice }
-        }
+    #[allow(clippy::missing_safety_doc)]
+    pub unsafe fn from(memory: *mut u8, ptr: usize) -> Self {
+        let wasi_iovec = memory.add(ptr) as *mut _wasi_iovec_t;
+        let slice_ptr = memory.add((*wasi_iovec).buf as usize);
+        let slice_len = (*wasi_iovec).buf_len as usize;
+        let slice = slice::from_raw_parts_mut(slice_ptr, slice_len);
+        Self { slice }
     }
 
     #[inline(always)]
-    pub fn from_wasi_iovec_t(memory: *mut u8, buf: usize, buf_len: usize) -> Self {
-        unsafe {
-            let slice_ptr = memory.add(buf);
-            let slice = slice::from_raw_parts_mut(slice_ptr, buf_len);
-            Self { slice }
-        }
+    #[allow(clippy::missing_safety_doc)]
+    pub unsafe fn from_wasi_iovec_t(memory: *mut u8, buf: usize, buf_len: usize) -> Self {
+        let slice_ptr = memory.add(buf);
+        let slice = slice::from_raw_parts_mut(slice_ptr, buf_len);
+        Self { slice }
     }
 
     pub fn as_mut_slice(&mut self) -> &mut [u8] {
@@ -253,7 +250,8 @@ pub struct WasiConstIoVecArray<'a> {
 
 impl<'a> WasiConstIoVecArray<'a> {
     #[inline(always)]
-    pub fn from(memory: *mut u8, ptr: usize, len: usize) -> Self {
+    #[allow(clippy::missing_safety_doc)]
+    pub unsafe fn from(memory: *mut u8, ptr: usize, len: usize) -> Self {
         let mut io_slices = SmallVec::with_capacity(len);
         for i in 0..len {
             let ptr = ptr + i * std::mem::size_of::<_wasi_iovec_t>();
@@ -275,7 +273,8 @@ pub struct WasiIoVecArray<'a> {
 
 impl<'a> WasiIoVecArray<'a> {
     #[inline(always)]
-    pub fn from(memory: *mut u8, ptr: usize, len: usize) -> Self {
+    #[allow(clippy::missing_safety_doc)]
+    pub unsafe fn from(memory: *mut u8, ptr: usize, len: usize) -> Self {
         let mut io_slices = Vec::with_capacity(len);
         for i in 0..len {
             let ptr = ptr + i * std::mem::size_of::<_wasi_iovec_t>();

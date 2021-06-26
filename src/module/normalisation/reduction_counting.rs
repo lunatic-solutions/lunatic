@@ -40,7 +40,7 @@ fn patch_function(
     function: &mut LocalFunction,
     counter: GlobalId,
     yield_func: FunctionId,
-    imported_functions: &Vec<FunctionId>,
+    imported_functions: &[FunctionId],
 ) {
     let mut insertion_points = Vec::new();
 
@@ -58,7 +58,7 @@ fn patch_function(
                     loop_.seq,
                     function,
                     &mut insertion_points,
-                    &imported_functions,
+                    imported_functions,
                 );
             }
             ir::Instr::Block(block) => {
@@ -67,7 +67,7 @@ fn patch_function(
                     block.seq,
                     function,
                     &mut insertion_points,
-                    &imported_functions,
+                    imported_functions,
                 );
             }
             ir::Instr::IfElse(if_else) => {
@@ -76,14 +76,14 @@ fn patch_function(
                     if_else.consequent,
                     function,
                     &mut insertion_points,
-                    &imported_functions,
+                    imported_functions,
                 );
                 patch_sequence(
                     false,
                     if_else.alternative,
                     function,
                     &mut insertion_points,
-                    &imported_functions,
+                    imported_functions,
                 );
             }
             _ => (),
@@ -110,7 +110,7 @@ fn patch_sequence(
     seq_id: ir::InstrSeqId,
     function: &LocalFunction,
     insertion_points: &mut Vec<ir::InstrSeqId>,
-    imported_functions: &Vec<FunctionId>,
+    imported_functions: &[FunctionId],
 ) -> bool {
     let mut child_inserts = false;
     let mut insert_reduction_counter = insert;
@@ -135,7 +135,7 @@ fn patch_sequence(
                     block.seq,
                     function,
                     insertion_points,
-                    &imported_functions,
+                    imported_functions,
                 );
                 if inserted {
                     insert_reduction_counter = false;
@@ -148,14 +148,14 @@ fn patch_sequence(
                     if_else.consequent,
                     function,
                     insertion_points,
-                    &imported_functions,
+                    imported_functions,
                 );
                 let inserted_else = patch_sequence(
                     false,
                     if_else.alternative,
                     function,
                     insertion_points,
-                    &imported_functions,
+                    imported_functions,
                 );
                 if inserted_then && inserted_else {
                     insert_reduction_counter = false;

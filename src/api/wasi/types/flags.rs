@@ -153,7 +153,7 @@ impl From<std::fs::FileType> for Filetype {
             return Filetype::SymbolicLink;
         }
 
-        return Filetype::Unknown;
+        Filetype::Unknown
     }
 }
 
@@ -174,9 +174,15 @@ pub const FDFLAGS_RSYNC: u16 = 0x8;
 /// may also synchronously update the file's metadata.
 pub const FDFLAGS_SYNC: u16 = 0x10;
 
+impl Default for Fdflags {
+    fn default() -> Self {
+        Fdflags(0)
+    }
+}
+
 impl Fdflags {
     pub fn new() -> Self {
-        Fdflags(0)
+        Default::default()
     }
 
     pub fn is_append(self) -> bool {

@@ -168,7 +168,7 @@ pub fn transform(
                     let io_slices: &[uptown_funk::IoVecT] = unsafe { std::mem::transmute(slice) };
                     // If we only need 4 or less slices, don't allocate memory.
                     let mut vec_of_io_slices = uptown_funk::SmallVec::<[std::io::IoSlice; 4]>::with_capacity(io_slices.len());
-                    for io_vec_t in io_slices.into_iter() {
+                    for io_vec_t in io_slices.iter() {
                         let io_slice = unsafe {
                             memory.as_mut_slice().get(io_vec_t.ptr as usize..(io_vec_t.ptr + io_vec_t.len) as usize)
                         };
@@ -196,7 +196,7 @@ pub fn transform(
                     let io_slices: &mut [uptown_funk::IoVecT] = unsafe { std::mem::transmute(slice) };
                     // Replace with SmallVec once https://github.com/servo/rust-smallvec/issues/217 is fixed.
                     let mut vec_of_io_slices = Vec::with_capacity(io_slices.len());
-                    for io_vec_t in io_slices.into_iter() {
+                    for io_vec_t in io_slices.iter() {
                         let io_slice = unsafe {
                             memory.as_mut_slice().get_mut(io_vec_t.ptr as usize..(io_vec_t.ptr + io_vec_t.len) as usize)
                         };

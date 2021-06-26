@@ -57,6 +57,10 @@ impl WasiEnv {
         self.bytes.len() as u32
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.bytes.is_empty()
+    }
+
     pub fn total_bytes(&self) -> u32 {
         self.total_bytes
     }

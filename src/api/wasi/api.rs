@@ -39,7 +39,7 @@ impl WasiState {
         for kv in ARG.iter() {
             args.copy(&args_buf);
             args_buf = args_buf
-                .copy_slice(&kv)?
+                .copy_slice(kv)?
                 .ok_or_else(|| Trap::new("Reached end of the args buffer"))?;
             args = args
                 .next()
@@ -63,7 +63,7 @@ impl WasiState {
         for kv in ENV.iter() {
             environ.copy(&environ_buf);
             environ_buf = environ_buf
-                .copy_slice(&kv)?
+                .copy_slice(kv)?
                 .ok_or_else(|| Trap::new("Reached end of the environment variables buffer"))?;
             environ = environ
                 .next()
@@ -156,7 +156,8 @@ impl WasiState {
     }
 
     fn fd_filestat_get(&self, fd: Fd, mut filestat: Ptr<Filestat>) -> StatusResult {
-        Ok(filestat.set(self.filestat(fd)?))
+        filestat.set(self.filestat(fd)?);
+        Ok(())
     }
 
     fn fd_filestat_set_size(&mut self, fd: Fd, size: Filesize) -> StatusResult {
@@ -190,9 +191,9 @@ impl WasiState {
     fn fd_prestat_get(&self, fd: u32, mut prestat: Ptr<Prestat>) -> Status {
         if fd == 3 {
             prestat.set(Prestat::directory(1));
-            return Status::Success;
+            Status::Success
         } else {
-            return Status::Badf;
+            Status::Badf
         }
     }
 
@@ -276,7 +277,7 @@ impl WasiState {
             //debug!("Copy {} bytes to {:?}", dpath_bytes.len(), buf);
 
             buf = buf
-                .copy_slice(&dpath_bytes)?
+                .copy_slice(dpath_bytes)?
                 .ok_or_else(|| Trap::new("Reached end of the readdir buffer"))?;
             //debug!("Final buf {:?}", buf);
             written += dirent_size + dpath_bytes.len() as u32;
@@ -300,7 +301,8 @@ impl WasiState {
         whence: Whence,
         mut seek_res: Ptr<u64>,
     ) -> StatusResult {
-        Ok(seek_res.set(self.seek(fd, whence.into_seek_from(delta))?))
+        seek_res.set(self.seek(fd, whence.into_seek_from(delta))?);
+        Ok(())
     }
 
     fn fd_sync(&self, _fd: u32) -> Status {
@@ -309,7 +311,8 @@ impl WasiState {
     }
 
     fn fd_tell(&mut self, fd: Fd, mut tell_res: Ptr<u64>) -> StatusResult {
-        Ok(tell_res.set(self.tell(fd)?))
+        tell_res.set(self.tell(fd)?);
+        Ok(())
     }
 
     fn fd_write(
@@ -384,6 +387,8 @@ impl WasiState {
     }
 
     /// Open a file or directory.
+    // note: the parameter count is fine because we need to comply with the spec
+    #[allow(clippy::too_many_arguments)]
     fn path_open(
         &mut self,
         fd: Fd,

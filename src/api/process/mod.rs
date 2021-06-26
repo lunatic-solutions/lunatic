@@ -1,6 +1,7 @@
 pub mod api;
 mod env;
 mod err;
+#[allow(clippy::module_inception)]
 mod process;
 mod tls;
 

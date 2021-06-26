@@ -48,9 +48,9 @@ fn run_tests(tests: Vec<PathBuf>) {
         let expected_output_wat = wasmprinter::print_bytes(&expected_output_wasm).unwrap();
 
         let expected_output_multiline: Vec<&str> =
-            expected_output_wat.split("\n").into_iter().collect();
+            expected_output_wat.split('\n').into_iter().collect();
 
-        let output_multiline: Vec<&str> = output_wat.split("\n").into_iter().collect();
+        let output_multiline: Vec<&str> = output_wat.split('\n').into_iter().collect();
 
         assert_eq!(expected_output_multiline, output_multiline);
         println!("Test OK!");

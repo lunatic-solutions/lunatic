@@ -64,7 +64,7 @@ pub fn wrap(
             Ok(#output_trans(output)?)
         };
 
-        for namespace in #namespace.split(",") {
+        for namespace in #namespace.split(',') {
             linker.func(namespace, #method_name_as_str, closure.clone()).unwrap();
         }
     };

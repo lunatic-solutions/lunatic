@@ -274,18 +274,18 @@ impl<S> ToWasm<S> for StatusTrap {
 pub type StatusResult = Result<(), Status>;
 pub type StatusTrapResult = Result<(), StatusTrap>;
 
-impl Into<StatusResult> for Status {
-    fn into(self) -> StatusResult {
-        match self {
+impl From<Status> for StatusResult {
+    fn from(status: Status) -> Self {
+        match status {
             Status::Success => Ok(()),
             s => Err(s),
         }
     }
 }
 
-impl Into<StatusTrapResult> for Status {
-    fn into(self) -> StatusTrapResult {
-        match self {
+impl From<Status> for StatusTrapResult {
+    fn from(status: Status) -> Self {
+        match status {
             Status::Success => Ok(()),
             s => Err(From::from(s)),
         }
