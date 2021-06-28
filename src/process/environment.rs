@@ -1,12 +1,16 @@
 use anyhow::{anyhow, Result};
-use tokio::task;
+use tokio::{sync::mpsc::unbounded_channel, task};
 use wasmtime::{
-    Config, Engine, InstanceAllocationStrategy, Limits, Linker, Memory, MemoryType, Module,
-    OptLevel, ProfilingStrategy, Store, Val,
+    Config, Engine, InstanceAllocationStrategy, Linker, Module, OptLevel, ProfilingStrategy, Store,
+    Val,
 };
 
 pub use super::config::EnvConfig;
-use crate::{api, state::State};
+use crate::{
+    api,
+    process::{message::Message, ProcessHandle},
+    state::State,
+};
 
 /// One gallon of fuel represents around 10k instructions.
 const GALLON_IN_INSTRUCTIONS: u64 = 10_000;
@@ -45,6 +49,8 @@ impl Environment {
             // Allocate resources on demand because we can't predict how many process will exist
             .allocation_strategy(InstanceAllocationStrategy::OnDemand)
             // Memories are always static (can't be bigger than max_memory)
+            // TODO: This is currently not enforced, we need to make sure the module doesn't
+            //       define any memories that will be automatically created by the engine.
             .static_memory_maximum_size(config.max_memory())
             // Set memory guards to 4 Mb
             .static_memory_guard_size(0x400000)
@@ -77,8 +83,17 @@ impl Environment {
         self.plugins.pop();
     }
 
-    pub async fn spawn(&self, module: &Module, function: &str) -> Result<()> {
-        let state = State::default();
+    /// Spawns a new process from the environment.
+    ///
+    /// A `Process` is created from a `Module` and an entry `function`. The configuration of the
+    /// environment will define some characteristics of the process, such as maximum memory, fuel
+    /// and available host functions.
+    ///
+    /// After it's spawned the process will keep running in the background. A process can be killed
+    /// by sending a `Signal::Kill` to it.
+    pub async fn spawn(&self, module: &Module, function: &str) -> Result<ProcessHandle> {
+        let (mailbox_sender, mailbox) = unbounded_channel::<Message>();
+        let state = State::new(mailbox);
         let mut store = Store::new(&self.engine, state);
 
         // Trap if out of fuel
@@ -104,10 +119,6 @@ impl Environment {
             linker.instance(&mut store, namespace, instance)?;
         }
 
-        // Create memory for module
-        let memory_ty = MemoryType::new(Limits::new(1, None));
-        let memory = Memory::new(&mut store, memory_ty)?;
-
         let instance = linker.instantiate_async(&mut store, &module).await?;
         let entry = instance
             .get_func(&mut store, &function)
@@ -115,14 +126,19 @@ impl Environment {
                 Ok(func)
             })?;
 
-        entry.call_async(&mut store, &[]).await?;
-
-        Ok(())
+        let fut = async move { entry.call_async(&mut store, &[]).await };
+        Ok(ProcessHandle::new(fut, mailbox_sender))
     }
 
+    /// Create a module from the environment.
+    ///
+    /// All plugins in this environment will get instantiated and their `lunatic_create_module_hook`
+    /// function will be called. Plugins can use host functions to modify the module before it's JIT
+    /// compiled by `Wasmtime`.
     pub async fn create_module(&self, data: Vec<u8>) -> Result<Module> {
         let module_size = data.len();
-        let mut state = State::default();
+        let (_, messages) = unbounded_channel::<Message>();
+        let mut state = State::new(messages);
         state.module_loaded = Some(data);
 
         let mut store = Store::new(&self.engine, state);

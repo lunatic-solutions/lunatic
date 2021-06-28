@@ -1,7 +1,7 @@
 pub mod error;
 mod plugin;
-mod wasi;
 pub(crate) mod process;
+mod wasi;
 
 use std::future::Future;
 
@@ -62,6 +62,31 @@ where
 {
     if namespace_matches_filter(namespace, name, namespace_filter) {
         linker.func_wrap4_async(namespace, name, func)?;
+    }
+    Ok(())
+}
+
+// Adds async function to linker if the namespace matches the allowed list.
+pub(crate) fn link_async5_if_match<T, A1, A2, A3, A4, A5, R>(
+    linker: &mut Linker<T>,
+    namespace: &str,
+    name: &str,
+    func: impl for<'a> Fn(Caller<'a, T>, A1, A2, A3, A4, A5) -> Box<dyn Future<Output = R> + Send + 'a>
+        + Send
+        + Sync
+        + 'static,
+    namespace_filter: &Vec<String>,
+) -> Result<()>
+where
+    A1: WasmTy,
+    A2: WasmTy,
+    A3: WasmTy,
+    A4: WasmTy,
+    A5: WasmTy,
+    R: WasmRet,
+{
+    if namespace_matches_filter(namespace, name, namespace_filter) {
+        linker.func_wrap5_async(namespace, name, func)?;
     }
     Ok(())
 }
