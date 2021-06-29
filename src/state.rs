@@ -6,16 +6,25 @@ use tokio::sync::mpsc::UnboundedReceiver;
 use wasmtime::Module;
 use wasmtime_wasi::{WasiCtx, WasiCtxBuilder};
 
-use crate::process::environment::{EnvConfig, Environment};
-use crate::process::message::Message;
-use crate::process::ProcessHandle;
+use crate::{
+    environment::{EnvConfig, Environment},
+    message::Message,
+    process::ProcessHandle,
+};
 
 /// The internal state of each Process.
 ///
 /// Host functions will share one state.
 pub(crate) struct State {
+    // A message that is going to be sent to another process.
+    // Messages can contain a buffer and resources, and they require a temp state while they are
+    // being constructed.
+    pub(crate) message: Option<Message>,
     // Messages sent to the process
     pub(crate) mailbox: UnboundedReceiver<Message>,
+    // Last received message.
+    // The receiving of a message is done in two steps so that the guest can reserve enough memory.
+    pub(crate) last_received_message: Option<Message>,
     // Errors belonging to the process
     pub(crate) errors: HashMapId<anyhow::Error>,
     // Resources
@@ -30,7 +39,9 @@ pub(crate) struct State {
 impl State {
     pub fn new(mailbox: UnboundedReceiver<Message>) -> Self {
         Self {
+            message: None,
             mailbox,
+            last_received_message: None,
             errors: HashMapId::new(),
             resources: Resources::default(),
             // TODO: Inherit args & envs

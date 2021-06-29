@@ -1,6 +1,9 @@
-pub mod error;
+mod error;
+#[macro_use]
+mod macros;
+mod mailbox;
 mod plugin;
-pub(crate) mod process;
+mod process;
 mod wasi;
 
 use std::future::Future;
@@ -15,6 +18,7 @@ use crate::state::State;
 pub(crate) fn register(linker: &mut Linker<State>, namespace_filter: &Vec<String>) -> Result<()> {
     plugin::register(linker, namespace_filter)?;
     process::register(linker, namespace_filter)?;
+    mailbox::register(linker, namespace_filter)?;
     wasi::register(linker, namespace_filter)?;
     Ok(())
 }
@@ -42,54 +46,8 @@ pub(crate) fn link_if_match<T, Params, Results>(
     Ok(())
 }
 
-// Adds async function to linker if the namespace matches the allowed list.
-pub(crate) fn link_async4_if_match<T, A1, A2, A3, A4, R>(
-    linker: &mut Linker<T>,
-    namespace: &str,
-    name: &str,
-    func: impl for<'a> Fn(Caller<'a, T>, A1, A2, A3, A4) -> Box<dyn Future<Output = R> + Send + 'a>
-        + Send
-        + Sync
-        + 'static,
-    namespace_filter: &Vec<String>,
-) -> Result<()>
-where
-    A1: WasmTy,
-    A2: WasmTy,
-    A3: WasmTy,
-    A4: WasmTy,
-    R: WasmRet,
-{
-    if namespace_matches_filter(namespace, name, namespace_filter) {
-        linker.func_wrap4_async(namespace, name, func)?;
-    }
-    Ok(())
-}
-
-// Adds async function to linker if the namespace matches the allowed list.
-pub(crate) fn link_async5_if_match<T, A1, A2, A3, A4, A5, R>(
-    linker: &mut Linker<T>,
-    namespace: &str,
-    name: &str,
-    func: impl for<'a> Fn(Caller<'a, T>, A1, A2, A3, A4, A5) -> Box<dyn Future<Output = R> + Send + 'a>
-        + Send
-        + Sync
-        + 'static,
-    namespace_filter: &Vec<String>,
-) -> Result<()>
-where
-    A1: WasmTy,
-    A2: WasmTy,
-    A3: WasmTy,
-    A4: WasmTy,
-    A5: WasmTy,
-    R: WasmRet,
-{
-    if namespace_matches_filter(namespace, name, namespace_filter) {
-        linker.func_wrap5_async(namespace, name, func)?;
-    }
-    Ok(())
-}
+// Adds link_async1_if_match, link_async2_if_match, ...
+for_each_function_signature!(generate_wrap_async_func);
 
 fn namespace_matches_filter(namespace: &str, name: &str, namespace_filter: &Vec<String>) -> bool {
     let full_name = format!("{}::{}", namespace, name);

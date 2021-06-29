@@ -1,9 +1,8 @@
 use anyhow::Result;
 use wasmtime::Linker;
 
-use crate::state::State;
-
 use super::namespace_matches_filter;
+use crate::state::State;
 
 // Register WASI APIs to the linker
 pub(crate) fn register(linker: &mut Linker<State>, namespace_filter: &Vec<String>) -> Result<()> {

@@ -6,11 +6,7 @@ use wasmtime::{
 };
 
 pub use super::config::EnvConfig;
-use crate::{
-    api,
-    process::{message::Message, ProcessHandle},
-    state::State,
-};
+use crate::{api, message::Message, process::ProcessHandle, state::State};
 
 /// One gallon of fuel represents around 10k instructions.
 const GALLON_IN_INSTRUCTIONS: u64 = 10_000;

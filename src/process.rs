@@ -1,13 +1,9 @@
-mod config;
-pub mod environment;
-pub mod message;
-
 use std::future::Future;
 
 use anyhow::Result;
 use tokio::sync::mpsc::{channel, Sender, UnboundedSender};
 
-use message::Message;
+use crate::message::Message;
 
 #[derive(Debug)]
 pub enum Signal {
@@ -27,6 +23,7 @@ pub enum Finished<T> {
 /// in ghe background and can't be observed directly.
 ///
 /// The only way of communicating with processes is through a `ProcessHandle`.
+#[derive(Debug)]
 pub struct ProcessHandle {
     signal_sender: Sender<Signal>,
     mailbox_sender: UnboundedSender<Message>,

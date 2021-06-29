@@ -3,7 +3,7 @@ use std::{fs, path::Path};
 use clap::{crate_version, App, Arg, ArgSettings};
 
 use anyhow::{anyhow, Result};
-use lunatic_runtime::process::environment::{EnvConfig, Environment};
+use lunatic_runtime::environment::{EnvConfig, Environment};
 
 fn main() -> Result<()> {
     let args = App::new("lunatic")

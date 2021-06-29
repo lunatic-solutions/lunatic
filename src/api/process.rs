@@ -6,7 +6,7 @@ use wasmtime::{Caller, Linker, Trap};
 use super::{get_memory, link_async4_if_match, link_async5_if_match, link_if_match};
 use crate::{
     api::error::IntoTrap,
-    process::environment::{EnvConfig, Environment},
+    environment::{EnvConfig, Environment},
     state::State,
 };
 
@@ -143,7 +143,7 @@ fn create_environment(mut caller: Caller<State>, config_id: u64, id_ptr: u32) ->
 //%     namespace_str_len: i32,
 //%     plugin_data_ptr: i32,
 //%     plugin_data_len: i32,
-//%     id_ptr: i64
+//%     id_ptr: i32
 //% ) -> i32
 //%
 //% Returns:
@@ -222,7 +222,7 @@ fn remove_last_plugin(mut caller: Caller<State>, env_id: u64) -> Result<(), Trap
 //%     env_id: i64,
 //%     module_data_ptr: i32,
 //%     module_data_len: i32,
-//%     id_ptr: i64
+//%     id_ptr: i32
 //% ) -> i64
 //%
 //% Returns:
@@ -270,7 +270,7 @@ fn crate_module(
 //%     env_id: u64,
 //%     function_str_ptr: i32,
 //%     function_str_len: i32,
-//%     id_ptr: i64
+//%     id_ptr: i32
 //% ) -> i64
 //%
 //% Returns:

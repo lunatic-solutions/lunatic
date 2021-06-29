@@ -845,6 +845,7 @@ dependencies = [
  "anyhow",
  "clap 3.0.0-beta.2",
  "criterion",
+ "paste",
  "tokio",
  "wasmtime",
  "wasmtime-wasi",
