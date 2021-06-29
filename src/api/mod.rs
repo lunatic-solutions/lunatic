@@ -16,6 +16,7 @@ use crate::state::State;
 
 // Registers all sub-APIs to the `Linker`
 pub(crate) fn register(linker: &mut Linker<State>, namespace_filter: &Vec<String>) -> Result<()> {
+    error::register(linker, namespace_filter)?;
     plugin::register(linker, namespace_filter)?;
     process::register(linker, namespace_filter)?;
     mailbox::register(linker, namespace_filter)?;

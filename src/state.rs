@@ -16,15 +16,14 @@ use crate::{
 ///
 /// Host functions will share one state.
 pub(crate) struct State {
-    // A message that is going to be sent to another process.
-    // Messages can contain a buffer and resources, and they require a temp state while they are
-    // being constructed.
+    // A space that can be used to temporarily store messages when sending or receiving them.
+    // Messages can contain resources that need to be added across multiple host. Likewise,
+    // receiving messages is done in two steps, first the message size is returned to allow the
+    // guest to reserve enough space and then the it's received. Both of those actions use
+    // `message` as a temp space to store messages across host calls.
     pub(crate) message: Option<Message>,
     // Messages sent to the process
     pub(crate) mailbox: UnboundedReceiver<Message>,
-    // Last received message.
-    // The receiving of a message is done in two steps so that the guest can reserve enough memory.
-    pub(crate) last_received_message: Option<Message>,
     // Errors belonging to the process
     pub(crate) errors: HashMapId<anyhow::Error>,
     // Resources
@@ -41,7 +40,6 @@ impl State {
         Self {
             message: None,
             mailbox,
-            last_received_message: None,
             errors: HashMapId::new(),
             resources: Resources::default(),
             // TODO: Inherit args & envs

@@ -48,8 +48,7 @@ pub(crate) fn register(linker: &mut Linker<State>, namespace_filter: &Vec<String
 //% lunatic::message::create()
 //%
 //% Creates a new message. This message is intended to be modified by other functions in this
-//% namespace. Once `lunatic::message::send` it will be sent to another process and a new one
-//% needs to be created.
+//% namespace. Once `lunatic::message::send` is called it will be sent to another process.
 fn create(mut caller: Caller<State>) {
     caller.data_mut().message = Some(Message::default());
 }
@@ -87,7 +86,7 @@ fn set_buffer(mut caller: Caller<State>, data_ptr: u32, data_len: u32) -> Result
 //% * 0 on success
 //% * 1 on error   - Process can't receive messages (finished).
 //%
-//% Sends the message to a process
+//% Sends the message to a process.
 //%
 //% Traps:
 //% * If the process ID doesn't exist.
@@ -143,7 +142,7 @@ fn prepare_receive(
         };
 
         let message_buffer_size = message.buffer_size() as u32;
-        caller.data_mut().last_received_message = Some(message);
+        caller.data_mut().message = Some(message);
         let memory = get_memory(&mut caller)?;
         memory
             .write(
@@ -166,7 +165,7 @@ fn prepare_receive(
 fn receive(mut caller: Caller<State>, data_ptr: u32) -> Result<(), Trap> {
     let last_message = caller
         .data_mut()
-        .last_received_message
+        .message
         .take()
         .or_trap("lunatic::message::receive")?;
 
