@@ -22,6 +22,13 @@ pub(crate) fn register(linker: &mut Linker<State>, namespace_filter: &Vec<String
     link_if_match(
         linker,
         "lunatic::process",
+        "drop_config",
+        drop_config,
+        namespace_filter,
+    )?;
+    link_if_match(
+        linker,
+        "lunatic::process",
         "allow_namespace",
         allow_namespace,
         namespace_filter,
@@ -31,6 +38,13 @@ pub(crate) fn register(linker: &mut Linker<State>, namespace_filter: &Vec<String
         "lunatic::process",
         "create_environment",
         create_environment,
+        namespace_filter,
+    )?;
+    link_if_match(
+        linker,
+        "lunatic::process",
+        "drop_environment",
+        drop_environment,
         namespace_filter,
     )?;
     link_if_match(
@@ -54,8 +68,21 @@ pub(crate) fn register(linker: &mut Linker<State>, namespace_filter: &Vec<String
         crate_module,
         namespace_filter,
     )?;
+    link_if_match(
+        linker,
+        "lunatic::process",
+        "drop_module",
+        drop_module,
+        namespace_filter,
+    )?;
     link_async5_if_match(linker, "lunatic::process", "spawn", spawn, namespace_filter)?;
-
+    link_if_match(
+        linker,
+        "lunatic::process",
+        "drop_process",
+        drop_process,
+        namespace_filter,
+    )?;
     Ok(())
 }
 
@@ -72,6 +99,22 @@ fn create_config(mut caller: Caller<State>, max_memory: u64, max_fuel: u32) -> u
     let max_fuel = if max_fuel != 0 { Some(max_fuel) } else { None };
     let config = EnvConfig::new(max_memory, max_fuel);
     caller.data_mut().resources.configs.add(config)
+}
+
+//% lunatic::error::drop_config(config_id: i64)
+//%
+//% Drops the config resource.
+//%
+//% Traps:
+//% * If the config ID doesn't exist.
+fn drop_config(mut caller: Caller<State>, config_id: u64) -> Result<(), Trap> {
+    caller
+        .data_mut()
+        .resources
+        .configs
+        .remove(config_id)
+        .or_trap("lunatic::process::drop_config")?;
+    Ok(())
 }
 
 //% lunatic::process::allow_namespace(config_id: i64, namespace_str_ptr: i32, namespace_str_len: i32)
@@ -135,6 +178,22 @@ fn create_environment(mut caller: Caller<State>, config_id: u64, id_ptr: u32) ->
         .or_trap("lunatic::process::create_environment")?;
 
     Ok(result)
+}
+
+//% lunatic::error::drop_environment(env_id: i64)
+//%
+//% Drops the environment resource.
+//%
+//% Traps:
+//% * If the environment ID doesn't exist.
+fn drop_environment(mut caller: Caller<State>, env_id: u64) -> Result<(), Trap> {
+    caller
+        .data_mut()
+        .resources
+        .environments
+        .remove(env_id)
+        .or_trap("lunatic::process::drop_environment")?;
+    Ok(())
 }
 
 //% lunatic::process::add_plugin(
@@ -265,6 +324,22 @@ fn crate_module(
     })
 }
 
+//% lunatic::error::drop_module(mod_id: i64)
+//%
+//% Drops the module resource.
+//%
+//% Traps:
+//% * If the module ID doesn't exist.
+fn drop_module(mut caller: Caller<State>, mod_id: u64) -> Result<(), Trap> {
+    caller
+        .data_mut()
+        .resources
+        .modules
+        .remove(mod_id)
+        .or_trap("lunatic::process::drop_module")?;
+    Ok(())
+}
+
 //% lunatic::process::spawn(
 //%     env_id: i64,
 //%     env_id: u64,
@@ -320,4 +395,21 @@ fn spawn(
             .or_trap("lunatic::process::spawn")?;
         Ok(result)
     })
+}
+
+//% lunatic::error::drop_process(process_id: i64)
+//%
+//% Drops the process handle. This will not kill the process, it just removes the handle that
+//% references the process and allows us to send messages and signals to it.
+//%
+//% Traps:
+//% * If the process ID doesn't exist.
+fn drop_process(mut caller: Caller<State>, process_id: u64) -> Result<(), Trap> {
+    caller
+        .data_mut()
+        .resources
+        .processes
+        .remove(process_id)
+        .or_trap("lunatic::process::drop_process")?;
+    Ok(())
 }

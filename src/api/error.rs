@@ -24,6 +24,7 @@ pub(crate) fn register(linker: &mut Linker<State>, namespace_filter: &Vec<String
         to_string,
         namespace_filter,
     )?;
+    link_if_match(linker, "lunatic::error", "drop", drop, namespace_filter)?;
     Ok(())
 }
 
@@ -42,7 +43,7 @@ fn string_size(caller: Caller<State>, error_id: u64) -> Result<u32, Trap> {
     Ok(error.to_string().len() as u32)
 }
 
-//% lunatic::error::to_string(config_id: i64, error_str_ptr: i32)
+//% lunatic::error::to_string(error_id: i64, error_str_ptr: i32)
 //%
 //% Write the string representation of the error to the guest memory.
 //% `lunatic::error::string_size` can be called to get the string size.
@@ -61,6 +62,21 @@ fn to_string(mut caller: Caller<State>, error_id: u64, error_str_ptr: u32) -> Re
     memory
         .write(&mut caller, error_str_ptr as usize, &mut error_str.as_ref())
         .or_trap("lunatic::error::string_size")?;
+    Ok(())
+}
+
+//% lunatic::error::drop(error_id: i64)
+//%
+//% Drops the error resource.
+//%
+//% Traps:
+//% * If the error ID doesn't exist.
+fn drop(mut caller: Caller<State>, error_id: u64) -> Result<(), Trap> {
+    caller
+        .data_mut()
+        .errors
+        .remove(error_id)
+        .or_trap("lunatic::error::drop")?;
     Ok(())
 }
 

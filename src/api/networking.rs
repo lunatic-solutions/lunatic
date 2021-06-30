@@ -32,11 +32,25 @@ pub(crate) fn register(linker: &mut Linker<State>, namespace_filter: &Vec<String
         socket_address_v6,
         namespace_filter,
     )?;
+    link_if_match(
+        linker,
+        "lunatic::networking",
+        "drop_socket_address",
+        drop_socket_address,
+        namespace_filter,
+    )?;
     link_async3_if_match(
         linker,
         "lunatic::networking",
         "resolve",
         resolve,
+        namespace_filter,
+    )?;
+    link_if_match(
+        linker,
+        "lunatic::networking",
+        "drop_dns_iterator",
+        drop_dns_iterator,
         namespace_filter,
     )?;
     link_if_match(
@@ -53,6 +67,13 @@ pub(crate) fn register(linker: &mut Linker<State>, namespace_filter: &Vec<String
         tcp_bind,
         namespace_filter,
     )?;
+    link_if_match(
+        linker,
+        "lunatic::networking",
+        "drop_tcp_listener",
+        drop_tcp_listener,
+        namespace_filter,
+    )?;
     link_async3_if_match(
         linker,
         "lunatic::networking",
@@ -65,6 +86,13 @@ pub(crate) fn register(linker: &mut Linker<State>, namespace_filter: &Vec<String
         "lunatic::networking",
         "tcp_connect",
         tcp_connect,
+        namespace_filter,
+    )?;
+    link_if_match(
+        linker,
+        "lunatic::networking",
+        "drop_tcp_stream",
+        drop_tcp_stream,
         namespace_filter,
     )?;
     link_async4_if_match(
@@ -133,6 +161,22 @@ fn socket_address_v6(mut caller: Caller<State>, address_ptr: u32, port: u32) -> 
     Ok(socket_addr_id)
 }
 
+//% lunatic::error::drop_socket_address(socket_addr_id: i64)
+//%
+//% Drops the socket address resource.
+//%
+//% Traps:
+//% * If the socket address ID doesn't exist.
+fn drop_socket_address(mut caller: Caller<State>, socket_addr_id: u64) -> Result<(), Trap> {
+    caller
+        .data_mut()
+        .resources
+        .socket_addresses
+        .remove(socket_addr_id)
+        .or_trap("lunatic::networking::drop_socket_address")?;
+    Ok(())
+}
+
 //% lunatic::networking::resolve(name_str_ptr: i32, name_str_len: i32, id_ptr: i32) -> i64
 //%
 //% Returns:
@@ -180,6 +224,22 @@ fn resolve(
             .or_trap("lunatic::process::spawn")?;
         Ok(result)
     })
+}
+
+//% lunatic::error::drop_dns_iterator(dns_iter_id: i64)
+//%
+//% Drops the DNS iterator resource..
+//%
+//% Traps:
+//% * If the DNS iterator ID doesn't exist.
+fn drop_dns_iterator(mut caller: Caller<State>, dns_iter_id: u64) -> Result<(), Trap> {
+    caller
+        .data_mut()
+        .resources
+        .dns_iterators
+        .remove(dns_iter_id)
+        .or_trap("lunatic::networking::drop_dns_iterator")?;
+    Ok(())
 }
 
 //% lunatic::networking::resolve_next(dns_iter_id: i64, id_ptr: i64) -> i32
@@ -269,6 +329,22 @@ fn tcp_bind(
 
         Ok(result)
     })
+}
+
+//% lunatic::error::drop_tcp_listener(tcp_listener_id: i64)
+//%
+//% Drops the TCP listener resource..
+//%
+//% Traps:
+//% * If the DNS iterator ID doesn't exist.
+fn drop_tcp_listener(mut caller: Caller<State>, tcp_listener_id: u64) -> Result<(), Trap> {
+    caller
+        .data_mut()
+        .resources
+        .tcp_listeners
+        .remove(tcp_listener_id)
+        .or_trap("lunatic::networking::drop_tcp_listener")?;
+    Ok(())
 }
 
 //% lunatic::networking::tcp_accept(listener_id: i64, id_ptr: i32, peer_socket_addr_id_ptr: i32) -> i64
@@ -376,6 +452,22 @@ fn tcp_connect(
             .or_trap("lunatic::process::tcp_connect")?;
         Ok(result)
     })
+}
+
+//% lunatic::error::drop_tcp_stream(tcp_stream_id: i64)
+//%
+//% Drops the TCP stream resource..
+//%
+//% Traps:
+//% * If the DNS iterator ID doesn't exist.
+fn drop_tcp_stream(mut caller: Caller<State>, tcp_stream_id: u64) -> Result<(), Trap> {
+    caller
+        .data_mut()
+        .resources
+        .tcp_streams
+        .remove(tcp_stream_id)
+        .or_trap("lunatic::networking::drop_tcp_stream")?;
+    Ok(())
 }
 
 //% lunatic::networking::tcp_write_vectored(
@@ -502,7 +594,7 @@ fn tcp_read(
     })
 }
 
-//% lunatic::networking::tcp_read(stream_id: i64, error_id_ptr: i32) -> i64
+//% lunatic::networking::tcp_flush(stream_id: i64, error_id_ptr: i32) -> i64
 //%
 //% Returns:
 //% * 0 on success
@@ -513,8 +605,7 @@ fn tcp_read(
 //%
 //% Traps:
 //% * If the stream ID doesn't exist.
-//% * If **buffer_ptr + buffer_len** is outside the memory.
-//% * If **i64_opaque_ptr** is outside the memory.
+//% * If **error_id_ptr** is outside the memory.
 fn tcp_flush(
     mut caller: Caller<State>,
     stream_id: u64,
