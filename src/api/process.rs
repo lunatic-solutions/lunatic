@@ -54,13 +54,6 @@ pub(crate) fn register(linker: &mut Linker<State>, namespace_filter: &Vec<String
         add_plugin,
         namespace_filter,
     )?;
-    link_if_match(
-        linker,
-        "lunatic::process",
-        "remove_last_plugin",
-        remove_last_plugin,
-        namespace_filter,
-    )?;
     link_async4_if_match(
         linker,
         "lunatic::process",
@@ -258,23 +251,6 @@ fn add_plugin(
         .or_trap("lunatic::process::add_plugin")?;
 
     Ok(result)
-}
-
-//% lunatic::process::remove_last_plugin(env_id: i64)
-//%
-//% Removes last plugin from environment if there are plugins.
-//%
-//% Traps:
-//% * If the environment ID doesn't exist.
-fn remove_last_plugin(mut caller: Caller<State>, env_id: u64) -> Result<(), Trap> {
-    let env = caller
-        .data_mut()
-        .resources
-        .environments
-        .get_mut(env_id)
-        .or_trap("lunatic::process::remove_last_plugin")?;
-    env.remove_last_plugin();
-    Ok(())
 }
 
 //% lunatic::process::crate_module(

@@ -53,7 +53,11 @@ fn main() -> Result<()> {
         let path = Path::new(path);
         let module = fs::read(path)?;
         let module = main_process_environment.create_module(module).await?;
-        main_process_environment.spawn(&module, "hello").await?;
+        main_process_environment
+            .spawn(&module, "_start")
+            .await?
+            .task
+            .await?;
         Ok(())
     })
 }

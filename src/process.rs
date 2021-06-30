@@ -1,7 +1,10 @@
 use std::future::Future;
 
 use anyhow::Result;
-use tokio::sync::mpsc::{channel, Sender, UnboundedSender};
+use tokio::{
+    sync::mpsc::{channel, Sender, UnboundedSender},
+    task::JoinHandle,
+};
 
 use crate::message::Message;
 
@@ -27,6 +30,7 @@ pub enum Finished<T> {
 pub struct ProcessHandle {
     signal_sender: Sender<Signal>,
     mailbox_sender: UnboundedSender<Message>,
+    pub task: JoinHandle<()>,
 }
 
 impl ProcessHandle {
@@ -59,11 +63,12 @@ impl ProcessHandle {
         };
 
         // Spawn a background process
-        tokio::spawn(fut);
+        let task = tokio::spawn(fut);
 
         Self {
             signal_sender,
             mailbox_sender,
+            task,
         }
     }
 

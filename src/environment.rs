@@ -74,11 +74,6 @@ impl Environment {
         Ok(())
     }
 
-    /// Removes last plugin
-    pub fn remove_last_plugin(&mut self) {
-        self.plugins.pop();
-    }
-
     /// Spawns a new process from the environment.
     ///
     /// A `Process` is created from a `Module` and an entry `function`. The configuration of the
@@ -89,8 +84,9 @@ impl Environment {
     /// by sending a `Signal::Kill` to it.
     pub async fn spawn(&self, module: &Module, function: &str) -> Result<ProcessHandle> {
         let (mailbox_sender, mailbox) = unbounded_channel::<Message>();
-        let state = State::new(mailbox);
+        let state = State::new(self.info(), mailbox);
         let mut store = Store::new(&self.engine, state);
+        store.limiter(|state| state);
 
         // Trap if out of fuel
         store.out_of_fuel_trap();
@@ -134,7 +130,7 @@ impl Environment {
     pub async fn create_module(&self, data: Vec<u8>) -> Result<Module> {
         let module_size = data.len();
         let (_, messages) = unbounded_channel::<Message>();
-        let mut state = State::new(messages);
+        let mut state = State::new(self.info(), messages);
         state.module_loaded = Some(data);
 
         let mut store = Store::new(&self.engine, state);
@@ -167,4 +163,19 @@ impl Environment {
             task::spawn_blocking(move || Module::new(&engine, new_data.as_slice())).await??;
         Ok(module)
     }
+
+    pub fn info(&self) -> EnvInfo {
+        EnvInfo {
+            max_memory: self.config.max_memory(),
+            max_fuel: self.config.max_fuel(),
+            plugin_count: self.plugins.len(),
+        }
+    }
+}
+
+/// Information about an environment
+pub struct EnvInfo {
+    pub max_memory: u64,
+    pub max_fuel: Option<u32>,
+    pub plugin_count: usize,
 }
