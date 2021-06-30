@@ -1,8 +1,12 @@
 use std::any::type_name;
 use std::collections::HashMap;
 use std::fmt::Debug;
+use std::net::SocketAddr;
+use std::sync::Arc;
+use std::vec::IntoIter;
 
-use tokio::sync::mpsc::UnboundedReceiver;
+use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::{mpsc::UnboundedReceiver, Mutex};
 use wasmtime::Module;
 use wasmtime_wasi::{WasiCtx, WasiCtxBuilder};
 
@@ -63,6 +67,10 @@ pub(crate) struct Resources {
     pub(crate) environments: HashMapId<Environment>,
     pub(crate) modules: HashMapId<Module>,
     pub(crate) processes: HashMapId<ProcessHandle>,
+    pub(crate) dns_iterators: HashMapId<DnsIterator>,
+    pub(crate) socket_addresses: HashMapId<SocketAddr>,
+    pub(crate) tcp_listeners: HashMapId<TcpListener>,
+    pub(crate) tcp_streams: HashMapId<Arc<Mutex<TcpStream>>>,
 }
 
 /// HashMap wrapper with incremental ID (u64) assignment.
@@ -71,7 +79,10 @@ pub struct HashMapId<T> {
     store: HashMap<u64, T>,
 }
 
-impl<T> HashMapId<T> {
+impl<T> HashMapId<T>
+where
+    T: Send + Sync,
+{
     pub fn new() -> Self {
         Self {
             id_seed: 0,
@@ -99,7 +110,10 @@ impl<T> HashMapId<T> {
     }
 }
 
-impl<T> Default for HashMapId<T> {
+impl<T> Default for HashMapId<T>
+where
+    T: Send + Sync,
+{
     fn default() -> Self {
         Self::new()
     }
@@ -111,5 +125,23 @@ impl<T> Debug for HashMapId<T> {
             .field("id_seed", &self.id_seed)
             .field("type", &type_name::<T>())
             .finish()
+    }
+}
+
+pub(crate) struct DnsIterator {
+    iter: IntoIter<SocketAddr>,
+}
+
+impl DnsIterator {
+    pub fn new(iter: IntoIter<SocketAddr>) -> Self {
+        Self { iter }
+    }
+}
+
+impl Iterator for DnsIterator {
+    type Item = SocketAddr;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter.next()
     }
 }

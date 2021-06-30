@@ -2,6 +2,7 @@ mod error;
 #[macro_use]
 mod macros;
 mod mailbox;
+mod networking;
 mod plugin;
 mod process;
 mod wasi;
@@ -20,6 +21,7 @@ pub(crate) fn register(linker: &mut Linker<State>, namespace_filter: &Vec<String
     plugin::register(linker, namespace_filter)?;
     process::register(linker, namespace_filter)?;
     mailbox::register(linker, namespace_filter)?;
+    networking::register(linker, namespace_filter)?;
     wasi::register(linker, namespace_filter)?;
     Ok(())
 }

@@ -74,7 +74,7 @@ fn create_config(mut caller: Caller<State>, max_memory: u64, max_fuel: u32) -> u
     caller.data_mut().resources.configs.add(config)
 }
 
-//% lunatic::process::allow_namespace(config_id: i64, namespace_str_ptr: i32 namespace_str_len: i32)
+//% lunatic::process::allow_namespace(config_id: i64, namespace_str_ptr: i32, namespace_str_len: i32)
 //%
 //% Allow using host functions under this namespace with this configuration. Namespaces are strings,
 //% e.g. `lunatic::` or `lunatic::process::`.
