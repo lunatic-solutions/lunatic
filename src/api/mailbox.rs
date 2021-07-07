@@ -1,6 +1,7 @@
-use std::future::Future;
+use std::{future::Future, sync::Arc};
 
 use anyhow::Result;
+use tokio::sync::Mutex;
 use wasmtime::{Caller, Linker, Trap};
 
 use crate::{
@@ -25,6 +26,20 @@ pub(crate) fn register(linker: &mut Linker<State>, namespace_filter: &Vec<String
         "lunatic::message",
         "set_buffer",
         set_buffer,
+        namespace_filter,
+    )?;
+    link_if_match(
+        linker,
+        "lunatic::message",
+        "add_process",
+        add_process,
+        namespace_filter,
+    )?;
+    link_if_match(
+        linker,
+        "lunatic::message",
+        "add_tcp_stream",
+        add_tcp_stream,
         namespace_filter,
     )?;
     link_if_match(linker, "lunatic::message", "send", send, namespace_filter)?;
@@ -56,13 +71,13 @@ fn create(mut caller: Caller<State>) {
 //% lunatic::message::set_buffer(
 //%     data_ptr: i32,
 //%     data_len: i32,
-//% ) -> i64
+//% )
 //%
 //% Sets the data for the next message.
 //%
 //% Traps:
 //% * If **data_ptr + data_len** is outside the memory.
-//% * If it's called before a creating the next message.
+//% * If it's called before the next message is created.
 fn set_buffer(mut caller: Caller<State>, data_ptr: u32, data_len: u32) -> Result<(), Trap> {
     let mut buffer = vec![0; data_len as usize];
     let memory = get_memory(&mut caller)?;
@@ -78,9 +93,55 @@ fn set_buffer(mut caller: Caller<State>, data_ptr: u32, data_len: u32) -> Result
     Ok(())
 }
 
+//% lunatic::message::add_process(process_id: i64) -> i32
+//%
+//% Adds a process resource to the next message and returns the location in the array the process
+//% was added to. This will remove the process handle from the current process' resources.
+//%
+//% Traps:
+//% * If process ID doesn't exist
+//% * If it's called before the next message is created.
+fn add_process(mut caller: Caller<State>, process_id: u64) -> Result<u32, Trap> {
+    let process = caller
+        .data_mut()
+        .resources
+        .processes
+        .remove(process_id)
+        .or_trap("lunatic::message::add_process")?;
+    Ok(caller
+        .data_mut()
+        .message
+        .as_mut()
+        .or_trap("lunatic::message::add_process")?
+        .add_process(process) as u32)
+}
+
+//% lunatic::message::add_tcp_stream(stream_id: i64) -> i32
+//%
+//% Adds a TCP stream resource to the next message and returns the location in the array the TCP
+//% stream was added to. This will remove the TCP stream from the current process' resources.
+//%
+//% Traps:
+//% * If TCP stream ID doesn't exist
+//% * If it's called before the next message is created.
+fn add_tcp_stream(mut caller: Caller<State>, stream_id: u64) -> Result<u32, Trap> {
+    let stream = caller
+        .data_mut()
+        .resources
+        .tcp_streams
+        .remove(stream_id)
+        .or_trap("lunatic::message::add_tcp_stream")?;
+    Ok(caller
+        .data_mut()
+        .message
+        .as_mut()
+        .or_trap("lunatic::message::add_tcp_stream")?
+        .add_tcp_stream(stream) as u32)
+}
+
 //% lunatic::message::send(
 //%     process_id: i64,
-//% ) -> i64
+//% ) -> i32
 //%
 //% Returns:
 //% * 0 on success
@@ -96,7 +157,7 @@ fn send(
     process_id: u64,
     data_ptr: u32,
     data_len: u32,
-) -> Result<i32, Trap> {
+) -> Result<u32, Trap> {
     let mut buffer = vec![0; data_len as usize];
     let memory = get_memory(&mut caller)?;
     memory
@@ -120,10 +181,11 @@ fn send(
     Ok(result)
 }
 
-//% lunatic::message::prepare_receive(i32_size_ptr: i32) -> i64
+//% lunatic::message::prepare_receive(i32_msg_size_ptr: i32, i32_res_size_ptr: i32) -> i32
 //%
 //% Returns:
-//% * 0 on success - The size of the last message is written to **size_ptr**.
+//% * 0 on success - The size of the message buffer is written to **i32_msg_size_ptr** and the
+//%                  number of the resources is written to **i32_res_size_ptr**.
 //% * 1 on error   - Process can't receive more messages (nobody holds a handle to it).
 //%
 //% This function should be called before `lunatic::message::receive` to let the guest know how
@@ -155,26 +217,45 @@ fn prepare_receive(
     })
 }
 
-//% lunatic::message::receive(data_ptr: i32)
+//% lunatic::message::receive(data_ptr: i32, resource_ptr: i32)
+//%
+//% * **data_ptr**     - Pointer to write the data to.
+//% * **resource_ptr** - Pointer to an array of i64 values, where each value represents the
+//%                      resource id inside the new process. Resources are in the same order they
+//%                      were added.
 //%
 //% Writes the message that was prepared with `lunatic::message::prepare_receive` to the guest.
 //%
 //% Traps:
 //% * If `lunatic::message::prepare_receive` was not called before.
 //% * If **data_ptr + size of the message** is outside the memory.
-fn receive(mut caller: Caller<State>, data_ptr: u32) -> Result<(), Trap> {
+//% * If **resource_ptr + size of the resources** is outside the memory.
+fn receive(mut caller: Caller<State>, data_ptr: u32, resource_ptr: u32) -> Result<(), Trap> {
     let last_message = caller
         .data_mut()
         .message
         .take()
         .or_trap("lunatic::message::receive")?;
-
-    // TODO: Extract resources
-
     let memory = get_memory(&mut caller)?;
     memory
         .write(&mut caller, data_ptr as usize, last_message.buffer())
         .or_trap("lunatic::message::receive")?;
 
+    let resources: Vec<u8> = last_message
+        .resources()
+        .into_iter()
+        .map(|resource| match resource {
+            crate::message::Resource::Process(process_handle) => {
+                u64::to_le_bytes(caller.data_mut().resources.processes.add(process_handle))
+            }
+            crate::message::Resource::TcpStream(tcp_stream) => {
+                u64::to_le_bytes(caller.data_mut().resources.tcp_streams.add(tcp_stream))
+            }
+        })
+        .flatten()
+        .collect();
+    memory
+        .write(&mut caller, resource_ptr as usize, &resources)
+        .or_trap("lunatic::message::receive")?;
     Ok(())
 }
