@@ -1,7 +1,6 @@
-use std::{future::Future, sync::Arc};
+use std::future::Future;
 
 use anyhow::Result;
-use tokio::sync::Mutex;
 use wasmtime::{Caller, Linker, Trap};
 
 use crate::{

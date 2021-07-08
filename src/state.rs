@@ -11,15 +11,11 @@ use wasmtime::{Module, ResourceLimiter};
 use wasmtime_wasi::{WasiCtx, WasiCtxBuilder};
 
 use crate::environment::EnvInfo;
-use crate::{
-    environment::{EnvConfig, Environment},
-    message::Message,
-    process::ProcessHandle,
-};
+use crate::{message::Message, process::ProcessHandle, EnvConfig, Environment};
 
-/// The internal state of each Process.
-///
-/// Host functions will share one state.
+// The internal state of each Process.
+//
+// Host functions will share one state.
 pub(crate) struct State {
     // Information about the environment that this process was spawned from
     pub(crate) env_info: EnvInfo,

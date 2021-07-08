@@ -1,4 +1,4 @@
-// Configuration structure for environments
+/// Configuration structure for environments.
 #[derive(Debug)]
 pub struct EnvConfig {
     // Maximum amount of memory that can be used by processes
@@ -9,6 +9,7 @@ pub struct EnvConfig {
 }
 
 impl EnvConfig {
+    /// Create a new environment configuration.
     pub fn new(max_memory: u64, max_fuel: Option<u32>) -> Self {
         Self {
             max_memory,
@@ -29,6 +30,7 @@ impl EnvConfig {
         &self.allowed_namespaces
     }
 
+    /// Allow a WebAssembly host function namespace to be used with this config.
     pub fn allow_namespace<S: Into<String>>(&mut self, namespace: S) {
         self.allowed_namespaces.push(namespace.into())
     }

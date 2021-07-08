@@ -4,6 +4,11 @@ use tokio::{net::TcpStream, sync::Mutex};
 
 use crate::process::ProcessHandle;
 
+/// A message that can be sent to a `process.
+///
+/// Messages consist of two parts:
+/// * buffer - raw data
+/// * resources - like [`ProcessHandle`] or `TcpStream`
 #[derive(Debug, Default)]
 pub struct Message {
     buffer: Vec<u8>,
@@ -11,6 +16,11 @@ pub struct Message {
 }
 
 impl Message {
+    /// Create a new message.
+    pub fn new(buffer: Vec<u8>, resources: Vec<Resource>) -> Self {
+        Self { buffer, resources }
+    }
+
     pub fn set_buffer(&mut self, buffer: Vec<u8>) {
         self.buffer = buffer;
     }

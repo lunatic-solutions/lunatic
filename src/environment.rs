@@ -5,10 +5,10 @@ use wasmtime::{
     Val,
 };
 
-pub use super::config::EnvConfig;
+use super::config::EnvConfig;
 use crate::{api, message::Message, process::ProcessHandle, state::State};
 
-/// One gallon of fuel represents around 10k instructions.
+// One gallon of fuel represents around 10k instructions.
 const GALLON_IN_INSTRUCTIONS: u64 = 10_000;
 
 /// The environment represents a set of characteristics that processes spawned from it will have.
@@ -16,9 +16,10 @@ const GALLON_IN_INSTRUCTIONS: u64 = 10_000;
 /// Environments let us set limits on processes:
 /// * Memory limits
 /// * Compute limits
+/// * Access to host functions
 ///
-/// They also define the set of plugins that are used by the process. Plugins then can be used to
-/// limit processes' access to host functions.
+/// They also define the set of plugins. Plugins can be used to modify loaded Wasm modules or to
+/// limit processes' access to host functions by shadowing their implementations.
 pub struct Environment {
     engine: Engine,
     linker: Linker<State>,
@@ -27,6 +28,7 @@ pub struct Environment {
 }
 
 impl Environment {
+    /// Create a new environment from a configuration.
     pub fn new(config: EnvConfig) -> Result<Self> {
         let mut wasmtime_config = Config::new();
         wasmtime_config
@@ -67,7 +69,11 @@ impl Environment {
         })
     }
 
-    /// Adds module as a plugin that will be used on all processes in this environment
+    /// Add module as a plugin that will be used on all processes in this environment.
+    ///
+    /// Plugins are just regular WebAssembly modules that can define specific hooks inside the
+    /// runtime to modify other modules that are dynamically loaded inside the environment or
+    /// export their own set of host functions.
     pub fn add_plugin<S: Into<String>>(&mut self, namespace: S, module: Vec<u8>) -> Result<()> {
         let module = Module::new(&self.engine, module)?;
         self.plugins.push((namespace.into(), module));
@@ -164,7 +170,7 @@ impl Environment {
         Ok(module)
     }
 
-    pub fn info(&self) -> EnvInfo {
+    pub(crate) fn info(&self) -> EnvInfo {
         EnvInfo {
             max_memory: self.config.max_memory(),
             max_fuel: self.config.max_fuel(),
@@ -174,7 +180,7 @@ impl Environment {
 }
 
 /// Information about an environment
-pub struct EnvInfo {
+pub(crate) struct EnvInfo {
     pub max_memory: u64,
     pub max_fuel: Option<u32>,
     pub plugin_count: usize,

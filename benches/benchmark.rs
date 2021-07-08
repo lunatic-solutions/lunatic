@@ -1,7 +1,7 @@
 use std::{fs, path::Path};
 
 use criterion::{criterion_group, criterion_main, Criterion};
-use lunatic_runtime::environment::{EnvConfig, Environment};
+use lunatic_runtime::{EnvConfig, Environment};
 
 fn criterion_benchmark(c: &mut Criterion) {
     let rt = tokio::runtime::Runtime::new().unwrap();

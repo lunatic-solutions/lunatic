@@ -21,11 +21,11 @@ pub enum Finished<T> {
     Signal(Signal),
 }
 
+/// The only way of communicating with processes is through a `ProcessHandle`.
+///
 /// Lunatic processes can be crated from a Wasm module & exported function name (or table index).
 /// They are created inside the `Environment::spawn` method, and once spawned they will be running
-/// in ghe background and can't be observed directly.
-///
-/// The only way of communicating with processes is through a `ProcessHandle`.
+/// in the background and can't be observed directly.
 #[derive(Debug)]
 pub struct ProcessHandle {
     signal_sender: Sender<Signal>,
@@ -35,7 +35,7 @@ pub struct ProcessHandle {
 
 impl ProcessHandle {
     /// Turns a Future into a process, enabling signals (e.g. kill) and messages.  
-    pub fn new<F>(fut: F, mailbox_sender: UnboundedSender<Message>) -> Self
+    pub(crate) fn new<F>(fut: F, mailbox_sender: UnboundedSender<Message>) -> Self
     where
         F: Future + Send + 'static,
     {
