@@ -26,7 +26,7 @@ impl EnvConfig {
         self.max_fuel
     }
 
-    pub fn allowed_namespace(&self) -> &Vec<String> {
+    pub fn allowed_namespace(&self) -> &[String] {
         &self.allowed_namespaces
     }
 

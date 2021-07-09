@@ -7,7 +7,7 @@ use super::{get_memory, link_async4_if_match, link_async5_if_match, link_if_matc
 use crate::{api::error::IntoTrap, state::State, EnvConfig, Environment};
 
 // Register the process APIs to the linker
-pub(crate) fn register(linker: &mut Linker<State>, namespace_filter: &Vec<String>) -> Result<()> {
+pub(crate) fn register(linker: &mut Linker<State>, namespace_filter: &[String]) -> Result<()> {
     link_if_match(
         linker,
         "lunatic::process",

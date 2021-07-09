@@ -16,7 +16,7 @@ use self::error::IntoTrap;
 use crate::state::State;
 
 // Registers all sub-APIs to the `Linker`
-pub(crate) fn register(linker: &mut Linker<State>, namespace_filter: &Vec<String>) -> Result<()> {
+pub(crate) fn register(linker: &mut Linker<State>, namespace_filter: &[String]) -> Result<()> {
     error::register(linker, namespace_filter)?;
     plugin::register(linker, namespace_filter)?;
     process::register(linker, namespace_filter)?;
@@ -41,7 +41,7 @@ pub(crate) fn link_if_match<T, Params, Results>(
     namespace: &str,
     name: &str,
     func: impl IntoFunc<T, Params, Results>,
-    namespace_filter: &Vec<String>,
+    namespace_filter: &[String],
 ) -> Result<()> {
     if namespace_matches_filter(namespace, name, namespace_filter) {
         linker.func_wrap(namespace, name, func)?;
@@ -52,7 +52,7 @@ pub(crate) fn link_if_match<T, Params, Results>(
 // Adds link_async1_if_match, link_async2_if_match, ...
 for_each_function_signature!(generate_wrap_async_func);
 
-fn namespace_matches_filter(namespace: &str, name: &str, namespace_filter: &Vec<String>) -> bool {
+fn namespace_matches_filter(namespace: &str, name: &str, namespace_filter: &[String]) -> bool {
     let full_name = format!("{}::{}", namespace, name);
     // Allow if any of the allowed namespaces matches the beginning of the full name.
     namespace_filter

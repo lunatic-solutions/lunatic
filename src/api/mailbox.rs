@@ -12,7 +12,7 @@ use crate::{
 use super::{link_async2_if_match, link_if_match};
 
 // Register the mailbox APIs to the linker
-pub(crate) fn register(linker: &mut Linker<State>, namespace_filter: &Vec<String>) -> Result<()> {
+pub(crate) fn register(linker: &mut Linker<State>, namespace_filter: &[String]) -> Result<()> {
     link_if_match(
         linker,
         "lunatic::message",
@@ -151,17 +151,7 @@ fn add_tcp_stream(mut caller: Caller<State>, stream_id: u64) -> Result<u64, Trap
 //% Traps:
 //% * If the process ID doesn't exist.
 //% * If it's called before a creating the next message.
-fn send(
-    mut caller: Caller<State>,
-    process_id: u64,
-    data_ptr: u32,
-    data_len: u32,
-) -> Result<u32, Trap> {
-    let mut buffer = vec![0; data_len as usize];
-    let memory = get_memory(&mut caller)?;
-    memory
-        .read(&caller, data_ptr as usize, buffer.as_mut_slice())
-        .or_trap("lunatic::message::send")?;
+fn send(mut caller: Caller<State>, process_id: u64) -> Result<u32, Trap> {
     let message = caller
         .data_mut()
         .message

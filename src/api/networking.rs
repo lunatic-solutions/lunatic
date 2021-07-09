@@ -17,7 +17,7 @@ use crate::{api::get_memory, state::State};
 use super::{link_async2_if_match, link_async3_if_match, link_async4_if_match, link_if_match};
 
 // Register the error APIs to the linker
-pub(crate) fn register(linker: &mut Linker<State>, namespace_filter: &Vec<String>) -> Result<()> {
+pub(crate) fn register(linker: &mut Linker<State>, namespace_filter: &[String]) -> Result<()> {
     link_if_match(
         linker,
         "lunatic::networking",
@@ -177,7 +177,7 @@ fn drop_socket_address(mut caller: Caller<State>, socket_addr_id: u64) -> Result
     Ok(())
 }
 
-//% lunatic::networking::resolve(name_str_ptr: i32, name_str_len: i32, id_ptr: i32) -> i64
+//% lunatic::networking::resolve(name_str_ptr: i32, name_str_len: i32, id_ptr: i32) -> i32
 //%
 //% Returns:
 //% * 0 on success - The ID of the newly created DNS iterator is written to **id_ptr**
@@ -195,7 +195,7 @@ fn resolve(
     name_str_ptr: u32,
     name_str_len: u32,
     id_ptr: u32,
-) -> Box<dyn Future<Output = Result<i32, Trap>> + Send + '_> {
+) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_> {
     Box::new(async move {
         let mut buffer = vec![0; name_str_len as usize];
         let memory = get_memory(&mut caller)?;
@@ -253,7 +253,7 @@ fn drop_dns_iterator(mut caller: Caller<State>, dns_iter_id: u64) -> Result<(), 
 //% Traps:
 //% * If the DNS iterator ID doesn't exist.
 //% * If **id_ptr** is outside the memory.
-fn resolve_next(mut caller: Caller<State>, dns_iter_id: u64, id_ptr: u32) -> Result<i32, Trap> {
+fn resolve_next(mut caller: Caller<State>, dns_iter_id: u64, id_ptr: u32) -> Result<u32, Trap> {
     let dns_iter = caller
         .data_mut()
         .resources
@@ -285,7 +285,7 @@ fn resolve_next(mut caller: Caller<State>, dns_iter_id: u64, id_ptr: u32) -> Res
     Ok(result)
 }
 
-//% lunatic::networking::tcp_bind(socket_addr_id: i64, id_ptr: i32) -> i64
+//% lunatic::networking::tcp_bind(socket_addr_id: i64, id_ptr: i32) -> i32
 //%
 //% Returns:
 //% * 0 on success - The ID of the newly created TCP listener is written to **id_ptr**
@@ -304,7 +304,7 @@ fn tcp_bind(
     mut caller: Caller<State>,
     socket_addr_id: u64,
     id_ptr: u32,
-) -> Box<dyn Future<Output = Result<i32, Trap>> + Send + '_> {
+) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_> {
     Box::new(async move {
         let socket_addr = caller
             .data()
@@ -347,7 +347,7 @@ fn drop_tcp_listener(mut caller: Caller<State>, tcp_listener_id: u64) -> Result<
     Ok(())
 }
 
-//% lunatic::networking::tcp_accept(listener_id: i64, id_ptr: i32, peer_socket_addr_id_ptr: i32) -> i64
+//% lunatic::networking::tcp_accept(listener_id: i64, id_ptr: i32, peer_socket_addr_id_ptr: i32) -> i32
 //%
 //% Returns:
 //% * 0 on success - The ID of the newly created TCP stream is written to **id_ptr** and the ID of
@@ -363,7 +363,7 @@ fn tcp_accept(
     listener_id: u64,
     id_ptr: u32,
     socket_addr_id_ptr: u32,
-) -> Box<dyn Future<Output = Result<i32, Trap>> + Send + '_> {
+) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_> {
     Box::new(async move {
         let tcp_listener = caller
             .data()
@@ -408,7 +408,7 @@ fn tcp_accept(
     })
 }
 
-//% lunatic::networking::tcp_connect(socket_addr_id: i64, id_ptr: i32) -> i64
+//% lunatic::networking::tcp_connect(socket_addr_id: i64, id_ptr: i32) -> i32
 //%
 //% Returns:
 //% * 0 on success - The ID of the newly created TCP stream is written to **id_ptr**.
@@ -421,7 +421,7 @@ fn tcp_connect(
     mut caller: Caller<State>,
     socket_addr_id: u64,
     id_ptr: u32,
-) -> Box<dyn Future<Output = Result<i32, Trap>> + Send + '_> {
+) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_> {
     Box::new(async move {
         let socket_addr = caller
             .data()
@@ -475,7 +475,7 @@ fn drop_tcp_stream(mut caller: Caller<State>, tcp_stream_id: u64) -> Result<(), 
 //%     ciovec_array_ptr: i32,
 //%     ciovec_array_len: i32,
 //%     i64_opaque_ptr: i32,
-//% ) -> i64
+//% ) -> i32
 //%
 //% Returns:
 //% * 0 on success - The number of bytes written is written to **opaque_ptr**
@@ -495,7 +495,7 @@ fn tcp_write_vectored(
     ciovec_array_ptr: u32,
     ciovec_array_len: u32,
     opaque_ptr: u32,
-) -> Box<dyn Future<Output = Result<i32, Trap>> + Send + '_> {
+) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_> {
     Box::new(async move {
         let memory = get_memory(&mut caller)?;
         let buffer = memory
@@ -547,7 +547,7 @@ fn tcp_write_vectored(
 //%     buffer_ptr: i32,
 //%     buffer_len: i32,
 //%     i64_opaque_ptr: i32,
-//% ) -> i64
+//% ) -> i32
 //%
 //% Returns:
 //% * 0 on success - The number of bytes read is written to **opaque_ptr**
@@ -565,7 +565,7 @@ fn tcp_read(
     buffer_ptr: u32,
     buffer_len: u32,
     opaque_ptr: u32,
-) -> Box<dyn Future<Output = Result<i32, Trap>> + Send + '_> {
+) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_> {
     Box::new(async move {
         let stream_mutex = caller
             .data()
@@ -594,7 +594,7 @@ fn tcp_read(
     })
 }
 
-//% lunatic::networking::tcp_flush(stream_id: i64, error_id_ptr: i32) -> i64
+//% lunatic::networking::tcp_flush(stream_id: i64, error_id_ptr: i32) -> i32
 //%
 //% Returns:
 //% * 0 on success
@@ -610,7 +610,7 @@ fn tcp_flush(
     mut caller: Caller<State>,
     stream_id: u64,
     error_id_ptr: u32,
-) -> Box<dyn Future<Output = Result<i32, Trap>> + Send + '_> {
+) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_> {
     Box::new(async move {
         let stream_mutex = caller
             .data()

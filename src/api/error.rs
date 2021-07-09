@@ -9,7 +9,7 @@ use crate::{api::get_memory, state::State};
 use super::link_if_match;
 
 // Register the error APIs to the linker
-pub(crate) fn register(linker: &mut Linker<State>, namespace_filter: &Vec<String>) -> Result<()> {
+pub(crate) fn register(linker: &mut Linker<State>, namespace_filter: &[String]) -> Result<()> {
     link_if_match(
         linker,
         "lunatic::error",
@@ -60,7 +60,7 @@ fn to_string(mut caller: Caller<State>, error_id: u64, error_str_ptr: u32) -> Re
     let error_str = error.to_string();
     let memory = get_memory(&mut caller)?;
     memory
-        .write(&mut caller, error_str_ptr as usize, &mut error_str.as_ref())
+        .write(&mut caller, error_str_ptr as usize, error_str.as_ref())
         .or_trap("lunatic::error::string_size")?;
     Ok(())
 }

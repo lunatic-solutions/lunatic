@@ -29,7 +29,7 @@ macro_rules! generate_wrap_async_func {
             namespace: &str,
             name: &str,
             func: impl for<'a> Fn(Caller<'a, T>, $($args),*) -> Box<dyn Future<Output = R> + Send + 'a> + Send + Sync + 'static,
-            namespace_filter: &Vec<String>,
+            namespace_filter: &[String],
         ) -> Result<()>
         where
             $($args: WasmTy,)*

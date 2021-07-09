@@ -14,17 +14,18 @@ fn main() {
     println!("cargo:rerun-if-changed={}", WAT_DIR);
 
     // Create output directory if it doesn't exist
-    fs::create_dir_all(TARGET_DIR).expect(&format!("Create {} dir", TARGET_DIR));
+    fs::create_dir_all(TARGET_DIR).unwrap_or_else(|_| panic!("Create {} dir", TARGET_DIR));
 
     // Scan `wat` directory for .wat files and build corresponding .wasm files
-    for wat_file in fs::read_dir(WAT_DIR).expect(&format!("Read {}", WAT_DIR)) {
+    for wat_file in fs::read_dir(WAT_DIR).unwrap_or_else(|_| panic!("Read {}", WAT_DIR)) {
         let wat_file = wat_file.unwrap();
-        let wasm = parse_file(wat_file.path()).expect(&format!("Parsing {:?}", wat_file.path()));
+        let wasm =
+            parse_file(wat_file.path()).unwrap_or_else(|_| panic!("Parsing {:?}", wat_file.path()));
         // Change extension to .wasm
         let wasm_filename = wat_file.path().with_extension("wasm");
         // Get only the filename part of the `Path`
         let wasm_filename = wasm_filename.file_name().unwrap().to_str().unwrap();
         let wasm_file = format!("{}{}", TARGET_DIR, wasm_filename);
-        fs::write(&wasm_file, wasm).expect(&format!("Writing {}", wasm_file));
+        fs::write(&wasm_file, wasm).unwrap_or_else(|_| panic!("Writing {}", wasm_file));
     }
 }

@@ -148,12 +148,9 @@ impl Environment {
             if let Some(initialize) = instance.get_func(&mut store, "_initialize") {
                 initialize.call_async(&mut store, &[]).await?;
             }
-            match instance.get_func(&mut store, "lunatic_create_module_hook") {
-                Some(hook) => {
-                    hook.call_async(&mut store, &[Val::I64(module_size as i64)])
-                        .await?;
-                }
-                None => (),
+            if let Some(hook) = instance.get_func(&mut store, "lunatic_create_module_hook") {
+                hook.call_async(&mut store, &[Val::I64(module_size as i64)])
+                    .await?;
             };
         }
 

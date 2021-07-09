@@ -5,7 +5,7 @@ use super::{get_memory, link_if_match};
 use crate::{api::error::IntoTrap, state::State};
 
 // Register the plugin APIs to the linker
-pub(crate) fn register(linker: &mut Linker<State>, namespace_filter: &Vec<String>) -> Result<()> {
+pub(crate) fn register(linker: &mut Linker<State>, namespace_filter: &[String]) -> Result<()> {
     link_if_match(
         linker,
         "lunatic::plugin",

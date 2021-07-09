@@ -66,20 +66,12 @@ impl Debug for State {
 impl ResourceLimiter for State {
     fn memory_growing(&mut self, current: u32, desired: u32, _maximum: Option<u32>) -> bool {
         const WASM_PAGE: u64 = 64 * 1024; // bytes
-        if (current as u64 + desired as u64) * WASM_PAGE < self.env_info.max_memory {
-            true
-        } else {
-            false
-        }
+        (current as u64 + desired as u64) * WASM_PAGE < self.env_info.max_memory
     }
 
     // TODO: What would be a reasonable table limit be?
     fn table_growing(&mut self, current: u32, desired: u32, _maximum: Option<u32>) -> bool {
-        if (current as u64 + desired as u64) < 10_000 {
-            true
-        } else {
-            false
-        }
+        (current as u64 + desired as u64) < 10_000
     }
 
     fn instances(&self) -> usize {
