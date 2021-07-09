@@ -46,6 +46,10 @@ impl Message {
     pub fn resources(self) -> Vec<Resource> {
         self.resources
     }
+
+    pub fn resources_size(&self) -> usize {
+        self.resources.len()
+    }
 }
 
 #[derive(Debug)]

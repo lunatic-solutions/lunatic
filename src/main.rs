@@ -2,7 +2,7 @@ use std::{fs, path::Path};
 
 use clap::{crate_version, App, Arg, ArgSettings};
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use lunatic_runtime::{EnvConfig, Environment};
 
 fn main() -> Result<()> {
@@ -55,7 +55,11 @@ fn main() -> Result<()> {
         let module = main_process_environment.create_module(module).await?;
         main_process_environment
             .spawn(&module, "_start")
-            .await?
+            .await
+            .context(format!(
+                "Failed to spawn process from {}::_start()",
+                path.to_string_lossy()
+            ))?
             .task
             .await?;
         Ok(())

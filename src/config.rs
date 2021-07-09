@@ -4,13 +4,13 @@ pub struct EnvConfig {
     // Maximum amount of memory that can be used by processes
     max_memory: u64,
     // Maximum amount of compute expressed in gallons.
-    max_fuel: Option<u32>,
+    max_fuel: Option<u64>,
     allowed_namespaces: Vec<String>,
 }
 
 impl EnvConfig {
     /// Create a new environment configuration.
-    pub fn new(max_memory: u64, max_fuel: Option<u32>) -> Self {
+    pub fn new(max_memory: u64, max_fuel: Option<u64>) -> Self {
         Self {
             max_memory,
             max_fuel,
@@ -22,7 +22,7 @@ impl EnvConfig {
         self.max_memory
     }
 
-    pub fn max_fuel(&self) -> Option<u32> {
+    pub fn max_fuel(&self) -> Option<u64> {
         self.max_fuel
     }
 

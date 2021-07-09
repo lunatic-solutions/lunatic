@@ -9,7 +9,7 @@ use crate::{
     state::State,
 };
 
-use super::{link_async1_if_match, link_if_match};
+use super::{link_async2_if_match, link_if_match};
 
 // Register the mailbox APIs to the linker
 pub(crate) fn register(linker: &mut Linker<State>, namespace_filter: &Vec<String>) -> Result<()> {
@@ -42,7 +42,7 @@ pub(crate) fn register(linker: &mut Linker<State>, namespace_filter: &Vec<String
         namespace_filter,
     )?;
     link_if_match(linker, "lunatic::message", "send", send, namespace_filter)?;
-    link_async1_if_match(
+    link_async2_if_match(
         linker,
         "lunatic::message",
         "prepare_receive",
@@ -100,7 +100,7 @@ fn set_buffer(mut caller: Caller<State>, data_ptr: u32, data_len: u32) -> Result
 //% Traps:
 //% * If process ID doesn't exist
 //% * If it's called before the next message is created.
-fn add_process(mut caller: Caller<State>, process_id: u64) -> Result<u32, Trap> {
+fn add_process(mut caller: Caller<State>, process_id: u64) -> Result<u64, Trap> {
     let process = caller
         .data_mut()
         .resources
@@ -112,7 +112,7 @@ fn add_process(mut caller: Caller<State>, process_id: u64) -> Result<u32, Trap> 
         .message
         .as_mut()
         .or_trap("lunatic::message::add_process")?
-        .add_process(process) as u32)
+        .add_process(process) as u64)
 }
 
 //% lunatic::message::add_tcp_stream(stream_id: i64) -> i32
@@ -180,10 +180,10 @@ fn send(
     Ok(result)
 }
 
-//% lunatic::message::prepare_receive(i32_msg_size_ptr: i32, i32_res_size_ptr: i32) -> i32
+//% lunatic::message::prepare_receive(i32_data_size_ptr: i32, i32_res_size_ptr: i32) -> i32
 //%
 //% Returns:
-//% * 0 on success - The size of the message buffer is written to **i32_msg_size_ptr** and the
+//% * 0 on success - The size of the message buffer is written to **i32_data_size_ptr** and the
 //%                  number of the resources is written to **i32_res_size_ptr**.
 //% * 1 on error   - Process can't receive more messages (nobody holds a handle to it).
 //%
@@ -194,7 +194,8 @@ fn send(
 //% * If **size_ptr** is outside the memory.
 fn prepare_receive(
     mut caller: Caller<State>,
-    size_ptr: u32,
+    data_size_ptr: u32,
+    res_size_ptr: u32,
 ) -> Box<dyn Future<Output = Result<i32, Trap>> + Send + '_> {
     Box::new(async move {
         let message = match caller.data_mut().mailbox.recv().await {
@@ -203,13 +204,21 @@ fn prepare_receive(
         };
 
         let message_buffer_size = message.buffer_size() as u32;
+        let message_resources_size = message.resources_size() as u32;
         caller.data_mut().message = Some(message);
         let memory = get_memory(&mut caller)?;
         memory
             .write(
                 &mut caller,
-                size_ptr as usize,
+                data_size_ptr as usize,
                 &message_buffer_size.to_le_bytes(),
+            )
+            .or_trap("lunatic::message::prepare_receive")?;
+        memory
+            .write(
+                &mut caller,
+                res_size_ptr as usize,
+                &message_resources_size.to_le_bytes(),
             )
             .or_trap("lunatic::message::prepare_receive")?;
         Ok(0)

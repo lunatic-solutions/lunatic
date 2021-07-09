@@ -100,8 +100,7 @@ impl Environment {
         match self.config.max_fuel() {
             Some(max_fuel) => store.out_of_fuel_async_yield(max_fuel, GALLON_IN_INSTRUCTIONS),
             // If no limit is specified use maximum
-            // TODO: Could we run out of u32::MAX * 10k instructions? (3 hours on a 4Ghz CPU?)
-            None => store.out_of_fuel_async_yield(u32::MAX, GALLON_IN_INSTRUCTIONS),
+            None => store.out_of_fuel_async_yield(u64::MAX, GALLON_IN_INSTRUCTIONS),
         };
 
         // Don't poison the common linker with a particular `Store`
@@ -141,7 +140,7 @@ impl Environment {
 
         let mut store = Store::new(&self.engine, state);
         // Give enough fuel for plugins to run.
-        store.out_of_fuel_async_yield(u32::MAX, GALLON_IN_INSTRUCTIONS);
+        store.out_of_fuel_async_yield(u64::MAX, GALLON_IN_INSTRUCTIONS);
         // Run plugin hooks on the .wasm file
         for (_, module) in self.plugins.iter() {
             let instance = self.linker.instantiate_async(&mut store, module).await?;
@@ -182,6 +181,6 @@ impl Environment {
 /// Information about an environment
 pub(crate) struct EnvInfo {
     pub max_memory: u64,
-    pub max_fuel: Option<u32>,
+    pub max_fuel: Option<u64>,
     pub plugin_count: usize,
 }

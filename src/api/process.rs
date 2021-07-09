@@ -72,10 +72,11 @@ pub(crate) fn register(linker: &mut Linker<State>, namespace_filter: &Vec<String
         drop_process,
         namespace_filter,
     )?;
+
     Ok(())
 }
 
-//% lunatic::process::create_config(max_memory: i64, max_fuel: i32) -> i64
+//% lunatic::process::create_config(max_memory: i64, max_fuel: i64) -> i64
 //%
 //% * **max_memory** - Maximum amount of memory in bytes that processes and plugins can use.
 //% * **max_fuel**   - Maximum amount of instructions in gallons that processes will be able to run
@@ -84,7 +85,7 @@ pub(crate) fn register(linker: &mut Linker<State>, namespace_filter: &Vec<String
 //% * Returns ID of newly created configuration.
 //%
 //% Create a new configuration for an environment.
-fn create_config(mut caller: Caller<State>, max_memory: u64, max_fuel: u32) -> u64 {
+fn create_config(mut caller: Caller<State>, max_memory: u64, max_fuel: u64) -> u64 {
     let max_fuel = if max_fuel != 0 { Some(max_fuel) } else { None };
     let config = EnvConfig::new(max_memory, max_fuel);
     caller.data_mut().resources.configs.add(config)
@@ -369,7 +370,7 @@ fn spawn(
     })
 }
 
-//% lunatic::error::drop_process(process_id: i64)
+//% lunatic::process::drop_process(process_id: i64)
 //%
 //% Drops the process handle. This will not kill the process, it just removes the handle that
 //% references the process and allows us to send messages and signals to it.
