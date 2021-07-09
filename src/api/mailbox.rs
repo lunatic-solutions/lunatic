@@ -92,7 +92,7 @@ fn set_buffer(mut caller: Caller<State>, data_ptr: u32, data_len: u32) -> Result
     Ok(())
 }
 
-//% lunatic::message::add_process(process_id: i64) -> i32
+//% lunatic::message::add_process(process_id: i64) -> i64
 //%
 //% Adds a process resource to the next message and returns the location in the array the process
 //% was added to. This will remove the process handle from the current process' resources.
@@ -115,7 +115,7 @@ fn add_process(mut caller: Caller<State>, process_id: u64) -> Result<u64, Trap> 
         .add_process(process) as u64)
 }
 
-//% lunatic::message::add_tcp_stream(stream_id: i64) -> i32
+//% lunatic::message::add_tcp_stream(stream_id: i64) -> i64
 //%
 //% Adds a TCP stream resource to the next message and returns the location in the array the TCP
 //% stream was added to. This will remove the TCP stream from the current process' resources.
@@ -123,7 +123,7 @@ fn add_process(mut caller: Caller<State>, process_id: u64) -> Result<u64, Trap> 
 //% Traps:
 //% * If TCP stream ID doesn't exist
 //% * If it's called before the next message is created.
-fn add_tcp_stream(mut caller: Caller<State>, stream_id: u64) -> Result<u32, Trap> {
+fn add_tcp_stream(mut caller: Caller<State>, stream_id: u64) -> Result<u64, Trap> {
     let stream = caller
         .data_mut()
         .resources
@@ -135,7 +135,7 @@ fn add_tcp_stream(mut caller: Caller<State>, stream_id: u64) -> Result<u32, Trap
         .message
         .as_mut()
         .or_trap("lunatic::message::add_tcp_stream")?
-        .add_tcp_stream(stream) as u32)
+        .add_tcp_stream(stream) as u64)
 }
 
 //% lunatic::message::send(
