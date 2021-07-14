@@ -1,17 +1,19 @@
 use std::fs;
+use std::process::Command;
 use wat::parse_file;
 
-// This script is used to generate .wasm files from .wat files for benchmarks and tests.
+// This script is used to generate .wasm files from .wat files for benchmarks/tests and to build
+// the plugins into .wasm files.
 //
 // It will write all generated .wasm files into the `./target/wasm` directory.
-// TODO: This should only run before `cargo test` or `cargo bench`, but this is currently not
-//       possible to detect from build scripts (https://github.com/rust-lang/cargo/issues/4001).
 fn main() {
     const WAT_DIR: &str = "wat";
+    const PLUGIN_DIR: &str = "plugins/";
     const TARGET_DIR: &str = "target/wasm/";
 
-    // Re-run if any file in the `wat` directory changes
+    // Re-run if any file in the `wat` or `plugins` directory changes
     println!("cargo:rerun-if-changed={}", WAT_DIR);
+    println!("cargo:rerun-if-changed={}", PLUGIN_DIR);
 
     // Create output directory if it doesn't exist
     fs::create_dir_all(TARGET_DIR).unwrap_or_else(|_| panic!("Create {} dir", TARGET_DIR));
@@ -28,4 +30,19 @@ fn main() {
         let wasm_file = format!("{}{}", TARGET_DIR, wasm_filename);
         fs::write(&wasm_file, wasm).unwrap_or_else(|_| panic!("Writing {}", wasm_file));
     }
+
+    // Build all plugins
+    Command::new("cargo")
+        .current_dir("./plugins/heap_profiler")
+        .args(&["build", "--release"])
+        .status()
+        .unwrap();
+    // Move plugins to `TARGET_DIR`
+    Command::new("mv")
+        .args(&[
+            "target/heap_profiler/wasm32-unknown-unknown/release/heap_profiler.wasm",
+            TARGET_DIR,
+        ])
+        .status()
+        .unwrap();
 }

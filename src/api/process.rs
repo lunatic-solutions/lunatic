@@ -138,6 +138,79 @@ fn allow_namespace(
     Ok(())
 }
 
+//% lunatic::process::add_plugin(
+//%     config_id: i64,
+//%     env_id: i64,
+//%     namespace_str_ptr: i32,
+//%     namespace_str_len: i32,
+//%     plugin_data_ptr: i32,
+//%     plugin_data_len: i32,
+//%     id_ptr: i32
+//% ) -> i32
+//%
+//% Returns:
+//% * 0 on success
+//% * 1 on error   - The error ID is written to **id_ptr**
+//%
+//% Add plugin to environment configuration.
+//%
+//% Traps:
+//% * If the config or environment ID doesn't exist.
+//% * If **id_ptr** is outside the memory.
+//% * If the namespace string is not a valid utf8 string.
+//% * If **namespace_str_ptr + namespace_str_len** is outside the memory.
+//% * If **plugin_data_ptr + plugin_data_len** is outside the memory.
+fn add_plugin(
+    mut caller: Caller<State>,
+    config_id: u64,
+    env_id: u64,
+    namespace_str_ptr: u32,
+    namespace_str_len: u32,
+    plugin_data_ptr: u32,
+    plugin_data_len: u32,
+    id_ptr: u32,
+) -> Result<i32, Trap> {
+    let mut plugin = vec![0; plugin_data_len as usize];
+    let memory = get_memory(&mut caller)?;
+    memory
+        .read(&caller, plugin_data_ptr as usize, plugin.as_mut_slice())
+        .or_trap("lunatic::process::add_plugin")?;
+
+    let mut buffer = vec![0; namespace_str_len as usize];
+    memory
+        .read(&caller, namespace_str_ptr as usize, &mut buffer)
+        .or_trap("lunatic::process::add_plugin")?;
+    let namespace =
+        std::str::from_utf8(buffer.as_slice()).or_trap("lunatic::process::add_plugin")?;
+
+    let env = caller
+        .data()
+        .resources
+        .environments
+        .get(env_id)
+        .or_trap("lunatic::process::add_plugin")?
+        .clone();
+
+    let config = caller
+        .data_mut()
+        .resources
+        .configs
+        .get_mut(config_id)
+        .or_trap("lunatic::process::add_plugin")?;
+
+    let (env_or_error_id, result) = match config.add_plugin(&env, namespace, plugin) {
+        Ok(()) => (0, 0),
+        Err(error) => (caller.data_mut().errors.add(error), 1),
+    };
+
+    let memory = get_memory(&mut caller)?;
+    memory
+        .write(&mut caller, id_ptr as usize, &env_or_error_id.to_le_bytes())
+        .or_trap("lunatic::process::add_plugin")?;
+
+    Ok(result)
+}
+
 //% lunatic::process::create_environment(config_id: i64, id_ptr: i64) -> i32
 //%
 //% Returns:
@@ -184,70 +257,6 @@ fn drop_environment(mut caller: Caller<State>, env_id: u64) -> Result<(), Trap> 
         .remove(env_id)
         .or_trap("lunatic::process::drop_environment")?;
     Ok(())
-}
-
-//% lunatic::process::add_plugin(
-//%     env_id: i64,
-//%     namespace_str_ptr: i32,
-//%     namespace_str_len: i32,
-//%     plugin_data_ptr: i32,
-//%     plugin_data_len: i32,
-//%     id_ptr: i32
-//% ) -> i32
-//%
-//% Returns:
-//% * 0 on success
-//% * 1 on error   - The error ID is written to **id_ptr**
-//%
-//% Add plugin to environment. The order of adding plugins is significant because later plugins
-//% can override functionality of earlier ones.
-//%
-//% Traps:
-//% * If the environment ID doesn't exist.
-//% * If **id_ptr** is outside the memory.
-//% * If the namespace string is not a valid utf8 string.
-//% * If **namespace_str_ptr + namespace_str_len** is outside the memory.
-//% * If **plugin_data_ptr + plugin_data_len** is outside the memory.
-fn add_plugin(
-    mut caller: Caller<State>,
-    env_id: u64,
-    namespace_str_ptr: u32,
-    namespace_str_len: u32,
-    plugin_data_ptr: u32,
-    plugin_data_len: u32,
-    id_ptr: u32,
-) -> Result<i32, Trap> {
-    let mut plugin = vec![0; plugin_data_len as usize];
-    let memory = get_memory(&mut caller)?;
-    memory
-        .read(&caller, plugin_data_ptr as usize, plugin.as_mut_slice())
-        .or_trap("lunatic::process::add_plugin")?;
-
-    let mut buffer = vec![0; namespace_str_len as usize];
-    memory
-        .read(&caller, namespace_str_ptr as usize, &mut buffer)
-        .or_trap("lunatic::process::add_plugin")?;
-    let namespace =
-        std::str::from_utf8(buffer.as_slice()).or_trap("lunatic::process::add_plugin")?;
-
-    let env = caller
-        .data_mut()
-        .resources
-        .environments
-        .get_mut(env_id)
-        .or_trap("lunatic::process::add_plugin")?;
-
-    let (env_or_error_id, result) = match env.add_plugin(namespace, plugin) {
-        Ok(()) => (0, 0),
-        Err(error) => (caller.data_mut().errors.add(error), 1),
-    };
-
-    let memory = get_memory(&mut caller)?;
-    memory
-        .write(&mut caller, id_ptr as usize, &env_or_error_id.to_le_bytes())
-        .or_trap("lunatic::process::add_plugin")?;
-
-    Ok(result)
 }
 
 //% lunatic::process::crate_module(

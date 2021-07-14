@@ -24,9 +24,10 @@ fn main() -> Result<()> {
         )
         .get_matches();
 
-    let config = EnvConfig::default();
-    let mut main_process_environment = Environment::new(config)?;
+    let plugin_config = EnvConfig::default();
+    let plugin_environment = Environment::new(plugin_config)?;
 
+    let mut config = EnvConfig::default();
     // Add plugins passed through the --plugin or -P flags to the environment
     if let Some(plugins) = args.values_of("plugin") {
         for plugin in plugins {
@@ -39,9 +40,10 @@ fn main() -> Result<()> {
                 .ok_or_else(|| anyhow!("Filename to str failed"))?
                 .to_str()
                 .ok_or_else(|| anyhow!("Filename to str failed"))?;
-            main_process_environment.add_plugin(namespace, module)?;
+            config.add_plugin(&plugin_environment, namespace, module)?;
         }
     }
+    let main_process_environment = Environment::new(config)?;
 
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()

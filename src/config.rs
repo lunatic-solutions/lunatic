@@ -1,11 +1,16 @@
+use anyhow::Result;
+use wasmtime::Module;
+
+use crate::Environment;
+
 /// Configuration structure for environments.
-#[derive(Debug)]
 pub struct EnvConfig {
     // Maximum amount of memory that can be used by processes
     max_memory: u64,
     // Maximum amount of compute expressed in gallons.
     max_fuel: Option<u64>,
     allowed_namespaces: Vec<String>,
+    plugins: Vec<(String, Module)>,
 }
 
 impl EnvConfig {
@@ -15,6 +20,7 @@ impl EnvConfig {
             max_memory,
             max_fuel,
             allowed_namespaces: Vec::new(),
+            plugins: Vec::new(),
         }
     }
 
@@ -34,6 +40,26 @@ impl EnvConfig {
     pub fn allow_namespace<S: Into<String>>(&mut self, namespace: S) {
         self.allowed_namespaces.push(namespace.into())
     }
+
+    pub fn plugins(&self) -> &Vec<(String, Module)> {
+        &self.plugins
+    }
+
+    /// Add module as a plugin that will be used on all processes in the environment.
+    ///
+    /// Plugins are just regular WebAssembly modules that can define specific hooks inside the
+    /// runtime to modify other modules that are dynamically loaded inside the environment or
+    /// spawn environment bound processes.
+    pub fn add_plugin<S: Into<String>>(
+        &mut self,
+        env: &Environment,
+        namespace: S,
+        module: Vec<u8>,
+    ) -> Result<()> {
+        let module = Module::new(&env.engine(), module)?;
+        self.plugins.push((namespace.into(), module));
+        Ok(())
+    }
 }
 
 impl Default for EnvConfig {
@@ -45,6 +71,7 @@ impl Default for EnvConfig {
                 String::from("lunatic::"),
                 String::from("wasi_snapshot_preview1::"),
             ],
+            plugins: vec![],
         }
     }
 }

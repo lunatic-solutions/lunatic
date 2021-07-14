@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use anyhow::{anyhow, Result};
 use tokio::{sync::mpsc::unbounded_channel, task};
 use wasmtime::{
@@ -8,8 +10,8 @@ use wasmtime::{
 use super::config::EnvConfig;
 use crate::{api, message::Message, process::ProcessHandle, state::State};
 
-// One gallon of fuel represents around 10k instructions.
-const GALLON_IN_INSTRUCTIONS: u64 = 10_000;
+// One gallon of fuel represents around 100k instructions.
+const GALLON_IN_INSTRUCTIONS: u64 = 100_000;
 
 /// The environment represents a set of characteristics that processes spawned from it will have.
 ///
@@ -20,11 +22,15 @@ const GALLON_IN_INSTRUCTIONS: u64 = 10_000;
 ///
 /// They also define the set of plugins. Plugins can be used to modify loaded Wasm modules or to
 /// limit processes' access to host functions by shadowing their implementations.
+#[derive(Clone)]
 pub struct Environment {
+    inner: Arc<InnerEnv>,
+}
+
+struct InnerEnv {
     engine: Engine,
     linker: Linker<State>,
     config: EnvConfig,
-    plugins: Vec<(String, Module)>,
 }
 
 impl Environment {
@@ -62,22 +68,12 @@ impl Environment {
         api::register(&mut linker, config.allowed_namespace())?;
 
         Ok(Self {
-            engine,
-            linker,
-            config,
-            plugins: Vec::new(),
+            inner: Arc::new(InnerEnv {
+                engine,
+                linker,
+                config,
+            }),
         })
-    }
-
-    /// Add module as a plugin that will be used on all processes in this environment.
-    ///
-    /// Plugins are just regular WebAssembly modules that can define specific hooks inside the
-    /// runtime to modify other modules that are dynamically loaded inside the environment or
-    /// export their own set of host functions.
-    pub fn add_plugin<S: Into<String>>(&mut self, namespace: S, module: Vec<u8>) -> Result<()> {
-        let module = Module::new(&self.engine, module)?;
-        self.plugins.push((namespace.into(), module));
-        Ok(())
     }
 
     /// Spawns a new process from the environment.
@@ -90,24 +86,24 @@ impl Environment {
     /// by sending a `Signal::Kill` to it.
     pub async fn spawn(&self, module: &Module, function: &str) -> Result<ProcessHandle> {
         let (mailbox_sender, mailbox) = unbounded_channel::<Message>();
-        let state = State::new(self.info(), mailbox);
-        let mut store = Store::new(&self.engine, state);
+        let state = State::new(self.clone(), mailbox);
+        let mut store = Store::new(&self.inner.engine, state);
         store.limiter(|state| state);
 
         // Trap if out of fuel
         store.out_of_fuel_trap();
         // Define maximum fuel
-        match self.config.max_fuel() {
+        match self.inner.config.max_fuel() {
             Some(max_fuel) => store.out_of_fuel_async_yield(max_fuel, GALLON_IN_INSTRUCTIONS),
             // If no limit is specified use maximum
             None => store.out_of_fuel_async_yield(u64::MAX, GALLON_IN_INSTRUCTIONS),
         };
 
         // Don't poison the common linker with a particular `Store`
-        let mut linker = self.linker.clone();
+        let mut linker = self.inner.linker.clone();
 
         // Add plugins to host functions
-        for (namespace, module) in self.plugins.iter() {
+        for (namespace, module) in self.inner.config.plugins().iter() {
             let instance = linker.instantiate_async(&mut store, module).await?;
             // Call the initialize method on the plugin if it exists
             if let Some(initialize) = instance.get_func(&mut store, "_initialize") {
@@ -135,15 +131,19 @@ impl Environment {
     pub async fn create_module(&self, data: Vec<u8>) -> Result<Module> {
         let module_size = data.len();
         let (_, messages) = unbounded_channel::<Message>();
-        let mut state = State::new(self.info(), messages);
+        let mut state = State::new(self.clone(), messages);
         state.module_loaded = Some(data);
 
-        let mut store = Store::new(&self.engine, state);
+        let mut store = Store::new(&self.inner.engine, state);
         // Give enough fuel for plugins to run.
         store.out_of_fuel_async_yield(u64::MAX, GALLON_IN_INSTRUCTIONS);
         // Run plugin hooks on the .wasm file
-        for (_, module) in self.plugins.iter() {
-            let instance = self.linker.instantiate_async(&mut store, module).await?;
+        for (_, module) in self.inner.config.plugins().iter() {
+            let instance = self
+                .inner
+                .linker
+                .instantiate_async(&mut store, module)
+                .await?;
             // Call the initialize method on the plugin if it exists
             if let Some(initialize) = instance.get_func(&mut store, "_initialize") {
                 initialize.call_async(&mut store, &[]).await?;
@@ -159,25 +159,19 @@ impl Environment {
             None => return Err(anyhow!("create_module failed: Module doesn't exist")),
         };
 
-        let engine = self.engine.clone();
+        let engine = self.inner.engine.clone();
         // The compilation of a module is a CPU intensive tasks and can take some time.
         let module =
             task::spawn_blocking(move || Module::new(&engine, new_data.as_slice())).await??;
         Ok(module)
     }
 
-    pub(crate) fn info(&self) -> EnvInfo {
-        EnvInfo {
-            max_memory: self.config.max_memory(),
-            max_fuel: self.config.max_fuel(),
-            plugin_count: self.plugins.len(),
-        }
+    // Returns the max memory allowed by this environment
+    pub fn max_memory(&self) -> u64 {
+        self.inner.config.max_memory()
     }
-}
 
-/// Information about an environment
-pub(crate) struct EnvInfo {
-    pub max_memory: u64,
-    pub max_fuel: Option<u64>,
-    pub plugin_count: usize,
+    pub fn engine(&self) -> &Engine {
+        &self.inner.engine
+    }
 }

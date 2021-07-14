@@ -10,15 +10,14 @@ use tokio::sync::{mpsc::UnboundedReceiver, Mutex};
 use wasmtime::{Module, ResourceLimiter};
 use wasmtime_wasi::{WasiCtx, WasiCtxBuilder};
 
-use crate::environment::EnvInfo;
 use crate::{message::Message, process::ProcessHandle, EnvConfig, Environment};
 
 // The internal state of each Process.
 //
 // Host functions will share one state.
 pub(crate) struct State {
-    // Information about the environment that this process was spawned from
-    pub(crate) env_info: EnvInfo,
+    // The environment that this process was spawned from
+    pub(crate) env: Environment,
     // A space that can be used to temporarily store messages when sending or receiving them.
     // Messages can contain resources that need to be added across multiple host. Likewise,
     // receiving messages is done in two steps, first the message size is returned to allow the
@@ -39,9 +38,9 @@ pub(crate) struct State {
 }
 
 impl State {
-    pub fn new(env_info: EnvInfo, mailbox: UnboundedReceiver<Message>) -> Self {
+    pub fn new(env: Environment, mailbox: UnboundedReceiver<Message>) -> Self {
         Self {
-            env_info,
+            env,
             message: None,
             mailbox,
             errors: HashMapId::new(),
@@ -61,12 +60,11 @@ impl Debug for State {
     }
 }
 
-// Only allow as many instances, tables and memories as their are plugins + 1 for the process.
 // Limit the maximum memory of the process depending on the environment it was spawned in.
 impl ResourceLimiter for State {
     fn memory_growing(&mut self, current: u32, desired: u32, _maximum: Option<u32>) -> bool {
         const WASM_PAGE: u64 = 64 * 1024; // bytes
-        (current as u64 + desired as u64) * WASM_PAGE < self.env_info.max_memory
+        (current as u64 + desired as u64) * WASM_PAGE < self.env.max_memory()
     }
 
     // TODO: What would be a reasonable table limit be?
@@ -74,16 +72,19 @@ impl ResourceLimiter for State {
         (current as u64 + desired as u64) < 10_000
     }
 
+    // Allow one instance per store
     fn instances(&self) -> usize {
-        self.env_info.plugin_count + 1
+        1
     }
 
+    // Allow one table per store
     fn tables(&self) -> usize {
-        self.env_info.plugin_count + 1
+        1
     }
 
+    // Allow one memory per store
     fn memories(&self) -> usize {
-        self.env_info.plugin_count + 1
+        1
     }
 }
 
