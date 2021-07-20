@@ -6,13 +6,16 @@ use wasmtime::{Caller, Linker, Trap};
 use crate::{
     api::{error::IntoTrap, get_memory},
     message::Message,
-    state::State,
+    state::ProcessState,
 };
 
 use super::{link_async2_if_match, link_if_match};
 
 // Register the mailbox APIs to the linker
-pub(crate) fn register(linker: &mut Linker<State>, namespace_filter: &[String]) -> Result<()> {
+pub(crate) fn register(
+    linker: &mut Linker<ProcessState>,
+    namespace_filter: &[String],
+) -> Result<()> {
     link_if_match(
         linker,
         "lunatic::message",
@@ -63,7 +66,7 @@ pub(crate) fn register(linker: &mut Linker<State>, namespace_filter: &[String]) 
 //%
 //% Creates a new message. This message is intended to be modified by other functions in this
 //% namespace. Once `lunatic::message::send` is called it will be sent to another process.
-fn create(mut caller: Caller<State>) {
+fn create(mut caller: Caller<ProcessState>) {
     caller.data_mut().message = Some(Message::default());
 }
 
@@ -77,7 +80,7 @@ fn create(mut caller: Caller<State>) {
 //% Traps:
 //% * If **data_ptr + data_len** is outside the memory.
 //% * If it's called before the next message is created.
-fn set_buffer(mut caller: Caller<State>, data_ptr: u32, data_len: u32) -> Result<(), Trap> {
+fn set_buffer(mut caller: Caller<ProcessState>, data_ptr: u32, data_len: u32) -> Result<(), Trap> {
     let mut buffer = vec![0; data_len as usize];
     let memory = get_memory(&mut caller)?;
     memory
@@ -100,7 +103,7 @@ fn set_buffer(mut caller: Caller<State>, data_ptr: u32, data_len: u32) -> Result
 //% Traps:
 //% * If process ID doesn't exist
 //% * If it's called before the next message is created.
-fn add_process(mut caller: Caller<State>, process_id: u64) -> Result<u64, Trap> {
+fn add_process(mut caller: Caller<ProcessState>, process_id: u64) -> Result<u64, Trap> {
     let process = caller
         .data_mut()
         .resources
@@ -123,7 +126,7 @@ fn add_process(mut caller: Caller<State>, process_id: u64) -> Result<u64, Trap> 
 //% Traps:
 //% * If TCP stream ID doesn't exist
 //% * If it's called before the next message is created.
-fn add_tcp_stream(mut caller: Caller<State>, stream_id: u64) -> Result<u64, Trap> {
+fn add_tcp_stream(mut caller: Caller<ProcessState>, stream_id: u64) -> Result<u64, Trap> {
     let stream = caller
         .data_mut()
         .resources
@@ -151,7 +154,7 @@ fn add_tcp_stream(mut caller: Caller<State>, stream_id: u64) -> Result<u64, Trap
 //% Traps:
 //% * If the process ID doesn't exist.
 //% * If it's called before a creating the next message.
-fn send(mut caller: Caller<State>, process_id: u64) -> Result<u32, Trap> {
+fn send(mut caller: Caller<ProcessState>, process_id: u64) -> Result<u32, Trap> {
     let message = caller
         .data_mut()
         .message
@@ -183,7 +186,7 @@ fn send(mut caller: Caller<State>, process_id: u64) -> Result<u32, Trap> {
 //% Traps:
 //% * If **size_ptr** is outside the memory.
 fn prepare_receive(
-    mut caller: Caller<State>,
+    mut caller: Caller<ProcessState>,
     data_size_ptr: u32,
     res_size_ptr: u32,
 ) -> Box<dyn Future<Output = Result<i32, Trap>> + Send + '_> {
@@ -228,7 +231,7 @@ fn prepare_receive(
 //% * If `lunatic::message::prepare_receive` was not called before.
 //% * If **data_ptr + size of the message** is outside the memory.
 //% * If **resource_ptr + size of the resources** is outside the memory.
-fn receive(mut caller: Caller<State>, data_ptr: u32, resource_ptr: u32) -> Result<(), Trap> {
+fn receive(mut caller: Caller<ProcessState>, data_ptr: u32, resource_ptr: u32) -> Result<(), Trap> {
     let last_message = caller
         .data_mut()
         .message

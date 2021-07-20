@@ -2,7 +2,7 @@ use std::{fs, path::Path};
 
 use clap::{crate_version, App, Arg, ArgSettings};
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 use lunatic_runtime::{EnvConfig, Environment};
 
 fn main() -> Result<()> {
@@ -24,23 +24,13 @@ fn main() -> Result<()> {
         )
         .get_matches();
 
-    let plugin_config = EnvConfig::default();
-    let plugin_environment = Environment::new(plugin_config)?;
-
     let mut config = EnvConfig::default();
     // Add plugins passed through the --plugin or -P flags to the environment
     if let Some(plugins) = args.values_of("plugin") {
         for plugin in plugins {
             let path = Path::new(plugin);
             let module = fs::read(path)?;
-            // The namespace is the filename without extension
-            let namespace = path.with_extension("");
-            let namespace = namespace
-                .file_name()
-                .ok_or_else(|| anyhow!("Filename to str failed"))?
-                .to_str()
-                .ok_or_else(|| anyhow!("Filename to str failed"))?;
-            config.add_plugin(&plugin_environment, namespace, module)?;
+            config.add_plugin(module)?;
         }
     }
     let main_process_environment = Environment::new(config)?;

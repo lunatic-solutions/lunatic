@@ -27,6 +27,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "ansi_term"
+version = "0.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d52a9bb7ec0cf484c551830a7ce27bd20d67eac647e1befb56b0be4ee39a55d2"
+dependencies = [
+ "winapi",
+]
+
+[[package]]
 name = "anyhow"
 version = "1.0.41"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -263,6 +272,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "cmake"
+version = "0.1.45"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eb6210b637171dfba4cda12e579ac6dc73f5165ad56133e5d72ef3131f320855"
+dependencies = [
+ "cc",
+]
+
+[[package]]
 name = "cpp_demangle"
 version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -481,6 +499,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "ctor"
+version = "0.1.20"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5e98e2ad1a782e33928b96fc3948e7c355e5af34ba4de7670fe8bac2a3b2006d"
+dependencies = [
+ "quote",
+ "syn",
+]
+
+[[package]]
+name = "diff"
+version = "0.1.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0e25ea47919b1560c4e3b7fe0aaab9becf5b84a10325ddf7db0f0ba5e1026499"
+
+[[package]]
 name = "digest"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -688,6 +722,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "glob"
+version = "0.2.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8be18de09a56b60ed0edf84bc9df007e30040691af7acd1c41874faac5895bfb"
+
+[[package]]
 name = "half"
 version = "1.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -845,8 +885,13 @@ dependencies = [
  "anyhow",
  "clap 3.0.0-beta.2",
  "criterion",
+ "lazy_static",
  "paste",
+ "pretty_assertions",
  "tokio",
+ "wabt",
+ "wasm-encoder",
+ "wasmparser 0.79.0",
  "wasmtime",
  "wasmtime-wasi",
  "wat",
@@ -984,6 +1029,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "afb2e1c3ee07430c2cf76151675e583e0f19985fa6efae47d6848a3e2c824f85"
 
 [[package]]
+name = "output_vt100"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "53cdc5b785b7a58c5aad8216b3dfa114df64b0b06ae6e1501cef91df2fbdf8f9"
+dependencies = [
+ "winapi",
+]
+
+[[package]]
 name = "paste"
 version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1057,6 +1111,18 @@ name = "ppv-lite86"
 version = "0.2.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ac74c624d6b2d21f425f752262f42188365d7b8ff1aff74c82e45136510a4857"
+
+[[package]]
+name = "pretty_assertions"
+version = "0.7.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1cab0e7c02cf376875e9335e0ba1da535775beb5450d21e1dffca068818ed98b"
+dependencies = [
+ "ansi_term",
+ "ctor",
+ "diff",
+ "output_vt100",
+]
 
 [[package]]
 name = "proc-macro-error"
@@ -1417,6 +1483,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a8f112729512f8e442d81f95a8a7ddf2b7c6b8a1a6f509a95864142b30cab2d3"
 
 [[package]]
+name = "stdlib"
+version = "0.1.0"
+dependencies = [
+ "leb128",
+]
+
+[[package]]
 name = "strsim"
 version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1637,6 +1710,29 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5fecdca9a5291cc2b8dcf7dc02453fee791a280f3743cb0905f8822ae463b3fe"
 
 [[package]]
+name = "wabt"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "00bef93d5e6c81a293bccf107cf43aa47239382f455ba14869d36695d8963b9c"
+dependencies = [
+ "serde",
+ "serde_derive",
+ "serde_json",
+ "wabt-sys",
+]
+
+[[package]]
+name = "wabt-sys"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1a4e043159f63e16986e713e9b5e1c06043df4848565bf672e27c523864c7791"
+dependencies = [
+ "cc",
+ "cmake",
+ "glob",
+]
+
+[[package]]
 name = "walkdir"
 version = "2.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1770,6 +1866,15 @@ name = "wasm-bindgen-shared"
 version = "0.2.74"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d7cff876b8f18eed75a66cf49b65e7f967cb354a7aa16003fb55dbfd25b44b4f"
+
+[[package]]
+name = "wasm-encoder"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "72b3fb3541f4cdc05f0eacd7ce5544d69a4cc3e922ef1e7f37c1e7cb8b1e8e66"
+dependencies = [
+ "leb128",
+]
 
 [[package]]
 name = "wasmparser"

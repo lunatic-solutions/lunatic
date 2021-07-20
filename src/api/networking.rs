@@ -12,12 +12,15 @@ use wasmtime::{Caller, Linker};
 
 use crate::api::error::IntoTrap;
 use crate::state::DnsIterator;
-use crate::{api::get_memory, state::State};
+use crate::{api::get_memory, state::ProcessState};
 
 use super::{link_async2_if_match, link_async3_if_match, link_async4_if_match, link_if_match};
 
 // Register the error APIs to the linker
-pub(crate) fn register(linker: &mut Linker<State>, namespace_filter: &[String]) -> Result<()> {
+pub(crate) fn register(
+    linker: &mut Linker<ProcessState>,
+    namespace_filter: &[String],
+) -> Result<()> {
     link_if_match(
         linker,
         "lunatic::networking",
@@ -125,7 +128,11 @@ pub(crate) fn register(linker: &mut Linker<State>, namespace_filter: &[String]) 
 //%
 //% Traps:
 //% * If **address_ptr + 4** is outside the memory.
-fn socket_address_v4(mut caller: Caller<State>, address_ptr: u32, port: u32) -> Result<u64, Trap> {
+fn socket_address_v4(
+    mut caller: Caller<ProcessState>,
+    address_ptr: u32,
+    port: u32,
+) -> Result<u64, Trap> {
     let mut buffer = [0; 4];
     let memory = get_memory(&mut caller)?;
     memory
@@ -146,7 +153,11 @@ fn socket_address_v4(mut caller: Caller<State>, address_ptr: u32, port: u32) -> 
 //%
 //% Traps:
 //% * If **address_ptr + 16** is outside the memory.
-fn socket_address_v6(mut caller: Caller<State>, address_ptr: u32, port: u32) -> Result<u64, Trap> {
+fn socket_address_v6(
+    mut caller: Caller<ProcessState>,
+    address_ptr: u32,
+    port: u32,
+) -> Result<u64, Trap> {
     let mut buffer = [0; 16];
     let memory = get_memory(&mut caller)?;
     memory
@@ -167,7 +178,7 @@ fn socket_address_v6(mut caller: Caller<State>, address_ptr: u32, port: u32) -> 
 //%
 //% Traps:
 //% * If the socket address ID doesn't exist.
-fn drop_socket_address(mut caller: Caller<State>, socket_addr_id: u64) -> Result<(), Trap> {
+fn drop_socket_address(mut caller: Caller<ProcessState>, socket_addr_id: u64) -> Result<(), Trap> {
     caller
         .data_mut()
         .resources
@@ -191,7 +202,7 @@ fn drop_socket_address(mut caller: Caller<State>, socket_addr_id: u64) -> Result
 //% * If **name_str_ptr + name_str_len** is outside the memory.
 //% * If **id_ptr** is outside the memory.
 fn resolve(
-    mut caller: Caller<State>,
+    mut caller: Caller<ProcessState>,
     name_str_ptr: u32,
     name_str_len: u32,
     id_ptr: u32,
@@ -232,7 +243,7 @@ fn resolve(
 //%
 //% Traps:
 //% * If the DNS iterator ID doesn't exist.
-fn drop_dns_iterator(mut caller: Caller<State>, dns_iter_id: u64) -> Result<(), Trap> {
+fn drop_dns_iterator(mut caller: Caller<ProcessState>, dns_iter_id: u64) -> Result<(), Trap> {
     caller
         .data_mut()
         .resources
@@ -253,7 +264,11 @@ fn drop_dns_iterator(mut caller: Caller<State>, dns_iter_id: u64) -> Result<(), 
 //% Traps:
 //% * If the DNS iterator ID doesn't exist.
 //% * If **id_ptr** is outside the memory.
-fn resolve_next(mut caller: Caller<State>, dns_iter_id: u64, id_ptr: u32) -> Result<u32, Trap> {
+fn resolve_next(
+    mut caller: Caller<ProcessState>,
+    dns_iter_id: u64,
+    id_ptr: u32,
+) -> Result<u32, Trap> {
     let dns_iter = caller
         .data_mut()
         .resources
@@ -301,7 +316,7 @@ fn resolve_next(mut caller: Caller<State>, dns_iter_id: u64, id_ptr: u32) -> Res
 //% * If the socket address ID doesn't exist.
 //% * If **id_ptr** is outside the memory.
 fn tcp_bind(
-    mut caller: Caller<State>,
+    mut caller: Caller<ProcessState>,
     socket_addr_id: u64,
     id_ptr: u32,
 ) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_> {
@@ -337,7 +352,7 @@ fn tcp_bind(
 //%
 //% Traps:
 //% * If the DNS iterator ID doesn't exist.
-fn drop_tcp_listener(mut caller: Caller<State>, tcp_listener_id: u64) -> Result<(), Trap> {
+fn drop_tcp_listener(mut caller: Caller<ProcessState>, tcp_listener_id: u64) -> Result<(), Trap> {
     caller
         .data_mut()
         .resources
@@ -359,7 +374,7 @@ fn drop_tcp_listener(mut caller: Caller<State>, tcp_listener_id: u64) -> Result<
 //% * If **id_ptr** is outside the memory.
 //% * If **peer_socket_addr_id_ptr** is outside the memory.
 fn tcp_accept(
-    mut caller: Caller<State>,
+    mut caller: Caller<ProcessState>,
     listener_id: u64,
     id_ptr: u32,
     socket_addr_id_ptr: u32,
@@ -418,7 +433,7 @@ fn tcp_accept(
 //% * If the socket address ID doesn't exist.
 //% * If **id_ptr** is outside the memory.
 fn tcp_connect(
-    mut caller: Caller<State>,
+    mut caller: Caller<ProcessState>,
     socket_addr_id: u64,
     id_ptr: u32,
 ) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_> {
@@ -460,7 +475,7 @@ fn tcp_connect(
 //%
 //% Traps:
 //% * If the DNS iterator ID doesn't exist.
-fn drop_tcp_stream(mut caller: Caller<State>, tcp_stream_id: u64) -> Result<(), Trap> {
+fn drop_tcp_stream(mut caller: Caller<ProcessState>, tcp_stream_id: u64) -> Result<(), Trap> {
     caller
         .data_mut()
         .resources
@@ -490,7 +505,7 @@ fn drop_tcp_stream(mut caller: Caller<State>, tcp_stream_id: u64) -> Result<(), 
 //%   ciovecs point outside of the memory.
 //% * If **i64_opaque_ptr** is outside the memory.
 fn tcp_write_vectored(
-    mut caller: Caller<State>,
+    mut caller: Caller<ProcessState>,
     stream_id: u64,
     ciovec_array_ptr: u32,
     ciovec_array_len: u32,
@@ -560,7 +575,7 @@ fn tcp_write_vectored(
 //% * If **buffer_ptr + buffer_len** is outside the memory.
 //% * If **i64_opaque_ptr** is outside the memory.
 fn tcp_read(
-    mut caller: Caller<State>,
+    mut caller: Caller<ProcessState>,
     stream_id: u64,
     buffer_ptr: u32,
     buffer_len: u32,
@@ -607,7 +622,7 @@ fn tcp_read(
 //% * If the stream ID doesn't exist.
 //% * If **error_id_ptr** is outside the memory.
 fn tcp_flush(
-    mut caller: Caller<State>,
+    mut caller: Caller<ProcessState>,
     stream_id: u64,
     error_id_ptr: u32,
 ) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_> {

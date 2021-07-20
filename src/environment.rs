@@ -1,17 +1,19 @@
 use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
+use lazy_static::lazy_static;
 use tokio::{sync::mpsc::unbounded_channel, task};
 use wasmtime::{
     Config, Engine, InstanceAllocationStrategy, Linker, Module, OptLevel, ProfilingStrategy, Store,
-    Val,
 };
 
 use super::config::EnvConfig;
-use crate::{api, message::Message, process::ProcessHandle, state::State};
+use crate::{
+    api, message::Message, plugin::patch_module, process::ProcessHandle, state::ProcessState,
+};
 
 // One gallon of fuel represents around 100k instructions.
-const GALLON_IN_INSTRUCTIONS: u64 = 100_000;
+pub const GALLON_IN_INSTRUCTIONS: u64 = 100_000;
 
 /// The environment represents a set of characteristics that processes spawned from it will have.
 ///
@@ -29,7 +31,7 @@ pub struct Environment {
 
 struct InnerEnv {
     engine: Engine,
-    linker: Linker<State>,
+    linker: Linker<ProcessState>,
     config: EnvConfig,
 }
 
@@ -53,8 +55,6 @@ impl Environment {
             // Allocate resources on demand because we can't predict how many process will exist
             .allocation_strategy(InstanceAllocationStrategy::OnDemand)
             // Memories are always static (can't be bigger than max_memory)
-            // TODO: This is currently not enforced, we need to make sure the module doesn't
-            //       define any memories that will be automatically created by the engine.
             .static_memory_maximum_size(config.max_memory())
             // Set memory guards to 4 Mb
             .static_memory_guard_size(0x400000)
@@ -86,7 +86,7 @@ impl Environment {
     /// by sending a `Signal::Kill` to it.
     pub async fn spawn(&self, module: &Module, function: &str) -> Result<ProcessHandle> {
         let (mailbox_sender, mailbox) = unbounded_channel::<Message>();
-        let state = State::new(self.clone(), mailbox);
+        let state = ProcessState::new(self.clone(), mailbox);
         let mut store = Store::new(&self.inner.engine, state);
         store.limiter(|state| state);
 
@@ -99,20 +99,11 @@ impl Environment {
             None => store.out_of_fuel_async_yield(u64::MAX, GALLON_IN_INSTRUCTIONS),
         };
 
-        // Don't poison the common linker with a particular `Store`
-        let mut linker = self.inner.linker.clone();
-
-        // Add plugins to host functions
-        for (namespace, module) in self.inner.config.plugins().iter() {
-            let instance = linker.instantiate_async(&mut store, module).await?;
-            // Call the initialize method on the plugin if it exists
-            if let Some(initialize) = instance.get_func(&mut store, "_initialize") {
-                initialize.call_async(&mut store, &[]).await?;
-            }
-            linker.instance(&mut store, namespace, instance)?;
-        }
-
-        let instance = linker.instantiate_async(&mut store, &module).await?;
+        let instance = self
+            .inner
+            .linker
+            .instantiate_async(&mut store, &module)
+            .await?;
         let entry = instance
             .get_func(&mut store, &function)
             .map_or(Err(anyhow!("Function '{}' not found", function)), |func| {
@@ -128,41 +119,12 @@ impl Environment {
     /// All plugins in this environment will get instantiated and their `lunatic_create_module_hook`
     /// function will be called. Plugins can use host functions to modify the module before it's JIT
     /// compiled by `Wasmtime`.
-    pub async fn create_module(&self, data: Vec<u8>) -> Result<Module> {
-        let module_size = data.len();
-        let (_, messages) = unbounded_channel::<Message>();
-        let mut state = State::new(self.clone(), messages);
-        state.module_loaded = Some(data);
-
-        let mut store = Store::new(&self.inner.engine, state);
-        // Give enough fuel for plugins to run.
-        store.out_of_fuel_async_yield(u64::MAX, GALLON_IN_INSTRUCTIONS);
-        // Run plugin hooks on the .wasm file
-        for (_, module) in self.inner.config.plugins().iter() {
-            let instance = self
-                .inner
-                .linker
-                .instantiate_async(&mut store, module)
-                .await?;
-            // Call the initialize method on the plugin if it exists
-            if let Some(initialize) = instance.get_func(&mut store, "_initialize") {
-                initialize.call_async(&mut store, &[]).await?;
-            }
-            if let Some(hook) = instance.get_func(&mut store, "lunatic_create_module_hook") {
-                hook.call_async(&mut store, &[Val::I64(module_size as i64)])
-                    .await?;
-            };
-        }
-
-        let new_data = match store.data_mut().module_loaded.take() {
-            Some(module) => module,
-            None => return Err(anyhow!("create_module failed: Module doesn't exist")),
-        };
-
+    pub async fn create_module(&self, module: Vec<u8>) -> Result<Module> {
         let engine = self.inner.engine.clone();
+        let new_module = patch_module(&module, self.inner.config.plugins())?;
         // The compilation of a module is a CPU intensive tasks and can take some time.
         let module =
-            task::spawn_blocking(move || Module::new(&engine, new_data.as_slice())).await??;
+            task::spawn_blocking(move || Module::new(&engine, new_module.as_slice())).await??;
         Ok(module)
     }
 
@@ -174,4 +136,16 @@ impl Environment {
     pub fn engine(&self) -> &Engine {
         &self.inner.engine
     }
+}
+
+// All plugins share one environment
+pub(crate) struct PluginEnv {
+    pub(crate) engine: Engine,
+}
+
+lazy_static! {
+    pub(crate) static ref PLUGIN_ENV: PluginEnv = {
+        let engine = Engine::default();
+        PluginEnv { engine }
+    };
 }

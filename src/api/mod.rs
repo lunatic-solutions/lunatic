@@ -3,7 +3,7 @@ mod error;
 mod macros;
 mod mailbox;
 mod networking;
-mod plugin;
+pub(crate) mod plugin;
 mod process;
 mod wasi;
 
@@ -13,12 +13,14 @@ use anyhow::Result;
 use wasmtime::{Caller, IntoFunc, Linker, Memory, Trap, WasmRet, WasmTy};
 
 use self::error::IntoTrap;
-use crate::state::State;
+use crate::state::ProcessState;
 
 // Registers all sub-APIs to the `Linker`
-pub(crate) fn register(linker: &mut Linker<State>, namespace_filter: &[String]) -> Result<()> {
+pub(crate) fn register(
+    linker: &mut Linker<ProcessState>,
+    namespace_filter: &[String],
+) -> Result<()> {
     error::register(linker, namespace_filter)?;
-    plugin::register(linker, namespace_filter)?;
     process::register(linker, namespace_filter)?;
     mailbox::register(linker, namespace_filter)?;
     networking::register(linker, namespace_filter)?;

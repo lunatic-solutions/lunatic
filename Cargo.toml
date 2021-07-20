@@ -15,12 +15,18 @@ path = "src/main.rs"
 [dependencies]
 anyhow = "1.0"
 clap = "3.0.0-beta.2"
+lazy_static = "1.4"
 tokio = { version = "1.7", features = ["rt-multi-thread", "macros", "sync", "net", "io-util"] }
 wasmtime = { version = "0.28", git = "https://github.com/bytecodealliance/wasmtime.git", branch = "main" }
 wasmtime-wasi = { version = "0.28", git = "https://github.com/bytecodealliance/wasmtime.git", branch = "main" }
+wasmparser = "0.79"
+wasm-encoder = "0.5"
 paste = "1.0"
 
 [dev-dependencies]
+wat = "1.0"
+wabt = "0.10"
+pretty_assertions = "0.7"
 criterion = { version = "0.3", features = ["async_tokio"] }
 
 [build-dependencies]
@@ -33,4 +39,5 @@ harness = false
 [workspace]
 members = [
     "plugins/heap_profiler",
+    "plugins/stdlib",
 ]

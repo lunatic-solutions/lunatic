@@ -20,15 +20,8 @@ fn criterion_benchmark(c: &mut Criterion) {
 
     let path = Path::new("target/wasm/heap_profiler.wasm");
     let module = fs::read(path).unwrap();
-    // The namespace is the filename without extension
-    let namespace = path.with_extension("");
-    let namespace = namespace.file_name().unwrap().to_str().unwrap();
-    let plugin_config = EnvConfig::default();
-    let plugin_environment = Environment::new(plugin_config).unwrap();
     let mut config = EnvConfig::default();
-    config
-        .add_plugin(&plugin_environment, namespace, module)
-        .unwrap();
+    config.add_plugin(module).unwrap();
     let environment = Environment::new(config).unwrap();
 
     // Reload module into modified environment (added plugin)

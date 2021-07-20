@@ -4,10 +4,13 @@ use anyhow::Result;
 use wasmtime::{Caller, Linker, Trap};
 
 use super::{get_memory, link_async4_if_match, link_async5_if_match, link_if_match};
-use crate::{api::error::IntoTrap, state::State, EnvConfig, Environment};
+use crate::{api::error::IntoTrap, state::ProcessState, EnvConfig, Environment};
 
 // Register the process APIs to the linker
-pub(crate) fn register(linker: &mut Linker<State>, namespace_filter: &[String]) -> Result<()> {
+pub(crate) fn register(
+    linker: &mut Linker<ProcessState>,
+    namespace_filter: &[String],
+) -> Result<()> {
     link_if_match(
         linker,
         "lunatic::process",
@@ -85,7 +88,7 @@ pub(crate) fn register(linker: &mut Linker<State>, namespace_filter: &[String]) 
 //% * Returns ID of newly created configuration.
 //%
 //% Create a new configuration for an environment.
-fn create_config(mut caller: Caller<State>, max_memory: u64, max_fuel: u64) -> u64 {
+fn create_config(mut caller: Caller<ProcessState>, max_memory: u64, max_fuel: u64) -> u64 {
     let max_fuel = if max_fuel != 0 { Some(max_fuel) } else { None };
     let config = EnvConfig::new(max_memory, max_fuel);
     caller.data_mut().resources.configs.add(config)
@@ -97,7 +100,7 @@ fn create_config(mut caller: Caller<State>, max_memory: u64, max_fuel: u64) -> u
 //%
 //% Traps:
 //% * If the config ID doesn't exist.
-fn drop_config(mut caller: Caller<State>, config_id: u64) -> Result<(), Trap> {
+fn drop_config(mut caller: Caller<ProcessState>, config_id: u64) -> Result<(), Trap> {
     caller
         .data_mut()
         .resources
@@ -116,7 +119,7 @@ fn drop_config(mut caller: Caller<State>, config_id: u64) -> Result<(), Trap> {
 //% * If the namespace string is not a valid utf8 string.
 //% * If **namespace_str_ptr + namespace_str_len** is outside the memory.
 fn allow_namespace(
-    mut caller: Caller<State>,
+    mut caller: Caller<ProcessState>,
     config_id: u64,
     namespace_str_ptr: u32,
     namespace_str_len: u32,
@@ -140,9 +143,6 @@ fn allow_namespace(
 
 //% lunatic::process::add_plugin(
 //%     config_id: i64,
-//%     env_id: i64,
-//%     namespace_str_ptr: i32,
-//%     namespace_str_len: i32,
 //%     plugin_data_ptr: i32,
 //%     plugin_data_len: i32,
 //%     id_ptr: i32
@@ -155,17 +155,12 @@ fn allow_namespace(
 //% Add plugin to environment configuration.
 //%
 //% Traps:
-//% * If the config or environment ID doesn't exist.
+//% * If the config ID doesn't exist.
 //% * If **id_ptr** is outside the memory.
-//% * If the namespace string is not a valid utf8 string.
-//% * If **namespace_str_ptr + namespace_str_len** is outside the memory.
 //% * If **plugin_data_ptr + plugin_data_len** is outside the memory.
 fn add_plugin(
-    mut caller: Caller<State>,
+    mut caller: Caller<ProcessState>,
     config_id: u64,
-    env_id: u64,
-    namespace_str_ptr: u32,
-    namespace_str_len: u32,
     plugin_data_ptr: u32,
     plugin_data_len: u32,
     id_ptr: u32,
@@ -176,21 +171,6 @@ fn add_plugin(
         .read(&caller, plugin_data_ptr as usize, plugin.as_mut_slice())
         .or_trap("lunatic::process::add_plugin")?;
 
-    let mut buffer = vec![0; namespace_str_len as usize];
-    memory
-        .read(&caller, namespace_str_ptr as usize, &mut buffer)
-        .or_trap("lunatic::process::add_plugin")?;
-    let namespace =
-        std::str::from_utf8(buffer.as_slice()).or_trap("lunatic::process::add_plugin")?;
-
-    let env = caller
-        .data()
-        .resources
-        .environments
-        .get(env_id)
-        .or_trap("lunatic::process::add_plugin")?
-        .clone();
-
     let config = caller
         .data_mut()
         .resources
@@ -198,7 +178,7 @@ fn add_plugin(
         .get_mut(config_id)
         .or_trap("lunatic::process::add_plugin")?;
 
-    let (env_or_error_id, result) = match config.add_plugin(&env, namespace, plugin) {
+    let (env_or_error_id, result) = match config.add_plugin(plugin) {
         Ok(()) => (0, 0),
         Err(error) => (caller.data_mut().errors.add(error), 1),
     };
@@ -222,7 +202,11 @@ fn add_plugin(
 //% Traps:
 //% * If the config ID doesn't exist.
 //% * If **id_ptr** is outside the memory.
-fn create_environment(mut caller: Caller<State>, config_id: u64, id_ptr: u32) -> Result<i32, Trap> {
+fn create_environment(
+    mut caller: Caller<ProcessState>,
+    config_id: u64,
+    id_ptr: u32,
+) -> Result<i32, Trap> {
     let config = caller
         .data_mut()
         .resources
@@ -249,7 +233,7 @@ fn create_environment(mut caller: Caller<State>, config_id: u64, id_ptr: u32) ->
 //%
 //% Traps:
 //% * If the environment ID doesn't exist.
-fn drop_environment(mut caller: Caller<State>, env_id: u64) -> Result<(), Trap> {
+fn drop_environment(mut caller: Caller<ProcessState>, env_id: u64) -> Result<(), Trap> {
     caller
         .data_mut()
         .resources
@@ -277,7 +261,7 @@ fn drop_environment(mut caller: Caller<State>, env_id: u64) -> Result<(), Trap> 
 //% * If **module_data_ptr + module_data_len** is outside the memory.
 //% * If **id_ptr** is outside the memory.
 fn crate_module(
-    mut caller: Caller<State>,
+    mut caller: Caller<ProcessState>,
     env_id: u64,
     module_data_ptr: u32,
     module_data_len: u32,
@@ -312,7 +296,7 @@ fn crate_module(
 //%
 //% Traps:
 //% * If the module ID doesn't exist.
-fn drop_module(mut caller: Caller<State>, mod_id: u64) -> Result<(), Trap> {
+fn drop_module(mut caller: Caller<ProcessState>, mod_id: u64) -> Result<(), Trap> {
     caller
         .data_mut()
         .resources
@@ -342,7 +326,7 @@ fn drop_module(mut caller: Caller<State>, mod_id: u64) -> Result<(), Trap> {
 //% * If **function_str_ptr + function_str_len** is outside the memory.
 //% * If **id_ptr** is outside the memory.
 fn spawn(
-    mut caller: Caller<State>,
+    mut caller: Caller<ProcessState>,
     env_id: u64,
     module_id: u64,
     function_str_ptr: u32,
@@ -386,7 +370,7 @@ fn spawn(
 //%
 //% Traps:
 //% * If the process ID doesn't exist.
-fn drop_process(mut caller: Caller<State>, process_id: u64) -> Result<(), Trap> {
+fn drop_process(mut caller: Caller<ProcessState>, process_id: u64) -> Result<(), Trap> {
     caller
         .data_mut()
         .resources

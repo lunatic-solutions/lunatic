@@ -4,12 +4,15 @@ use anyhow::Result;
 use wasmtime::Trap;
 use wasmtime::{Caller, Linker};
 
-use crate::{api::get_memory, state::State};
+use crate::{api::get_memory, state::ProcessState};
 
 use super::link_if_match;
 
 // Register the error APIs to the linker
-pub(crate) fn register(linker: &mut Linker<State>, namespace_filter: &[String]) -> Result<()> {
+pub(crate) fn register(
+    linker: &mut Linker<ProcessState>,
+    namespace_filter: &[String],
+) -> Result<()> {
     link_if_match(
         linker,
         "lunatic::error",
@@ -34,7 +37,7 @@ pub(crate) fn register(linker: &mut Linker<State>, namespace_filter: &[String]) 
 //%
 //% Traps:
 //% * If the error ID doesn't exist.
-fn string_size(caller: Caller<State>, error_id: u64) -> Result<u32, Trap> {
+fn string_size(caller: Caller<ProcessState>, error_id: u64) -> Result<u32, Trap> {
     let error = caller
         .data()
         .errors
@@ -51,7 +54,11 @@ fn string_size(caller: Caller<State>, error_id: u64) -> Result<u32, Trap> {
 //% Traps:
 //% * If the error ID doesn't exist.
 //% * If **error_str_ptr + length of the error string** is outside the memory.
-fn to_string(mut caller: Caller<State>, error_id: u64, error_str_ptr: u32) -> Result<(), Trap> {
+fn to_string(
+    mut caller: Caller<ProcessState>,
+    error_id: u64,
+    error_str_ptr: u32,
+) -> Result<(), Trap> {
     let error = caller
         .data()
         .errors
@@ -71,7 +78,7 @@ fn to_string(mut caller: Caller<State>, error_id: u64, error_str_ptr: u32) -> Re
 //%
 //% Traps:
 //% * If the error ID doesn't exist.
-fn drop(mut caller: Caller<State>, error_id: u64) -> Result<(), Trap> {
+fn drop(mut caller: Caller<ProcessState>, error_id: u64) -> Result<(), Trap> {
     caller
         .data_mut()
         .errors

@@ -1,7 +1,6 @@
 use anyhow::Result;
-use wasmtime::Module;
 
-use crate::Environment;
+use crate::plugin::Plugin;
 
 /// Configuration structure for environments.
 pub struct EnvConfig {
@@ -10,7 +9,7 @@ pub struct EnvConfig {
     // Maximum amount of compute expressed in gallons.
     max_fuel: Option<u64>,
     allowed_namespaces: Vec<String>,
-    plugins: Vec<(String, Module)>,
+    plugins: Vec<Plugin>,
 }
 
 impl EnvConfig {
@@ -41,7 +40,7 @@ impl EnvConfig {
         self.allowed_namespaces.push(namespace.into())
     }
 
-    pub fn plugins(&self) -> &Vec<(String, Module)> {
+    pub fn plugins(&self) -> &Vec<Plugin> {
         &self.plugins
     }
 
@@ -50,14 +49,9 @@ impl EnvConfig {
     /// Plugins are just regular WebAssembly modules that can define specific hooks inside the
     /// runtime to modify other modules that are dynamically loaded inside the environment or
     /// spawn environment bound processes.
-    pub fn add_plugin<S: Into<String>>(
-        &mut self,
-        env: &Environment,
-        namespace: S,
-        module: Vec<u8>,
-    ) -> Result<()> {
-        let module = Module::new(&env.engine(), module)?;
-        self.plugins.push((namespace.into(), module));
+    pub fn add_plugin(&mut self, module: Vec<u8>) -> Result<()> {
+        let plugin = Plugin::new(module)?;
+        self.plugins.push(plugin);
         Ok(())
     }
 }

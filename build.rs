@@ -32,15 +32,34 @@ fn main() {
     }
 
     // Build all plugins
-    Command::new("cargo")
+    let status = Command::new("cargo")
         .current_dir("./plugins/heap_profiler")
         .args(&["build", "--release"])
         .status()
         .unwrap();
+    if !status.success() {
+        panic!("Failed building heap_profiler plugin: {}", status);
+    }
+    let status = Command::new("cargo")
+        .current_dir("./plugins/stdlib")
+        .args(&["build", "--release"])
+        .status()
+        .unwrap();
+    if !status.success() {
+        panic!("Failed building stdlib plugin: {}", status);
+    }
+
     // Move plugins to `TARGET_DIR`
     Command::new("mv")
         .args(&[
             "target/heap_profiler/wasm32-unknown-unknown/release/heap_profiler.wasm",
+            TARGET_DIR,
+        ])
+        .status()
+        .unwrap();
+    Command::new("mv")
+        .args(&[
+            "target/stdlib/wasm32-unknown-unknown/release/stdlib.wasm",
             TARGET_DIR,
         ])
         .status()

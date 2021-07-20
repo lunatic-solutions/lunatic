@@ -10,12 +10,33 @@ use tokio::sync::{mpsc::UnboundedReceiver, Mutex};
 use wasmtime::{Module, ResourceLimiter};
 use wasmtime_wasi::{WasiCtx, WasiCtxBuilder};
 
+use crate::plugin::ModuleContext;
 use crate::{message::Message, process::ProcessHandle, EnvConfig, Environment};
+
+// The internal state of Plugins.
+pub(crate) struct PluginState<'a, 'b> {
+    // Errors belonging to the plugin
+    pub(crate) errors: HashMapId<anyhow::Error>,
+    module_context: &'a mut ModuleContext<'b>,
+}
+
+impl<'a, 'b> PluginState<'a, 'b> {
+    pub fn new(module_context: &'a mut ModuleContext<'b>) -> Self {
+        Self {
+            errors: HashMapId::new(),
+            module_context,
+        }
+    }
+
+    pub fn module_context(&mut self) -> &mut ModuleContext<'b> {
+        &mut self.module_context
+    }
+}
 
 // The internal state of each Process.
 //
 // Host functions will share one state.
-pub(crate) struct State {
+pub(crate) struct ProcessState {
     // The environment that this process was spawned from
     pub(crate) env: Environment,
     // A space that can be used to temporarily store messages when sending or receiving them.
@@ -32,12 +53,9 @@ pub(crate) struct State {
     pub(crate) resources: Resources,
     // WASI
     pub(crate) wasi: WasiCtx,
-    // The module that is being added to the environment.
-    // This makes it accessible inside of plugins that run on the module before it's compiled.
-    pub(crate) module_loaded: Option<Vec<u8>>,
 }
 
-impl State {
+impl ProcessState {
     pub fn new(env: Environment, mailbox: UnboundedReceiver<Message>) -> Self {
         Self {
             env,
@@ -47,12 +65,11 @@ impl State {
             resources: Resources::default(),
             // TODO: Inherit args & envs
             wasi: WasiCtxBuilder::new().inherit_stdio().build(),
-            module_loaded: None,
         }
     }
 }
 
-impl Debug for State {
+impl Debug for ProcessState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("State")
             .field("process", &self.resources)
@@ -61,7 +78,7 @@ impl Debug for State {
 }
 
 // Limit the maximum memory of the process depending on the environment it was spawned in.
-impl ResourceLimiter for State {
+impl ResourceLimiter for ProcessState {
     fn memory_growing(&mut self, current: u32, desired: u32, _maximum: Option<u32>) -> bool {
         const WASM_PAGE: u64 = 64 * 1024; // bytes
         (current as u64 + desired as u64) * WASM_PAGE < self.env.max_memory()
