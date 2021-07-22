@@ -42,6 +42,7 @@ pub mod api;
 mod config;
 mod environment;
 pub mod message;
+pub mod module;
 pub mod plugin;
 pub mod process;
 pub mod state;

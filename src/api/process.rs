@@ -1,10 +1,13 @@
-use std::future::Future;
+use std::{convert::TryInto, future::Future, time::Duration};
 
-use anyhow::Result;
-use wasmtime::{Caller, Linker, Trap};
+use anyhow::{anyhow, Result};
+use wasmtime::{Caller, Linker, Trap, Val};
 
-use super::{get_memory, link_async4_if_match, link_async5_if_match, link_if_match};
-use crate::{api::error::IntoTrap, state::ProcessState, EnvConfig, Environment};
+use super::{
+    get_memory, link_async1_if_match, link_async4_if_match, link_async5_if_match,
+    link_async6_if_match, link_if_match,
+};
+use crate::{api::error::IntoTrap, module::Module, state::ProcessState, EnvConfig, Environment};
 
 // Register the process APIs to the linker
 pub(crate) fn register(
@@ -67,12 +70,26 @@ pub(crate) fn register(
         drop_module,
         namespace_filter,
     )?;
-    link_async5_if_match(linker, "lunatic::process", "spawn", spawn, namespace_filter)?;
+    link_async6_if_match(linker, "lunatic::process", "spawn", spawn, namespace_filter)?;
+    link_async5_if_match(
+        linker,
+        "lunatic::process",
+        "inherit_spawn",
+        inherit_spawn,
+        namespace_filter,
+    )?;
     link_if_match(
         linker,
         "lunatic::process",
         "drop_process",
         drop_process,
+        namespace_filter,
+    )?;
+    link_async1_if_match(
+        linker,
+        "lunatic::process",
+        "sleep_ms",
+        sleep_ms,
         namespace_filter,
     )?;
 
@@ -307,10 +324,11 @@ fn drop_module(mut caller: Caller<ProcessState>, mod_id: u64) -> Result<(), Trap
 }
 
 //% lunatic::process::spawn(
-//%     env_id: i64,
-//%     env_id: u64,
-//%     function_str_ptr: i32,
-//%     function_str_len: i32,
+//%     module_id: u64,
+//%     func_str_ptr: i32,
+//%     func_str_len: i32,
+//%     params_ptr: i32,
+//%     params_len: i32,
 //%     id_ptr: i32
 //% ) -> i64
 //%
@@ -320,46 +338,99 @@ fn drop_module(mut caller: Caller<ProcessState>, mod_id: u64) -> Result<(), Trap
 //%
 //% Spawns a new process using the passed in function inside a module as the entry point.
 //%
+//% The function arguments are passed as an array with the following structure:
+//% [0 byte = type ID; 1..17 bytes = value as u128, ...]
+//% The type ID follows the WebAssembly binary convention:
+//%  - 0x7F => i32
+//%  - 0x7E => i64
+//%  - 0x7B => v128
+//% If any other value is used as type ID, this function will trap.
+//%
 //% Traps:
-//% * If the env or module ID doesn't exist.
+//% * If the module ID doesn't exist.
 //% * If the function string is not a valid utf8 string.
-//% * If **function_str_ptr + function_str_len** is outside the memory.
+//% * If the params array is in a wrong format.
+//% * If **func_str_ptr + func_str_len** is outside the memory.
+//% * If **params_ptr + params_len** is outside the memory.
 //% * If **id_ptr** is outside the memory.
 fn spawn(
     mut caller: Caller<ProcessState>,
-    env_id: u64,
     module_id: u64,
-    function_str_ptr: u32,
-    function_str_len: u32,
+    func_str_ptr: u32,
+    func_str_len: u32,
+    params_ptr: u32,
+    params_len: u32,
     id_ptr: u32,
 ) -> Box<dyn Future<Output = Result<i32, Trap>> + Send + '_> {
     Box::new(async move {
-        let mut buffer = vec![0; function_str_len as usize];
-        let memory = get_memory(&mut caller)?;
-        memory
-            .read(&caller, function_str_ptr as usize, buffer.as_mut_slice())
-            .or_trap("lunatic::process::spawn")?;
-        let function = std::str::from_utf8(buffer.as_slice()).or_trap("lunatic::process::spawn")?;
-        let env = caller
-            .data()
-            .resources
-            .environments
-            .get(env_id)
-            .or_trap("lunatic::process::spawn")?;
         let module = caller
             .data()
             .resources
             .modules
             .get(module_id)
-            .or_trap("lunatic::process::spawn")?;
-        let (mod_or_error_id, result) = match env.spawn(module, &function).await {
-            Ok(process) => (caller.data_mut().resources.processes.add(process), 0),
-            Err(error) => (caller.data_mut().errors.add(error), 1),
-        };
-        memory
-            .write(&mut caller, id_ptr as usize, &mod_or_error_id.to_le_bytes())
-            .or_trap("lunatic::process::spawn")?;
-        Ok(result)
+            .or_trap("lunatic::process::spawn")?
+            .clone();
+        spawn_from_module(
+            &mut caller,
+            module,
+            func_str_ptr,
+            func_str_len,
+            params_ptr,
+            params_len,
+            id_ptr,
+        )
+        .await
+    })
+}
+
+//% lunatic::process::inherit_spawn(
+//%     func_str_ptr: i32,
+//%     func_str_len: i32,
+//%     params_ptr: i32,
+//%     params_len: i32,
+//%     id_ptr: i32
+//% ) -> i64
+//%
+//% Returns:
+//% * 0 on success - The ID of the newly created process is written to **id_ptr**
+//% * 1 on error   - The error ID is written to **id_ptr**
+//%
+//% Spawns a new process using the same module as the parent.
+//%
+//% The function arguments are passed as an array with the following structure:
+//% [0 byte = type ID; 1..17 bytes = value as u128, ...]
+//% The type ID follows the WebAssembly binary convention:
+//%  - 0x7F => i32
+//%  - 0x7E => i64
+//%  - 0x7B => v128
+//% If any other value is used as type ID, this function will trap.
+//%
+//% Traps:
+//% * If the function string is not a valid utf8 string.
+//% * If the params array is in a wrong format.
+//% * If **func_str_ptr + func_str_len** is outside the memory.
+//% * If **params_ptr + params_len** is outside the memory.
+//% * If **id_ptr** is outside the memory.
+fn inherit_spawn(
+    mut caller: Caller<ProcessState>,
+    func_str_ptr: u32,
+    func_str_len: u32,
+    params_ptr: u32,
+    params_len: u32,
+    id_ptr: u32,
+) -> Box<dyn Future<Output = Result<i32, Trap>> + Send + '_> {
+    Box::new(async move {
+        let module = caller.data().module.clone();
+        spawn_from_module(
+            &mut caller,
+            module,
+            func_str_ptr,
+            func_str_len,
+            params_ptr,
+            params_len,
+            id_ptr,
+        )
+        .await
     })
 }
 
@@ -378,4 +449,55 @@ fn drop_process(mut caller: Caller<ProcessState>, process_id: u64) -> Result<(),
         .remove(process_id)
         .or_trap("lunatic::process::drop_process")?;
     Ok(())
+}
+
+//% lunatic::process::sleep_ms(millis: i64)
+//%
+//% Suspend process for `millis`.
+fn sleep_ms(_: Caller<ProcessState>, millis: u64) -> Box<dyn Future<Output = ()> + Send + '_> {
+    Box::new(async move {
+        tokio::time::sleep(Duration::from_millis(millis)).await;
+    })
+}
+
+async fn spawn_from_module(
+    mut caller: &mut Caller<'_, ProcessState>,
+    module: Module,
+    func_str_ptr: u32,
+    func_str_len: u32,
+    params_ptr: u32,
+    params_len: u32,
+    id_ptr: u32,
+) -> Result<i32, Trap> {
+    let memory = get_memory(&mut caller)?;
+    let func_str = memory
+        .data(&caller)
+        .get(func_str_ptr as usize..(func_str_ptr + func_str_len) as usize)
+        .or_trap("lunatic::process::(inherit_)spawn")?;
+    let function = std::str::from_utf8(func_str).or_trap("lunatic::process::(inherit_)spawn")?;
+    let params = memory
+        .data(&caller)
+        .get(params_ptr as usize..(params_ptr + params_len) as usize)
+        .or_trap("lunatic::process::(inherit_)spawn")?;
+    let params = params
+        .chunks_exact(17)
+        .map(|chunk| {
+            let value = u128::from_le_bytes(chunk[1..].try_into()?);
+            let result = match chunk[0] {
+                0x7F => Val::I32(value as i32),
+                0x7E => Val::I64(value as i64),
+                0x7B => Val::V128(value),
+                _ => return Err(anyhow!("Unsupported type ID")),
+            };
+            Ok(result)
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let (mod_or_error_id, result) = match module.spawn(&function, params).await {
+        Ok(process) => (caller.data_mut().resources.processes.add(process), 0),
+        Err(error) => (caller.data_mut().errors.add(error), 1),
+    };
+    memory
+        .write(&mut caller, id_ptr as usize, &mod_or_error_id.to_le_bytes())
+        .or_trap("lunatic::process::(inherit_)spawn")?;
+    Ok(result)
 }

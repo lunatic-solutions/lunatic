@@ -1,16 +1,10 @@
-use std::sync::Arc;
-
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use lazy_static::lazy_static;
-use tokio::{sync::mpsc::unbounded_channel, task};
-use wasmtime::{
-    Config, Engine, InstanceAllocationStrategy, Linker, Module, OptLevel, ProfilingStrategy, Store,
-};
+use tokio::task;
+use wasmtime::{Config, Engine, InstanceAllocationStrategy, Linker, OptLevel, ProfilingStrategy};
 
 use super::config::EnvConfig;
-use crate::{
-    api, message::Message, plugin::patch_module, process::ProcessHandle, state::ProcessState,
-};
+use crate::{api, module::Module, plugin::patch_module, state::ProcessState};
 
 // One gallon of fuel represents around 100k instructions.
 pub const GALLON_IN_INSTRUCTIONS: u64 = 100_000;
@@ -26,10 +20,6 @@ pub const GALLON_IN_INSTRUCTIONS: u64 = 100_000;
 /// limit processes' access to host functions by shadowing their implementations.
 #[derive(Clone)]
 pub struct Environment {
-    inner: Arc<InnerEnv>,
-}
-
-struct InnerEnv {
     engine: Engine,
     linker: Linker<ProcessState>,
     config: EnvConfig,
@@ -68,50 +58,10 @@ impl Environment {
         api::register(&mut linker, config.allowed_namespace())?;
 
         Ok(Self {
-            inner: Arc::new(InnerEnv {
-                engine,
-                linker,
-                config,
-            }),
+            engine,
+            linker,
+            config,
         })
-    }
-
-    /// Spawns a new process from the environment.
-    ///
-    /// A `Process` is created from a `Module` and an entry `function`. The configuration of the
-    /// environment will define some characteristics of the process, such as maximum memory, fuel
-    /// and available host functions.
-    ///
-    /// After it's spawned the process will keep running in the background. A process can be killed
-    /// by sending a `Signal::Kill` to it.
-    pub async fn spawn(&self, module: &Module, function: &str) -> Result<ProcessHandle> {
-        let (mailbox_sender, mailbox) = unbounded_channel::<Message>();
-        let state = ProcessState::new(self.clone(), mailbox);
-        let mut store = Store::new(&self.inner.engine, state);
-        store.limiter(|state| state);
-
-        // Trap if out of fuel
-        store.out_of_fuel_trap();
-        // Define maximum fuel
-        match self.inner.config.max_fuel() {
-            Some(max_fuel) => store.out_of_fuel_async_yield(max_fuel, GALLON_IN_INSTRUCTIONS),
-            // If no limit is specified use maximum
-            None => store.out_of_fuel_async_yield(u64::MAX, GALLON_IN_INSTRUCTIONS),
-        };
-
-        let instance = self
-            .inner
-            .linker
-            .instantiate_async(&mut store, &module)
-            .await?;
-        let entry = instance
-            .get_func(&mut store, &function)
-            .map_or(Err(anyhow!("Function '{}' not found", function)), |func| {
-                Ok(func)
-            })?;
-
-        let fut = async move { entry.call_async(&mut store, &[]).await };
-        Ok(ProcessHandle::new(fut, mailbox_sender))
     }
 
     /// Create a module from the environment.
@@ -120,21 +70,29 @@ impl Environment {
     /// function will be called. Plugins can use host functions to modify the module before it's JIT
     /// compiled by `Wasmtime`.
     pub async fn create_module(&self, module: Vec<u8>) -> Result<Module> {
-        let engine = self.inner.engine.clone();
-        let new_module = patch_module(&module, self.inner.config.plugins())?;
+        let env = self.clone();
+        let new_module = patch_module(&module, self.config.plugins())?;
         // The compilation of a module is a CPU intensive tasks and can take some time.
-        let module =
-            task::spawn_blocking(move || Module::new(&engine, new_module.as_slice())).await??;
+        let module = task::spawn_blocking(move || {
+            match wasmtime::Module::new(env.engine(), new_module.as_slice()) {
+                Ok(wasmtime_module) => Ok(Module::new(env, wasmtime_module)),
+                Err(err) => Err(err),
+            }
+        })
+        .await??;
         Ok(module)
     }
 
-    // Returns the max memory allowed by this environment
-    pub fn max_memory(&self) -> u64 {
-        self.inner.config.max_memory()
+    pub fn engine(&self) -> &Engine {
+        &self.engine
     }
 
-    pub fn engine(&self) -> &Engine {
-        &self.inner.engine
+    pub fn config(&self) -> &EnvConfig {
+        &self.config
+    }
+
+    pub(crate) fn linker(&self) -> &Linker<ProcessState> {
+        &self.linker
     }
 }
 

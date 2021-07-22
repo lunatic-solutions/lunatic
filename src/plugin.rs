@@ -16,7 +16,7 @@ Another use case is inserting additional code into particular functions to colle
 execution, like the `heap_profiler` plugin does.
 */
 
-use std::collections::HashMap;
+use std::{collections::HashMap, convert::TryInto};
 
 use anyhow::{anyhow, Result};
 use wasmparser::{
@@ -28,6 +28,7 @@ use wasmtime::{Linker, Module, Store};
 use crate::{api, environment::PLUGIN_ENV, state::PluginState};
 
 /// WebAssembly module that can be attached to an [`Environment`].
+#[derive(Clone)]
 pub struct Plugin {
     module: Module,
 }
@@ -88,10 +89,10 @@ impl<'a> ModuleContext<'a> {
         self.functions.push(type_index as u32);
         // Add code section
         let func_locals = func_locals
-            .chunks_exact(5) // (index: u32, type :u8)
+            .chunks_exact(5) // (count: u32, type :u8)
             .map(|data| {
-                let index = u32::from_le_bytes([data[0], data[1], data[2], data[3]]);
-                Ok((index, Self::u8_to_valtype(data[4])?))
+                let count = u32::from_le_bytes(data[0..4].try_into()?);
+                Ok((count, Self::u8_to_valtype(data[4])?))
             })
             .collect::<Result<Vec<_>>>()?;
         self.code_section
@@ -247,8 +248,14 @@ impl<'a> ModuleContext<'a> {
                             match subsection {
                                 Name::Function(function_names) => {
                                     let mut name_map = function_names.get_map()?;
-                                    while let Ok(function) = name_map.read() {
-                                        self.function_names.insert(function.name, function.index);
+                                    let name_map_count = name_map.get_count() as usize;
+                                    for _ in 0..name_map_count {
+                                        if let Ok(function) = name_map.read() {
+                                            self.function_names
+                                                .insert(function.name, function.index);
+                                        } else {
+                                            return Err(anyhow!("Couldn't parse all function names of CustomName section."));
+                                        }
                                     }
                                     // Finish as soon as function names are parsed.
                                     break;
@@ -395,9 +402,14 @@ impl<'a> ModuleContext<'a> {
                 ContextCode::Unchanged(function_body) => {
                     // Extract locals from original function
                     let mut locals_reader = function_body.get_locals_reader()?;
-                    let mut locals = Vec::with_capacity(locals_reader.get_count() as usize);
-                    while let Ok((id, type_)) = locals_reader.read() {
-                        locals.push((id, Self::type_translate(&type_)?))
+                    let locls_count = locals_reader.get_count() as usize;
+                    let mut locals = Vec::with_capacity(locls_count);
+                    for _ in 0..locls_count {
+                        if let Ok((count, type_)) = locals_reader.read() {
+                            locals.push((count, Self::type_translate(&type_)?));
+                        } else {
+                            return Err(anyhow!("Couldn't parse all locals of Wasm function."));
+                        }
                     }
                     let mut function = wasm_encoder::Function::new(locals);
                     // Copy original instruction body from function

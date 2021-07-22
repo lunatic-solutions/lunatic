@@ -7,9 +7,10 @@ use std::vec::IntoIter;
 
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{mpsc::UnboundedReceiver, Mutex};
-use wasmtime::{Module, ResourceLimiter};
+use wasmtime::ResourceLimiter;
 use wasmtime_wasi::{WasiCtx, WasiCtxBuilder};
 
+use crate::module::Module;
 use crate::plugin::ModuleContext;
 use crate::{message::Message, process::ProcessHandle, EnvConfig, Environment};
 
@@ -37,8 +38,8 @@ impl<'a, 'b> PluginState<'a, 'b> {
 //
 // Host functions will share one state.
 pub(crate) struct ProcessState {
-    // The environment that this process was spawned from
-    pub(crate) env: Environment,
+    // The module that this process was spawned from
+    pub(crate) module: Module,
     // A space that can be used to temporarily store messages when sending or receiving them.
     // Messages can contain resources that need to be added across multiple host. Likewise,
     // receiving messages is done in two steps, first the message size is returned to allow the
@@ -56,9 +57,9 @@ pub(crate) struct ProcessState {
 }
 
 impl ProcessState {
-    pub fn new(env: Environment, mailbox: UnboundedReceiver<Message>) -> Self {
+    pub fn new(module: Module, mailbox: UnboundedReceiver<Message>) -> Self {
         Self {
-            env,
+            module,
             message: None,
             mailbox,
             errors: HashMapId::new(),
@@ -81,7 +82,8 @@ impl Debug for ProcessState {
 impl ResourceLimiter for ProcessState {
     fn memory_growing(&mut self, current: u32, desired: u32, _maximum: Option<u32>) -> bool {
         const WASM_PAGE: u64 = 64 * 1024; // bytes
-        (current as u64 + desired as u64) * WASM_PAGE < self.env.max_memory()
+        (current as u64 + desired as u64) * WASM_PAGE
+            < self.module.environment().config().max_memory()
     }
 
     // TODO: What would be a reasonable table limit be?

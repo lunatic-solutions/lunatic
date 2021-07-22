@@ -3,6 +3,7 @@ use anyhow::Result;
 use crate::plugin::Plugin;
 
 /// Configuration structure for environments.
+#[derive(Clone)]
 pub struct EnvConfig {
     // Maximum amount of memory that can be used by processes
     max_memory: u64,

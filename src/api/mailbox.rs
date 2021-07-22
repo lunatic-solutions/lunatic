@@ -181,7 +181,9 @@ fn send(mut caller: Caller<ProcessState>, process_id: u64) -> Result<u32, Trap> 
 //% * 1 on error   - Process can't receive more messages (nobody holds a handle to it).
 //%
 //% This function should be called before `lunatic::message::receive` to let the guest know how
-//% much memory space needs to be reserved for the next message.
+//% much memory space needs to be reserved for the next message. The data size is in **bytes**,
+//% the resources size is the number of resources and each resource is a u64 value. Because of
+//% this the guest needs to reserve `64 * resource size` bytes for the resource buffer.
 //%
 //% Traps:
 //% * If **size_ptr** is outside the memory.

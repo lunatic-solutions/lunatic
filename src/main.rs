@@ -6,6 +6,9 @@ use anyhow::{Context, Result};
 use lunatic_runtime::{EnvConfig, Environment};
 
 fn main() -> Result<()> {
+    // Init logger
+    env_logger::init();
+    // Parse command line arguments
     let args = App::new("lunatic")
         .version(crate_version!())
         .arg(
@@ -33,7 +36,7 @@ fn main() -> Result<()> {
             config.add_plugin(module)?;
         }
     }
-    let main_process_environment = Environment::new(config)?;
+    let env = Environment::new(config)?;
 
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
@@ -44,9 +47,9 @@ fn main() -> Result<()> {
         let path = args.value_of("wasm").unwrap();
         let path = Path::new(path);
         let module = fs::read(path)?;
-        let module = main_process_environment.create_module(module).await?;
-        main_process_environment
-            .spawn(&module, "_start")
+        let module = env.create_module(module).await?;
+        module
+            .spawn("_start", Vec::new())
             .await
             .context(format!(
                 "Failed to spawn process from {}::_start()",

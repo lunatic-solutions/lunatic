@@ -515,7 +515,7 @@ fn tcp_write_vectored(
         let memory = get_memory(&mut caller)?;
         let buffer = memory
             .data(&caller)
-            .get(ciovec_array_ptr as usize..ciovec_array_len as usize)
+            .get(ciovec_array_ptr as usize..(ciovec_array_ptr + ciovec_array_len) as usize)
             .or_trap("lunatic::networking::tcp_write_vectored")?;
 
         // Ciovecs consist of 32bit ptr + 32bit len = 8 bytes.
@@ -528,7 +528,7 @@ fn tcp_write_vectored(
                     u32::from_le_bytes([ciovec[4], ciovec[5], ciovec[6], ciovec[7]]) as usize;
                 let slice = memory
                     .data(&caller)
-                    .get(ciovec_ptr..ciovec_len)
+                    .get(ciovec_ptr..(ciovec_ptr + ciovec_len))
                     .or_trap("lunatic::networking::tcp_write_vectored")?;
                 Ok(IoSlice::new(slice))
             })

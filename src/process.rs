@@ -1,10 +1,12 @@
 use std::future::Future;
 
 use anyhow::Result;
+use log::debug;
 use tokio::{
     sync::mpsc::{channel, Sender, UnboundedSender},
     task::JoinHandle,
 };
+use wasmtime::Val;
 
 use crate::message::Message;
 
@@ -37,14 +39,14 @@ impl ProcessHandle {
     /// Turns a Future into a process, enabling signals (e.g. kill) and messages.  
     pub(crate) fn new<F>(fut: F, mailbox_sender: UnboundedSender<Message>) -> Self
     where
-        F: Future + Send + 'static,
+        F: Future<Output = Result<Box<[Val]>>> + Send + 'static,
     {
         let (signal_sender, mut signal_mailbox) = channel::<Signal>(1);
         let fut = async move {
             tokio::pin!(fut);
 
             let mut disable_signals = false;
-            let _result = loop {
+            let result = loop {
                 tokio::select! {
                     biased;
                     // Handle signals first
@@ -60,6 +62,10 @@ impl ProcessHandle {
                     output = &mut fut => { break Finished::Wasm(output); }
                 }
             };
+            match result {
+                Finished::Wasm(Result::Err(err)) => debug!("Process failed: {}", err),
+                _ => (),
+            }
         };
 
         // Spawn a background process
