@@ -86,12 +86,15 @@ fn set_buffer(mut caller: Caller<ProcessState>, data_ptr: u32, data_len: u32) ->
     memory
         .read(&caller, data_ptr as usize, buffer.as_mut_slice())
         .or_trap("lunatic::message::set_buffer")?;
-    caller
+    let message = caller
         .data_mut()
         .message
         .as_mut()
-        .or_trap("lunatic::message::set_buffer")?
-        .set_buffer(buffer);
+        .or_trap("lunatic::message::set_buffer")?;
+    match message {
+        Message::Data(data) => data.set_buffer(buffer),
+        Message::Signal => return Err(Trap::new("Unexpected `Message::Signal` in scratch buffer")),
+    };
     Ok(())
 }
 
@@ -110,12 +113,16 @@ fn add_process(mut caller: Caller<ProcessState>, process_id: u64) -> Result<u64,
         .processes
         .remove(process_id)
         .or_trap("lunatic::message::add_process")?;
-    Ok(caller
+    let message = caller
         .data_mut()
         .message
         .as_mut()
-        .or_trap("lunatic::message::add_process")?
-        .add_process(process) as u64)
+        .or_trap("lunatic::message::set_buffer")?;
+    let pid = match message {
+        Message::Data(data) => data.add_process(process) as u64,
+        Message::Signal => return Err(Trap::new("Unexpected `Message::Signal` in scratch buffer")),
+    };
+    Ok(pid)
 }
 
 //% lunatic::message::add_tcp_stream(stream_id: i64) -> i64
@@ -133,12 +140,16 @@ fn add_tcp_stream(mut caller: Caller<ProcessState>, stream_id: u64) -> Result<u6
         .tcp_streams
         .remove(stream_id)
         .or_trap("lunatic::message::add_tcp_stream")?;
-    Ok(caller
+    let message = caller
         .data_mut()
         .message
         .as_mut()
-        .or_trap("lunatic::message::add_tcp_stream")?
-        .add_tcp_stream(stream) as u64)
+        .or_trap("lunatic::message::set_buffer")?;
+    let stream_id = match message {
+        Message::Data(data) => data.add_tcp_stream(stream) as u64,
+        Message::Signal => return Err(Trap::new("Unexpected `Message::Signal` in scratch buffer")),
+    };
+    Ok(stream_id)
 }
 
 //% lunatic::message::send(
@@ -176,9 +187,12 @@ fn send(mut caller: Caller<ProcessState>, process_id: u64) -> Result<u32, Trap> 
 //% lunatic::message::prepare_receive(i32_data_size_ptr: i32, i32_res_size_ptr: i32) -> i32
 //%
 //% Returns:
-//% * 0 on success - The size of the message buffer is written to **i32_data_size_ptr** and the
-//%                  number of the resources is written to **i32_res_size_ptr**.
-//% * 1 on error   - Process can't receive more messages (nobody holds a handle to it).
+//% * 0 if it's a regular message.
+//% * 1 if it's a signal turned into a message.
+//%
+//% For regular messages both parameters are used.
+//% * **i32_data_size_ptr** - Location to write the message buffer size to as.
+//% * **i32_res_size_ptr**  - Location to write the number of resources to.
 //%
 //% This function should be called before `lunatic::message::receive` to let the guest know how
 //% much memory space needs to be reserved for the next message. The data size is in **bytes**,
@@ -191,32 +205,39 @@ fn prepare_receive(
     mut caller: Caller<ProcessState>,
     data_size_ptr: u32,
     res_size_ptr: u32,
-) -> Box<dyn Future<Output = Result<i32, Trap>> + Send + '_> {
+) -> Box<dyn Future<Output = Result<(), Trap>> + Send + '_> {
     Box::new(async move {
-        let message = match caller.data_mut().mailbox.recv().await {
-            Some(message) => message,
-            None => return Ok(1),
+        let message = caller
+            .data_mut()
+            .mailbox
+            .recv()
+            .await
+            .expect("a process always hold onto its sender and this can't be None");
+        match &message {
+            Message::Data(message) => {
+                let message_buffer_size = message.buffer_size() as u32;
+                let message_resources_size = message.resources_size() as u32;
+                let memory = get_memory(&mut caller)?;
+                memory
+                    .write(
+                        &mut caller,
+                        data_size_ptr as usize,
+                        &message_buffer_size.to_le_bytes(),
+                    )
+                    .or_trap("lunatic::message::prepare_receive")?;
+                memory
+                    .write(
+                        &mut caller,
+                        res_size_ptr as usize,
+                        &message_resources_size.to_le_bytes(),
+                    )
+                    .or_trap("lunatic::message::prepare_receive")?;
+            }
+            Message::Signal => (),
         };
-
-        let message_buffer_size = message.buffer_size() as u32;
-        let message_resources_size = message.resources_size() as u32;
+        // Put the message into the scratch area
         caller.data_mut().message = Some(message);
-        let memory = get_memory(&mut caller)?;
-        memory
-            .write(
-                &mut caller,
-                data_size_ptr as usize,
-                &message_buffer_size.to_le_bytes(),
-            )
-            .or_trap("lunatic::message::prepare_receive")?;
-        memory
-            .write(
-                &mut caller,
-                res_size_ptr as usize,
-                &message_resources_size.to_le_bytes(),
-            )
-            .or_trap("lunatic::message::prepare_receive")?;
-        Ok(0)
+        Ok(())
     })
 }
 
@@ -227,7 +248,9 @@ fn prepare_receive(
 //%                      resource id inside the new process. Resources are in the same order they
 //%                      were added.
 //%
-//% Writes the message that was prepared with `lunatic::message::prepare_receive` to the guest.
+//% Writes the message that was prepared with `lunatic::message::prepare_receive` to the guest. It
+//% should only be called if `prepare_receive` returned 0, otherwise it will trap. Signal message
+//% don't cary any additional information and everything we need was returned by `prepare_receive`.
 //%
 //% Traps:
 //% * If `lunatic::message::prepare_receive` was not called before.
@@ -239,26 +262,30 @@ fn receive(mut caller: Caller<ProcessState>, data_ptr: u32, resource_ptr: u32) -
         .message
         .take()
         .or_trap("lunatic::message::receive")?;
-    let memory = get_memory(&mut caller)?;
-    memory
-        .write(&mut caller, data_ptr as usize, last_message.buffer())
-        .or_trap("lunatic::message::receive")?;
-
-    let resources: Vec<u8> = last_message
-        .resources()
-        .into_iter()
-        .map(|resource| match resource {
-            crate::message::Resource::Process(process_handle) => {
-                u64::to_le_bytes(caller.data_mut().resources.processes.add(process_handle))
-            }
-            crate::message::Resource::TcpStream(tcp_stream) => {
-                u64::to_le_bytes(caller.data_mut().resources.tcp_streams.add(tcp_stream))
-            }
-        })
-        .flatten()
-        .collect();
-    memory
-        .write(&mut caller, resource_ptr as usize, &resources)
-        .or_trap("lunatic::message::receive")?;
-    Ok(())
+    match last_message {
+        Message::Data(last_message) => {
+            let memory = get_memory(&mut caller)?;
+            memory
+                .write(&mut caller, data_ptr as usize, last_message.buffer())
+                .or_trap("lunatic::message::receive")?;
+            let resources: Vec<u8> = last_message
+                .resources()
+                .into_iter()
+                .map(|resource| match resource {
+                    crate::message::Resource::Process(process_handle) => {
+                        u64::to_le_bytes(caller.data_mut().resources.processes.add(process_handle))
+                    }
+                    crate::message::Resource::TcpStream(tcp_stream) => {
+                        u64::to_le_bytes(caller.data_mut().resources.tcp_streams.add(tcp_stream))
+                    }
+                })
+                .flatten()
+                .collect();
+            memory
+                .write(&mut caller, resource_ptr as usize, &resources)
+                .or_trap("lunatic::message::receive")?;
+            Ok(())
+        }
+        Message::Signal => Err(Trap::new("`lunatic::message::receive` called on a signal")),
+    }
 }

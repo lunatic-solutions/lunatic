@@ -14,7 +14,7 @@ fn criterion_benchmark(c: &mut Criterion) {
 
     c.bench_function("spawn process", |b| {
         b.to_async(&rt).iter(|| async {
-            module.spawn("hello", Vec::new()).await.unwrap();
+            module.spawn("hello", Vec::new(), None).await.unwrap();
         });
     });
 

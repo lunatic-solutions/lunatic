@@ -6,12 +6,15 @@ use std::sync::Arc;
 use std::vec::IntoIter;
 
 use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::{mpsc::UnboundedReceiver, Mutex};
+use uuid::Uuid;
 use wasmtime::ResourceLimiter;
 use wasmtime_wasi::{WasiCtx, WasiCtxBuilder};
 
 use crate::module::Module;
 use crate::plugin::ModuleContext;
+use crate::process::Signal;
 use crate::{message::Message, process::ProcessHandle, EnvConfig, Environment};
 
 // The internal state of Plugins.
@@ -38,6 +41,8 @@ impl<'a, 'b> PluginState<'a, 'b> {
 //
 // Host functions will share one state.
 pub(crate) struct ProcessState {
+    // Process id
+    pub(crate) id: Uuid,
     // The module that this process was spawned from
     pub(crate) module: Module,
     // A space that can be used to temporarily store messages when sending or receiving them.
@@ -46,6 +51,10 @@ pub(crate) struct ProcessState {
     // guest to reserve enough space and then the it's received. Both of those actions use
     // `message` as a temp space to store messages across host calls.
     pub(crate) message: Option<Message>,
+    // Message sender
+    pub(crate) message_sender: UnboundedSender<Message>,
+    // Signal sender
+    pub(crate) signal_sender: UnboundedSender<Signal>,
     // Messages sent to the process
     pub(crate) mailbox: UnboundedReceiver<Message>,
     // Errors belonging to the process
@@ -57,10 +66,19 @@ pub(crate) struct ProcessState {
 }
 
 impl ProcessState {
-    pub fn new(module: Module, mailbox: UnboundedReceiver<Message>) -> Self {
+    pub fn new(
+        id: Uuid,
+        module: Module,
+        message_sender: UnboundedSender<Message>,
+        mailbox: UnboundedReceiver<Message>,
+        signal_sender: UnboundedSender<Signal>,
+    ) -> Self {
         Self {
+            id,
             module,
             message: None,
+            message_sender,
+            signal_sender,
             mailbox,
             errors: HashMapId::new(),
             resources: Resources::default(),

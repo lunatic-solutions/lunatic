@@ -48,15 +48,15 @@ fn main() -> Result<()> {
         let path = Path::new(path);
         let module = fs::read(path)?;
         let module = env.create_module(module).await?;
-        module
-            .spawn("_start", Vec::new())
+        let (task, _) = module
+            .spawn("_start", Vec::new(), None)
             .await
             .context(format!(
                 "Failed to spawn process from {}::_start()",
                 path.to_string_lossy()
-            ))?
-            .task
-            .await?;
+            ))?;
+        // Wait on the main process to finish
+        task.await?;
         Ok(())
     })
 }

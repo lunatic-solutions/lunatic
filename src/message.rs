@@ -4,18 +4,33 @@ use tokio::{net::TcpStream, sync::Mutex};
 
 use crate::process::ProcessHandle;
 
-/// A message that can be sent to a `process.
+/// Messages can be sent between processes.
 ///
+/// A [`Message`] can have 2 types:
+/// * Data - Regular message containing a buffer and resources.
+/// * Signal - A Signal that was received from another process, but was turned into a message.
+#[derive(Debug)]
+pub enum Message {
+    Data(DataMessage),
+    Signal,
+}
+
+impl Default for Message {
+    fn default() -> Self {
+        Message::Data(DataMessage::default())
+    }
+}
+
 /// Messages consist of two parts:
 /// * buffer - raw data
 /// * resources - like [`ProcessHandle`] or `TcpStream`
 #[derive(Debug, Default)]
-pub struct Message {
+pub struct DataMessage {
     buffer: Vec<u8>,
     resources: Vec<Resource>,
 }
 
-impl Message {
+impl DataMessage {
     /// Create a new message.
     pub fn new(buffer: Vec<u8>, resources: Vec<Resource>) -> Self {
         Self { buffer, resources }

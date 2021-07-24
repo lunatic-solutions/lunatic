@@ -1,12 +1,16 @@
 use anyhow::{anyhow, Result};
-use tokio::sync::mpsc::unbounded_channel;
+use tokio::{sync::mpsc::unbounded_channel, task::JoinHandle};
+use uuid::Uuid;
 use wasmtime::{Store, Val};
 
 use std::sync::Arc;
 
 use crate::{
-    environment::GALLON_IN_INSTRUCTIONS, message::Message, process::ProcessHandle,
-    state::ProcessState, Environment,
+    environment::GALLON_IN_INSTRUCTIONS,
+    message::Message,
+    process::{self, ProcessHandle, Signal},
+    state::ProcessState,
+    Environment,
 };
 
 #[derive(Clone)]
@@ -36,10 +40,34 @@ impl Module {
     /// maximum memory, fuel and available host functions.
     ///
     /// After it's spawned the process will keep running in the background. A process can be killed
-    /// by sending a `Signal::Kill` to it.
-    pub async fn spawn(&self, function: &str, params: Vec<Val>) -> Result<ProcessHandle> {
-        let (mailbox_sender, mailbox) = unbounded_channel::<Message>();
-        let state = ProcessState::new(self.clone(), mailbox);
+    /// by sending a `Signal::Kill` to it. If you would like to block until the process is finished
+    /// you can `.await` on the returned `JoinHandle<()>`.
+    pub async fn spawn(
+        &self,
+        function: &str,
+        params: Vec<Val>,
+        link: Option<ProcessHandle>,
+    ) -> Result<(JoinHandle<()>, ProcessHandle)> {
+        // TODO: Switch to new_v1() for distributed Lunatic to assure uniqueness across nodes.
+        let id = Uuid::new_v4();
+        let (message_sender, message_mailbox) = unbounded_channel::<Message>();
+        let (signal_sender, signal_mailbox) = unbounded_channel::<Signal>();
+        let mut state = ProcessState::new(
+            id,
+            self.clone(),
+            message_sender.clone(),
+            message_mailbox,
+            signal_sender.clone(),
+        );
+        if let Some(link) = link {
+            // If processes are linked add the parent as the 0 process of the child.
+            state.resources.processes.add(link.clone());
+            // Send signal to itself to perform the linking
+            signal_sender
+                .send(Signal::Link(link))
+                .expect("receiver must exist at this point");
+        }
+
         let mut store = Store::new(&self.environment().engine(), state);
         store.limiter(|state| state);
 
@@ -64,7 +92,12 @@ impl Module {
             })?;
 
         let fut = async move { entry.call_async(&mut store, &params).await };
-        Ok(ProcessHandle::new(fut, mailbox_sender))
+        let process = process::new(fut, message_sender.clone(), signal_mailbox);
+
+        Ok((
+            process,
+            ProcessHandle::new(id, signal_sender, message_sender),
+        ))
     }
 
     pub fn environment(&self) -> &Environment {

@@ -4,10 +4,13 @@ use anyhow::{anyhow, Result};
 use wasmtime::{Caller, Linker, Trap, Val};
 
 use super::{
-    get_memory, link_async1_if_match, link_async4_if_match, link_async5_if_match,
-    link_async6_if_match, link_if_match,
+    get_memory, link_async1_if_match, link_async4_if_match, link_async6_if_match,
+    link_async7_if_match, link_if_match,
 };
-use crate::{api::error::IntoTrap, module::Module, state::ProcessState, EnvConfig, Environment};
+use crate::{
+    api::error::IntoTrap, module::Module, process::ProcessHandle, state::ProcessState, EnvConfig,
+    Environment,
+};
 
 // Register the process APIs to the linker
 pub(crate) fn register(
@@ -70,8 +73,8 @@ pub(crate) fn register(
         drop_module,
         namespace_filter,
     )?;
-    link_async6_if_match(linker, "lunatic::process", "spawn", spawn, namespace_filter)?;
-    link_async5_if_match(
+    link_async7_if_match(linker, "lunatic::process", "spawn", spawn, namespace_filter)?;
+    link_async6_if_match(
         linker,
         "lunatic::process",
         "inherit_spawn",
@@ -324,6 +327,7 @@ fn drop_module(mut caller: Caller<ProcessState>, mod_id: u64) -> Result<(), Trap
 }
 
 //% lunatic::process::spawn(
+//%     link: u32,
 //%     module_id: u64,
 //%     func_str_ptr: i32,
 //%     func_str_len: i32,
@@ -337,6 +341,7 @@ fn drop_module(mut caller: Caller<ProcessState>, mod_id: u64) -> Result<(), Trap
 //% * 1 on error   - The error ID is written to **id_ptr**
 //%
 //% Spawns a new process using the passed in function inside a module as the entry point.
+//% If link is not 0, it will link the child
 //%
 //% The function arguments are passed as an array with the following structure:
 //% [0 byte = type ID; 1..17 bytes = value as u128, ...]
@@ -355,6 +360,7 @@ fn drop_module(mut caller: Caller<ProcessState>, mod_id: u64) -> Result<(), Trap
 //% * If **id_ptr** is outside the memory.
 fn spawn(
     mut caller: Caller<ProcessState>,
+    link: u32,
     module_id: u64,
     func_str_ptr: u32,
     func_str_len: u32,
@@ -372,6 +378,7 @@ fn spawn(
             .clone();
         spawn_from_module(
             &mut caller,
+            link,
             module,
             func_str_ptr,
             func_str_len,
@@ -396,6 +403,7 @@ fn spawn(
 //% * 1 on error   - The error ID is written to **id_ptr**
 //%
 //% Spawns a new process using the same module as the parent.
+//% If **link** is not 0, it will link the child and parent processes.
 //%
 //% The function arguments are passed as an array with the following structure:
 //% [0 byte = type ID; 1..17 bytes = value as u128, ...]
@@ -413,6 +421,7 @@ fn spawn(
 //% * If **id_ptr** is outside the memory.
 fn inherit_spawn(
     mut caller: Caller<ProcessState>,
+    link: u32,
     func_str_ptr: u32,
     func_str_len: u32,
     params_ptr: u32,
@@ -423,6 +432,7 @@ fn inherit_spawn(
         let module = caller.data().module.clone();
         spawn_from_module(
             &mut caller,
+            link,
             module,
             func_str_ptr,
             func_str_len,
@@ -462,6 +472,7 @@ fn sleep_ms(_: Caller<ProcessState>, millis: u64) -> Box<dyn Future<Output = ()>
 
 async fn spawn_from_module(
     mut caller: &mut Caller<'_, ProcessState>,
+    link: u32,
     module: Module,
     func_str_ptr: u32,
     func_str_len: u32,
@@ -492,8 +503,19 @@ async fn spawn_from_module(
             Ok(result)
         })
         .collect::<Result<Vec<_>>>()?;
-    let (mod_or_error_id, result) = match module.spawn(&function, params).await {
-        Ok(process) => (caller.data_mut().resources.processes.add(process), 0),
+    // Should processes be linked together?
+    let link = match link {
+        0 => {
+            let id = caller.data().id.clone();
+            let signal_sender = caller.data().signal_sender.clone();
+            let message_sender = caller.data().message_sender.clone();
+            let process = ProcessHandle::new(id, signal_sender, message_sender);
+            Some(process)
+        }
+        _ => None,
+    };
+    let (mod_or_error_id, result) = match module.spawn(&function, params, link).await {
+        Ok((_, process)) => (caller.data_mut().resources.processes.add(process), 0),
         Err(error) => (caller.data_mut().errors.add(error), 1),
     };
     memory

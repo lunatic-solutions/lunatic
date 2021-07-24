@@ -13,6 +13,7 @@ name = "lunatic"
 path = "src/main.rs"
 
 [dependencies]
+uuid = { version = "0.8", features = ["v4"] }
 anyhow = "1.0"
 clap = "3.0.0-beta.2"
 lazy_static = "1.4"
