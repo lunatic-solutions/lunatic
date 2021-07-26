@@ -105,6 +105,7 @@ pub(crate) fn register(
         die_when_link_dies,
         namespace_filter,
     )?;
+    link_if_match(linker, "lunatic::process", "this", this, namespace_filter)?;
     Ok(())
 }
 
@@ -548,4 +549,15 @@ fn die_when_link_dies(mut caller: Caller<ProcessState>, trap: u32) {
         .signal_sender
         .send(Signal::DieWhenLinkDies(trap != 0))
         .expect("The signal is sent to itself and the receiver must exist at this point");
+}
+
+//% lunatic::error::this() -> u64
+//%
+//% Create a process handle to itself and return resource ID.
+fn this(mut caller: Caller<ProcessState>) -> u64 {
+    let id = caller.data().id.clone();
+    let signal_sender = caller.data().signal_sender.clone();
+    let message_sender = caller.data().message_sender.clone();
+    let proc = ProcessHandle::new(id, signal_sender, message_sender);
+    caller.data_mut().resources.processes.add(proc)
 }
