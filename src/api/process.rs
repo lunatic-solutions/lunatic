@@ -8,8 +8,11 @@ use super::{
     link_async7_if_match, link_if_match,
 };
 use crate::{
-    api::error::IntoTrap, module::Module, process::ProcessHandle, state::ProcessState, EnvConfig,
-    Environment,
+    api::error::IntoTrap,
+    module::Module,
+    process::{ProcessHandle, Signal},
+    state::ProcessState,
+    EnvConfig, Environment,
 };
 
 // Register the process APIs to the linker
@@ -95,7 +98,13 @@ pub(crate) fn register(
         sleep_ms,
         namespace_filter,
     )?;
-
+    link_if_match(
+        linker,
+        "lunatic::process",
+        "die_when_link_dies",
+        die_when_link_dies,
+        namespace_filter,
+    )?;
     Ok(())
 }
 
@@ -444,32 +453,6 @@ fn inherit_spawn(
     })
 }
 
-//% lunatic::process::drop_process(process_id: i64)
-//%
-//% Drops the process handle. This will not kill the process, it just removes the handle that
-//% references the process and allows us to send messages and signals to it.
-//%
-//% Traps:
-//% * If the process ID doesn't exist.
-fn drop_process(mut caller: Caller<ProcessState>, process_id: u64) -> Result<(), Trap> {
-    caller
-        .data_mut()
-        .resources
-        .processes
-        .remove(process_id)
-        .or_trap("lunatic::process::drop_process")?;
-    Ok(())
-}
-
-//% lunatic::process::sleep_ms(millis: i64)
-//%
-//% Suspend process for `millis`.
-fn sleep_ms(_: Caller<ProcessState>, millis: u64) -> Box<dyn Future<Output = ()> + Send + '_> {
-    Box::new(async move {
-        tokio::time::sleep(Duration::from_millis(millis)).await;
-    })
-}
-
 async fn spawn_from_module(
     mut caller: &mut Caller<'_, ProcessState>,
     link: u32,
@@ -522,4 +505,47 @@ async fn spawn_from_module(
         .write(&mut caller, id_ptr as usize, &mod_or_error_id.to_le_bytes())
         .or_trap("lunatic::process::(inherit_)spawn")?;
     Ok(result)
+}
+
+//% lunatic::process::drop_process(process_id: i64)
+//%
+//% Drops the process handle. This will not kill the process, it just removes the handle that
+//% references the process and allows us to send messages and signals to it.
+//%
+//% Traps:
+//% * If the process ID doesn't exist.
+fn drop_process(mut caller: Caller<ProcessState>, process_id: u64) -> Result<(), Trap> {
+    caller
+        .data_mut()
+        .resources
+        .processes
+        .remove(process_id)
+        .or_trap("lunatic::process::drop_process")?;
+    Ok(())
+}
+
+//% lunatic::process::sleep_ms(millis: i64)
+//%
+//% Suspend process for `millis`.
+fn sleep_ms(_: Caller<ProcessState>, millis: u64) -> Box<dyn Future<Output = ()> + Send + '_> {
+    Box::new(async move {
+        tokio::time::sleep(Duration::from_millis(millis)).await;
+    })
+}
+
+//% lunatic::error::die_when_link_dies(trap: u32)
+//%
+//% Defines what happens to this process if one of the linked processes notifies us that it died.
+//%
+//% There are 2 options:
+//% 1. `trap == 0` the received signal will be turned into a signal message and put into the mailbox.
+//% 2. `trap != 0` the process will die and notify all linked processes of its death.
+//%
+//% The default behaviour for a newly spawned process is 2.
+fn die_when_link_dies(mut caller: Caller<ProcessState>, trap: u32) {
+    caller
+        .data_mut()
+        .signal_sender
+        .send(Signal::DieWhenLinkDies(trap != 0))
+        .expect("The signal is sent to itself and the receiver must exist at this point");
 }

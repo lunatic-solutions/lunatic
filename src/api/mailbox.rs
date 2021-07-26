@@ -205,7 +205,7 @@ fn prepare_receive(
     mut caller: Caller<ProcessState>,
     data_size_ptr: u32,
     res_size_ptr: u32,
-) -> Box<dyn Future<Output = Result<(), Trap>> + Send + '_> {
+) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_> {
     Box::new(async move {
         let message = caller
             .data_mut()
@@ -213,7 +213,7 @@ fn prepare_receive(
             .recv()
             .await
             .expect("a process always hold onto its sender and this can't be None");
-        match &message {
+        let result = match &message {
             Message::Data(message) => {
                 let message_buffer_size = message.buffer_size() as u32;
                 let message_resources_size = message.resources_size() as u32;
@@ -232,12 +232,13 @@ fn prepare_receive(
                         &message_resources_size.to_le_bytes(),
                     )
                     .or_trap("lunatic::message::prepare_receive")?;
+                0
             }
-            Message::Signal => (),
+            Message::Signal => 1,
         };
         // Put the message into the scratch area
         caller.data_mut().message = Some(message);
-        Ok(())
+        Ok(result)
     })
 }
 

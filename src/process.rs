@@ -96,8 +96,8 @@ where
     let process = async move {
         tokio::pin!(fut);
 
-        // What happens if one of the
-        let mut die_when_link_dies = false;
+        // Defines what happens if one of the linked processes dies.
+        let mut die_when_link_dies = true;
         // Process linked to this one
         let mut links = HashSet::new();
         let mut disable_signals = false;
