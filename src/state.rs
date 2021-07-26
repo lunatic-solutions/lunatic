@@ -5,6 +5,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::vec::IntoIter;
 
+use anyhow::Result;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::{mpsc::UnboundedReceiver, Mutex};
@@ -72,8 +73,12 @@ impl ProcessState {
         message_sender: UnboundedSender<Message>,
         mailbox: UnboundedReceiver<Message>,
         signal_sender: UnboundedSender<Signal>,
-    ) -> Self {
-        Self {
+    ) -> Result<Self> {
+        let wasi = WasiCtxBuilder::new();
+        let wasi = wasi.inherit_stdio();
+        let wasi = wasi.inherit_args()?;
+        let wasi = wasi.inherit_env()?;
+        let state = Self {
             id,
             module,
             message: None,
@@ -82,9 +87,9 @@ impl ProcessState {
             mailbox,
             errors: HashMapId::new(),
             resources: Resources::default(),
-            // TODO: Inherit args & envs
-            wasi: WasiCtxBuilder::new().inherit_stdio().build(),
-        }
+            wasi: wasi.build(),
+        };
+        Ok(state)
     }
 }
 

@@ -58,7 +58,7 @@ impl Module {
             message_sender.clone(),
             message_mailbox,
             signal_sender.clone(),
-        );
+        )?;
         if let Some(link) = link {
             // If processes are linked add the parent as the 0 process of the child.
             state.resources.processes.add(link.clone());
