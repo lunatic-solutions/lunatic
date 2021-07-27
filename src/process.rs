@@ -3,7 +3,10 @@ use std::{collections::HashSet, future::Future, hash::Hash};
 use anyhow::Result;
 use log::debug;
 use tokio::{
-    sync::mpsc::{UnboundedReceiver, UnboundedSender},
+    sync::{
+        broadcast::{Receiver, Sender},
+        mpsc::{UnboundedReceiver, UnboundedSender},
+    },
     task::JoinHandle,
 };
 use uuid::Uuid;
@@ -38,11 +41,25 @@ pub enum Finished<T> {
 /// Lunatic processes can be crated from a Wasm module & exported function name (or table index).
 /// They are created inside the `Environment::spawn` method, and once spawned they will be running
 /// in the background and can't be observed directly.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct ProcessHandle {
     id: Uuid,
     signal_sender: UnboundedSender<Signal>,
     message_sender: UnboundedSender<Message>,
+    trapped_sender: Sender<bool>,
+    trapped: Receiver<bool>,
+}
+
+impl Clone for ProcessHandle {
+    fn clone(&self) -> Self {
+        Self {
+            id: self.id.clone(),
+            signal_sender: self.signal_sender.clone(),
+            message_sender: self.message_sender.clone(),
+            trapped_sender: self.trapped_sender.clone(),
+            trapped: self.trapped_sender.subscribe(),
+        }
+    }
 }
 
 impl PartialEq for ProcessHandle {
@@ -65,11 +82,14 @@ impl ProcessHandle {
         id: Uuid,
         signal_sender: UnboundedSender<Signal>,
         message_sender: UnboundedSender<Message>,
+        trapped_sender: Sender<bool>,
     ) -> Self {
         Self {
             id,
             signal_sender,
             message_sender,
+            trapped_sender: trapped_sender.clone(),
+            trapped: trapped_sender.subscribe(),
         }
     }
 
@@ -82,12 +102,23 @@ impl ProcessHandle {
     pub fn send_signal(&self, signal: Signal) -> Result<()> {
         Ok(self.signal_sender.send(signal)?)
     }
+
+    /// Wait on process to finish and return:
+    /// * false if the process finished normally
+    /// * true if the process trapped or received a Signal::Kill
+    pub async fn join(&mut self) -> bool {
+        self.trapped
+            .recv()
+            .await
+            .expect("a process holds a sender and must exist at this time")
+    }
 }
 
 // Turns a Future into a process, enabling signals (e.g. kill).
 pub(crate) fn new<F>(
     fut: F,
     message_sender: UnboundedSender<Message>,
+    trapped_sender: Sender<bool>,
     mut signal_mailbox: UnboundedReceiver<Signal>,
 ) -> JoinHandle<()>
 where
@@ -139,6 +170,8 @@ where
                 links.iter().for_each(|proc| {
                     let _ = proc.send_signal(Signal::LinkNotifyTrap);
                 });
+                // Notify process handles that we finished with a trap
+                let _ = trapped_sender.send(true);
             }
             Finished::Signal(Signal::Kill) => {
                 debug!("Process was killed");
@@ -146,8 +179,12 @@ where
                 links.iter().for_each(|proc| {
                     let _ = proc.send_signal(Signal::LinkNotifyKill);
                 });
+                // Notify process handles that we finished with a trap
+                let _ = trapped_sender.send(true);
             }
-            _ => (),
+            _ => {
+                let _ = trapped_sender.send(false);
+            }
         }
     };
 

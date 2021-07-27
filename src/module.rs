@@ -1,5 +1,8 @@
 use anyhow::{anyhow, Result};
-use tokio::{sync::mpsc::unbounded_channel, task::JoinHandle};
+use tokio::{
+    sync::{broadcast, mpsc::unbounded_channel},
+    task::JoinHandle,
+};
 use uuid::Uuid;
 use wasmtime::{Store, Val};
 
@@ -52,8 +55,10 @@ impl Module {
         let id = Uuid::new_v4();
         let (message_sender, message_mailbox) = unbounded_channel::<Message>();
         let (signal_sender, signal_mailbox) = unbounded_channel::<Signal>();
+        let (trapped_sender, _) = broadcast::channel(1);
         let mut state = ProcessState::new(
             id,
+            trapped_sender.clone(),
             self.clone(),
             message_sender.clone(),
             message_mailbox,
@@ -92,11 +97,16 @@ impl Module {
             })?;
 
         let fut = async move { entry.call_async(&mut store, &params).await };
-        let process = process::new(fut, message_sender.clone(), signal_mailbox);
+        let process = process::new(
+            fut,
+            message_sender.clone(),
+            trapped_sender.clone(),
+            signal_mailbox,
+        );
 
         Ok((
             process,
-            ProcessHandle::new(id, signal_sender, message_sender),
+            ProcessHandle::new(id, signal_sender, message_sender, trapped_sender),
         ))
     }
 

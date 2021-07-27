@@ -7,6 +7,7 @@ use std::vec::IntoIter;
 
 use anyhow::Result;
 use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::broadcast::Sender;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::{mpsc::UnboundedReceiver, Mutex};
 use uuid::Uuid;
@@ -44,6 +45,9 @@ impl<'a, 'b> PluginState<'a, 'b> {
 pub(crate) struct ProcessState {
     // Process id
     pub(crate) id: Uuid,
+    // This fields allows us to wait on the process to finish and check if it trapped during the
+    // execution, received a Signal::Kill or finished regularly.
+    pub(crate) trapped_sender: Sender<bool>,
     // The module that this process was spawned from
     pub(crate) module: Module,
     // A space that can be used to temporarily store messages when sending or receiving them.
@@ -69,6 +73,7 @@ pub(crate) struct ProcessState {
 impl ProcessState {
     pub fn new(
         id: Uuid,
+        trapped_sender: Sender<bool>,
         module: Module,
         message_sender: UnboundedSender<Message>,
         mailbox: UnboundedReceiver<Message>,
@@ -76,10 +81,15 @@ impl ProcessState {
     ) -> Result<Self> {
         let wasi = WasiCtxBuilder::new();
         let wasi = wasi.inherit_stdio();
-        let wasi = wasi.inherit_args()?;
         let wasi = wasi.inherit_env()?;
+        // Skip the first argument (`lunatic`) from the args list. When compiling existing
+        // applications to Wasm, they assume that the first argument is going to be the binary
+        // name and all other arguments follow.
+        let args: Vec<String> = std::env::args().skip(1).collect();
+        let wasi = wasi.args(&args)?;
         let state = Self {
             id,
+            trapped_sender,
             module,
             message: None,
             message_sender,

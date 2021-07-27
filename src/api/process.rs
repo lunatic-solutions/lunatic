@@ -106,6 +106,7 @@ pub(crate) fn register(
         namespace_filter,
     )?;
     link_if_match(linker, "lunatic::process", "this", this, namespace_filter)?;
+    link_async1_if_match(linker, "lunatic::process", "join", join, namespace_filter)?;
     Ok(())
 }
 
@@ -489,14 +490,15 @@ async fn spawn_from_module(
         .collect::<Result<Vec<_>>>()?;
     // Should processes be linked together?
     let link = match link {
-        0 => {
+        0 => None,
+        _ => {
             let id = caller.data().id.clone();
+            let trapped_sender = caller.data().trapped_sender.clone();
             let signal_sender = caller.data().signal_sender.clone();
             let message_sender = caller.data().message_sender.clone();
-            let process = ProcessHandle::new(id, signal_sender, message_sender);
+            let process = ProcessHandle::new(id, signal_sender, message_sender, trapped_sender);
             Some(process)
         }
-        _ => None,
     };
     let (mod_or_error_id, result) = match module.spawn(&function, params, link).await {
         Ok((_, process)) => (caller.data_mut().resources.processes.add(process), 0),
@@ -556,8 +558,38 @@ fn die_when_link_dies(mut caller: Caller<ProcessState>, trap: u32) {
 //% Create a process handle to itself and return resource ID.
 fn this(mut caller: Caller<ProcessState>) -> u64 {
     let id = caller.data().id.clone();
+    let trapped_sender = caller.data().trapped_sender.clone();
     let signal_sender = caller.data().signal_sender.clone();
     let message_sender = caller.data().message_sender.clone();
-    let proc = ProcessHandle::new(id, signal_sender, message_sender);
-    caller.data_mut().resources.processes.add(proc)
+    let process = ProcessHandle::new(id, signal_sender, message_sender, trapped_sender);
+    caller.data_mut().resources.processes.add(process)
+}
+
+//% lunatic::error::join(process_id: u64) -> u32
+//%
+//% Returns:
+//% * 0 if process finished normally.
+//% * 1 ir process trapped or received a Signal::Kill.
+//%
+//% Blocks until the process finishes and returns the status code.
+//%
+//% Traps:
+//% * If the process ID doesn't exist.
+fn join(
+    mut caller: Caller<ProcessState>,
+    process_id: u64,
+) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_> {
+    Box::new(async move {
+        let process = caller
+            .data_mut()
+            .resources
+            .processes
+            .get_mut(process_id)
+            .or_trap("lunatic::process::join")?;
+        if process.join().await {
+            Ok(1)
+        } else {
+            Ok(0)
+        }
+    })
 }
