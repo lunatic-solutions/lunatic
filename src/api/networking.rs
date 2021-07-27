@@ -481,7 +481,7 @@ fn drop_tcp_stream(mut caller: Caller<ProcessState>, tcp_stream_id: u64) -> Resu
     Ok(())
 }
 
-//% lunatic::process::clone_tcp_stream(tcp_stream_id: u64) -> u64
+//% lunatic::networking::clone_tcp_stream(tcp_stream_id: u64) -> u64
 //%
 //% Clones a TCP stream returning the ID of the clone.
 //%
@@ -515,7 +515,7 @@ fn clone_tcp_stream(mut caller: Caller<ProcessState>, tcp_stream_id: u64) -> Res
 //%
 //% Traps:
 //% * If the stream ID doesn't exist.
-//% * If **ciovec_array_ptr + (ciovec_array_len * 4)** is outside the memory, or any of the sub
+//% * If **ciovec_array_ptr + (ciovec_array_len * 8)** is outside the memory, or any of the sub
 //%   ciovecs point outside of the memory.
 //% * If **i64_opaque_ptr** is outside the memory.
 fn tcp_write_vectored(
@@ -529,7 +529,7 @@ fn tcp_write_vectored(
         let memory = get_memory(&mut caller)?;
         let buffer = memory
             .data(&caller)
-            .get(ciovec_array_ptr as usize..(ciovec_array_ptr + ciovec_array_len) as usize)
+            .get(ciovec_array_ptr as usize..(ciovec_array_ptr + ciovec_array_len * 8) as usize)
             .or_trap("lunatic::networking::tcp_write_vectored")?;
 
         // Ciovecs consist of 32bit ptr + 32bit len = 8 bytes.
@@ -537,9 +537,9 @@ fn tcp_write_vectored(
             .chunks_exact(8)
             .map(|ciovec| {
                 let ciovec_ptr =
-                    u32::from_le_bytes([ciovec[0], ciovec[1], ciovec[2], ciovec[3]]) as usize;
+                    u32::from_le_bytes(ciovec[0..4].try_into().expect("works")) as usize;
                 let ciovec_len =
-                    u32::from_le_bytes([ciovec[4], ciovec[5], ciovec[6], ciovec[7]]) as usize;
+                    u32::from_le_bytes(ciovec[4..8].try_into().expect("works")) as usize;
                 let slice = memory
                     .data(&caller)
                     .get(ciovec_ptr..(ciovec_ptr + ciovec_len))
@@ -608,7 +608,7 @@ fn tcp_read(
         let memory = get_memory(&mut caller)?;
         let buffer = memory
             .data_mut(&mut caller)
-            .get_mut(buffer_ptr as usize..buffer_len as usize)
+            .get_mut(buffer_ptr as usize..(buffer_ptr + buffer_len) as usize)
             .or_trap("lunatic::networking::tcp_read")?;
         let (opaque, result) = match stream.read(buffer).await {
             Ok(bytes) => (bytes as u64, 0),
