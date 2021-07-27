@@ -91,6 +91,13 @@ pub(crate) fn register(
         drop_process,
         namespace_filter,
     )?;
+    link_if_match(
+        linker,
+        "lunatic::process",
+        "clone_process",
+        clone_process,
+        namespace_filter,
+    )?;
     link_async1_if_match(
         linker,
         "lunatic::process",
@@ -525,6 +532,24 @@ fn drop_process(mut caller: Caller<ProcessState>, process_id: u64) -> Result<(),
         .remove(process_id)
         .or_trap("lunatic::process::drop_process")?;
     Ok(())
+}
+
+//% lunatic::process::clone_process(process_id: u64) -> u64
+//%
+//% Clones a process returning the ID of the clone.
+//%
+//% Traps:
+//% * If the process ID doesn't exist.
+fn clone_process(mut caller: Caller<ProcessState>, process_id: u64) -> Result<u64, Trap> {
+    let process = caller
+        .data()
+        .resources
+        .processes
+        .get(process_id)
+        .or_trap("lunatic::process::clone_process")?
+        .clone();
+    let id = caller.data_mut().resources.processes.add(process);
+    Ok(id)
 }
 
 //% lunatic::process::sleep_ms(millis: i64)

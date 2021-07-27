@@ -31,7 +31,7 @@ pub(crate) fn register(
     Ok(())
 }
 
-//% lunatic::error::string_size(error: i64) -> i32
+//% lunatic::error::string_size(error: u64) -> i32
 //%
 //% Returns the size of the string representation of the error.
 //%
@@ -46,7 +46,7 @@ fn string_size(caller: Caller<ProcessState>, error_id: u64) -> Result<u32, Trap>
     Ok(error.to_string().len() as u32)
 }
 
-//% lunatic::error::to_string(error_id: i64, error_str_ptr: i32)
+//% lunatic::error::to_string(error_id: u64, error_str_ptr: u32)
 //%
 //% Write the string representation of the error to the guest memory.
 //% `lunatic::error::string_size` can be called to get the string size.
@@ -72,7 +72,7 @@ fn to_string(
     Ok(())
 }
 
-//% lunatic::error::drop(error_id: i64)
+//% lunatic::error::drop(error_id: u64)
 //%
 //% Drops the error resource.
 //%

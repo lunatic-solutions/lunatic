@@ -98,7 +98,7 @@ fn set_buffer(mut caller: Caller<ProcessState>, data_ptr: u32, data_len: u32) ->
     Ok(())
 }
 
-//% lunatic::message::add_process(process_id: i64) -> i64
+//% lunatic::message::add_process(process_id: u64) -> u64
 //%
 //% Adds a process resource to the next message and returns the location in the array the process
 //% was added to. This will remove the process handle from the current process' resources.
@@ -117,7 +117,7 @@ fn add_process(mut caller: Caller<ProcessState>, process_id: u64) -> Result<u64,
         .data_mut()
         .message
         .as_mut()
-        .or_trap("lunatic::message::set_buffer")?;
+        .or_trap("lunatic::message::add_process")?;
     let pid = match message {
         Message::Data(data) => data.add_process(process) as u64,
         Message::Signal => return Err(Trap::new("Unexpected `Message::Signal` in scratch buffer")),
@@ -125,7 +125,7 @@ fn add_process(mut caller: Caller<ProcessState>, process_id: u64) -> Result<u64,
     Ok(pid)
 }
 
-//% lunatic::message::add_tcp_stream(stream_id: i64) -> i64
+//% lunatic::message::add_tcp_stream(stream_id: u64) -> u64
 //%
 //% Adds a TCP stream resource to the next message and returns the location in the array the TCP
 //% stream was added to. This will remove the TCP stream from the current process' resources.
@@ -144,7 +144,7 @@ fn add_tcp_stream(mut caller: Caller<ProcessState>, stream_id: u64) -> Result<u6
         .data_mut()
         .message
         .as_mut()
-        .or_trap("lunatic::message::set_buffer")?;
+        .or_trap("lunatic::message::add_tcp_stream")?;
     let stream_id = match message {
         Message::Data(data) => data.add_tcp_stream(stream) as u64,
         Message::Signal => return Err(Trap::new("Unexpected `Message::Signal` in scratch buffer")),

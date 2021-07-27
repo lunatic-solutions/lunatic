@@ -147,7 +147,6 @@ pub(crate) struct Resources {
     pub(crate) modules: HashMapId<Module>,
     pub(crate) processes: HashMapId<ProcessHandle>,
     pub(crate) dns_iterators: HashMapId<DnsIterator>,
-    pub(crate) socket_addresses: HashMapId<SocketAddr>,
     pub(crate) tcp_listeners: HashMapId<TcpListener>,
     pub(crate) tcp_streams: HashMapId<Arc<Mutex<TcpStream>>>,
 }

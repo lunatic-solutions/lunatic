@@ -1,47 +1,30 @@
+use std::convert::TryInto;
 use std::future::Future;
 use std::io::IoSlice;
-use std::net::{IpAddr, SocketAddr};
+use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
 use std::sync::Arc;
 
 use anyhow::Result;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::Mutex;
-use wasmtime::Trap;
 use wasmtime::{Caller, Linker};
+use wasmtime::{Memory, Trap};
 
 use crate::api::error::IntoTrap;
 use crate::state::DnsIterator;
 use crate::{api::get_memory, state::ProcessState};
 
-use super::{link_async2_if_match, link_async3_if_match, link_async4_if_match, link_if_match};
+use super::{
+    link_async2_if_match, link_async3_if_match, link_async4_if_match, link_async6_if_match,
+    link_if_match,
+};
 
 // Register the error APIs to the linker
 pub(crate) fn register(
     linker: &mut Linker<ProcessState>,
     namespace_filter: &[String],
 ) -> Result<()> {
-    link_if_match(
-        linker,
-        "lunatic::networking",
-        "socket_address_v4",
-        socket_address_v4,
-        namespace_filter,
-    )?;
-    link_if_match(
-        linker,
-        "lunatic::networking",
-        "socket_address_v6",
-        socket_address_v6,
-        namespace_filter,
-    )?;
-    link_if_match(
-        linker,
-        "lunatic::networking",
-        "drop_socket_address",
-        drop_socket_address,
-        namespace_filter,
-    )?;
     link_async3_if_match(
         linker,
         "lunatic::networking",
@@ -63,7 +46,7 @@ pub(crate) fn register(
         resolve_next,
         namespace_filter,
     )?;
-    link_async2_if_match(
+    link_async6_if_match(
         linker,
         "lunatic::networking",
         "tcp_bind",
@@ -84,7 +67,7 @@ pub(crate) fn register(
         tcp_accept,
         namespace_filter,
     )?;
-    link_async2_if_match(
+    link_async6_if_match(
         linker,
         "lunatic::networking",
         "tcp_connect",
@@ -96,6 +79,13 @@ pub(crate) fn register(
         "lunatic::networking",
         "drop_tcp_stream",
         drop_tcp_stream,
+        namespace_filter,
+    )?;
+    link_if_match(
+        linker,
+        "lunatic::networking",
+        "clone_tcp_stream",
+        clone_tcp_stream,
         namespace_filter,
     )?;
     link_async4_if_match(
@@ -122,77 +112,11 @@ pub(crate) fn register(
     Ok(())
 }
 
-//% lunatic::networking::socket_address_v4(address_ptr: i32, port: i32) -> i64
-//%
-//% Returns the ID of the socket address.
-//%
-//% Traps:
-//% * If **address_ptr + 4** is outside the memory.
-fn socket_address_v4(
-    mut caller: Caller<ProcessState>,
-    address_ptr: u32,
-    port: u32,
-) -> Result<u64, Trap> {
-    let mut buffer = [0; 4];
-    let memory = get_memory(&mut caller)?;
-    memory
-        .read(&caller, address_ptr as usize, &mut buffer)
-        .or_trap("lunatic::networking::socket_address_v4")?;
-    let socket_addr = SocketAddr::new(IpAddr::from(buffer), port as u16);
-    let socket_addr_id = caller
-        .data_mut()
-        .resources
-        .socket_addresses
-        .add(socket_addr);
-    Ok(socket_addr_id)
-}
-
-//% lunatic::networking::socket_address_v6(address_ptr: i32, port: i32) -> i64
-//%
-//% Returns the ID of the socket address.
-//%
-//% Traps:
-//% * If **address_ptr + 16** is outside the memory.
-fn socket_address_v6(
-    mut caller: Caller<ProcessState>,
-    address_ptr: u32,
-    port: u32,
-) -> Result<u64, Trap> {
-    let mut buffer = [0; 16];
-    let memory = get_memory(&mut caller)?;
-    memory
-        .read(&caller, address_ptr as usize, &mut buffer)
-        .or_trap("lunatic::networking::socket_address_v6")?;
-    let socket_addr = SocketAddr::new(IpAddr::from(buffer), port as u16);
-    let socket_addr_id = caller
-        .data_mut()
-        .resources
-        .socket_addresses
-        .add(socket_addr);
-    Ok(socket_addr_id)
-}
-
-//% lunatic::error::drop_socket_address(socket_addr_id: i64)
-//%
-//% Drops the socket address resource.
-//%
-//% Traps:
-//% * If the socket address ID doesn't exist.
-fn drop_socket_address(mut caller: Caller<ProcessState>, socket_addr_id: u64) -> Result<(), Trap> {
-    caller
-        .data_mut()
-        .resources
-        .socket_addresses
-        .remove(socket_addr_id)
-        .or_trap("lunatic::networking::drop_socket_address")?;
-    Ok(())
-}
-
-//% lunatic::networking::resolve(name_str_ptr: i32, name_str_len: i32, id_ptr: i32) -> i32
+//% lunatic::networking::resolve(name_str_ptr: u32, name_str_len: u32, id_u64_ptr: u32) -> u32
 //%
 //% Returns:
-//% * 0 on success - The ID of the newly created DNS iterator is written to **id_ptr**
-//% * 1 on error   - The error ID is written to **id_ptr**
+//% * 0 on success - The ID of the newly created DNS iterator is written to **id_u64_ptr**
+//% * 1 on error   - The error ID is written to **id_u64_ptr**
 //%
 //% Performs a DNS resolution. The returned iterator may not actually yield any values
 //% depending on the outcome of any resolution performed.
@@ -205,7 +129,7 @@ fn resolve(
     mut caller: Caller<ProcessState>,
     name_str_ptr: u32,
     name_str_len: u32,
-    id_ptr: u32,
+    id_u64_ptr: u32,
 ) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_> {
     Box::new(async move {
         let mut buffer = vec![0; name_str_len as usize];
@@ -229,15 +153,15 @@ fn resolve(
         memory
             .write(
                 &mut caller,
-                id_ptr as usize,
+                id_u64_ptr as usize,
                 &iter_or_error_id.to_le_bytes(),
             )
-            .or_trap("lunatic::process::spawn")?;
+            .or_trap("lunatic::networking::resolve")?;
         Ok(result)
     })
 }
 
-//% lunatic::error::drop_dns_iterator(dns_iter_id: i64)
+//% lunatic::networking::drop_dns_iterator(dns_iter_id: u64)
 //%
 //% Drops the DNS iterator resource..
 //%
@@ -253,22 +177,41 @@ fn drop_dns_iterator(mut caller: Caller<ProcessState>, dns_iter_id: u64) -> Resu
     Ok(())
 }
 
-//% lunatic::networking::resolve_next(dns_iter_id: i64, id_ptr: i64) -> i32
+//% lunatic::networking::resolve_next(
+//%     dns_iter_id: u64,
+//%     addr_type_u32_ptr: u32,
+//%     addr_u8_ptr: u32,
+//%     port_u16_ptr: u32,
+//%     flow_info_u32_ptr: u32,
+//%     scope_id_u32_ptr: u32,
+//%  ) -> u32
 //%
 //% Returns:
-//% * 0 on success - The ID of the newly created socket address is written to **id_ptr**
+//% * 0 on success
 //% * 1 on error   - There are no more addresses in this iterator
 //%
-//% Takes the next socket address from DNS iterator.
+//% Takes the next socket address from DNS iterator and writes it to the passed in pointers.
+//% Addresses type is going to be a value of `4` or `6`, representing v4 or v6 addresses. The
+//% caller needs to reserve enough space at `addr_u8_ptr` for both values to fit in (16 bytes).
+//% `flow_info_u32_ptr` & `scope_id_u32_ptr` are only going to be used with version v6.
 //%
 //% Traps:
 //% * If the DNS iterator ID doesn't exist.
-//% * If **id_ptr** is outside the memory.
+//% * If **addr_type_u32_ptr** is outside the memory
+//% * If **addr_u8_ptr** is outside the memory
+//% * If **port_u16_ptr** is outside the memory
+//% * If **flow_info_u32_ptr** is outside the memory
+//% * If **scope_id_u32_ptr** is outside the memory
 fn resolve_next(
     mut caller: Caller<ProcessState>,
     dns_iter_id: u64,
-    id_ptr: u32,
+    addr_type_u32_ptr: u32,
+    addr_u8_ptr: u32,
+    port_u16_ptr: u32,
+    flow_info_u32_ptr: u32,
+    scope_id_u32_ptr: u32,
 ) -> Result<u32, Trap> {
+    let memory = get_memory(&mut caller)?;
     let dns_iter = caller
         .data_mut()
         .resources
@@ -276,35 +219,62 @@ fn resolve_next(
         .get_mut(dns_iter_id)
         .or_trap("lunatic::networking::resolve_next")?;
 
-    let (sock_addr_or_error_id, result) = match dns_iter.next() {
+    match dns_iter.next() {
         Some(socket_addr) => {
-            let sock_addr_id = caller
-                .data_mut()
-                .resources
-                .socket_addresses
-                .add(socket_addr);
-            (sock_addr_id, 0)
+            match socket_addr {
+                SocketAddr::V4(v4) => {
+                    memory
+                        .write(&mut caller, addr_type_u32_ptr as usize, &4u32.to_le_bytes())
+                        .or_trap("lunatic::networking::resolve_next")?;
+                    memory
+                        .write(&mut caller, addr_u8_ptr as usize, &v4.ip().octets())
+                        .or_trap("lunatic::networking::resolve_next")?;
+                    memory
+                        .write(&mut caller, port_u16_ptr as usize, &v4.port().to_le_bytes())
+                        .or_trap("lunatic::networking::resolve_next")?;
+                }
+                SocketAddr::V6(v6) => {
+                    memory
+                        .write(&mut caller, addr_type_u32_ptr as usize, &6u32.to_le_bytes())
+                        .or_trap("lunatic::networking::resolve_next")?;
+                    memory
+                        .write(&mut caller, addr_u8_ptr as usize, &v6.ip().octets())
+                        .or_trap("lunatic::networking::resolve_next")?;
+                    memory
+                        .write(&mut caller, port_u16_ptr as usize, &v6.port().to_le_bytes())
+                        .or_trap("lunatic::networking::resolve_next")?;
+                    memory
+                        .write(
+                            &mut caller,
+                            flow_info_u32_ptr as usize,
+                            &v6.flowinfo().to_le_bytes(),
+                        )
+                        .or_trap("lunatic::networking::resolve_next")?;
+                    memory
+                        .write(
+                            &mut caller,
+                            scope_id_u32_ptr as usize,
+                            &v6.scope_id().to_le_bytes(),
+                        )
+                        .or_trap("lunatic::networking::resolve_next")?;
+                }
+            }
+            Ok(0)
         }
-        None => (0, 1),
-    };
-
-    let memory = get_memory(&mut caller)?;
-    memory
-        .write(
-            &mut caller,
-            id_ptr as usize,
-            &sock_addr_or_error_id.to_le_bytes(),
-        )
-        .or_trap("lunatic::networking::resolve_next")?;
-
-    Ok(result)
+        None => Ok(1),
+    }
 }
 
-//% lunatic::networking::tcp_bind(socket_addr_id: i64, id_ptr: i32) -> i32
+//% lunatic::networking::tcp_bind(
+//%     addr_type: u32,
+//%     addr_u8_ptr: u32,
+//%     port: u32,
+//%     id_u64_ptr: i32
+//% ) -> u32
 //%
 //% Returns:
-//% * 0 on success - The ID of the newly created TCP listener is written to **id_ptr**
-//% * 1 on error   - The error ID is written to **id_ptr**
+//% * 0 on success - The ID of the newly created TCP listener is written to **id_u64_ptr**
+//% * 1 on error   - The error ID is written to **id_u64_ptr**
 //%
 //% Creates a new TCP listener, which will be bound to the specified address. The returned listener
 //% is ready for accepting connections.
@@ -313,31 +283,37 @@ fn resolve_next(
 //% port allocated can be queried via the `local_addr` (TODO) method.
 //%
 //% Traps:
-//% * If the socket address ID doesn't exist.
-//% * If **id_ptr** is outside the memory.
+//% * If **addr_type** is neither 4 or 6.
+//% * If **addr_u8_ptr** is outside the memory
+//% * If **id_u64_ptr** is outside the memory.
 fn tcp_bind(
     mut caller: Caller<ProcessState>,
-    socket_addr_id: u64,
-    id_ptr: u32,
+    addr_type: u32,
+    addr_u8_ptr: u32,
+    port: u32,
+    flow_info: u32,
+    scope_id: u32,
+    id_u64_ptr: u32,
 ) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_> {
     Box::new(async move {
-        let socket_addr = caller
-            .data()
-            .resources
-            .socket_addresses
-            .get(socket_addr_id)
-            .or_trap("lunatic::network::tcp_bind")?;
-
+        let memory = get_memory(&mut caller)?;
+        let socket_addr = socket_address(
+            &caller,
+            &memory,
+            addr_type,
+            addr_u8_ptr,
+            port,
+            flow_info,
+            scope_id,
+        )?;
         let (tcp_listener_or_error_id, result) = match TcpListener::bind(socket_addr).await {
             Ok(listener) => (caller.data_mut().resources.tcp_listeners.add(listener), 0),
             Err(error) => (caller.data_mut().errors.add(error.into()), 1),
         };
-
-        let memory = get_memory(&mut caller)?;
         memory
             .write(
                 &mut caller,
-                id_ptr as usize,
+                id_u64_ptr as usize,
                 &tcp_listener_or_error_id.to_le_bytes(),
             )
             .or_trap("lunatic::process::create_environment")?;
@@ -346,7 +322,7 @@ fn tcp_bind(
     })
 }
 
-//% lunatic::error::drop_tcp_listener(tcp_listener_id: i64)
+//% lunatic::networking::drop_tcp_listener(tcp_listener_id: i64)
 //%
 //% Drops the TCP listener resource..
 //%
@@ -362,16 +338,21 @@ fn drop_tcp_listener(mut caller: Caller<ProcessState>, tcp_listener_id: u64) -> 
     Ok(())
 }
 
-//% lunatic::networking::tcp_accept(listener_id: i64, id_ptr: i32, peer_socket_addr_id_ptr: i32) -> i32
+//% lunatic::networking::tcp_accept(
+//%     listener_id: u64,
+//%     id_u64_ptr: u32,
+//%     peer_addr_dns_iter_id_u64_ptr: u32
+//% ) -> u32
 //%
 //% Returns:
-//% * 0 on success - The ID of the newly created TCP stream is written to **id_ptr** and the ID of
-//%                  the peer's address is written to ***socket_addr_id_ptr**.
-//% * 1 on error   - The error ID is written to **id_ptr**
+//% * 0 on success - The ID of the newly created TCP stream is written to **id_u64_ptr** and the
+//%                  peer address is returned as an DNS iterator with just one element and written
+//%                  to **peer_addr_dns_iter_id_u64_ptr**.
+//% * 1 on error   - The error ID is written to **id_u64_ptr**
 //%
 //% Traps:
 //% * If the tcp listener ID doesn't exist.
-//% * If **id_ptr** is outside the memory.
+//% * If **id_u64_ptr** is outside the memory.
 //% * If **peer_socket_addr_id_ptr** is outside the memory.
 fn tcp_accept(
     mut caller: Caller<ProcessState>,
@@ -387,20 +368,20 @@ fn tcp_accept(
             .get(listener_id)
             .or_trap("lunatic::network::tcp_accept")?;
 
-        let (tcp_stream_or_error_id, socket_addr_id, result) = match tcp_listener.accept().await {
-            Ok((stream, socket_addr)) => (
-                caller
+        let (tcp_stream_or_error_id, peer_addr_iter, result) = match tcp_listener.accept().await {
+            Ok((stream, socket_addr)) => {
+                let stream_id = caller
                     .data_mut()
                     .resources
                     .tcp_streams
-                    .add(Arc::new(Mutex::new(stream))),
-                caller
+                    .add(Arc::new(Mutex::new(stream)));
+                let dns_iter_id = caller
                     .data_mut()
                     .resources
-                    .socket_addresses
-                    .add(socket_addr),
-                0,
-            ),
+                    .dns_iterators
+                    .add(DnsIterator::new(vec![socket_addr].into_iter()));
+                (stream_id, dns_iter_id, 0)
+            }
             Err(error) => (caller.data_mut().errors.add(error.into()), 0, 1),
         };
 
@@ -416,34 +397,50 @@ fn tcp_accept(
             .write(
                 &mut caller,
                 socket_addr_id_ptr as usize,
-                &socket_addr_id.to_le_bytes(),
+                &peer_addr_iter.to_le_bytes(),
             )
             .or_trap("lunatic::process::tcp_accept")?;
         Ok(result)
     })
 }
 
-//% lunatic::networking::tcp_connect(socket_addr_id: i64, id_ptr: i32) -> i32
+//% lunatic::networking::tcp_connect(
+//%     addr_type: u32,
+//%     addr_u8_ptr: u32,
+//%     port: u32,
+//%     flow_info: u32,
+//%     scope_id: u32,
+//%     id_u64_ptr: u32
+//% ) -> u32
 //%
 //% Returns:
 //% * 0 on success - The ID of the newly created TCP stream is written to **id_ptr**.
 //% * 1 on error   - The error ID is written to **id_ptr**
 //%
 //% Traps:
-//% * If the socket address ID doesn't exist.
-//% * If **id_ptr** is outside the memory.
+//% * If **addr_type** is neither 4 or 6.
+//% * If **addr_u8_ptr** is outside the memory
+//% * If **id_u64_ptr** is outside the memory.
 fn tcp_connect(
     mut caller: Caller<ProcessState>,
-    socket_addr_id: u64,
-    id_ptr: u32,
+    addr_type: u32,
+    addr_u8_ptr: u32,
+    port: u32,
+    flow_info: u32,
+    scope_id: u32,
+    id_u64_ptr: u32,
 ) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_> {
     Box::new(async move {
-        let socket_addr = caller
-            .data()
-            .resources
-            .socket_addresses
-            .get(socket_addr_id)
-            .or_trap("lunatic::network::tcp_connect")?;
+        let memory = get_memory(&mut caller)?;
+        let socket_addr = socket_address(
+            &caller,
+            &memory,
+            addr_type,
+            addr_u8_ptr,
+            port,
+            flow_info,
+            scope_id,
+        )?;
 
         let (stream_or_error_id, result) = match TcpStream::connect(socket_addr).await {
             Ok(stream) => (
@@ -457,11 +454,10 @@ fn tcp_connect(
             Err(error) => (caller.data_mut().errors.add(error.into()), 1),
         };
 
-        let memory = get_memory(&mut caller)?;
         memory
             .write(
                 &mut caller,
-                id_ptr as usize,
+                id_u64_ptr as usize,
                 &stream_or_error_id.to_le_bytes(),
             )
             .or_trap("lunatic::process::tcp_connect")?;
@@ -469,7 +465,7 @@ fn tcp_connect(
     })
 }
 
-//% lunatic::error::drop_tcp_stream(tcp_stream_id: i64)
+//% lunatic::networking::drop_tcp_stream(tcp_stream_id: i64)
 //%
 //% Drops the TCP stream resource..
 //%
@@ -483,6 +479,24 @@ fn drop_tcp_stream(mut caller: Caller<ProcessState>, tcp_stream_id: u64) -> Resu
         .remove(tcp_stream_id)
         .or_trap("lunatic::networking::drop_tcp_stream")?;
     Ok(())
+}
+
+//% lunatic::process::clone_tcp_stream(tcp_stream_id: u64) -> u64
+//%
+//% Clones a TCP stream returning the ID of the clone.
+//%
+//% Traps:
+//% * If the stream ID doesn't exist.
+fn clone_tcp_stream(mut caller: Caller<ProcessState>, tcp_stream_id: u64) -> Result<u64, Trap> {
+    let stream = caller
+        .data()
+        .resources
+        .tcp_streams
+        .get(tcp_stream_id)
+        .or_trap("lunatic::process::clone_process")?
+        .clone();
+    let id = caller.data_mut().resources.tcp_streams.add(stream);
+    Ok(id)
 }
 
 //% lunatic::networking::tcp_write_vectored(
@@ -646,5 +660,35 @@ fn tcp_flush(
             .write(&mut caller, error_id_ptr as usize, &error_id.to_le_bytes())
             .or_trap("lunatic::process::tcp_write_vectored")?;
         Ok(result)
+    })
+}
+
+fn socket_address(
+    caller: &Caller<ProcessState>,
+    memory: &Memory,
+    addr_type: u32,
+    addr_u8_ptr: u32,
+    port: u32,
+    flow_info: u32,
+    scope_id: u32,
+) -> Result<SocketAddr, Trap> {
+    Ok(match addr_type {
+        4 => {
+            let ip = memory
+                .data(&caller)
+                .get(addr_u8_ptr as usize..(addr_u8_ptr + 4) as usize)
+                .or_trap("lunatic::network::tcp_bind")?;
+            let addr = <Ipv4Addr as From<[u8; 4]>>::from(ip.try_into().expect("exactly 4 bytes"));
+            SocketAddrV4::new(addr, port as u16).into()
+        }
+        6 => {
+            let ip = memory
+                .data(&caller)
+                .get(addr_u8_ptr as usize..(addr_u8_ptr + 16) as usize)
+                .or_trap("lunatic::network::tcp_bind")?;
+            let addr = <Ipv6Addr as From<[u8; 16]>>::from(ip.try_into().expect("exactly 16 bytes"));
+            SocketAddrV6::new(addr, port as u16, flow_info, scope_id).into()
+        }
+        _ => return Err(Trap::new("Unsupported address type in tcp_bind")),
     })
 }
