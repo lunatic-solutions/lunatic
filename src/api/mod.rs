@@ -47,6 +47,10 @@ pub(crate) fn link_if_match<T, Params, Results>(
 ) -> Result<()> {
     if namespace_matches_filter(namespace, name, namespace_filter) {
         linker.func_wrap(namespace, name, func)?;
+    } else {
+        // If the host function is forbidden, we still want to add a fake function that always
+        // traps under its name. This allows us to spawn a module into different environments,
+        // even not all parts of the module can be run inside an environment.
     }
     Ok(())
 }

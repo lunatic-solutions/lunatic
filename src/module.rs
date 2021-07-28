@@ -22,14 +22,16 @@ pub struct Module {
 }
 
 struct InnerModule {
+    data: Vec<u8>,
     env: Environment,
     wasmtime_module: wasmtime::Module,
 }
 
 impl Module {
-    pub fn new(env: Environment, wasmtime_module: wasmtime::Module) -> Self {
+    pub fn new(data: Vec<u8>, env: Environment, wasmtime_module: wasmtime::Module) -> Self {
         Self {
             inner: Arc::new(InnerModule {
+                data,
                 env,
                 wasmtime_module,
             }),
@@ -116,5 +118,9 @@ impl Module {
 
     pub fn wasmtime_module(&self) -> &wasmtime::Module {
         &self.inner.wasmtime_module
+    }
+
+    pub fn data(&self) -> Vec<u8> {
+        self.inner.data.clone()
     }
 }

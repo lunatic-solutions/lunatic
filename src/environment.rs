@@ -69,13 +69,13 @@ impl Environment {
     /// All plugins in this environment will get instantiated and their `lunatic_create_module_hook`
     /// function will be called. Plugins can use host functions to modify the module before it's JIT
     /// compiled by `Wasmtime`.
-    pub async fn create_module(&self, module: Vec<u8>) -> Result<Module> {
+    pub async fn create_module(&self, data: Vec<u8>) -> Result<Module> {
         let env = self.clone();
-        let new_module = patch_module(&module, self.config.plugins())?;
+        let new_module = patch_module(&data, self.config.plugins())?;
         // The compilation of a module is a CPU intensive tasks and can take some time.
         let module = task::spawn_blocking(move || {
             match wasmtime::Module::new(env.engine(), new_module.as_slice()) {
-                Ok(wasmtime_module) => Ok(Module::new(env, wasmtime_module)),
+                Ok(wasmtime_module) => Ok(Module::new(data, env, wasmtime_module)),
                 Err(err) => Err(err),
             }
         })

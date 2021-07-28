@@ -4,8 +4,8 @@ use anyhow::{anyhow, Result};
 use wasmtime::{Caller, Linker, Trap, Val};
 
 use super::{
-    get_memory, link_async1_if_match, link_async4_if_match, link_async6_if_match,
-    link_async7_if_match, link_if_match,
+    get_memory, link_async1_if_match, link_async2_if_match, link_async4_if_match,
+    link_async6_if_match, link_async7_if_match, link_if_match,
 };
 use crate::{
     api::error::IntoTrap,
@@ -65,8 +65,15 @@ pub(crate) fn register(
     link_async4_if_match(
         linker,
         "lunatic::process",
-        "crate_module",
-        crate_module,
+        "add_module",
+        add_module,
+        namespace_filter,
+    )?;
+    link_async2_if_match(
+        linker,
+        "lunatic::process",
+        "add_this_module",
+        add_this_module,
         namespace_filter,
     )?;
     link_if_match(
@@ -216,14 +223,14 @@ fn add_plugin(
         .get_mut(config_id)
         .or_trap("lunatic::process::add_plugin")?;
 
-    let (env_or_error_id, result) = match config.add_plugin(plugin) {
+    let (error_id, result) = match config.add_plugin(plugin) {
         Ok(()) => (0, 0),
         Err(error) => (caller.data_mut().errors.add(error), 1),
     };
 
     let memory = get_memory(&mut caller)?;
     memory
-        .write(&mut caller, id_ptr as usize, &env_or_error_id.to_le_bytes())
+        .write(&mut caller, id_ptr as usize, &error_id.to_le_bytes())
         .or_trap("lunatic::process::add_plugin")?;
 
     Ok(result)
@@ -281,7 +288,7 @@ fn drop_environment(mut caller: Caller<ProcessState>, env_id: u64) -> Result<(),
     Ok(())
 }
 
-//% lunatic::process::crate_module(
+//% lunatic::process::add_module(
 //%     env_id: i64,
 //%     module_data_ptr: i32,
 //%     module_data_len: i32,
@@ -292,13 +299,13 @@ fn drop_environment(mut caller: Caller<ProcessState>, env_id: u64) -> Result<(),
 //% * 0 on success - The ID of the newly created module is written to **id_ptr**
 //% * 1 on error   - The error ID is written to **id_ptr**
 //%
-//% Creates a module from na environment. This function will also JIT compile the module.
+//% Adds a module to the environment. This function will also JIT compile the module.
 //%
 //% Traps:
 //% * If the env ID doesn't exist.
 //% * If **module_data_ptr + module_data_len** is outside the memory.
 //% * If **id_ptr** is outside the memory.
-fn crate_module(
+fn add_module(
     mut caller: Caller<ProcessState>,
     env_id: u64,
     module_data_ptr: u32,
@@ -310,20 +317,59 @@ fn crate_module(
         let memory = get_memory(&mut caller)?;
         memory
             .read(&caller, module_data_ptr as usize, module.as_mut_slice())
-            .or_trap("lunatic::process::crate_module")?;
+            .or_trap("lunatic::process::add_module")?;
         let env = caller
             .data_mut()
             .resources
             .environments
             .get_mut(env_id)
-            .or_trap("lunatic::process::crate_module")?;
+            .or_trap("lunatic::process::add_module")?;
         let (mod_or_error_id, result) = match env.create_module(module).await {
             Ok(module) => (caller.data_mut().resources.modules.add(module), 0),
             Err(error) => (caller.data_mut().errors.add(error), 1),
         };
         memory
             .write(&mut caller, id_ptr as usize, &mod_or_error_id.to_le_bytes())
-            .or_trap("lunatic::process::crate_module")?;
+            .or_trap("lunatic::process::add_module")?;
+        Ok(result)
+    })
+}
+
+//% lunatic::process::add_this_module(
+//%     env_id: i64,
+//% ) -> i64
+//%
+//% Returns:
+//% * 0 on success - The ID of the newly created module is written to **id_ptr**
+//% * 1 on error   - The error ID is written to **id_ptr**
+//%
+//% Adds the module, that the currently running process was spawned from, to a new environment.
+//% This function will also JIT compile the module.
+//%
+//% Traps:
+//% * If the env ID doesn't exist.
+//% * If **id_ptr** is outside the memory.
+fn add_this_module(
+    mut caller: Caller<ProcessState>,
+    env_id: u64,
+    id_ptr: u32,
+) -> Box<dyn Future<Output = Result<i32, Trap>> + Send + '_> {
+    Box::new(async move {
+        let module = caller.data().module.clone();
+        let env = caller
+            .data_mut()
+            .resources
+            .environments
+            .get_mut(env_id)
+            .or_trap("lunatic::process::add_this_module")?;
+        let (mod_or_error_id, result) = match env.create_module(module.data()).await {
+            Ok(module) => (caller.data_mut().resources.modules.add(module), 0),
+            Err(error) => (caller.data_mut().errors.add(error), 1),
+        };
+        let memory = get_memory(&mut caller)?;
+        memory
+            .write(&mut caller, id_ptr as usize, &mod_or_error_id.to_le_bytes())
+            .or_trap("lunatic::process::add_this_module")?;
         Ok(result)
     })
 }
