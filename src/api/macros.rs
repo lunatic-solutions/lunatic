@@ -28,6 +28,7 @@ macro_rules! generate_wrap_async_func {
             linker: &mut Linker<T>,
             namespace: &str,
             name: &str,
+            func_ty: FuncType,
             func: impl for<'a> Fn(Caller<'a, T>, $($args),*) -> Box<dyn Future<Output = R> + Send + 'a> + Send + Sync + 'static,
             namespace_filter: &[String],
         ) -> Result<()>
@@ -37,6 +38,18 @@ macro_rules! generate_wrap_async_func {
         {
             if namespace_matches_filter(namespace, name, namespace_filter) {
                 linker.[<func_wrap $num _async>](namespace, name, func)?;
+            } else {
+                // If the host function is forbidden, we still want to add a fake function that always
+                // traps under its name. This allows us to spawn a module into different environments,
+                // even not all parts of the module can be run inside an environment.
+                let error = format!(
+                    "Host function `{}::{}` unavailable in this environment ",
+                    namespace, name
+                );
+                linker.func_new_async(namespace, name, func_ty, move |_, _, _| {
+                    let error = error.clone();
+                    Box::new(async move { Err(Trap::new(error)) })
+                })?;
             }
             Ok(())
         }

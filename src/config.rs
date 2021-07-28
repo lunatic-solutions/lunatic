@@ -5,7 +5,7 @@ use crate::plugin::Plugin;
 /// Configuration structure for environments.
 #[derive(Clone)]
 pub struct EnvConfig {
-    // Maximum amount of memory that can be used by processes
+    // Maximum amount of memory that can be used by processes in Wasm pages (64KB)
     max_memory: u64,
     // Maximum amount of compute expressed in gallons.
     max_fuel: Option<u64>,
@@ -60,7 +60,7 @@ impl EnvConfig {
 impl Default for EnvConfig {
     fn default() -> Self {
         Self {
-            max_memory: 0x40000000, // 4 Gb
+            max_memory: 62_500, // = 4 Gb
             max_fuel: None,
             allowed_namespaces: vec![
                 String::from("lunatic::"),

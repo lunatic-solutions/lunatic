@@ -114,9 +114,7 @@ impl Debug for ProcessState {
 // Limit the maximum memory of the process depending on the environment it was spawned in.
 impl ResourceLimiter for ProcessState {
     fn memory_growing(&mut self, current: u32, desired: u32, _maximum: Option<u32>) -> bool {
-        const WASM_PAGE: u64 = 64 * 1024; // bytes
-        (current as u64 + desired as u64) * WASM_PAGE
-            < self.module.environment().config().max_memory()
+        (current as u64 + desired as u64) < self.module.environment().config().max_memory()
     }
 
     // TODO: What would be a reasonable table limit be?

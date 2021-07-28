@@ -1,8 +1,8 @@
 use std::fmt::Display;
 
 use anyhow::Result;
-use wasmtime::Trap;
-use wasmtime::{Caller, Linker};
+use wasmtime::{Caller, Linker, ValType};
+use wasmtime::{FuncType, Trap};
 
 use crate::{api::get_memory, state::ProcessState};
 
@@ -17,6 +17,7 @@ pub(crate) fn register(
         linker,
         "lunatic::error",
         "string_size",
+        FuncType::new([ValType::I64], [ValType::I32]),
         string_size,
         namespace_filter,
     )?;
@@ -24,10 +25,18 @@ pub(crate) fn register(
         linker,
         "lunatic::error",
         "to_string",
+        FuncType::new([ValType::I64, ValType::I32], []),
         to_string,
         namespace_filter,
     )?;
-    link_if_match(linker, "lunatic::error", "drop", drop, namespace_filter)?;
+    link_if_match(
+        linker,
+        "lunatic::error",
+        "drop",
+        FuncType::new([ValType::I64], []),
+        drop,
+        namespace_filter,
+    )?;
     Ok(())
 }
 

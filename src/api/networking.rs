@@ -8,7 +8,7 @@ use anyhow::Result;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::Mutex;
-use wasmtime::{Caller, Linker};
+use wasmtime::{Caller, FuncType, Linker, ValType};
 use wasmtime::{Memory, Trap};
 
 use crate::api::error::IntoTrap;
@@ -29,6 +29,7 @@ pub(crate) fn register(
         linker,
         "lunatic::networking",
         "resolve",
+        FuncType::new([ValType::I32, ValType::I32, ValType::I32], [ValType::I32]),
         resolve,
         namespace_filter,
     )?;
@@ -36,6 +37,7 @@ pub(crate) fn register(
         linker,
         "lunatic::networking",
         "drop_dns_iterator",
+        FuncType::new([ValType::I64], []),
         drop_dns_iterator,
         namespace_filter,
     )?;
@@ -43,6 +45,17 @@ pub(crate) fn register(
         linker,
         "lunatic::networking",
         "resolve_next",
+        FuncType::new(
+            [
+                ValType::I64,
+                ValType::I32,
+                ValType::I32,
+                ValType::I32,
+                ValType::I32,
+                ValType::I32,
+            ],
+            [ValType::I32],
+        ),
         resolve_next,
         namespace_filter,
     )?;
@@ -50,6 +63,17 @@ pub(crate) fn register(
         linker,
         "lunatic::networking",
         "tcp_bind",
+        FuncType::new(
+            [
+                ValType::I32,
+                ValType::I32,
+                ValType::I32,
+                ValType::I32,
+                ValType::I32,
+                ValType::I32,
+            ],
+            [ValType::I32],
+        ),
         tcp_bind,
         namespace_filter,
     )?;
@@ -57,6 +81,7 @@ pub(crate) fn register(
         linker,
         "lunatic::networking",
         "drop_tcp_listener",
+        FuncType::new([ValType::I64], []),
         drop_tcp_listener,
         namespace_filter,
     )?;
@@ -64,6 +89,7 @@ pub(crate) fn register(
         linker,
         "lunatic::networking",
         "tcp_accept",
+        FuncType::new([ValType::I64, ValType::I32, ValType::I32], [ValType::I32]),
         tcp_accept,
         namespace_filter,
     )?;
@@ -71,6 +97,17 @@ pub(crate) fn register(
         linker,
         "lunatic::networking",
         "tcp_connect",
+        FuncType::new(
+            [
+                ValType::I32,
+                ValType::I32,
+                ValType::I32,
+                ValType::I32,
+                ValType::I32,
+                ValType::I32,
+            ],
+            [ValType::I32],
+        ),
         tcp_connect,
         namespace_filter,
     )?;
@@ -78,6 +115,7 @@ pub(crate) fn register(
         linker,
         "lunatic::networking",
         "drop_tcp_stream",
+        FuncType::new([ValType::I64], []),
         drop_tcp_stream,
         namespace_filter,
     )?;
@@ -85,6 +123,7 @@ pub(crate) fn register(
         linker,
         "lunatic::networking",
         "clone_tcp_stream",
+        FuncType::new([ValType::I64], [ValType::I64]),
         clone_tcp_stream,
         namespace_filter,
     )?;
@@ -92,6 +131,10 @@ pub(crate) fn register(
         linker,
         "lunatic::networking",
         "tcp_write_vectored",
+        FuncType::new(
+            [ValType::I64, ValType::I32, ValType::I32, ValType::I32],
+            [ValType::I32],
+        ),
         tcp_write_vectored,
         namespace_filter,
     )?;
@@ -99,6 +142,10 @@ pub(crate) fn register(
         linker,
         "lunatic::networking",
         "tcp_read",
+        FuncType::new(
+            [ValType::I64, ValType::I32, ValType::I32, ValType::I32],
+            [ValType::I32],
+        ),
         tcp_read,
         namespace_filter,
     )?;
@@ -106,6 +153,7 @@ pub(crate) fn register(
         linker,
         "lunatic::networking",
         "tcp_flush",
+        FuncType::new([ValType::I64, ValType::I32], [ValType::I32]),
         tcp_flush,
         namespace_filter,
     )?;

@@ -1,7 +1,7 @@
 use std::future::Future;
 
 use anyhow::Result;
-use wasmtime::{Caller, Linker, Trap};
+use wasmtime::{Caller, FuncType, Linker, Trap, ValType};
 
 use crate::{
     api::{error::IntoTrap, get_memory},
@@ -20,6 +20,7 @@ pub(crate) fn register(
         linker,
         "lunatic::message",
         "create",
+        FuncType::new([], []),
         create,
         namespace_filter,
     )?;
@@ -27,6 +28,7 @@ pub(crate) fn register(
         linker,
         "lunatic::message",
         "set_buffer",
+        FuncType::new([ValType::I32, ValType::I32], []),
         set_buffer,
         namespace_filter,
     )?;
@@ -34,6 +36,7 @@ pub(crate) fn register(
         linker,
         "lunatic::message",
         "add_process",
+        FuncType::new([ValType::I64], [ValType::I64]),
         add_process,
         namespace_filter,
     )?;
@@ -41,14 +44,23 @@ pub(crate) fn register(
         linker,
         "lunatic::message",
         "add_tcp_stream",
+        FuncType::new([ValType::I64], [ValType::I64]),
         add_tcp_stream,
         namespace_filter,
     )?;
-    link_if_match(linker, "lunatic::message", "send", send, namespace_filter)?;
+    link_if_match(
+        linker,
+        "lunatic::message",
+        "send",
+        FuncType::new([ValType::I64], [ValType::I32]),
+        send,
+        namespace_filter,
+    )?;
     link_async2_if_match(
         linker,
         "lunatic::message",
         "prepare_receive",
+        FuncType::new([ValType::I32, ValType::I32], [ValType::I32]),
         prepare_receive,
         namespace_filter,
     )?;
@@ -56,6 +68,7 @@ pub(crate) fn register(
         linker,
         "lunatic::message",
         "receive",
+        FuncType::new([ValType::I32, ValType::I32], []),
         receive,
         namespace_filter,
     )?;

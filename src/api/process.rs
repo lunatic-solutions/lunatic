@@ -1,7 +1,7 @@
 use std::{convert::TryInto, future::Future, time::Duration};
 
 use anyhow::{anyhow, Result};
-use wasmtime::{Caller, Linker, Trap, Val};
+use wasmtime::{Caller, FuncType, Linker, Trap, Val, ValType};
 
 use super::{
     get_memory, link_async1_if_match, link_async2_if_match, link_async4_if_match,
@@ -24,6 +24,7 @@ pub(crate) fn register(
         linker,
         "lunatic::process",
         "create_config",
+        FuncType::new([ValType::I64, ValType::I64], [ValType::I64]),
         create_config,
         namespace_filter,
     )?;
@@ -31,6 +32,7 @@ pub(crate) fn register(
         linker,
         "lunatic::process",
         "drop_config",
+        FuncType::new([ValType::I64], []),
         drop_config,
         namespace_filter,
     )?;
@@ -38,6 +40,7 @@ pub(crate) fn register(
         linker,
         "lunatic::process",
         "allow_namespace",
+        FuncType::new([ValType::I64, ValType::I32, ValType::I32], []),
         allow_namespace,
         namespace_filter,
     )?;
@@ -45,6 +48,7 @@ pub(crate) fn register(
         linker,
         "lunatic::process",
         "create_environment",
+        FuncType::new([ValType::I64, ValType::I32], [ValType::I32]),
         create_environment,
         namespace_filter,
     )?;
@@ -52,6 +56,7 @@ pub(crate) fn register(
         linker,
         "lunatic::process",
         "drop_environment",
+        FuncType::new([ValType::I64], []),
         drop_environment,
         namespace_filter,
     )?;
@@ -59,6 +64,10 @@ pub(crate) fn register(
         linker,
         "lunatic::process",
         "add_plugin",
+        FuncType::new(
+            [ValType::I64, ValType::I32, ValType::I32, ValType::I32],
+            [ValType::I32],
+        ),
         add_plugin,
         namespace_filter,
     )?;
@@ -66,6 +75,10 @@ pub(crate) fn register(
         linker,
         "lunatic::process",
         "add_module",
+        FuncType::new(
+            [ValType::I64, ValType::I32, ValType::I32, ValType::I32],
+            [ValType::I32],
+        ),
         add_module,
         namespace_filter,
     )?;
@@ -73,6 +86,7 @@ pub(crate) fn register(
         linker,
         "lunatic::process",
         "add_this_module",
+        FuncType::new([ValType::I64, ValType::I32], [ValType::I32]),
         add_this_module,
         namespace_filter,
     )?;
@@ -80,14 +94,44 @@ pub(crate) fn register(
         linker,
         "lunatic::process",
         "drop_module",
+        FuncType::new([ValType::I64], []),
         drop_module,
         namespace_filter,
     )?;
-    link_async7_if_match(linker, "lunatic::process", "spawn", spawn, namespace_filter)?;
+    link_async7_if_match(
+        linker,
+        "lunatic::process",
+        "spawn",
+        FuncType::new(
+            [
+                ValType::I32,
+                ValType::I64,
+                ValType::I32,
+                ValType::I32,
+                ValType::I32,
+                ValType::I32,
+                ValType::I32,
+            ],
+            [ValType::I32],
+        ),
+        spawn,
+        namespace_filter,
+    )?;
     link_async6_if_match(
         linker,
         "lunatic::process",
         "inherit_spawn",
+        FuncType::new(
+            [
+                ValType::I32,
+                ValType::I32,
+                ValType::I32,
+                ValType::I32,
+                ValType::I32,
+                ValType::I32,
+            ],
+            [ValType::I32],
+        ),
         inherit_spawn,
         namespace_filter,
     )?;
@@ -95,6 +139,7 @@ pub(crate) fn register(
         linker,
         "lunatic::process",
         "drop_process",
+        FuncType::new([ValType::I64], []),
         drop_process,
         namespace_filter,
     )?;
@@ -102,6 +147,7 @@ pub(crate) fn register(
         linker,
         "lunatic::process",
         "clone_process",
+        FuncType::new([ValType::I64], [ValType::I64]),
         clone_process,
         namespace_filter,
     )?;
@@ -109,6 +155,7 @@ pub(crate) fn register(
         linker,
         "lunatic::process",
         "sleep_ms",
+        FuncType::new([ValType::I64], []),
         sleep_ms,
         namespace_filter,
     )?;
@@ -116,17 +163,32 @@ pub(crate) fn register(
         linker,
         "lunatic::process",
         "die_when_link_dies",
+        FuncType::new([ValType::I32], []),
         die_when_link_dies,
         namespace_filter,
     )?;
-    link_if_match(linker, "lunatic::process", "this", this, namespace_filter)?;
-    link_async1_if_match(linker, "lunatic::process", "join", join, namespace_filter)?;
+    link_if_match(
+        linker,
+        "lunatic::process",
+        "this",
+        FuncType::new([], [ValType::I64]),
+        this,
+        namespace_filter,
+    )?;
+    link_async1_if_match(
+        linker,
+        "lunatic::process",
+        "join",
+        FuncType::new([ValType::I64], [ValType::I32]),
+        join,
+        namespace_filter,
+    )?;
     Ok(())
 }
 
 //% lunatic::process::create_config(max_memory: i64, max_fuel: i64) -> i64
 //%
-//% * **max_memory** - Maximum amount of memory in bytes that processes and plugins can use.
+//% * **max_memory** - Maximum amount of memory in Wasm pages (64KB) that the process can use.
 //% * **max_fuel**   - Maximum amount of instructions in gallons that processes will be able to run
 //%                    before it traps. 1 gallon ~= 10k instructions. The special value of `0` means
 //%                    unlimited instructions.
@@ -256,8 +318,9 @@ fn create_environment(
         .data_mut()
         .resources
         .configs
-        .remove(config_id)
-        .or_trap("lunatic::process::create_environment")?;
+        .get(config_id)
+        .or_trap("lunatic::process::create_environment")?
+        .clone();
 
     let (env_or_error_id, result) = match Environment::new(config) {
         Ok(env) => (caller.data_mut().resources.environments.add(env), 0),

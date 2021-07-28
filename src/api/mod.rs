@@ -10,7 +10,7 @@ mod wasi;
 use std::future::Future;
 
 use anyhow::Result;
-use wasmtime::{Caller, IntoFunc, Linker, Memory, Trap, WasmRet, WasmTy};
+use wasmtime::{Caller, FuncType, IntoFunc, Linker, Memory, Trap, WasmRet, WasmTy};
 
 use self::error::IntoTrap;
 use crate::state::ProcessState;
@@ -42,6 +42,7 @@ pub(crate) fn link_if_match<T, Params, Results>(
     linker: &mut Linker<T>,
     namespace: &str,
     name: &str,
+    func_ty: FuncType,
     func: impl IntoFunc<T, Params, Results>,
     namespace_filter: &[String],
 ) -> Result<()> {
@@ -51,6 +52,13 @@ pub(crate) fn link_if_match<T, Params, Results>(
         // If the host function is forbidden, we still want to add a fake function that always
         // traps under its name. This allows us to spawn a module into different environments,
         // even not all parts of the module can be run inside an environment.
+        let error = format!(
+            "Host function `{}::{}` unavailable in this environment.",
+            namespace, name
+        );
+        linker.func_new(namespace, name, func_ty, move |_, _, _| {
+            Err(Trap::new(error.clone()))
+        })?;
     }
     Ok(())
 }
