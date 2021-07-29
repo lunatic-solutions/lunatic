@@ -1,5 +1,4 @@
 use std::fs;
-use std::process::Command;
 use wat::parse_file;
 
 // This script is used to generate .wasm files from .wat files for benchmarks/tests and to build
@@ -30,38 +29,4 @@ fn main() {
         let wasm_file = format!("{}{}", TARGET_DIR, wasm_filename);
         fs::write(&wasm_file, wasm).unwrap_or_else(|_| panic!("Writing {}", wasm_file));
     }
-
-    // Build all plugins
-    let status = Command::new("cargo")
-        .current_dir("./plugins/heap_profiler")
-        .args(&["build", "--release"])
-        .status()
-        .unwrap();
-    if !status.success() {
-        panic!("Failed building heap_profiler plugin: {}", status);
-    }
-    let status = Command::new("cargo")
-        .current_dir("./plugins/stdlib")
-        .args(&["build", "--release"])
-        .status()
-        .unwrap();
-    if !status.success() {
-        panic!("Failed building stdlib plugin: {}", status);
-    }
-
-    // Move plugins to `TARGET_DIR`
-    Command::new("mv")
-        .args(&[
-            "target/heap_profiler/wasm32-unknown-unknown/release/heap_profiler.wasm",
-            TARGET_DIR,
-        ])
-        .status()
-        .unwrap();
-    Command::new("mv")
-        .args(&[
-            "target/stdlib/wasm32-unknown-unknown/release/stdlib.wasm",
-            TARGET_DIR,
-        ])
-        .status()
-        .unwrap();
 }
