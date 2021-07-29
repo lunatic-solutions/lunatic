@@ -657,8 +657,8 @@ mod tests {
         assert_eq!(input, output);
     }
 
-    #[test]
-    fn simple_add_function_plugin() {
+    // #[test]
+    fn _simple_add_function_plugin() {
         let input = r#"
         (module)
         "#;
