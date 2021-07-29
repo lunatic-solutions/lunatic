@@ -618,7 +618,7 @@ async fn spawn_from_module(
             Some(process)
         }
     };
-    let (mod_or_error_id, result) = match module.spawn(&function, params, link).await {
+    let (mod_or_error_id, result) = match module.spawn(function, params, link).await {
         Ok((_, process)) => (caller.data_mut().resources.processes.add(process), 0),
         Err(error) => (caller.data_mut().errors.add(error), 1),
     };

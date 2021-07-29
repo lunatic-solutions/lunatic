@@ -188,6 +188,8 @@ fn resolve(
         let name = std::str::from_utf8(buffer.as_slice()).or_trap("lunatic::network::resolve")?;
         let (iter_or_error_id, result) = match tokio::net::lookup_host(name).await {
             Ok(iter) => {
+                // This is a bug in clippy, this collect is not needless
+                #[allow(clippy::needless_collect)]
                 let vec: Vec<SocketAddr> = iter.collect();
                 let id = caller
                     .data_mut()

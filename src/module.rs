@@ -75,7 +75,7 @@ impl Module {
                 .expect("receiver must exist at this point");
         }
 
-        let mut store = Store::new(&self.environment().engine(), state);
+        let mut store = Store::new(self.environment().engine(), state);
         store.limiter(|state| state);
 
         // Trap if out of fuel
@@ -92,10 +92,10 @@ impl Module {
         let instance = self
             .environment()
             .linker()
-            .instantiate_async(&mut store, &self.wasmtime_module())
+            .instantiate_async(&mut store, self.wasmtime_module())
             .await?;
         let entry = instance
-            .get_func(&mut store, &function)
+            .get_func(&mut store, function)
             .map_or(Err(anyhow!("Function '{}' not found", function)), |func| {
                 Ok(func)
             })?;
