@@ -65,7 +65,7 @@ fn add_function(
     let module_context = caller.data_mut().module_context();
     let (id, result) = match module_context.add_function(type_index, &func_locals, func_body) {
         Ok(id) => (id, 0),
-        Err(error) => (caller.data_mut().errors.add(error.into()), 1),
+        Err(error) => (caller.data_mut().errors.add(error), 1),
     };
 
     let memory = get_memory(&mut caller)?;
@@ -121,7 +121,7 @@ fn add_function_type(
     let module_context = caller.data_mut().module_context();
     let (id, result) = match module_context.add_function_type(&param_types, &return_types) {
         Ok(id) => (id, 0),
-        Err(error) => (caller.data_mut().errors.add(error.into()), 1),
+        Err(error) => (caller.data_mut().errors.add(error), 1),
     };
 
     let memory = get_memory(&mut caller)?;

@@ -140,7 +140,7 @@ impl<'a> ModuleContext<'a> {
         let mut parser = Parser::new(0);
         let mut validator = Validator::new();
 
-        let mut data = &self.module[..];
+        let mut data = self.module;
         loop {
             let payload = match parser.parse(data, true)? {
                 Chunk::NeedMoreData(_) => unreachable!(),
@@ -245,22 +245,18 @@ impl<'a> ModuleContext<'a> {
                         // Extract the function names
                         let mut name_section_reader = NameSectionReader::new(data, 0)?;
                         while let Ok(subsection) = name_section_reader.read() {
-                            match subsection {
-                                Name::Function(function_names) => {
-                                    let mut name_map = function_names.get_map()?;
-                                    let name_map_count = name_map.get_count() as usize;
-                                    for _ in 0..name_map_count {
-                                        if let Ok(function) = name_map.read() {
-                                            self.function_names
-                                                .insert(function.name, function.index);
-                                        } else {
-                                            return Err(anyhow!("Couldn't parse all function names of CustomName section."));
-                                        }
+                            if let Name::Function(function_names) = subsection {
+                                let mut name_map = function_names.get_map()?;
+                                let name_map_count = name_map.get_count() as usize;
+                                for _ in 0..name_map_count {
+                                    if let Ok(function) = name_map.read() {
+                                        self.function_names.insert(function.name, function.index);
+                                    } else {
+                                        return Err(anyhow!("Couldn't parse all function names of CustomName section."));
                                     }
-                                    // Finish as soon as function names are parsed.
-                                    break;
                                 }
-                                _ => (),
+                                // Finish as soon as function names are parsed.
+                                break;
                             }
                         }
                     }
@@ -286,13 +282,13 @@ impl<'a> ModuleContext<'a> {
         let mut section_iterator = self.sections.iter();
         let mut current_section = section_iterator.next();
 
-        if self.types.len() > 0 {
+        if !self.types.is_empty() {
             module.section(&self.encode_types()?);
         }
-        if self.imports.len() > 0 {
+        if !self.imports.is_empty() {
             module.section(&self.encode_imports()?);
         }
-        if self.functions.len() > 0 {
+        if !self.functions.is_empty() {
             module.section(&self.encode_functions());
         }
         if let Some(section) = current_section {
@@ -313,7 +309,7 @@ impl<'a> ModuleContext<'a> {
                 current_section = section_iterator.next();
             }
         }
-        if self.exports.len() > 0 {
+        if !self.exports.is_empty() {
             module.section(&self.encode_exports()?);
         }
         if let Some(section) = current_section {
@@ -328,7 +324,7 @@ impl<'a> ModuleContext<'a> {
                 current_section = section_iterator.next();
             }
         }
-        if self.code_section.len() > 0 {
+        if !self.code_section.is_empty() {
             module.section(&self.encode_code()?);
         }
         if let Some(section) = current_section {

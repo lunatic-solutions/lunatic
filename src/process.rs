@@ -53,7 +53,7 @@ pub struct ProcessHandle {
 impl Clone for ProcessHandle {
     fn clone(&self) -> Self {
         Self {
-            id: self.id.clone(),
+            id: self.id,
             signal_sender: self.signal_sender.clone(),
             message_sender: self.message_sender.clone(),
             trapped_sender: self.trapped_sender.clone(),

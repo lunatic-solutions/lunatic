@@ -485,6 +485,7 @@ fn drop_module(mut caller: Caller<ProcessState>, mod_id: u64) -> Result<(), Trap
 //% * If **func_str_ptr + func_str_len** is outside the memory.
 //% * If **params_ptr + params_len** is outside the memory.
 //% * If **id_ptr** is outside the memory.
+#[allow(clippy::too_many_arguments)]
 fn spawn(
     mut caller: Caller<ProcessState>,
     link: u32,
@@ -571,6 +572,7 @@ fn inherit_spawn(
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn spawn_from_module(
     mut caller: &mut Caller<'_, ProcessState>,
     link: u32,
@@ -608,7 +610,7 @@ async fn spawn_from_module(
     let link = match link {
         0 => None,
         _ => {
-            let id = caller.data().id.clone();
+            let id = caller.data().id;
             let trapped_sender = caller.data().trapped_sender.clone();
             let signal_sender = caller.data().signal_sender.clone();
             let message_sender = caller.data().message_sender.clone();
@@ -691,7 +693,7 @@ fn die_when_link_dies(mut caller: Caller<ProcessState>, trap: u32) {
 //%
 //% Create a process handle to itself and return resource ID.
 fn this(mut caller: Caller<ProcessState>) -> u64 {
-    let id = caller.data().id.clone();
+    let id = caller.data().id;
     let trapped_sender = caller.data().trapped_sender.clone();
     let signal_sender = caller.data().signal_sender.clone();
     let message_sender = caller.data().message_sender.clone();
