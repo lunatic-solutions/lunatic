@@ -37,10 +37,10 @@ jobs:
             target_name: lunatic
             asset_name: lunatic-linux-amd64.tar.gz
             content_type: application/gzip
-          # - os: macos-latest
-          #   target_name: lunatic
-          #   asset_name: lunatic-macos-amd64.tar.gz
-          #   content_type: application/gzip
+          - os: macos-latest
+            target_name: lunatic
+            asset_name: lunatic-macos-amd64.tar.gz
+            content_type: application/gzip
           - os: windows-latest
             target_name: lunatic.exe
             asset_name: lunatic-windows-amd64.zip
@@ -53,11 +53,11 @@ jobs:
       - name: Install latest nightly
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: nightly
+          toolchain: stable
           override: true
           components: rustfmt, clippy
       - name: Build project
-        run: cargo +nightly build --release
+        run: cargo build --release
       - name: Tar release on Unix
         if: runner.os != 'Windows'
         run: |
