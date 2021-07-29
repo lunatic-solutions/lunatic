@@ -75,6 +75,59 @@ pub(crate) fn register(
     Ok(())
 }
 
+//% lunatic::message
+//%
+//% A lunatic message consists of 2 parts:
+//% * A buffer of raw data
+//% * An array of resource IDs
+//%
+//% If resources are sent between processes, their ID changes. The resource ID can for example
+//% be already taken in the receiving process. So we need a way to communicate the new ID on the
+//% receiving end.
+//%
+//% When the `create()` function is called an empty message is allocated and both parts can be
+//% modified before it's sent to another process. If a new resource is added to the message, the
+//% index inside of the array is returned. This information can be now serialized inside the raw
+//% data buffer in some way. E.g. You are serializing a structure like this:
+//%
+//% struct A {
+//%     a: String,
+//%     b: Process,
+//%     c: i32,
+//%     d: TcpStream
+//% }
+//%
+//% Into something like this:
+//%
+//% ["Some string" | [resource 0] | i32 value | [resource 1] ]
+//%
+//% [resource 0] & [resource 1] are just encoded as 0 and 1 u64 values, representing their order
+//% in the resource array.
+//%
+//% It's common to use some serialization library that will encode a mixture of raw data and
+//% resource indexes into the data buffer.
+//%
+//% On the receiving side, first the `prepare_receive()` function must be called to receive info
+//% on how big the buffer and resource arrays are, so that enough space can be allocated inside
+//% the guest.
+//%
+//% The `receive()` function will do 2 things:
+//% * Write the buffer of raw data to the specified location
+//% * Give all resources to the new process (with new IDs) and write the IDs to the specified
+//%   location in the same order they were added.
+//% Now the information from the buffer (with resource indexes) can be used to deserialize the
+//% received message into the same structure.
+//%
+//% This can be a bit confusing, because resources are just IDs (u64 values) themself. But we
+//% still need to serialize them into different u64 values. Resources are inherently bound to a
+//% process and you can't access another resource just by guessing an ID from another process.
+//% The process of sending them around needs to be explicit.
+//%
+//% This API was designed around the idea that most guest languages will use some serialization
+//% library and turning resources into indexes is a way of serializing. The same is true for
+//% deserializing them on the receiving side, when an index needs to be turned into an actual
+//% resource ID.
+
 //% lunatic::message::create()
 //%
 //% Creates a new message. This message is intended to be modified by other functions in this
