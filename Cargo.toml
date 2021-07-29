@@ -1,8 +1,11 @@
 [package]
-name = "lunatic_ny"
-version = "0.1.0"
+name = "lunatic-runtime"
+version = "0.5"
 authors = ["Bernard Kolobara <me@kolobara.com>"]
 edition = "2018"
+description = "An actor platform built on WebAssembly"
+license = "Apache-2.0/MIT"
+readme = "Readme.md"
 
 [lib]
 name = "lunatic_runtime"
