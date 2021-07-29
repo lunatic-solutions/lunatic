@@ -1,12 +1,11 @@
 on:
   push:
-    tags:
-      - "v*" # Push events to matching v*, i.e. v1.0, v20.15.10
+  pull_request:
 
 name: Create Release
 
 jobs:
-  release:
+  test_or_release:
     name: Build Lunatic
     runs-on: ${{ matrix.os }}
     strategy:
@@ -27,29 +26,44 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
-      - name: Install latest nightly
+      - name: Install latest
         uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
           target: wasm32-unknown-unknown
           override: true
           components: rustfmt, clippy
+      - name: "Run tests"
+        run: cargo test
+      - name: "Run clippy"
+        run: cargo clippy -- -D warnings
+      - name: "Check formatting check"
+        run: cargo fmt -- --check
+      # Create a release:
+      # - The next steps will only run if a tag was added during the push
       - name: Build project
+        if: startsWith(github.ref, 'refs/tags/')
         run: cargo build --release
       - name: Tar release on Unix
-        if: runner.os != 'Windows'
+        if: startsWith(github.ref, 'refs/tags/') && runner.os != 'Windows'
         run: |
           mv ./target/release/${{ matrix.target_name }} ${{ matrix.target_name }}
           tar czf ${{ matrix.asset_name }} README.md LICENSE-MIT LICENSE-APACHE ${{ matrix.target_name }}
       - name: Zip release on Windows
-        if: runner.os == 'Windows'
+        if: startsWith(github.ref, 'refs/tags/') && runner.os == 'Windows'
         uses: papeloto/action-zip@v1
         with:
           files: README.md LICENSE-MIT LICENSE-APACHE ./target/release/${{ matrix.target_name }}
           dest: ${{ matrix.asset_name }}
+      - name: Get release name
+        if: startsWith(github.ref, 'refs/tags/')
+        id: getReleaseName
+        run: echo ::set-output name=RELEASE_NAME::${GITHUB_REF/refs\/tags\//}
       - name: Release
+        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v1
         with:
-          name: Release ${{ github.ref }}
+          tag_name: ${{ steps.getReleaseName.outputs.RELEASE_NAME }}
+          name: Release ${{ steps.getReleaseName.outputs.RELEASE_NAME }}
           draft: true
           files: ${{ matrix.asset_name }}
