@@ -7,27 +7,6 @@ name: Create Release
 
 jobs:
   release:
-    name: Create Release
-    runs-on: ubuntu-latest
-    outputs:
-      upload_url: ${{ steps.create_release.outputs.upload_url }}
-    steps:
-      - name: Create Release
-        id: create_release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: ${{ github.ref }}
-          release_name: Release ${{ github.ref }}
-          body: |
-            Changes in this Release
-            - First Change
-            - Second Change
-          draft: true
-          prerelease: false
-  build:
-    needs: release
     name: Build Lunatic
     runs-on: ${{ matrix.os }}
     strategy:
@@ -48,8 +27,6 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
-        with:
-          submodules: recursive
       - name: Install latest nightly
         uses: actions-rs/toolchain@v1
         with:
@@ -70,12 +47,9 @@ jobs:
         with:
           files: README.md LICENSE-MIT LICENSE-APACHE ./target/release/${{ matrix.target_name }}
           dest: ${{ matrix.asset_name }}
-      - name: Upload binary to release
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Release
+        uses: softprops/action-gh-release@v1
         with:
-          upload_url: ${{ needs.release.outputs.upload_url }}
-          asset_path: ${{ matrix.asset_name }}
-          asset_name: ${{ matrix.asset_name }}
-          asset_content_type: ${{ matrix.content_type }}
+          name: Release ${{ github.ref }}
+          draft: true
+          files: ${{ matrix.asset_name }}
