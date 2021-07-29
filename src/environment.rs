@@ -6,8 +6,8 @@ use wasmtime::{Config, Engine, InstanceAllocationStrategy, Linker, OptLevel, Pro
 use super::config::EnvConfig;
 use crate::{api, module::Module, plugin::patch_module, state::ProcessState};
 
-// One gallon of fuel represents around 100k instructions.
-pub const GALLON_IN_INSTRUCTIONS: u64 = 100_000;
+// One unit of fuel represents around 100k instructions.
+pub const UNIT_OF_COMPUTE_IN_INSTRUCTIONS: u64 = 100_000;
 
 /// The environment represents a set of characteristics that processes spawned from it will have.
 ///

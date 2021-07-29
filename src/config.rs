@@ -7,7 +7,7 @@ use crate::plugin::Plugin;
 pub struct EnvConfig {
     // Maximum amount of memory that can be used by processes in Wasm pages (64KB)
     max_memory: u64,
-    // Maximum amount of compute expressed in gallons.
+    // Maximum amount of compute expressed in units of 100k instructions.
     max_fuel: Option<u64>,
     allowed_namespaces: Vec<String>,
     plugins: Vec<Plugin>,

@@ -9,7 +9,7 @@ use wasmtime::{Store, Val};
 use std::sync::Arc;
 
 use crate::{
-    environment::GALLON_IN_INSTRUCTIONS,
+    environment::UNIT_OF_COMPUTE_IN_INSTRUCTIONS,
     message::Message,
     process::{self, ProcessHandle, Signal},
     state::ProcessState,
@@ -82,9 +82,11 @@ impl Module {
         store.out_of_fuel_trap();
         // Define maximum fuel
         match self.environment().config().max_fuel() {
-            Some(max_fuel) => store.out_of_fuel_async_yield(max_fuel, GALLON_IN_INSTRUCTIONS),
+            Some(max_fuel) => {
+                store.out_of_fuel_async_yield(max_fuel, UNIT_OF_COMPUTE_IN_INSTRUCTIONS)
+            }
             // If no limit is specified use maximum
-            None => store.out_of_fuel_async_yield(u64::MAX, GALLON_IN_INSTRUCTIONS),
+            None => store.out_of_fuel_async_yield(u64::MAX, UNIT_OF_COMPUTE_IN_INSTRUCTIONS),
         };
 
         let instance = self
