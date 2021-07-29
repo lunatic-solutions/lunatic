@@ -2,6 +2,42 @@
 
 ---
 
+## v0.5.0
+
+Released 2021-07-29.
+
+### Changes
+
+Lunatic was completely re-written from scratch. Now it's built on top of
+[Wasmtime's](https://github.com/bytecodealliance/wasmtime) `async` support and doesn't contain any
+**unsafe** code.
+
+The architecture of the runtime was changed to closer mirror Erlang's features. Processes now only
+contain **one mailbox** and the channels API was removed. Processes can also be linked together to
+propagate failure, so that [supervisor](https://erlang.org/doc/man/supervisor.html) like tools can
+be built on top of them.
+
+#### Environments
+
+Environments allow you to specify some characteristics of the execution, like how much memory or
+CPU processes can use. They can also define host function namespaces that are allowed to be called.
+Processes that are spawned into an environment inherit theses characteristics, allowing you to
+dynamically create execution contexts for new processes.
+
+#### Dynamic module loading
+
+WebAssembly modules can be loaded from other WebAssembly modules during runtime. Combined together
+with `Environments` this can be used to load untrusted code and run it inside a sandbox.
+
+#### Libraries
+
+The Rust library was also completely re-written to support the new abstractions.
+[Check out the new docs!](https://docs.rs/lunatic/0.5.0/lunatic/)
+
+The AssemblyScript library is still WIP and doesn't support the new features yet.
+
+---
+
 ## v0.3.1
 
 Released 2021-02-22.
