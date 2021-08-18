@@ -178,7 +178,7 @@ pub(crate) fn register(
     Ok(())
 }
 
-//% lunatic::process::create_config(max_memory: i64, max_fuel: i64) -> i64
+//% lunatic::process::create_config(max_memory: u64, max_fuel: u64) -> u64
 //%
 //% * **max_memory** - Maximum amount of memory in Wasm pages (64KB) that the process can use.
 //% * **max_fuel**   - Maximum amount of instructions in gallons that processes will be able to run
@@ -193,7 +193,7 @@ fn create_config(mut caller: Caller<ProcessState>, max_memory: u64, max_fuel: u6
     caller.data_mut().resources.configs.add(config)
 }
 
-//% lunatic::error::drop_config(config_id: i64)
+//% lunatic::error::drop_config(config_id: u64)
 //%
 //% Drops the config resource.
 //%
@@ -209,7 +209,7 @@ fn drop_config(mut caller: Caller<ProcessState>, config_id: u64) -> Result<(), T
     Ok(())
 }
 
-//% lunatic::process::allow_namespace(config_id: i64, namespace_str_ptr: i32, namespace_str_len: i32)
+//% lunatic::process::allow_namespace(config_id: u64, namespace_str_ptr: u32, namespace_str_len: u32)
 //%
 //% Allow using host functions under this namespace with this configuration. Namespaces are strings,
 //% e.g. `lunatic::` or `lunatic::process::`.
@@ -241,11 +241,11 @@ fn allow_namespace(
 }
 
 //% lunatic::process::add_plugin(
-//%     config_id: i64,
-//%     plugin_data_ptr: i32,
-//%     plugin_data_len: i32,
-//%     id_ptr: i32
-//% ) -> i32
+//%     config_id: u64,
+//%     plugin_data_ptr: u32,
+//%     plugin_data_len: u32,
+//%     id_ptr: u32
+//% ) -> u32
 //%
 //% Returns:
 //% * 0 on success
@@ -263,7 +263,7 @@ fn add_plugin(
     plugin_data_ptr: u32,
     plugin_data_len: u32,
     id_ptr: u32,
-) -> Result<i32, Trap> {
+) -> Result<u32, Trap> {
     let mut plugin = vec![0; plugin_data_len as usize];
     let memory = get_memory(&mut caller)?;
     memory
@@ -290,7 +290,7 @@ fn add_plugin(
     Ok(result)
 }
 
-//% lunatic::process::create_environment(config_id: i64, id_ptr: i64) -> i32
+//% lunatic::process::create_environment(config_id: u64, id_ptr: u32) -> u32
 //%
 //% Returns:
 //% * 0 on success - The ID of the newly created environment is written to **id_ptr**
@@ -305,7 +305,7 @@ fn create_environment(
     mut caller: Caller<ProcessState>,
     config_id: u64,
     id_ptr: u32,
-) -> Result<i32, Trap> {
+) -> Result<u32, Trap> {
     let config = caller
         .data_mut()
         .resources
@@ -327,7 +327,7 @@ fn create_environment(
     Ok(result)
 }
 
-//% lunatic::error::drop_environment(env_id: i64)
+//% lunatic::process::drop_environment(env_id: u64)
 //%
 //% Drops the environment resource.
 //%
@@ -344,11 +344,11 @@ fn drop_environment(mut caller: Caller<ProcessState>, env_id: u64) -> Result<(),
 }
 
 //% lunatic::process::add_module(
-//%     env_id: i64,
-//%     module_data_ptr: i32,
-//%     module_data_len: i32,
-//%     id_ptr: i32
-//% ) -> i64
+//%     env_id: u64,
+//%     module_data_ptr: u32,
+//%     module_data_len: u32,
+//%     id_ptr: u32
+//% ) -> u64
 //%
 //% Returns:
 //% * 0 on success - The ID of the newly created module is written to **id_ptr**
@@ -366,7 +366,7 @@ fn add_module(
     module_data_ptr: u32,
     module_data_len: u32,
     id_ptr: u32,
-) -> Box<dyn Future<Output = Result<i32, Trap>> + Send + '_> {
+) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_> {
     Box::new(async move {
         let mut module = vec![0; module_data_len as usize];
         let memory = get_memory(&mut caller)?;
@@ -391,8 +391,9 @@ fn add_module(
 }
 
 //% lunatic::process::add_this_module(
-//%     env_id: i64,
-//% ) -> i64
+//%     env_id: u64,
+//%     id_ptr: u32,
+//% ) -> u32
 //%
 //% Returns:
 //% * 0 on success - The ID of the newly created module is written to **id_ptr**
@@ -408,7 +409,7 @@ fn add_this_module(
     mut caller: Caller<ProcessState>,
     env_id: u64,
     id_ptr: u32,
-) -> Box<dyn Future<Output = Result<i32, Trap>> + Send + '_> {
+) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_> {
     Box::new(async move {
         let module = caller.data().module.clone();
         let env = caller
@@ -448,16 +449,16 @@ fn drop_module(mut caller: Caller<ProcessState>, mod_id: u64) -> Result<(), Trap
 //% lunatic::process::spawn(
 //%     link: i64,
 //%     module_id: u64,
-//%     func_str_ptr: i32,
-//%     func_str_len: i32,
-//%     params_ptr: i32,
-//%     params_len: i32,
-//%     id_ptr: i32
-//% ) -> i64
+//%     func_str_ptr: u32,
+//%     func_str_len: u32,
+//%     params_ptr: u32,
+//%     params_len: u32,
+//%     id_u64_ptr: u32
+//% ) -> u32
 //%
 //% Returns:
-//% * 0 on success - The ID of the newly created process is written to **id_ptr**
-//% * 1 on error   - The error ID is written to **id_ptr**
+//% * 0 on success - The ID of the newly created process is written to **id_u64_ptr**
+//% * 1 on error   - The error ID is written to **id_u64_ptr**
 //%
 //% Spawns a new process using the passed in function inside a module as the entry point.
 //% If **link** is not 0, it will link the child and parent processes. The value
@@ -489,7 +490,7 @@ fn spawn(
     params_ptr: u32,
     params_len: u32,
     id_ptr: u32,
-) -> Box<dyn Future<Output = Result<i32, Trap>> + Send + '_> {
+) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_> {
     Box::new(async move {
         let module = caller
             .data()
@@ -514,12 +515,12 @@ fn spawn(
 
 //% lunatic::process::inherit_spawn(
 //%     link: i64,
-//%     func_str_ptr: i32,
-//%     func_str_len: i32,
-//%     params_ptr: i32,
-//%     params_len: i32,
-//%     id_ptr: i32
-//% ) -> i64
+//%     func_str_ptr: u32,
+//%     func_str_len: u32,
+//%     params_ptr: u32,
+//%     params_len: u32,
+//%     id_ptr: u32
+//% ) -> u32
 //%
 //% Returns:
 //% * 0 on success - The ID of the newly created process is written to **id_ptr**
@@ -551,7 +552,7 @@ fn inherit_spawn(
     params_ptr: u32,
     params_len: u32,
     id_ptr: u32,
-) -> Box<dyn Future<Output = Result<i32, Trap>> + Send + '_> {
+) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_> {
     Box::new(async move {
         let module = caller.data().module.clone();
         spawn_from_module(
@@ -578,7 +579,7 @@ async fn spawn_from_module(
     params_ptr: u32,
     params_len: u32,
     id_ptr: u32,
-) -> Result<i32, Trap> {
+) -> Result<u32, Trap> {
     let memory = get_memory(&mut caller)?;
     let func_str = memory
         .data(&caller)
@@ -626,7 +627,7 @@ async fn spawn_from_module(
     Ok(result)
 }
 
-//% lunatic::process::drop_process(process_id: i64)
+//% lunatic::process::drop_process(process_id: u64)
 //%
 //% Drops the process handle. This will not kill the process, it just removes the handle that
 //% references the process and allows us to send messages and signals to it.
@@ -661,7 +662,7 @@ fn clone_process(mut caller: Caller<ProcessState>, process_id: u64) -> Result<u6
     Ok(id)
 }
 
-//% lunatic::process::sleep_ms(millis: i64)
+//% lunatic::process::sleep_ms(millis: u64)
 //%
 //% Suspend process for `millis`.
 fn sleep_ms(_: Caller<ProcessState>, millis: u64) -> Box<dyn Future<Output = ()> + Send + '_> {

@@ -40,7 +40,7 @@ pub(crate) fn register(
     Ok(())
 }
 
-//% lunatic::error::string_size(error: u64) -> i32
+//% lunatic::error::string_size(error: u64) -> u32
 //%
 //% Returns the size of the string representation of the error.
 //%

@@ -73,3 +73,24 @@ fn namespace_matches_filter(namespace: &str, name: &str, namespace_filter: &[Str
         .iter()
         .any(|allowed| full_name.starts_with(allowed))
 }
+
+mod tests {
+    #[tokio::test]
+    async fn import_filter_signature_matches() {
+        use crate::{EnvConfig, Environment};
+
+        // The default configuration includes both, the "lunatic::*" and "wasi_*" namespaces.
+        let config = EnvConfig::default();
+        let environment = Environment::new(config).unwrap();
+        let raw_module = std::fs::read("./target/wasm/all_imports.wasm").unwrap();
+        let module = environment.create_module(raw_module).await.unwrap();
+        module.spawn("hello", Vec::new(), None).await.unwrap();
+
+        // This configuration should still compile, even all host calls will trap.
+        let config = EnvConfig::new(0, None);
+        let environment = Environment::new(config).unwrap();
+        let raw_module = std::fs::read("./target/wasm/all_imports.wasm").unwrap();
+        let module = environment.create_module(raw_module).await.unwrap();
+        module.spawn("hello", Vec::new(), None).await.unwrap();
+    }
+}

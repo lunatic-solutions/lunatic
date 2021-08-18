@@ -47,7 +47,7 @@ pub(crate) fn register(
     link_if_match(
         linker,
         "lunatic::message",
-        "add_process",
+        "push_process",
         FuncType::new([ValType::I64], [ValType::I64]),
         push_process,
         namespace_filter,
@@ -63,7 +63,7 @@ pub(crate) fn register(
     link_if_match(
         linker,
         "lunatic::message",
-        "add_tcp_stream",
+        "push_tcp_stream",
         FuncType::new([ValType::I64], [ValType::I64]),
         push_tcp_stream,
         namespace_filter,
@@ -96,7 +96,7 @@ pub(crate) fn register(
         linker,
         "lunatic::message",
         "receive",
-        FuncType::new([ValType::I64], []),
+        FuncType::new([ValType::I64], [ValType::I32]),
         receive,
         namespace_filter,
     )?;

@@ -15,14 +15,14 @@ jobs:
             target_name: lunatic
             asset_name: lunatic-linux-amd64.tar.gz
             content_type: application/gzip
-          - os: macos-latest
-            target_name: lunatic
-            asset_name: lunatic-macos-amd64.tar.gz
-            content_type: application/gzip
           - os: windows-latest
             target_name: lunatic.exe
             asset_name: lunatic-windows-amd64.zip
             content_type: application/zip
+          # - os: macos-latest
+          #   target_name: lunatic
+          #   asset_name: lunatic-macos-amd64.tar.gz
+          #   content_type: application/gzip
     steps:
       - name: Checkout code
         uses: actions/checkout@v2

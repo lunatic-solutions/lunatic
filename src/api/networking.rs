@@ -319,7 +319,9 @@ fn resolve_next(
 //%     addr_type: u32,
 //%     addr_u8_ptr: u32,
 //%     port: u32,
-//%     id_u64_ptr: i32
+//%     flow_info: u32,
+//%     scope_id: u32,
+//%     id_u64_ptr: u32
 //% ) -> u32
 //%
 //% Returns:
@@ -515,7 +517,7 @@ fn tcp_connect(
     })
 }
 
-//% lunatic::networking::drop_tcp_stream(tcp_stream_id: i64)
+//% lunatic::networking::drop_tcp_stream(tcp_stream_id: u64)
 //%
 //% Drops the TCP stream resource..
 //%
@@ -550,11 +552,11 @@ fn clone_tcp_stream(mut caller: Caller<ProcessState>, tcp_stream_id: u64) -> Res
 }
 
 //% lunatic::networking::tcp_write_vectored(
-//%     stream_id: i64,
-//%     ciovec_array_ptr: i32,
-//%     ciovec_array_len: i32,
-//%     i64_opaque_ptr: i32,
-//% ) -> i32
+//%     stream_id: u64,
+//%     ciovec_array_ptr: u32,
+//%     ciovec_array_len: u32,
+//%     i64_opaque_ptr: u32,
+//% ) -> u32
 //%
 //% Returns:
 //% * 0 on success - The number of bytes written is written to **opaque_ptr**
@@ -622,10 +624,10 @@ fn tcp_write_vectored(
 }
 
 //% lunatic::networking::tcp_read(
-//%     stream_id: i64,
-//%     buffer_ptr: i32,
-//%     buffer_len: i32,
-//%     i64_opaque_ptr: i32,
+//%     stream_id: u64,
+//%     buffer_ptr: u32,
+//%     buffer_len: u32,
+//%     i64_opaque_ptr: u32,
 //% ) -> i32
 //%
 //% Returns:
@@ -673,7 +675,7 @@ fn tcp_read(
     })
 }
 
-//% lunatic::networking::tcp_flush(stream_id: i64, error_id_ptr: i32) -> i32
+//% lunatic::networking::tcp_flush(stream_id: u64, error_id_ptr: u32) -> u32
 //%
 //% Returns:
 //% * 0 on success
