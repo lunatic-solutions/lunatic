@@ -207,9 +207,7 @@ fn write_data(mut caller: Caller<ProcessState>, data_ptr: u32, data_len: u32) ->
         .get(data_ptr as usize..(data_ptr as usize + data_len as usize))
         .or_trap("lunatic::message::write_data")?;
     let bytes = match &mut message {
-        Message::Data(data) => data
-            .write(&buffer)
-            .or_trap("lunatic::message::write_data")?,
+        Message::Data(data) => data.write(buffer).or_trap("lunatic::message::write_data")?,
         Message::Signal(_) => {
             return Err(Trap::new("Unexpected `Message::Signal` in scratch area"))
         }
@@ -233,13 +231,13 @@ fn read_data(mut caller: Caller<ProcessState>, data_ptr: u32, data_len: u32) -> 
         .data_mut()
         .message
         .take()
-        .or_trap("lunatic::message::write_data")?;
+        .or_trap("lunatic::message::read_data")?;
     let buffer = memory
         .data_mut(&mut caller)
         .get_mut(data_ptr as usize..(data_ptr as usize + data_len as usize))
-        .or_trap("lunatic::message::write_data")?;
+        .or_trap("lunatic::message::read_data")?;
     let bytes = match &mut message {
-        Message::Data(data) => data.read(buffer).or_trap("lunatic::message::write_data")?,
+        Message::Data(data) => data.read(buffer).or_trap("lunatic::message::read_data")?,
         Message::Signal(_) => {
             return Err(Trap::new("Unexpected `Message::Signal` in scratch area"))
         }
@@ -265,12 +263,12 @@ fn push_process(mut caller: Caller<ProcessState>, process_id: u64) -> Result<u64
         .resources
         .processes
         .remove(process_id)
-        .or_trap("lunatic::message::add_process")?;
+        .or_trap("lunatic::message::push_process")?;
     let message = caller
         .data_mut()
         .message
         .as_mut()
-        .or_trap("lunatic::message::add_process")?;
+        .or_trap("lunatic::message::push_process")?;
     let index = match message {
         Message::Data(data) => data.add_process(process) as u64,
         Message::Signal(_) => {
@@ -319,12 +317,12 @@ fn push_tcp_stream(mut caller: Caller<ProcessState>, stream_id: u64) -> Result<u
         .resources
         .tcp_streams
         .remove(stream_id)
-        .or_trap("lunatic::message::add_tcp_stream")?;
+        .or_trap("lunatic::message::push_tcp_stream")?;
     let message = caller
         .data_mut()
         .message
         .as_mut()
-        .or_trap("lunatic::message::add_tcp_stream")?;
+        .or_trap("lunatic::message::push_tcp_stream")?;
     let index = match message {
         Message::Data(data) => data.add_tcp_stream(stream) as u64,
         Message::Signal(_) => {
