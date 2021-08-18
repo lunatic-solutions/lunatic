@@ -10,7 +10,7 @@ use super::{
 use crate::{
     api::error::IntoTrap,
     module::Module,
-    process::{ProcessHandle, Signal},
+    process::{Signal, WasmProcess},
     state::ProcessState,
     EnvConfig, Environment,
 };
@@ -104,7 +104,7 @@ pub(crate) fn register(
         "spawn",
         FuncType::new(
             [
-                ValType::I32,
+                ValType::I64,
                 ValType::I64,
                 ValType::I32,
                 ValType::I32,
@@ -123,7 +123,7 @@ pub(crate) fn register(
         "inherit_spawn",
         FuncType::new(
             [
-                ValType::I32,
+                ValType::I64,
                 ValType::I32,
                 ValType::I32,
                 ValType::I32,
@@ -173,14 +173,6 @@ pub(crate) fn register(
         "this",
         FuncType::new([], [ValType::I64]),
         this,
-        namespace_filter,
-    )?;
-    link_async1_if_match(
-        linker,
-        "lunatic::process",
-        "join",
-        FuncType::new([ValType::I64], [ValType::I32]),
-        join,
         namespace_filter,
     )?;
     Ok(())
@@ -454,7 +446,7 @@ fn drop_module(mut caller: Caller<ProcessState>, mod_id: u64) -> Result<(), Trap
 }
 
 //% lunatic::process::spawn(
-//%     link: u32,
+//%     link: i64,
 //%     module_id: u64,
 //%     func_str_ptr: i32,
 //%     func_str_len: i32,
@@ -468,7 +460,9 @@ fn drop_module(mut caller: Caller<ProcessState>, mod_id: u64) -> Result<(), Trap
 //% * 1 on error   - The error ID is written to **id_ptr**
 //%
 //% Spawns a new process using the passed in function inside a module as the entry point.
-//% If link is not 0, it will link the child
+//% If **link** is not 0, it will link the child and parent processes. The value
+//% of the **link** argument will be used as the link-tag for the child.
+//%
 //%
 //% The function arguments are passed as an array with the following structure:
 //% [0 byte = type ID; 1..17 bytes = value as u128, ...]
@@ -488,7 +482,7 @@ fn drop_module(mut caller: Caller<ProcessState>, mod_id: u64) -> Result<(), Trap
 #[allow(clippy::too_many_arguments)]
 fn spawn(
     mut caller: Caller<ProcessState>,
-    link: u32,
+    link: i64,
     module_id: u64,
     func_str_ptr: u32,
     func_str_len: u32,
@@ -519,6 +513,7 @@ fn spawn(
 }
 
 //% lunatic::process::inherit_spawn(
+//%     link: i64,
 //%     func_str_ptr: i32,
 //%     func_str_len: i32,
 //%     params_ptr: i32,
@@ -531,7 +526,8 @@ fn spawn(
 //% * 1 on error   - The error ID is written to **id_ptr**
 //%
 //% Spawns a new process using the same module as the parent.
-//% If **link** is not 0, it will link the child and parent processes.
+//% If **link** is not 0, it will link the child and parent processes. The value
+//% of the **link** argument will be used as the link-tag for the child.
 //%
 //% The function arguments are passed as an array with the following structure:
 //% [0 byte = type ID; 1..17 bytes = value as u128, ...]
@@ -549,7 +545,7 @@ fn spawn(
 //% * If **id_ptr** is outside the memory.
 fn inherit_spawn(
     mut caller: Caller<ProcessState>,
-    link: u32,
+    link: i64,
     func_str_ptr: u32,
     func_str_len: u32,
     params_ptr: u32,
@@ -575,7 +571,7 @@ fn inherit_spawn(
 #[allow(clippy::too_many_arguments)]
 async fn spawn_from_module(
     mut caller: &mut Caller<'_, ProcessState>,
-    link: u32,
+    link: i64,
     module: Module,
     func_str_ptr: u32,
     func_str_len: u32,
@@ -609,21 +605,23 @@ async fn spawn_from_module(
     // Should processes be linked together?
     let link = match link {
         0 => None,
-        _ => {
+        tag => {
             let id = caller.data().id;
-            let trapped_sender = caller.data().trapped_sender.clone();
-            let signal_sender = caller.data().signal_sender.clone();
-            let message_sender = caller.data().message_sender.clone();
-            let process = ProcessHandle::new(id, signal_sender, message_sender, trapped_sender);
-            Some(process)
+            let signal_mailbox = caller.data().signal_mailbox.clone();
+            let process = WasmProcess::new(id, signal_mailbox);
+            Some((Some(tag), process))
         }
     };
-    let (mod_or_error_id, result) = match module.spawn(function, params, link).await {
+    let (proc_or_error_id, result) = match module.spawn(function, params, link).await {
         Ok((_, process)) => (caller.data_mut().resources.processes.add(process), 0),
         Err(error) => (caller.data_mut().errors.add(error), 1),
     };
     memory
-        .write(&mut caller, id_ptr as usize, &mod_or_error_id.to_le_bytes())
+        .write(
+            &mut caller,
+            id_ptr as usize,
+            &proc_or_error_id.to_le_bytes(),
+        )
         .or_trap("lunatic::process::(inherit_)spawn")?;
     Ok(result)
 }
@@ -684,7 +682,7 @@ fn sleep_ms(_: Caller<ProcessState>, millis: u64) -> Box<dyn Future<Output = ()>
 fn die_when_link_dies(mut caller: Caller<ProcessState>, trap: u32) {
     caller
         .data_mut()
-        .signal_sender
+        .signal_mailbox
         .send(Signal::DieWhenLinkDies(trap != 0))
         .expect("The signal is sent to itself and the receiver must exist at this point");
 }
@@ -694,38 +692,7 @@ fn die_when_link_dies(mut caller: Caller<ProcessState>, trap: u32) {
 //% Create a process handle to itself and return resource ID.
 fn this(mut caller: Caller<ProcessState>) -> u64 {
     let id = caller.data().id;
-    let trapped_sender = caller.data().trapped_sender.clone();
-    let signal_sender = caller.data().signal_sender.clone();
-    let message_sender = caller.data().message_sender.clone();
-    let process = ProcessHandle::new(id, signal_sender, message_sender, trapped_sender);
+    let signal_mailbox = caller.data().signal_mailbox.clone();
+    let process = WasmProcess::new(id, signal_mailbox);
     caller.data_mut().resources.processes.add(process)
-}
-
-//% lunatic::error::join(process_id: u64) -> u32
-//%
-//% Returns:
-//% * 0 if process finished normally.
-//% * 1 ir process trapped or received a Signal::Kill.
-//%
-//% Blocks until the process finishes and returns the status code.
-//%
-//% Traps:
-//% * If the process ID doesn't exist.
-fn join(
-    mut caller: Caller<ProcessState>,
-    process_id: u64,
-) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_> {
-    Box::new(async move {
-        let process = caller
-            .data_mut()
-            .resources
-            .processes
-            .get_mut(process_id)
-            .or_trap("lunatic::process::join")?;
-        if process.join().await {
-            Ok(1)
-        } else {
-            Ok(0)
-        }
-    })
 }

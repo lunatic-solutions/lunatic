@@ -41,6 +41,7 @@ TODO
 pub mod api;
 mod config;
 mod environment;
+pub(crate) mod mailbox;
 pub mod message;
 pub mod module;
 pub mod plugin;

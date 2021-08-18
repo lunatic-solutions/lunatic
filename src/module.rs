@@ -1,8 +1,5 @@
 use anyhow::{anyhow, Result};
-use tokio::{
-    sync::{broadcast, mpsc::unbounded_channel},
-    task::JoinHandle,
-};
+use tokio::{sync::mpsc::unbounded_channel, task::JoinHandle};
 use uuid::Uuid;
 use wasmtime::{Store, Val};
 
@@ -10,8 +7,8 @@ use std::sync::Arc;
 
 use crate::{
     environment::UNIT_OF_COMPUTE_IN_INSTRUCTIONS,
-    message::Message,
-    process::{self, ProcessHandle, Signal},
+    mailbox::MessageMailbox,
+    process::{self, Signal, WasmProcess},
     state::ProcessState,
     Environment,
 };
@@ -51,27 +48,23 @@ impl Module {
         &self,
         function: &str,
         params: Vec<Val>,
-        link: Option<ProcessHandle>,
-    ) -> Result<(JoinHandle<()>, ProcessHandle)> {
+        link: Option<(Option<i64>, WasmProcess)>,
+    ) -> Result<(JoinHandle<()>, WasmProcess)> {
         // TODO: Switch to new_v1() for distributed Lunatic to assure uniqueness across nodes.
         let id = Uuid::new_v4();
-        let (message_sender, message_mailbox) = unbounded_channel::<Message>();
-        let (signal_sender, signal_mailbox) = unbounded_channel::<Signal>();
-        let (trapped_sender, _) = broadcast::channel(1);
-        let mut state = ProcessState::new(
+        let signal_mailbox = unbounded_channel::<Signal>();
+        let message_mailbox = MessageMailbox::default();
+        let state = ProcessState::new(
             id,
-            trapped_sender.clone(),
             self.clone(),
-            message_sender.clone(),
-            message_mailbox,
-            signal_sender.clone(),
+            signal_mailbox.0.clone(),
+            message_mailbox.clone(),
         )?;
-        if let Some(link) = link {
-            // If processes are linked add the parent as the 0 process of the child.
-            state.resources.processes.add(link.clone());
+        if let Some((tag, process)) = link {
             // Send signal to itself to perform the linking
-            signal_sender
-                .send(Signal::Link(link))
+            signal_mailbox
+                .0
+                .send(Signal::Link(tag, process))
                 .expect("receiver must exist at this point");
         }
 
@@ -101,17 +94,9 @@ impl Module {
             })?;
 
         let fut = async move { entry.call_async(&mut store, &params).await };
-        let process = process::new(
-            fut,
-            message_sender.clone(),
-            trapped_sender.clone(),
-            signal_mailbox,
-        );
+        let process = process::new(fut, signal_mailbox.1, message_mailbox);
 
-        Ok((
-            process,
-            ProcessHandle::new(id, signal_sender, message_sender, trapped_sender),
-        ))
+        Ok((process, WasmProcess::new(id, signal_mailbox.0)))
     }
 
     pub fn environment(&self) -> &Environment {

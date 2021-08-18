@@ -1,15 +1,19 @@
-use std::future::Future;
+use std::{
+    future::Future,
+    io::{Read, Write},
+};
 
 use anyhow::Result;
 use wasmtime::{Caller, FuncType, Linker, Trap, ValType};
 
 use crate::{
     api::{error::IntoTrap, get_memory},
-    message::Message,
+    message::{DataMessage, Message},
+    process::{Process, Signal},
     state::ProcessState,
 };
 
-use super::{link_async2_if_match, link_if_match};
+use super::{link_async1_if_match, link_if_match};
 
 // Register the mailbox APIs to the linker
 pub(crate) fn register(
@@ -19,17 +23,25 @@ pub(crate) fn register(
     link_if_match(
         linker,
         "lunatic::message",
-        "create",
-        FuncType::new([], []),
-        create,
+        "create_data",
+        FuncType::new([ValType::I64, ValType::I64], []),
+        create_data,
         namespace_filter,
     )?;
     link_if_match(
         linker,
         "lunatic::message",
-        "set_buffer",
-        FuncType::new([ValType::I32, ValType::I32], []),
-        set_buffer,
+        "write_data",
+        FuncType::new([ValType::I32, ValType::I32], [ValType::I32]),
+        write_data,
+        namespace_filter,
+    )?;
+    link_if_match(
+        linker,
+        "lunatic::message",
+        "read_data",
+        FuncType::new([ValType::I32, ValType::I32], [ValType::I32]),
+        read_data,
         namespace_filter,
     )?;
     link_if_match(
@@ -37,7 +49,15 @@ pub(crate) fn register(
         "lunatic::message",
         "add_process",
         FuncType::new([ValType::I64], [ValType::I64]),
-        add_process,
+        push_process,
+        namespace_filter,
+    )?;
+    link_if_match(
+        linker,
+        "lunatic::message",
+        "take_process",
+        FuncType::new([ValType::I64], [ValType::I64]),
+        take_process,
         namespace_filter,
     )?;
     link_if_match(
@@ -45,30 +65,38 @@ pub(crate) fn register(
         "lunatic::message",
         "add_tcp_stream",
         FuncType::new([ValType::I64], [ValType::I64]),
-        add_tcp_stream,
+        push_tcp_stream,
+        namespace_filter,
+    )?;
+    link_if_match(
+        linker,
+        "lunatic::message",
+        "take_tcp_stream",
+        FuncType::new([ValType::I64], [ValType::I64]),
+        take_tcp_stream,
         namespace_filter,
     )?;
     link_if_match(
         linker,
         "lunatic::message",
         "send",
-        FuncType::new([ValType::I64], [ValType::I32]),
+        FuncType::new([ValType::I64], []),
         send,
         namespace_filter,
     )?;
-    link_async2_if_match(
+    link_async1_if_match(
         linker,
         "lunatic::message",
-        "prepare_receive",
-        FuncType::new([ValType::I32, ValType::I32], [ValType::I32]),
-        prepare_receive,
+        "send_skip_search_receive",
+        FuncType::new([ValType::I64], []),
+        send_skip_search_receive,
         namespace_filter,
     )?;
-    link_if_match(
+    link_async1_if_match(
         linker,
         "lunatic::message",
         "receive",
-        FuncType::new([ValType::I32, ValType::I32], []),
+        FuncType::new([ValType::I64], []),
         receive,
         namespace_filter,
     )?;
@@ -77,18 +105,35 @@ pub(crate) fn register(
 
 //% lunatic::message
 //%
-//% A lunatic message consists of 2 parts:
+//% There are two kinds of messages a lunatic process can receive:
+//% * **data message** that contains a buffer of raw `u8` data and host side resources.
+//% * **signal message**, representing a signal that was turned into a message. By setting a flag,
+//%   a process can control if when a link dies the process should die too, or just receive a
+//%   signal message notifying it about the link's death.
+//%
+//% All messages have a `tag` allowing for selective receives. If there are already messages in the
+//% receiving queue, they will be first searched for a specific tag and the first match returned.
+//% Tags are just `i64` values, and a value of 0 indicates no-tag, meaning that it matches all
+//% messages.
+//%
+//% # Data messages
+//%
+//% Data messages can be created from inside a process and sent to others.
+//%
+//% They consists of two parts:
 //% * A buffer of raw data
-//% * An array of resource IDs
+//% * An collection of resources
 //%
 //% If resources are sent between processes, their ID changes. The resource ID can for example
 //% be already taken in the receiving process. So we need a way to communicate the new ID on the
 //% receiving end.
 //%
-//% When the `create()` function is called an empty message is allocated and both parts can be
-//% modified before it's sent to another process. If a new resource is added to the message, the
-//% index inside of the array is returned. This information can be now serialized inside the raw
-//% data buffer in some way. E.g. You are serializing a structure like this:
+//% When the `create_data(tag, capacity)` function is called an empty message is allocated and both
+//% parts (buffer and resources) can be modified before it's sent to another process. If a new
+//% resource is added to the message, the index inside of the message is returned. This information
+//% can be now serialized inside the raw data buffer in some way.
+//%
+//% E.g. Serializing a structure like this:
 //%
 //% struct A {
 //%     a: String,
@@ -97,26 +142,25 @@ pub(crate) fn register(
 //%     d: TcpStream
 //% }
 //%
-//% Into something like this:
+//% can be done by creating a new data message with `create_data(tag, capacity)`. `capacity` can
+//% be used as a hint to the host to pre-reserve the right buffer size. After a message is created,
+//% all the resources can be added to it with `add_*`, in this case the fields `b` & `d`. The
+//% returned values will be the indexes inside the message.
+//%
+//% Now the struct can be serialized for example into something like this:
 //%
 //% ["Some string" | [resource 0] | i32 value | [resource 1] ]
 //%
-//% [resource 0] & [resource 1] are just encoded as 0 and 1 u64 values, representing their order
-//% in the resource array.
+//% [resource 0] & [resource 1] are just encoded as 0 and 1 u64 values, representing their index
+//% in the message. Now the message can be sent to another process with `send`.
 //%
-//% It's common to use some serialization library that will encode a mixture of raw data and
-//% resource indexes into the data buffer.
+//% An important limitation here is that messages can only be worked on one at a time. If we
+//% called `create_data` again before sending the message, the current buffer and resources
+//% would be dropped.
 //%
-//% On the receiving side, first the `prepare_receive()` function must be called to receive info
-//% on how big the buffer and resource arrays are, so that enough space can be allocated inside
-//% the guest.
-//%
-//% The `receive()` function will do 2 things:
-//% * Write the buffer of raw data to the specified location
-//% * Give all resources to the new process (with new IDs) and write the IDs to the specified
-//%   location in the same order they were added.
-//% Now the information from the buffer (with resource indexes) can be used to deserialize the
-//% received message into the same structure.
+//% On the receiving side, first the `receive(tag)` function must be called. If `tag` has a value
+//% different from 0, the function will only return messages that have the specific `tag`. Once
+//% a message is received, we can read from its buffer or extract resources from it.
 //%
 //% This can be a bit confusing, because resources are just IDs (u64 values) themself. But we
 //% still need to serialize them into different u64 values. Resources are inherently bound to a
@@ -128,51 +172,94 @@ pub(crate) fn register(
 //% deserializing them on the receiving side, when an index needs to be turned into an actual
 //% resource ID.
 
-//% lunatic::message::create()
+//% lunatic::message::create_data(tag: i64, buffer_capacity: u64)
 //%
-//% Creates a new message. This message is intended to be modified by other functions in this
+//% * tag - An identifier that can be used for selective receives. If value is 0, no tag is used.
+//% * buffer_capacity - A hint to the message to pre-allocate a large enough buffer for writes.
+//%
+//% Creates a new data message. This message is intended to be modified by other functions in this
 //% namespace. Once `lunatic::message::send` is called it will be sent to another process.
-fn create(mut caller: Caller<ProcessState>) {
-    caller.data_mut().message = Some(Message::default());
+fn create_data(mut caller: Caller<ProcessState>, tag: i64, buffer_capacity: u64) {
+    let tag = match tag {
+        0 => None,
+        tag => Some(tag),
+    };
+    let message = DataMessage::new(tag, buffer_capacity as usize);
+    caller.data_mut().message = Some(Message::Data(message));
 }
 
-//% lunatic::message::set_buffer(
-//%     data_ptr: i32,
-//%     data_len: i32,
-//% )
+//% lunatic::message::write_data(data_ptr: u32, data_len: u32) -> u32
 //%
-//% Sets the data for the next message.
+//% Writes some data into the message buffer and returns how much data is written in bytes.
 //%
 //% Traps:
 //% * If **data_ptr + data_len** is outside the memory.
-//% * If it's called before the next message is created.
-fn set_buffer(mut caller: Caller<ProcessState>, data_ptr: u32, data_len: u32) -> Result<(), Trap> {
-    let mut buffer = vec![0; data_len as usize];
+//% * If it's called without a data message being inside of the scratch area.
+fn write_data(mut caller: Caller<ProcessState>, data_ptr: u32, data_len: u32) -> Result<u32, Trap> {
     let memory = get_memory(&mut caller)?;
-    memory
-        .read(&caller, data_ptr as usize, buffer.as_mut_slice())
-        .or_trap("lunatic::message::set_buffer")?;
-    let message = caller
+    let mut message = caller
         .data_mut()
         .message
-        .as_mut()
-        .or_trap("lunatic::message::set_buffer")?;
-    match message {
-        Message::Data(data) => data.set_buffer(buffer),
-        Message::Signal => return Err(Trap::new("Unexpected `Message::Signal` in scratch buffer")),
+        .take()
+        .or_trap("lunatic::message::write_data")?;
+    let buffer = memory
+        .data(&caller)
+        .get(data_ptr as usize..(data_ptr as usize + data_len as usize))
+        .or_trap("lunatic::message::write_data")?;
+    let bytes = match &mut message {
+        Message::Data(data) => data
+            .write(&buffer)
+            .or_trap("lunatic::message::write_data")?,
+        Message::Signal(_) => {
+            return Err(Trap::new("Unexpected `Message::Signal` in scratch area"))
+        }
     };
-    Ok(())
+    // Put message back after writing to it.
+    caller.data_mut().message = Some(message);
+
+    Ok(bytes as u32)
 }
 
-//% lunatic::message::add_process(process_id: u64) -> u64
+//% lunatic::message::read_data(data_ptr: u32, data_len: u32) -> u32
 //%
-//% Adds a process resource to the next message and returns the location in the array the process
-//% was added to. This will remove the process handle from the current process' resources.
+//% Reads some data from the message buffer and returns how much data is read in bytes.
+//%
+//% Traps:
+//% * If **data_ptr + data_len** is outside the memory.
+//% * If it's called without a data message being inside of the scratch area.
+fn read_data(mut caller: Caller<ProcessState>, data_ptr: u32, data_len: u32) -> Result<u32, Trap> {
+    let memory = get_memory(&mut caller)?;
+    let mut message = caller
+        .data_mut()
+        .message
+        .take()
+        .or_trap("lunatic::message::write_data")?;
+    let buffer = memory
+        .data_mut(&mut caller)
+        .get_mut(data_ptr as usize..(data_ptr as usize + data_len as usize))
+        .or_trap("lunatic::message::write_data")?;
+    let bytes = match &mut message {
+        Message::Data(data) => data.read(buffer).or_trap("lunatic::message::write_data")?,
+        Message::Signal(_) => {
+            return Err(Trap::new("Unexpected `Message::Signal` in scratch area"))
+        }
+    };
+    // Put message back after reading from it.
+    caller.data_mut().message = Some(message);
+
+    Ok(bytes as u32)
+}
+
+//% lunatic::message::push_process(process_id: u64) -> u64
+//%
+//% Adds a process resource to the message that is currently in the scratch area and returns
+//% the location in the array the process was added to. This will remove the process handle from
+//% the current process' resources.
 //%
 //% Traps:
 //% * If process ID doesn't exist
-//% * If it's called before the next message is created.
-fn add_process(mut caller: Caller<ProcessState>, process_id: u64) -> Result<u64, Trap> {
+//% * If no data message is in the scratch area.
+fn push_process(mut caller: Caller<ProcessState>, process_id: u64) -> Result<u64, Trap> {
     let process = caller
         .data_mut()
         .resources
@@ -184,22 +271,49 @@ fn add_process(mut caller: Caller<ProcessState>, process_id: u64) -> Result<u64,
         .message
         .as_mut()
         .or_trap("lunatic::message::add_process")?;
-    let pid = match message {
+    let index = match message {
         Message::Data(data) => data.add_process(process) as u64,
-        Message::Signal => return Err(Trap::new("Unexpected `Message::Signal` in scratch buffer")),
+        Message::Signal(_) => {
+            return Err(Trap::new("Unexpected `Message::Signal` in scratch area"))
+        }
     };
-    Ok(pid)
+    Ok(index)
 }
 
-//% lunatic::message::add_tcp_stream(stream_id: u64) -> u64
+//% lunatic::message::take_process(index: u64) -> u64
 //%
-//% Adds a TCP stream resource to the next message and returns the location in the array the TCP
-//% stream was added to. This will remove the TCP stream from the current process' resources.
+//% Takes the process handle from the message that is currently in the scratch area by index, puts
+//% it into the process' resources and returns the resource ID.
+//%
+//% Traps:
+//% * If index ID doesn't exist or matches the wrong resource (not process).
+//% * If no data message is in the scratch area.
+fn take_process(mut caller: Caller<ProcessState>, index: u64) -> Result<u64, Trap> {
+    let message = caller
+        .data_mut()
+        .message
+        .as_mut()
+        .or_trap("lunatic::message::take_process")?;
+    let process = match message {
+        Message::Data(data) => data
+            .take_process(index as usize)
+            .or_trap("lunatic::message::take_process")?,
+        Message::Signal(_) => {
+            return Err(Trap::new("Unexpected `Message::Signal` in scratch area"))
+        }
+    };
+    Ok(caller.data_mut().resources.processes.add(process))
+}
+
+//% lunatic::message::push_tcp_stream(stream_id: u64) -> u64
+//%
+//% Adds a tcp stream resource to the message that is currently in the scratch area and returns
+//% the new location of it. This will remove the tcp stream from  the current process' resources.
 //%
 //% Traps:
 //% * If TCP stream ID doesn't exist
-//% * If it's called before the next message is created.
-fn add_tcp_stream(mut caller: Caller<ProcessState>, stream_id: u64) -> Result<u64, Trap> {
+//% * If no data message is in the scratch area.
+fn push_tcp_stream(mut caller: Caller<ProcessState>, stream_id: u64) -> Result<u64, Trap> {
     let stream = caller
         .data_mut()
         .resources
@@ -211,27 +325,51 @@ fn add_tcp_stream(mut caller: Caller<ProcessState>, stream_id: u64) -> Result<u6
         .message
         .as_mut()
         .or_trap("lunatic::message::add_tcp_stream")?;
-    let stream_id = match message {
+    let index = match message {
         Message::Data(data) => data.add_tcp_stream(stream) as u64,
-        Message::Signal => return Err(Trap::new("Unexpected `Message::Signal` in scratch buffer")),
+        Message::Signal(_) => {
+            return Err(Trap::new("Unexpected `Message::Signal` in scratch area"))
+        }
     };
-    Ok(stream_id)
+    Ok(index)
+}
+
+//% lunatic::message::take_tcp_stream(index: u64) -> u64
+//%
+//% Takes the tcp stream from the message that is currently in the scratch area by index, puts
+//% it into the process' resources and returns the resource ID.
+//%
+//% Traps:
+//% * If index ID doesn't exist or matches the wrong resource (not a tcp stream).
+//% * If no data message is in the scratch area.
+fn take_tcp_stream(mut caller: Caller<ProcessState>, index: u64) -> Result<u64, Trap> {
+    let message = caller
+        .data_mut()
+        .message
+        .as_mut()
+        .or_trap("lunatic::message::take_tcp_stream")?;
+    let tcp_stream = match message {
+        Message::Data(data) => data
+            .take_tcp_stream(index as usize)
+            .or_trap("lunatic::message::take_tcp_stream")?,
+        Message::Signal(_) => {
+            return Err(Trap::new("Unexpected `Message::Signal` in scratch area"))
+        }
+    };
+    Ok(caller.data_mut().resources.tcp_streams.add(tcp_stream))
 }
 
 //% lunatic::message::send(
-//%     process_id: i64,
-//% ) -> i32
+//%     process_id: u64,
+//% )
 //%
-//% Returns:
-//% * 0 on success
-//% * 1 on error   - Process can't receive messages (finished).
-//%
-//% Sends the message to a process.
+//% Sends the message to a process. There are no guarantees that the process will ever receive
+//% the message.
 //%
 //% Traps:
 //% * If the process ID doesn't exist.
-//% * If it's called before a creating the next message.
-fn send(mut caller: Caller<ProcessState>, process_id: u64) -> Result<u32, Trap> {
+//% * If it's called before creating the next message.
+fn send(mut caller: Caller<ProcessState>, process_id: u64) -> Result<(), Trap> {
     let message = caller
         .data_mut()
         .message
@@ -243,116 +381,78 @@ fn send(mut caller: Caller<ProcessState>, process_id: u64) -> Result<u32, Trap> 
         .processes
         .get(process_id)
         .or_trap("lunatic::message::send")?;
-    let result = match process.send_message(message) {
-        Ok(()) => 0,
-        Err(_error) => 1,
-    };
-    Ok(result)
+    process.send(Signal::Message(message));
+    Ok(())
 }
 
-//% lunatic::message::prepare_receive(i32_data_size_ptr: i32, i32_res_size_ptr: i32) -> i32
+//% lunatic::message::send_skip_search_receive(
+//%     process_id: u64,
+//% )
 //%
-//% Returns:
-//% * 0 if it's a regular message.
-//% * 1 if it's a signal turned into a message.
+//% Sends the message to a process and waits for a replay, but doesn't look through existing
+//% messages in the mailbox queue while waiting. This is an optimization that only makes sense
+//% with tagged messages. In a request/replay scenario we can tag the request message with an
+//% unique tag and just wait on it specifically.
 //%
-//% For regular messages both parameters are used.
-//% * **i32_data_size_ptr** - Location to write the message buffer size to as.
-//% * **i32_res_size_ptr**  - Location to write the number of resources to.
-//%
-//% This function should be called before `lunatic::message::receive` to let the guest know how
-//% much memory space needs to be reserved for the next message. The data size is in **bytes**,
-//% the resources size is the number of resources and each resource is a u64 value. Because of
-//% this the guest needs to reserve `64 * resource size` bytes for the resource buffer.
+//% This operation needs to be an atomic host function, if we jumped back into the guest we could
+//%  miss out on the incoming message before `receive` is called.
 //%
 //% Traps:
-//% * If **size_ptr** is outside the memory.
-fn prepare_receive(
+//% * If the process ID doesn't exist.
+//% * If it's called with wrong data in the scratch area.
+fn send_skip_search_receive(
     mut caller: Caller<ProcessState>,
-    data_size_ptr: u32,
-    res_size_ptr: u32,
-) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_> {
+    process_id: u64,
+) -> Box<dyn Future<Output = Result<(), Trap>> + Send + '_> {
     Box::new(async move {
         let message = caller
             .data_mut()
-            .mailbox
-            .recv()
-            .await
-            .expect("a process always hold onto its sender and this can't be None");
-        let result = match &message {
-            Message::Data(message) => {
-                let message_buffer_size = message.buffer_size() as u32;
-                let message_resources_size = message.resources_size() as u32;
-                let memory = get_memory(&mut caller)?;
-                memory
-                    .write(
-                        &mut caller,
-                        data_size_ptr as usize,
-                        &message_buffer_size.to_le_bytes(),
-                    )
-                    .or_trap("lunatic::message::prepare_receive")?;
-                memory
-                    .write(
-                        &mut caller,
-                        res_size_ptr as usize,
-                        &message_resources_size.to_le_bytes(),
-                    )
-                    .or_trap("lunatic::message::prepare_receive")?;
-                0
-            }
-            Message::Signal => 1,
-        };
+            .message
+            .take()
+            .or_trap("lunatic::message::send_skip_search_receive")?;
+        let tag = message.tag();
+        let process = caller
+            .data()
+            .resources
+            .processes
+            .get(process_id)
+            .or_trap("lunatic::message::send_skip_search_receive")?;
+        process.send(Signal::Message(message));
+        let message = caller.data_mut().message_mailbox.pop_skip_search(tag).await;
         // Put the message into the scratch area
         caller.data_mut().message = Some(message);
-        Ok(result)
+        Ok(())
     })
 }
 
-//% lunatic::message::receive(data_ptr: i32, resource_ptr: i32)
+//% lunatic::message::receive(tag: i64) -> u32
 //%
-//% * **data_ptr**     - Pointer to write the data to.
-//% * **resource_ptr** - Pointer to an array of i64 values, where each value represents the
-//%                      resource id inside the new process. Resources are in the same order they
-//%                      were added.
+//% Returns:
+//% * 0 if it's a data message.
+//% * 1 if it's a signal turned into a message.
 //%
-//% Writes the message that was prepared with `lunatic::message::prepare_receive` to the guest. It
-//% should only be called if `prepare_receive` returned 0, otherwise it will trap. Signal message
-//% don't cary any additional information and everything we need was returned by `prepare_receive`.
+//% Takes the next message out of the queue or blocks until the next message is received if queue
+//% is empty. If **tag** is a value different from 0 it will block until a message with such a tag
+//% is received and return it.
 //%
-//% Traps:
-//% * If `lunatic::message::prepare_receive` was not called before.
-//% * If **data_ptr + size of the message** is outside the memory.
-//% * If **resource_ptr + size of the resources** is outside the memory.
-fn receive(mut caller: Caller<ProcessState>, data_ptr: u32, resource_ptr: u32) -> Result<(), Trap> {
-    let last_message = caller
-        .data_mut()
-        .message
-        .take()
-        .or_trap("lunatic::message::receive")?;
-    match last_message {
-        Message::Data(last_message) => {
-            let memory = get_memory(&mut caller)?;
-            memory
-                .write(&mut caller, data_ptr as usize, last_message.buffer())
-                .or_trap("lunatic::message::receive")?;
-            let resources: Vec<u8> = last_message
-                .resources()
-                .into_iter()
-                .map(|resource| match resource {
-                    crate::message::Resource::Process(process_handle) => {
-                        u64::to_le_bytes(caller.data_mut().resources.processes.add(process_handle))
-                    }
-                    crate::message::Resource::TcpStream(tcp_stream) => {
-                        u64::to_le_bytes(caller.data_mut().resources.tcp_streams.add(tcp_stream))
-                    }
-                })
-                .flatten()
-                .collect();
-            memory
-                .write(&mut caller, resource_ptr as usize, &resources)
-                .or_trap("lunatic::message::receive")?;
-            Ok(())
-        }
-        Message::Signal => Err(Trap::new("`lunatic::message::receive` called on a signal")),
-    }
+//% Once the message is received, functions like `lunatic::message::read_data()` can be used to extract
+//% data out of it.
+fn receive(
+    mut caller: Caller<ProcessState>,
+    tag: i64,
+) -> Box<dyn Future<Output = u32> + Send + '_> {
+    Box::new(async move {
+        let tag = match tag {
+            0 => None,
+            tag => Some(tag),
+        };
+        let message = caller.data_mut().message_mailbox.pop(tag).await;
+        let result = match message {
+            Message::Data(_) => 0,
+            Message::Signal(_) => 1,
+        };
+        // Put the message into the scratch area
+        caller.data_mut().message = Some(message);
+        result
+    })
 }

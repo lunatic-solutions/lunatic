@@ -1,31 +1,43 @@
-use std::{collections::HashSet, future::Future, hash::Hash};
+use std::{collections::HashMap, future::Future, hash::Hash};
 
 use anyhow::Result;
 use log::debug;
 use tokio::{
-    sync::{
-        broadcast::{Receiver, Sender},
-        mpsc::{UnboundedReceiver, UnboundedSender},
-    },
+    sync::mpsc::{UnboundedReceiver, UnboundedSender},
     task::JoinHandle,
 };
 use uuid::Uuid;
 use wasmtime::Val;
 
-use crate::message::Message;
+use crate::{mailbox::MessageMailbox, message::Message};
+
+/// The `Process` is the main abstraction unit in lunatic.
+///
+/// It usually represents some code that is being executed (Wasm instance or V8 isolate), but it
+/// could also be a resource (GPU, UDP connection) that can be interacted with through messages.
+///
+/// The only way of interacting with them is through signals. These signals can come in different
+/// shapes (message, kill, link, ...). Most signals have well defined meanings, but others such as
+/// a [`Message`] can be interpreted by the receiver in different ways.
+pub trait Process {
+    fn send(&self, signal: Signal);
+}
 
 #[derive(Debug)]
 pub enum Signal {
+    Message(Message),
     // When received process should stop.
     Kill,
     // Change behaviour of what happens if a linked process dies.
     DieWhenLinkDies(bool),
-    // Sent from a process that wants to be linked.
-    Link(ProcessHandle),
-    // Sent to linked processes when a process dies because of a trap.
-    LinkNotifyTrap,
-    // Sent to linked processes when a process dies because of a kill signal.
-    LinkNotifyKill,
+    // Sent from a process that wants to be linked. In case of a death the tag will be returned
+    // to the sender in form of a `LinkDied` signal.
+    Link(Option<i64>, WasmProcess),
+    // Sent to linked processes when the link dies. Contains the tag used when the link was
+    // established. Depending on the value of `die_when_link_dies` (default is `true`) this
+    // receiving process will turn this signal into a message or the process will immediately
+    // die as well.
+    LinkDied(Option<i64>),
 }
 
 /// The reason of a process finishing
@@ -36,90 +48,52 @@ pub enum Finished<T> {
     Signal(Signal),
 }
 
-/// The only way of communicating with processes is through a `ProcessHandle`.
+/// A `WasmProcess` represents an instance of a Wasm module that is being executed.
 ///
-/// Lunatic processes can be crated from a Wasm module & exported function name (or table index).
 /// They are created inside the `Environment::spawn` method, and once spawned they will be running
 /// in the background and can't be observed directly.
-#[derive(Debug)]
-pub struct ProcessHandle {
+#[derive(Debug, Clone)]
+pub struct WasmProcess {
     id: Uuid,
-    signal_sender: UnboundedSender<Signal>,
-    message_sender: UnboundedSender<Message>,
-    trapped_sender: Sender<bool>,
-    trapped: Receiver<bool>,
+    signal_mailbox: UnboundedSender<Signal>,
 }
 
-impl Clone for ProcessHandle {
-    fn clone(&self) -> Self {
-        Self {
-            id: self.id,
-            signal_sender: self.signal_sender.clone(),
-            message_sender: self.message_sender.clone(),
-            trapped_sender: self.trapped_sender.clone(),
-            trapped: self.trapped_sender.subscribe(),
-        }
-    }
-}
-
-impl PartialEq for ProcessHandle {
+impl PartialEq for WasmProcess {
     fn eq(&self, other: &Self) -> bool {
         self.id == other.id
     }
 }
 
-impl Eq for ProcessHandle {}
+impl Eq for WasmProcess {}
 
-impl Hash for ProcessHandle {
+impl Hash for WasmProcess {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.id.hash(state);
     }
 }
 
-impl ProcessHandle {
-    /// Create a new ProcessHandle
-    pub fn new(
-        id: Uuid,
-        signal_sender: UnboundedSender<Signal>,
-        message_sender: UnboundedSender<Message>,
-        trapped_sender: Sender<bool>,
-    ) -> Self {
-        Self {
-            id,
-            signal_sender,
-            message_sender,
-            trapped_sender: trapped_sender.clone(),
-            trapped: trapped_sender.subscribe(),
-        }
+impl WasmProcess {
+    /// Create a new WasmProcess
+    pub fn new(id: Uuid, signal_mailbox: UnboundedSender<Signal>) -> Self {
+        Self { id, signal_mailbox }
     }
+}
 
-    /// Send message to process
-    pub fn send_message(&self, message: Message) -> Result<()> {
-        Ok(self.message_sender.send(message)?)
-    }
-
-    /// Send signal to process
-    pub fn send_signal(&self, signal: Signal) -> Result<()> {
-        Ok(self.signal_sender.send(signal)?)
-    }
-
-    /// Wait on process to finish and return:
-    /// * false if the process finished normally
-    /// * true if the process trapped or received a Signal::Kill
-    pub async fn join(&mut self) -> bool {
-        self.trapped
-            .recv()
-            .await
-            .expect("a process holds a sender and must exist at this time")
+impl Process for WasmProcess {
+    fn send(&self, signal: Signal) {
+        // If the receiver doesn't exist or is closed, just ignore it and drop the `signal`.
+        // lunatic can't guarantee that a message was successfully seen by the receiving side even
+        // if this call succeeds. We deliberately don't expose this API, as it would not make sense
+        // to relay on it and could signal wrong guarantees to users.
+        let _ = self.signal_mailbox.send(signal);
     }
 }
 
 // Turns a Future into a process, enabling signals (e.g. kill).
 pub(crate) fn new<F>(
     fut: F,
-    message_sender: UnboundedSender<Message>,
-    trapped_sender: Sender<bool>,
     mut signal_mailbox: UnboundedReceiver<Signal>,
+    message_mailbox: MessageMailbox,
 ) -> JoinHandle<()>
 where
     F: Future<Output = Result<Box<[Val]>>> + Send + 'static,
@@ -130,33 +104,32 @@ where
         // Defines what happens if one of the linked processes dies.
         let mut die_when_link_dies = true;
         // Process linked to this one
-        let mut links = HashSet::new();
-        let mut disable_signals = false;
+        let mut links = HashMap::new();
         let result = loop {
             tokio::select! {
                 biased;
                 // Handle signals first
-                signal = signal_mailbox.recv(), if !disable_signals => {
+                signal = signal_mailbox.recv() => {
                     match signal {
+                        Some(Signal::Message(message)) => message_mailbox.push(message),
                         Some(Signal::DieWhenLinkDies(value)) => die_when_link_dies = value,
                         // Put process into list of linked processes
-                        Some(Signal::Link(proc)) => { links.insert(proc); },
+                        Some(Signal::Link(tag, proc)) => { links.insert(proc, tag); },
                         // Exit loop and don't poll anymore the future if Signal::Kill received.
                         Some(Signal::Kill) => break Finished::Signal(Signal::Kill),
                         // Depending if `die_when_link_dies` is set, process will die or turn the
                         // signal into a message
-                        Some(Signal::LinkNotifyTrap) | Some(Signal::LinkNotifyKill) => {
+                        Some(Signal::LinkDied(tag)) => {
                             if die_when_link_dies {
                                 // Even this was not a **kill** signal it has the same effect on
                                 // this process and should be propagated as such.
                                 break Finished::Signal(Signal::Kill)
                             } else {
-                                message_sender.send(Message::Signal)
-                                .expect("message is sent to ourself and receiver must exist");
+                                let message = Message::Signal(tag);
+                                message_mailbox.push(message);
                             }
                         },
-                        // Can't receive anymore signals, disable this `select!` branch
-                        None => disable_signals = true
+                        None => unreachable!("The process holds the sending side and is never closed")
                     }
                 }
                 // Run process
@@ -167,24 +140,18 @@ where
             Finished::Wasm(Result::Err(err)) => {
                 debug!("Process failed: {}", err);
                 // Notify all links that we finished with a trap
-                links.iter().for_each(|proc| {
-                    let _ = proc.send_signal(Signal::LinkNotifyTrap);
+                links.iter().for_each(|(proc, tag)| {
+                    let _ = proc.send(Signal::LinkDied(*tag));
                 });
-                // Notify process handles that we finished with a trap
-                let _ = trapped_sender.send(true);
             }
             Finished::Signal(Signal::Kill) => {
                 debug!("Process was killed");
                 // Notify all links that we finished because of a kill signal
-                links.iter().for_each(|proc| {
-                    let _ = proc.send_signal(Signal::LinkNotifyKill);
+                links.iter().for_each(|(proc, tag)| {
+                    let _ = proc.send(Signal::LinkDied(*tag));
                 });
-                // Notify process handles that we finished with a trap
-                let _ = trapped_sender.send(true);
             }
-            _ => {
-                let _ = trapped_sender.send(false);
-            }
+            _ => {} // Finished normally
         }
     };
 

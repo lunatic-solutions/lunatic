@@ -7,17 +7,17 @@ use std::vec::IntoIter;
 
 use anyhow::Result;
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::broadcast::Sender;
 use tokio::sync::mpsc::UnboundedSender;
-use tokio::sync::{mpsc::UnboundedReceiver, Mutex};
+use tokio::sync::Mutex;
 use uuid::Uuid;
 use wasmtime::ResourceLimiter;
 use wasmtime_wasi::{WasiCtx, WasiCtxBuilder};
 
+use crate::mailbox::MessageMailbox;
 use crate::module::Module;
 use crate::plugin::ModuleContext;
 use crate::process::Signal;
-use crate::{message::Message, process::ProcessHandle, EnvConfig, Environment};
+use crate::{message::Message, process::WasmProcess, EnvConfig, Environment};
 
 // The internal state of Plugins.
 pub(crate) struct PluginState<'a, 'b> {
@@ -45,9 +45,6 @@ impl<'a, 'b> PluginState<'a, 'b> {
 pub(crate) struct ProcessState {
     // Process id
     pub(crate) id: Uuid,
-    // This fields allows us to wait on the process to finish and check if it trapped during the
-    // execution, received a Signal::Kill or finished regularly.
-    pub(crate) trapped_sender: Sender<bool>,
     // The module that this process was spawned from
     pub(crate) module: Module,
     // A space that can be used to temporarily store messages when sending or receiving them.
@@ -56,12 +53,11 @@ pub(crate) struct ProcessState {
     // guest to reserve enough space and then the it's received. Both of those actions use
     // `message` as a temp space to store messages across host calls.
     pub(crate) message: Option<Message>,
-    // Message sender
-    pub(crate) message_sender: UnboundedSender<Message>,
-    // Signal sender
-    pub(crate) signal_sender: UnboundedSender<Signal>,
+    // This field is only part of the state to make it possible to create a Wasm process handle
+    // from inside itself. See the `lunatic::process::this()` Wasm API.
+    pub(crate) signal_mailbox: UnboundedSender<Signal>,
     // Messages sent to the process
-    pub(crate) mailbox: UnboundedReceiver<Message>,
+    pub(crate) message_mailbox: MessageMailbox,
     // Errors belonging to the process
     pub(crate) errors: HashMapId<anyhow::Error>,
     // Resources
@@ -73,11 +69,9 @@ pub(crate) struct ProcessState {
 impl ProcessState {
     pub fn new(
         id: Uuid,
-        trapped_sender: Sender<bool>,
         module: Module,
-        message_sender: UnboundedSender<Message>,
-        mailbox: UnboundedReceiver<Message>,
-        signal_sender: UnboundedSender<Signal>,
+        signal_mailbox: UnboundedSender<Signal>,
+        message_mailbox: MessageMailbox,
     ) -> Result<Self> {
         let wasi = WasiCtxBuilder::new();
         let wasi = wasi.inherit_stdio();
@@ -89,12 +83,10 @@ impl ProcessState {
         let wasi = wasi.args(&args)?;
         let state = Self {
             id,
-            trapped_sender,
             module,
             message: None,
-            message_sender,
-            signal_sender,
-            mailbox,
+            signal_mailbox,
+            message_mailbox,
             errors: HashMapId::new(),
             resources: Resources::default(),
             wasi: wasi.build(),
@@ -143,7 +135,7 @@ pub(crate) struct Resources {
     pub(crate) configs: HashMapId<EnvConfig>,
     pub(crate) environments: HashMapId<Environment>,
     pub(crate) modules: HashMapId<Module>,
-    pub(crate) processes: HashMapId<ProcessHandle>,
+    pub(crate) processes: HashMapId<WasmProcess>,
     pub(crate) dns_iterators: HashMapId<DnsIterator>,
     pub(crate) tcp_listeners: HashMapId<TcpListener>,
     pub(crate) tcp_streams: HashMapId<Arc<Mutex<TcpStream>>>,
