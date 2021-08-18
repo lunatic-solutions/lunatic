@@ -6,6 +6,11 @@ use std::task::{Context, Poll, Waker};
 
 use crate::message::Message;
 
+// The `MessageMailbox` is a data structure holding all messages of a process.
+//
+// If a `Signal` of type `Message` is received it will be taken from the Signal queue and put into
+// this structure. The order of messages is preserved. This struct also implements the [`Future`]
+// trait and `pop()` operations can be awaited on if the queue is empty.
 #[derive(Clone, Default)]
 pub(crate) struct MessageMailbox {
     inner: Arc<Mutex<InnerMessageMailbox>>,
@@ -78,6 +83,10 @@ impl MessageMailbox {
         self.await
     }
 
+    // Pushes a message into the mailbox.
+    //
+    // If the message is being .awaited on, this call will immediately notify the waker that it's
+    // ready, otherwise it will push it at the end of the queue.
     pub(crate) fn push(&self, message: Message) {
         let mut mailbox = self.inner.lock().expect("only accessed by one process");
         // If waiting on a new message notify executor that it arrived.
@@ -113,13 +122,111 @@ impl Future for &MessageMailbox {
 
 #[cfg(test)]
 mod tests {
+    use std::{
+        future::Future,
+        sync::{Arc, Mutex},
+        task::{Context, Wake},
+    };
+
     use super::{Message, MessageMailbox};
 
     #[tokio::test]
-    async fn no_tag_message() {
+    async fn no_tag_signal_message() {
         let mailbox = MessageMailbox::default();
         let message = Message::Signal(None);
         mailbox.push(message);
         mailbox.pop(None).await;
+    }
+
+    #[tokio::test]
+    async fn tag_signal_message() {
+        let mailbox = MessageMailbox::default();
+        let tag = Some(1337);
+        let message = Message::Signal(tag);
+        mailbox.push(message);
+        let message = mailbox.pop(None).await;
+        assert_eq!(message.tag(), tag);
+    }
+
+    #[tokio::test]
+    async fn selective_receive_tag_signal_message() {
+        let mailbox = MessageMailbox::default();
+        let tag1 = Some(1);
+        let tag2 = Some(2);
+        let tag3 = Some(3);
+        let tag4 = Some(4);
+        let tag5 = Some(5);
+        mailbox.push(Message::Signal(tag1));
+        mailbox.push(Message::Signal(tag2));
+        mailbox.push(Message::Signal(tag3));
+        mailbox.push(Message::Signal(tag4));
+        mailbox.push(Message::Signal(tag5));
+        let message = mailbox.pop(tag2).await;
+        assert_eq!(message.tag(), tag2);
+        let message = mailbox.pop(tag1).await;
+        assert_eq!(message.tag(), tag1);
+        let message = mailbox.pop(tag3).await;
+        assert_eq!(message.tag(), tag3);
+        // The only 2 left over are 4 & 5
+        let message = mailbox.pop(None).await;
+        assert_eq!(message.tag(), tag4);
+        let message = mailbox.pop(None).await;
+        assert_eq!(message.tag(), tag5);
+    }
+
+    #[derive(Clone)]
+    struct FlagWaker(Arc<Mutex<bool>>);
+    impl Wake for FlagWaker {
+        fn wake(self: Arc<Self>) {
+            let mut called = self.0.lock().unwrap();
+            *called = true;
+        }
+    }
+    #[tokio::test]
+    async fn waker_trigger_on_wait() {
+        let mailbox = MessageMailbox::default();
+        // Sending a message with any tag to a mailbox that is "awaiting" a `None` tag should
+        // trigger the waker and return the tag.
+        let tag = Some(1337);
+        // Manually poll future
+        let waker = FlagWaker(Arc::new(Mutex::new(false)));
+        let waker_ref = waker.clone();
+        let waker = &Arc::new(waker).into();
+        let mut context = Context::from_waker(waker);
+        let fut = mailbox.pop(None);
+        tokio::pin!(fut);
+        // First poll will block
+        let result = fut.poll(&mut context);
+        assert!(result.is_pending());
+        assert_eq!(*waker_ref.0.lock().unwrap(), false);
+        // Pushing a message to the mailbox will call the waker
+        mailbox.push(Message::Signal(tag));
+        assert_eq!(*waker_ref.0.lock().unwrap(), true);
+        // Next poll will return the value
+        let fut = mailbox.pop(None);
+        tokio::pin!(fut);
+        let result = fut.poll(&mut context);
+        assert!(result.is_ready());
+
+        // "Awaiting" a specific tag and receiving a `None` message should not trigger the waker.
+        // Manually poll future
+        let waker = FlagWaker(Arc::new(Mutex::new(false)));
+        let waker_ref = waker.clone();
+        let waker = &Arc::new(waker).into();
+        let mut context = Context::from_waker(waker);
+        let fut = mailbox.pop(Some(1337));
+        tokio::pin!(fut);
+        // First poll will block
+        let result = fut.poll(&mut context);
+        assert!(result.is_pending());
+        assert_eq!(*waker_ref.0.lock().unwrap(), false);
+        // Pushing a message with the `None` tag should not call the waker
+        mailbox.push(Message::Signal(None));
+        assert_eq!(*waker_ref.0.lock().unwrap(), false);
+        // Next poll will still not have the value with the tag 1337
+        let fut = mailbox.pop(Some(1337));
+        tokio::pin!(fut);
+        let result = fut.poll(&mut context);
+        assert!(result.is_pending());
     }
 }
