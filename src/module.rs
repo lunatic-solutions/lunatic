@@ -8,7 +8,7 @@ use std::sync::Arc;
 use crate::{
     environment::UNIT_OF_COMPUTE_IN_INSTRUCTIONS,
     mailbox::MessageMailbox,
-    process::{self, Signal, WasmProcess},
+    process::{self, Process, Signal, WasmProcess},
     state::ProcessState,
     Environment,
 };
@@ -60,13 +60,6 @@ impl Module {
             signal_mailbox.0.clone(),
             message_mailbox.clone(),
         )?;
-        if let Some((tag, process)) = link {
-            // Send signal to itself to perform the linking
-            signal_mailbox
-                .0
-                .send(Signal::Link(tag, process))
-                .expect("receiver must exist at this point");
-        }
 
         let mut store = Store::new(self.environment().engine(), state);
         store.limiter(|state| state);
@@ -94,9 +87,43 @@ impl Module {
             })?;
 
         let fut = async move { entry.call_async(&mut store, &params).await };
-        let process = process::new(fut, signal_mailbox.1, message_mailbox);
+        let child_process = process::new(fut, signal_mailbox.1, message_mailbox);
+        let child_process_handle = WasmProcess::new(id, signal_mailbox.0.clone());
 
-        Ok((process, WasmProcess::new(id, signal_mailbox.0)))
+        // **Child link guarantees**:
+        // The link signal is going to be put inside of the child's mailbox and is going to be
+        // processed before any child code can run. This means that any failure inside the child
+        // Wasm code will be correctly reported to the parent.
+        //
+        // We assume here that the code inside of `process::new()` will not fail during signal
+        // handling.
+        //
+        // **Parent link guarantees**:
+        // A `tokio::task::yield_now()` call is executed to allow the parent to link the child
+        // before continuing any further execution. This should force the parent to process all
+        // signals right away.
+        //
+        // The parent could have received a `kill` signal in its mailbox before this function was
+        // called and this signal is going to be processed before the link is established (FIFO).
+        // Only after the yield function we can guarantee that the child is going to be notified
+        // if the parent fails. This is ok, as the actual spawning of the child happens after the
+        // call, so the child wouldn't even exist if the parent failed before.
+        if let Some((tag, process)) = link {
+            // Send signal to itself to perform the linking
+            process.send(Signal::Link(None, child_process_handle.clone()));
+            // Suspend itself to process all new signals
+            tokio::task::yield_now().await;
+            // Send signal to child to link it
+            signal_mailbox
+                .0
+                .send(Signal::Link(tag, process))
+                .expect("receiver must exist at this point");
+        }
+
+        // Spawn a background process
+        let join = tokio::spawn(child_process);
+
+        Ok((join, child_process_handle))
     }
 
     pub fn environment(&self) -> &Environment {

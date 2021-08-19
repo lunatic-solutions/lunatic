@@ -2,10 +2,7 @@ use std::{collections::HashMap, future::Future, hash::Hash};
 
 use anyhow::Result;
 use log::debug;
-use tokio::{
-    sync::mpsc::{UnboundedReceiver, UnboundedSender},
-    task::JoinHandle,
-};
+use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use uuid::Uuid;
 use wasmtime::Val;
 
@@ -33,6 +30,8 @@ pub enum Signal {
     // Sent from a process that wants to be linked. In case of a death the tag will be returned
     // to the sender in form of a `LinkDied` signal.
     Link(Option<i64>, WasmProcess),
+    // Request from a process to be unlinked
+    UnLink(WasmProcess),
     // Sent to linked processes when the link dies. Contains the tag used when the link was
     // established. Depending on the value of `die_when_link_dies` (default is `true`) this
     // receiving process will turn this signal into a message or the process will immediately
@@ -90,71 +89,67 @@ impl Process for WasmProcess {
 }
 
 // Turns a Future into a process, enabling signals (e.g. kill).
-pub(crate) fn new<F>(
+pub(crate) async fn new<F>(
     fut: F,
     mut signal_mailbox: UnboundedReceiver<Signal>,
     message_mailbox: MessageMailbox,
-) -> JoinHandle<()>
-where
+) where
     F: Future<Output = Result<Box<[Val]>>> + Send + 'static,
 {
-    let process = async move {
-        tokio::pin!(fut);
+    tokio::pin!(fut);
 
-        // Defines what happens if one of the linked processes dies.
-        let mut die_when_link_dies = true;
-        // Process linked to this one
-        let mut links = HashMap::new();
-        let result = loop {
-            tokio::select! {
-                biased;
-                // Handle signals first
-                signal = signal_mailbox.recv() => {
-                    match signal {
-                        Some(Signal::Message(message)) => message_mailbox.push(message),
-                        Some(Signal::DieWhenLinkDies(value)) => die_when_link_dies = value,
-                        // Put process into list of linked processes
-                        Some(Signal::Link(tag, proc)) => { links.insert(proc, tag); },
-                        // Exit loop and don't poll anymore the future if Signal::Kill received.
-                        Some(Signal::Kill) => break Finished::Signal(Signal::Kill),
-                        // Depending if `die_when_link_dies` is set, process will die or turn the
-                        // signal into a message
-                        Some(Signal::LinkDied(tag)) => {
-                            if die_when_link_dies {
-                                // Even this was not a **kill** signal it has the same effect on
-                                // this process and should be propagated as such.
-                                break Finished::Signal(Signal::Kill)
-                            } else {
-                                let message = Message::Signal(tag);
-                                message_mailbox.push(message);
-                            }
-                        },
-                        None => unreachable!("The process holds the sending side and is never closed")
-                    }
+    // Defines what happens if one of the linked processes dies.
+    let mut die_when_link_dies = true;
+    // Process linked to this one
+    let mut links = HashMap::new();
+    let result = loop {
+        tokio::select! {
+            biased;
+            // Handle signals first
+            signal = signal_mailbox.recv() => {
+                match signal {
+                    Some(Signal::Message(message)) => message_mailbox.push(message),
+                    Some(Signal::DieWhenLinkDies(value)) => die_when_link_dies = value,
+                    // Put process into list of linked processes
+                    Some(Signal::Link(tag, proc)) => { links.insert(proc, tag); },
+                    // Remove process from list
+                    Some(Signal::UnLink(proc)) => { links.remove(&proc); }
+                    // Exit loop and don't poll anymore the future if Signal::Kill received.
+                    Some(Signal::Kill) => break Finished::Signal(Signal::Kill),
+                    // Depending if `die_when_link_dies` is set, process will die or turn the
+                    // signal into a message
+                    Some(Signal::LinkDied(tag)) => {
+                        if die_when_link_dies {
+                            // Even this was not a **kill** signal it has the same effect on
+                            // this process and should be propagated as such.
+                            break Finished::Signal(Signal::Kill)
+                        } else {
+                            let message = Message::Signal(tag);
+                            message_mailbox.push(message);
+                        }
+                    },
+                    None => unreachable!("The process holds the sending side and is never closed")
                 }
-                // Run process
-                output = &mut fut => { break Finished::Wasm(output); }
             }
-        };
-        match result {
-            Finished::Wasm(Result::Err(err)) => {
-                debug!("Process failed: {}", err);
-                // Notify all links that we finished with a trap
-                links.iter().for_each(|(proc, tag)| {
-                    let _ = proc.send(Signal::LinkDied(*tag));
-                });
-            }
-            Finished::Signal(Signal::Kill) => {
-                debug!("Process was killed");
-                // Notify all links that we finished because of a kill signal
-                links.iter().for_each(|(proc, tag)| {
-                    let _ = proc.send(Signal::LinkDied(*tag));
-                });
-            }
-            _ => {} // Finished normally
+            // Run process
+            output = &mut fut => { break Finished::Wasm(output); }
         }
     };
-
-    // Spawn a background process
-    tokio::spawn(process)
+    match result {
+        Finished::Wasm(Result::Err(err)) => {
+            debug!("Process failed: {}", err);
+            // Notify all links that we finished with a trap
+            links.iter().for_each(|(proc, tag)| {
+                let _ = proc.send(Signal::LinkDied(*tag));
+            });
+        }
+        Finished::Signal(Signal::Kill) => {
+            debug!("Process was killed");
+            // Notify all links that we finished because of a kill signal
+            links.iter().for_each(|(proc, tag)| {
+                let _ = proc.send(Signal::LinkDied(*tag));
+            });
+        }
+        _ => {} // Finished normally
+    }
 }

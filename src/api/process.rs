@@ -10,7 +10,7 @@ use super::{
 use crate::{
     api::error::IntoTrap,
     module::Module,
-    process::{Signal, WasmProcess},
+    process::{Process, Signal, WasmProcess},
     state::ProcessState,
     EnvConfig, Environment,
 };
@@ -175,6 +175,22 @@ pub(crate) fn register(
         this,
         namespace_filter,
     )?;
+    link_if_match(
+        linker,
+        "lunatic::process",
+        "link",
+        FuncType::new([ValType::I64, ValType::I64], []),
+        link,
+        namespace_filter,
+    )?;
+    link_if_match(
+        linker,
+        "lunatic::process",
+        "unlink",
+        FuncType::new([ValType::I64], []),
+        unlink,
+        namespace_filter,
+    )?;
     Ok(())
 }
 
@@ -193,7 +209,7 @@ fn create_config(mut caller: Caller<ProcessState>, max_memory: u64, max_fuel: u6
     caller.data_mut().resources.configs.add(config)
 }
 
-//% lunatic::error::drop_config(config_id: u64)
+//% lunatic::process::drop_config(config_id: u64)
 //%
 //% Drops the config resource.
 //%
@@ -430,7 +446,7 @@ fn add_this_module(
     })
 }
 
-//% lunatic::error::drop_module(mod_id: i64)
+//% lunatic::process::drop_module(mod_id: i64)
 //%
 //% Drops the module resource.
 //%
@@ -671,7 +687,7 @@ fn sleep_ms(_: Caller<ProcessState>, millis: u64) -> Box<dyn Future<Output = ()>
     })
 }
 
-//% lunatic::error::die_when_link_dies(trap: u32)
+//% lunatic::process::die_when_link_dies(trap: u32)
 //%
 //% Defines what happens to this process if one of the linked processes notifies us that it died.
 //%
@@ -688,7 +704,7 @@ fn die_when_link_dies(mut caller: Caller<ProcessState>, trap: u32) {
         .expect("The signal is sent to itself and the receiver must exist at this point");
 }
 
-//% lunatic::error::this() -> u64
+//% lunatic::process::this() -> u64
 //%
 //% Create a process handle to itself and return resource ID.
 fn this(mut caller: Caller<ProcessState>) -> u64 {
@@ -696,4 +712,71 @@ fn this(mut caller: Caller<ProcessState>) -> u64 {
     let signal_mailbox = caller.data().signal_mailbox.clone();
     let process = WasmProcess::new(id, signal_mailbox);
     caller.data_mut().resources.processes.add(process)
+}
+
+//% lunatic::process::link(tag: i64, process_id: u64)
+//%
+//% Link current process to **process_id**. This is not an atomic operation, any of the 2 processes
+//% could fail before processing the `Link` signal and may not notify the other.
+//%
+//% Traps:
+//% * If the process ID doesn't exist.
+fn link(mut caller: Caller<ProcessState>, tag: i64, process_id: u64) -> Result<(), Trap> {
+    let tag = match tag {
+        0 => None,
+        tag => Some(tag),
+    };
+    // Create handle to itself
+    let id = caller.data().id;
+    let signal_mailbox = caller.data().signal_mailbox.clone();
+    let this_process = WasmProcess::new(id, signal_mailbox);
+
+    // Send link signal to other process
+    let process = caller
+        .data()
+        .resources
+        .processes
+        .get(process_id)
+        .or_trap("lunatic::process::link")?
+        .clone();
+    process.send(Signal::Link(tag, this_process));
+
+    // Send link signal to itself
+    caller
+        .data_mut()
+        .signal_mailbox
+        .send(Signal::Link(tag, process))
+        .expect("The signal is sent to itself and the receiver must exist at this point");
+    Ok(())
+}
+
+//% lunatic::process::unlink(process_id: u64)
+//%
+//% Unlink current process from **process_id**. This is not an atomic operation.
+//%
+//% Traps:
+//% * If the process ID doesn't exist.
+fn unlink(mut caller: Caller<ProcessState>, process_id: u64) -> Result<(), Trap> {
+    // Create handle to itself
+    let id = caller.data().id;
+    let signal_mailbox = caller.data().signal_mailbox.clone();
+    let this_process = WasmProcess::new(id, signal_mailbox);
+
+    // Send unlink signal to other process
+    let process = caller
+        .data()
+        .resources
+        .processes
+        .get(process_id)
+        .or_trap("lunatic::process::link")?
+        .clone();
+    process.send(Signal::UnLink(this_process));
+
+    // Send unlink signal to itself
+    caller
+        .data_mut()
+        .signal_mailbox
+        .send(Signal::UnLink(process))
+        .expect("The signal is sent to itself and the receiver must exist at this point");
+    Ok(())
 }

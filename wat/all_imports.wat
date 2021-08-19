@@ -8,6 +8,7 @@
     (import "lunatic::message" "create_data" (func (param i64 i64)))
     (import "lunatic::message" "write_data" (func (param i32 i32) (result i32)))
     (import "lunatic::message" "read_data" (func (param i32 i32) (result i32)))
+    (import "lunatic::message" "seek_data" (func (param i64)))
     (import "lunatic::message" "push_process" (func (param i64) (result i64)))
     (import "lunatic::message" "take_process" (func (param i64) (result i64)))
     (import "lunatic::message" "push_tcp_stream" (func (param i64) (result i64)))
@@ -45,6 +46,8 @@
     (import "lunatic::process" "sleep_ms" (func (param i64)))
     (import "lunatic::process" "die_when_link_dies" (func (param i32)))
     (import "lunatic::process" "this" (func (result i64)))
+    (import "lunatic::process" "link" (func (param i64 i64)))
+    (import "lunatic::process" "unlink" (func (param i64)))
 
     ;; TODO: Add all WASI imports
 
