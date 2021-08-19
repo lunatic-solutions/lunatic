@@ -97,6 +97,11 @@ impl DataMessage {
         }
         None
     }
+
+    /// Moves read pointer to index.
+    pub fn seek(&mut self, index: usize) {
+        self.read_ptr = index;
+    }
 }
 
 impl Write for DataMessage {
@@ -112,7 +117,15 @@ impl Write for DataMessage {
 
 impl Read for DataMessage {
     fn read(&mut self, mut buf: &mut [u8]) -> std::io::Result<usize> {
-        let bytes = buf.write(&self.buffer[self.read_ptr..])?;
+        let slice = if let Some(slice) = self.buffer.get(self.read_ptr..) {
+            slice
+        } else {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::OutOfMemory,
+                "Reading outside of message buffer",
+            ));
+        };
+        let bytes = buf.write(slice)?;
         self.read_ptr += bytes;
         Ok(bytes)
     }

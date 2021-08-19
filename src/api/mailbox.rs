@@ -47,6 +47,14 @@ pub(crate) fn register(
     link_if_match(
         linker,
         "lunatic::message",
+        "seek_data",
+        FuncType::new([ValType::I64], []),
+        seek_data,
+        namespace_filter,
+    )?;
+    link_if_match(
+        linker,
+        "lunatic::message",
         "push_process",
         FuncType::new([ValType::I64], [ValType::I64]),
         push_process,
@@ -246,6 +254,29 @@ fn read_data(mut caller: Caller<ProcessState>, data_ptr: u32, data_len: u32) -> 
     caller.data_mut().message = Some(message);
 
     Ok(bytes as u32)
+}
+
+//% lunatic::message::seek_data(index: u64)
+//%
+//% Moves reading head of the internal message buffer. It's useful if you wish to read the a bit
+//% of a message, decide that someone else will handle it, `seek_data(0)` to reset the read
+//% position for the new receiver and `send` it to another process.
+//%
+//% Traps:
+//% * If it's called without a data message being inside of the scratch area.
+fn seek_data(mut caller: Caller<ProcessState>, index: u64) -> Result<(), Trap> {
+    let mut message = caller
+        .data_mut()
+        .message
+        .as_mut()
+        .or_trap("lunatic::message::read_data")?;
+    match &mut message {
+        Message::Data(data) => data.seek(index as usize),
+        Message::Signal(_) => {
+            return Err(Trap::new("Unexpected `Message::Signal` in scratch area"))
+        }
+    };
+    Ok(())
 }
 
 //% lunatic::message::push_process(process_id: u64) -> u64
