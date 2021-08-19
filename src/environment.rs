@@ -45,7 +45,7 @@ impl Environment {
             // Allocate resources on demand because we can't predict how many process will exist
             .allocation_strategy(InstanceAllocationStrategy::OnDemand)
             // Memories are always static (can't be bigger than max_memory)
-            .static_memory_maximum_size(config.max_memory())
+            .static_memory_maximum_size(config.max_memory() as u64)
             // Set memory guards to 4 Mb
             .static_memory_guard_size(0x400000)
             .dynamic_memory_guard_size(0x400000);

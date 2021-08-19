@@ -6,7 +6,7 @@ use crate::plugin::Plugin;
 #[derive(Clone)]
 pub struct EnvConfig {
     // Maximum amount of memory that can be used by processes in Wasm pages (64KB)
-    max_memory: u64,
+    max_memory: usize,
     // Maximum amount of compute expressed in units of 100k instructions.
     max_fuel: Option<u64>,
     allowed_namespaces: Vec<String>,
@@ -15,7 +15,7 @@ pub struct EnvConfig {
 
 impl EnvConfig {
     /// Create a new environment configuration.
-    pub fn new(max_memory: u64, max_fuel: Option<u64>) -> Self {
+    pub fn new(max_memory: usize, max_fuel: Option<u64>) -> Self {
         Self {
             max_memory,
             max_fuel,
@@ -24,7 +24,7 @@ impl EnvConfig {
         }
     }
 
-    pub fn max_memory(&self) -> u64 {
+    pub fn max_memory(&self) -> usize {
         self.max_memory
     }
 

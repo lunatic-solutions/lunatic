@@ -17,7 +17,8 @@ fn main() -> Result<()> {
                 .long("plugin")
                 .value_name("PLUGIN")
                 .about("Adds plugin")
-                .settings(&[ArgSettings::MultipleOccurrences, ArgSettings::TakesValue]),
+                .setting(ArgSettings::MultipleOccurrences)
+                .setting(ArgSettings::TakesValue),
         )
         .arg(
             Arg::new("wasm")
