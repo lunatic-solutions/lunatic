@@ -191,6 +191,58 @@ pub(crate) fn register(
         unlink,
         namespace_filter,
     )?;
+    link_if_match(
+        linker,
+        "lunatic::process",
+        "register",
+        FuncType::new(
+            [
+                ValType::I32,
+                ValType::I32,
+                ValType::I32,
+                ValType::I32,
+                ValType::I64,
+                ValType::I64,
+            ],
+            [],
+        ),
+        register_proc,
+        namespace_filter,
+    )?;
+    link_if_match(
+        linker,
+        "lunatic::process",
+        "unregister",
+        FuncType::new(
+            [
+                ValType::I32,
+                ValType::I32,
+                ValType::I32,
+                ValType::I32,
+                ValType::I64,
+            ],
+            [ValType::I32],
+        ),
+        unregister,
+        namespace_filter,
+    )?;
+    link_if_match(
+        linker,
+        "lunatic::process",
+        "lookup",
+        FuncType::new(
+            [
+                ValType::I32,
+                ValType::I32,
+                ValType::I32,
+                ValType::I32,
+                ValType::I32,
+            ],
+            [ValType::I32],
+        ),
+        lookup,
+        namespace_filter,
+    )?;
     Ok(())
 }
 
@@ -779,4 +831,165 @@ fn unlink(mut caller: Caller<ProcessState>, process_id: u64) -> Result<(), Trap>
         .send(Signal::UnLink(process))
         .expect("The signal is sent to itself and the receiver must exist at this point");
     Ok(())
+}
+
+//% lunatic::process::register(
+//%     name_ptr: u32,
+//%     name_len: u32,
+//%     version_ptr: u32,
+//%     version_len: u32,
+//%     env_id: u64
+//%     process_id: u64
+//%  )
+//%
+//% Registers process under **name** and **version** inside the specified environment. Processes
+//% that are spawned into this environment can look up the process using the **lookup** function.
+//%
+//% Traps:
+//% * If the process ID doesn't exist.
+//% * If the environment ID doesn't exist.
+//% * If the version string is not in a correct semver format.
+//% * If **name_ptr + name_len** is outside the memory.
+//% * If **version_ptr + version_len** is outside the memory.
+fn register_proc(
+    mut caller: Caller<ProcessState>,
+    name_ptr: u32,
+    name_len: u32,
+    version_ptr: u32,
+    version_len: u32,
+    env_id: u64,
+    process_id: u64,
+) -> Result<(), Trap> {
+    let memory = get_memory(&mut caller)?;
+    let buffer = memory
+        .data(&caller)
+        .get(name_ptr as usize..(name_ptr + name_len) as usize)
+        .or_trap("lunatic::process::register")?;
+    let name = std::str::from_utf8(buffer).or_trap("lunatic::process::register")?;
+    let name = String::from(name);
+    let buffer = memory
+        .data(&caller)
+        .get(version_ptr as usize..(version_ptr + version_len) as usize)
+        .or_trap("lunatic::process::register")?;
+    let version = std::str::from_utf8(buffer).or_trap("lunatic::process::register")?;
+    let process = caller
+        .data()
+        .resources
+        .processes
+        .get(process_id)
+        .or_trap("lunatic::process::register")?
+        .clone();
+    let environment = caller
+        .data()
+        .resources
+        .environments
+        .get(env_id)
+        .or_trap("lunatic::process::register")?;
+    let registry = environment.registry();
+    registry
+        .insert(name, version, process)
+        .or_trap("lunatic::process::register")?;
+    Ok(())
+}
+
+//% lunatic::process::unregister(
+//%     name_ptr: u32,
+//%     name_len: u32,
+//%     version_ptr: u32,
+//%     version_len: u32,
+//%     env_id: u64
+//%  ) -> u32
+//%
+//% Remove process from registry. Returns 0 if the process was removed, 1 if no match exists.
+//%
+//% Traps:
+//% * If the environment ID doesn't exist.
+//% * If the version string is not in a correct semver format.
+//% * If **name_ptr + name_len** is outside the memory.
+//% * If **version_ptr + version_len** is outside the memory.
+fn unregister(
+    mut caller: Caller<ProcessState>,
+    name_ptr: u32,
+    name_len: u32,
+    version_ptr: u32,
+    version_len: u32,
+    env_id: u64,
+) -> Result<u32, Trap> {
+    let memory = get_memory(&mut caller)?;
+    let buffer = memory
+        .data(&caller)
+        .get(name_ptr as usize..(name_ptr + name_len) as usize)
+        .or_trap("lunatic::process::register")?;
+    let name = std::str::from_utf8(buffer).or_trap("lunatic::process::register")?;
+    let buffer = memory
+        .data(&caller)
+        .get(version_ptr as usize..(version_ptr + version_len) as usize)
+        .or_trap("lunatic::process::register")?;
+    let version = std::str::from_utf8(buffer).or_trap("lunatic::process::register")?;
+    let environment = caller
+        .data()
+        .resources
+        .environments
+        .get(env_id)
+        .or_trap("lunatic::process::register")?;
+    let registry = environment.registry();
+    let result = registry
+        .remove(name, version)
+        .or_trap("lunatic::process::register")?;
+    match result {
+        Some(_) => Ok(0),
+        None => Ok(1),
+    }
+}
+
+//% lunatic::process::lookup(
+//%     name_ptr: u32,
+//%     name_len: u32,
+//%     query_ptr: u32,
+//%     query_len: u32,
+//%     id_u64_ptr: u32,
+//%  ) -> u32
+//%
+//% Returns a process that was registered inside the environment that the caller was spawned into.
+//% The query can be be an exact version or follow semver query rules (e.g. "^1.1"). If a process
+//% under this name and version was found the function will return 0 and write the process ID into
+//% **id_u64_ptr**, otherwise it will return 1.
+//%
+//% Traps:
+//% * If the query string is not in a correct semver query format.
+//% * If **name_ptr + name_len** is outside the memory.
+//% * If **query_ptr + query_len** is outside the memory.
+fn lookup(
+    mut caller: Caller<ProcessState>,
+    name_ptr: u32,
+    name_len: u32,
+    query_ptr: u32,
+    query_len: u32,
+    id_u64_ptr: u32,
+) -> Result<u32, Trap> {
+    let memory = get_memory(&mut caller)?;
+    let buffer = memory
+        .data(&caller)
+        .get(name_ptr as usize..(name_ptr + name_len) as usize)
+        .or_trap("lunatic::process::lookup")?;
+    let name = std::str::from_utf8(buffer).or_trap("lunatic::process::lookup")?;
+    let buffer = memory
+        .data(&caller)
+        .get(query_ptr as usize..(query_ptr + query_len) as usize)
+        .or_trap("lunatic::process::lookup")?;
+    let query = std::str::from_utf8(buffer).or_trap("lunatic::process::lookup")?;
+    let registry = caller.data().module.environment().registry();
+    let process = registry
+        .get(name, query)
+        .or_trap("lunatic::process::lookup")?;
+    match process {
+        Some(process) => {
+            let process_id = caller.data_mut().resources.processes.add(process);
+            memory
+                .write(&mut caller, id_u64_ptr as usize, &process_id.to_le_bytes())
+                .or_trap("lunatic::process::lookup")?;
+            Ok(0)
+        }
+        None => Ok(1),
+    }
 }

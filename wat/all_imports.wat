@@ -40,7 +40,7 @@
     (import "lunatic::process" "add_module" (func (param i64 i32 i32 i32) (result i32)))
     (import "lunatic::process" "add_this_module" (func (param i64 i32) (result i32)))
     (import "lunatic::process" "drop_module" (func (param i64)))
-    (import "lunatic::process" "spawn" (func (param i64 i64 i32 i32 i32 i32  i32) (result i32)))
+    (import "lunatic::process" "spawn" (func (param i64 i64 i32 i32 i32 i32 i32) (result i32)))
     (import "lunatic::process" "inherit_spawn" (func (param i64 i32 i32 i32 i32  i32) (result i32)))
     (import "lunatic::process" "drop_process" (func (param i64)))
     (import "lunatic::process" "clone_process" (func (param i64) (result i64)))
@@ -49,6 +49,9 @@
     (import "lunatic::process" "this" (func (result i64)))
     (import "lunatic::process" "link" (func (param i64 i64)))
     (import "lunatic::process" "unlink" (func (param i64)))
+    (import "lunatic::process" "register" (func (param i32 i32 i32 i32 i64 i64)))
+    (import "lunatic::process" "unregister" (func (param i32 i32 i32 i32 i64) (result i32)))
+    (import "lunatic::process" "lookup" (func (param i32 i32 i32 i32 i32) (result i32)))
 
     ;; TODO: Add all WASI imports
 

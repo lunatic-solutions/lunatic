@@ -102,6 +102,9 @@ pub(crate) async fn new<F>(
     let mut die_when_link_dies = true;
     // Process linked to this one
     let mut links = HashMap::new();
+    // TODO: Maybe wrapping this in some kind of `std::panic::catch_unwind` wold be a good idea,
+    //       to protect against panics in host function calls that unwind through Wasm code.
+    //       Currently a panic would just kill the task, but not notify linked processes.
     let result = loop {
         tokio::select! {
             biased;

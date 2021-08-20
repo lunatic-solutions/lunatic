@@ -4,7 +4,10 @@ use tokio::task;
 use wasmtime::{Config, Engine, InstanceAllocationStrategy, Linker, OptLevel, ProfilingStrategy};
 
 use super::config::EnvConfig;
-use crate::{api, module::Module, plugin::patch_module, state::ProcessState};
+use crate::{
+    api, module::Module, plugin::patch_module, process::WasmProcess, registry::LocalRegistry,
+    state::ProcessState,
+};
 
 // One unit of fuel represents around 100k instructions.
 pub const UNIT_OF_COMPUTE_IN_INSTRUCTIONS: u64 = 100_000;
@@ -16,13 +19,14 @@ pub const UNIT_OF_COMPUTE_IN_INSTRUCTIONS: u64 = 100_000;
 /// * Compute limits
 /// * Access to host functions
 ///
-/// They also define the set of plugins. Plugins can be used to modify loaded Wasm modules or to
-/// limit processes' access to host functions by shadowing their implementations.
+/// They also define the set of plugins. Plugins can be used to modify loaded Wasm modules.
+/// Plugins are WIP and not well documented.
 #[derive(Clone)]
 pub struct Environment {
     engine: Engine,
     linker: Linker<ProcessState>,
     config: EnvConfig,
+    registry: LocalRegistry<WasmProcess>,
 }
 
 impl Environment {
@@ -61,6 +65,7 @@ impl Environment {
             engine,
             linker,
             config,
+            registry: LocalRegistry::new(),
         })
     }
 
@@ -93,6 +98,10 @@ impl Environment {
 
     pub(crate) fn linker(&self) -> &Linker<ProcessState> {
         &self.linker
+    }
+
+    pub fn registry(&self) -> &LocalRegistry<WasmProcess> {
+        &self.registry
     }
 }
 

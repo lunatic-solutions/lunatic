@@ -909,6 +909,7 @@ dependencies = [
  "log",
  "paste",
  "pretty_assertions",
+ "semver",
  "tokio",
  "uuid",
  "wabt",

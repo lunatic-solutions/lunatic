@@ -46,6 +46,7 @@ pub mod message;
 pub mod module;
 pub mod plugin;
 pub mod process;
+pub mod registry;
 pub mod state;
 
 pub use config::EnvConfig;
