@@ -1,6 +1,7 @@
 use std::{
     future::Future,
     io::{Read, Write},
+    time::Duration,
 };
 
 use anyhow::Result;
@@ -13,7 +14,7 @@ use crate::{
     state::ProcessState,
 };
 
-use super::{link_async1_if_match, link_if_match};
+use super::{link_async2_if_match, link_if_match};
 
 // Register the mailbox APIs to the linker
 pub(crate) fn register(
@@ -100,19 +101,19 @@ pub(crate) fn register(
         send,
         namespace_filter,
     )?;
-    link_async1_if_match(
+    link_async2_if_match(
         linker,
         "lunatic::message",
-        "send_skip_search_receive",
-        FuncType::new([ValType::I64], []),
-        send_skip_search_receive,
+        "send_receive_skip_search",
+        FuncType::new([ValType::I64, ValType::I32], [ValType::I32]),
+        send_receive_skip_search,
         namespace_filter,
     )?;
-    link_async1_if_match(
+    link_async2_if_match(
         linker,
         "lunatic::message",
         "receive",
-        FuncType::new([ValType::I64], [ValType::I32]),
+        FuncType::new([ValType::I64, ValType::I32], [ValType::I32]),
         receive,
         namespace_filter,
     )?;
@@ -444,9 +445,11 @@ fn send(mut caller: Caller<ProcessState>, process_id: u64) -> Result<(), Trap> {
     Ok(())
 }
 
-//% lunatic::message::send_skip_search_receive(
-//%     process_id: u64,
-//% )
+//% lunatic::message::send_receive_skip_search(process_id: u64, timeout: u32) -> u32
+//%
+//% Returns:
+//% * 0    if message arrived.
+//% * 9027 if call timed out.
 //%
 //% Sends the message to a process and waits for a replay, but doesn't look through existing
 //% messages in the mailbox queue while waiting. This is an optimization that only makes sense
@@ -454,64 +457,85 @@ fn send(mut caller: Caller<ProcessState>, process_id: u64) -> Result<(), Trap> {
 //% unique tag and just wait on it specifically.
 //%
 //% This operation needs to be an atomic host function, if we jumped back into the guest we could
-//%  miss out on the incoming message before `receive` is called.
+//% miss out on the incoming message before `receive` is called.
+//%
+//% If timeout is specified (value different from 0), the function will return on timeout
+//% expiration with value 9027.
 //%
 //% Traps:
 //% * If the process ID doesn't exist.
 //% * If it's called with wrong data in the scratch area.
-fn send_skip_search_receive(
+fn send_receive_skip_search(
     mut caller: Caller<ProcessState>,
     process_id: u64,
-) -> Box<dyn Future<Output = Result<(), Trap>> + Send + '_> {
+    timeout: u32,
+) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_> {
     Box::new(async move {
         let message = caller
             .data_mut()
             .message
             .take()
-            .or_trap("lunatic::message::send_skip_search_receive")?;
+            .or_trap("lunatic::message::send_receive_skip_search")?;
         let tag = message.tag();
         let process = caller
             .data()
             .resources
             .processes
             .get(process_id)
-            .or_trap("lunatic::message::send_skip_search_receive")?;
+            .or_trap("lunatic::message::send_receive_skip_search")?;
         process.send(Signal::Message(message));
-        let message = caller.data_mut().message_mailbox.pop_skip_search(tag).await;
-        // Put the message into the scratch area
-        caller.data_mut().message = Some(message);
-        Ok(())
+        if let Some(message) = tokio::select! {
+            _ = tokio::time::sleep(Duration::from_millis(timeout as u64)), if timeout != 0 => None,
+            message = caller.data_mut().message_mailbox.pop_skip_search(tag) => Some(message)
+        } {
+            // Put the message into the scratch area
+            caller.data_mut().message = Some(message);
+            Ok(0)
+        } else {
+            Ok(9027)
+        }
     })
 }
 
-//% lunatic::message::receive(tag: i64) -> u32
+//% lunatic::message::receive(tag: i64, timeout: u32) -> u32
 //%
 //% Returns:
-//% * 0 if it's a data message.
-//% * 1 if it's a signal turned into a message.
+//% * 0    if it's a data message.
+//% * 1    if it's a signal turned into a message.
+//% * 9027 if call timed out.
 //%
 //% Takes the next message out of the queue or blocks until the next message is received if queue
 //% is empty. If **tag** is a value different from 0 it will block until a message with such a tag
 //% is received and return it.
 //%
-//% Once the message is received, functions like `lunatic::message::read_data()` can be used to extract
-//% data out of it.
+//% If timeout is specified (value different from 0), the function will return on timeout
+//% expiration with value 9027.
+//%
+//% Once the message is received, functions like `lunatic::message::read_data()` can be used to
+//% extract data out of it.
 fn receive(
     mut caller: Caller<ProcessState>,
     tag: i64,
+    timeout: u32,
 ) -> Box<dyn Future<Output = u32> + Send + '_> {
     Box::new(async move {
         let tag = match tag {
             0 => None,
             tag => Some(tag),
         };
-        let message = caller.data_mut().message_mailbox.pop(tag).await;
-        let result = match message {
-            Message::Data(_) => 0,
-            Message::Signal(_) => 1,
-        };
-        // Put the message into the scratch area
-        caller.data_mut().message = Some(message);
-        result
+        if let Some(message) = tokio::select! {
+            _ = tokio::time::sleep(Duration::from_millis(timeout as u64)), if timeout != 0 => None,
+            message = caller.data_mut().message_mailbox.pop(tag) => Some(message)
+        } {
+            let result = match message {
+                Message::Data(_) => 0,
+                Message::Signal(_) => 1,
+            };
+            // Put the message into the scratch area
+            caller.data_mut().message = Some(message);
+            result
+        } else {
+            9027
+        }
     })
 }

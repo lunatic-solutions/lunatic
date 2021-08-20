@@ -3,6 +3,7 @@ use std::future::Future;
 use std::io::IoSlice;
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::Result;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -16,8 +17,8 @@ use crate::state::DnsIterator;
 use crate::{api::get_memory, state::ProcessState};
 
 use super::{
-    link_async2_if_match, link_async3_if_match, link_async4_if_match, link_async6_if_match,
-    link_if_match,
+    link_async2_if_match, link_async3_if_match, link_async4_if_match, link_async5_if_match,
+    link_async6_if_match, link_async7_if_match, link_if_match,
 };
 
 // Register the error APIs to the linker
@@ -25,11 +26,14 @@ pub(crate) fn register(
     linker: &mut Linker<ProcessState>,
     namespace_filter: &[String],
 ) -> Result<()> {
-    link_async3_if_match(
+    link_async4_if_match(
         linker,
         "lunatic::networking",
         "resolve",
-        FuncType::new([ValType::I32, ValType::I32, ValType::I32], [ValType::I32]),
+        FuncType::new(
+            [ValType::I32, ValType::I32, ValType::I32, ValType::I32],
+            [ValType::I32],
+        ),
         resolve,
         namespace_filter,
     )?;
@@ -93,12 +97,13 @@ pub(crate) fn register(
         tcp_accept,
         namespace_filter,
     )?;
-    link_async6_if_match(
+    link_async7_if_match(
         linker,
         "lunatic::networking",
         "tcp_connect",
         FuncType::new(
             [
+                ValType::I32,
                 ValType::I32,
                 ValType::I32,
                 ValType::I32,
@@ -127,23 +132,35 @@ pub(crate) fn register(
         clone_tcp_stream,
         namespace_filter,
     )?;
-    link_async4_if_match(
+    link_async5_if_match(
         linker,
         "lunatic::networking",
         "tcp_write_vectored",
         FuncType::new(
-            [ValType::I64, ValType::I32, ValType::I32, ValType::I32],
+            [
+                ValType::I64,
+                ValType::I32,
+                ValType::I32,
+                ValType::I32,
+                ValType::I32,
+            ],
             [ValType::I32],
         ),
         tcp_write_vectored,
         namespace_filter,
     )?;
-    link_async4_if_match(
+    link_async5_if_match(
         linker,
         "lunatic::networking",
         "tcp_read",
         FuncType::new(
-            [ValType::I64, ValType::I32, ValType::I32, ValType::I32],
+            [
+                ValType::I64,
+                ValType::I32,
+                ValType::I32,
+                ValType::I32,
+                ValType::I32,
+            ],
             [ValType::I32],
         ),
         tcp_read,
@@ -160,11 +177,17 @@ pub(crate) fn register(
     Ok(())
 }
 
-//% lunatic::networking::resolve(name_str_ptr: u32, name_str_len: u32, id_u64_ptr: u32) -> u32
+//% lunatic::networking::resolve(
+//%     name_str_ptr: u32,
+//%     name_str_len: u32,
+//%     timeout: u32,
+//%     id_u64_ptr: u32,
+//% ) -> u32
 //%
 //% Returns:
 //% * 0 on success - The ID of the newly created DNS iterator is written to **id_u64_ptr**
 //% * 1 on error   - The error ID is written to **id_u64_ptr**
+//% * 9027 on timeout
 //%
 //% Performs a DNS resolution. The returned iterator may not actually yield any values
 //% depending on the outcome of any resolution performed.
@@ -177,6 +200,7 @@ fn resolve(
     mut caller: Caller<ProcessState>,
     name_str_ptr: u32,
     name_str_len: u32,
+    timeout: u32,
     id_u64_ptr: u32,
 ) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_> {
     Box::new(async move {
@@ -186,28 +210,40 @@ fn resolve(
             .read(&caller, name_str_ptr as usize, buffer.as_mut_slice())
             .or_trap("lunatic::network::resolve")?;
         let name = std::str::from_utf8(buffer.as_slice()).or_trap("lunatic::network::resolve")?;
-        let (iter_or_error_id, result) = match tokio::net::lookup_host(name).await {
-            Ok(iter) => {
-                // This is a bug in clippy, this collect is not needless
-                #[allow(clippy::needless_collect)]
-                let vec: Vec<SocketAddr> = iter.collect();
-                let id = caller
-                    .data_mut()
-                    .resources
-                    .dns_iterators
-                    .add(DnsIterator::new(vec.into_iter()));
-                (id, 0)
-            }
-            Err(error) => (caller.data_mut().errors.add(error.into()), 1),
+        // Check for timeout during lookup
+        let return_ = if let Some(result) = tokio::select! {
+            _ = tokio::time::sleep(Duration::from_millis(timeout as u64)), if timeout != 0 => None,
+            result = tokio::net::lookup_host(name) => Some(result)
+        } {
+            let (iter_or_error_id, result) = match result {
+                Ok(iter) => {
+                    // This is a bug in clippy, this collect is not needless
+                    #[allow(clippy::needless_collect)]
+                    let vec: Vec<SocketAddr> = iter.collect();
+                    let id = caller
+                        .data_mut()
+                        .resources
+                        .dns_iterators
+                        .add(DnsIterator::new(vec.into_iter()));
+                    (id, 0)
+                }
+                Err(error) => {
+                    let error_id = caller.data_mut().errors.add(error.into());
+                    (error_id, 1)
+                }
+            };
+            memory
+                .write(
+                    &mut caller,
+                    id_u64_ptr as usize,
+                    &iter_or_error_id.to_le_bytes(),
+                )
+                .or_trap("lunatic::networking::resolve")?;
+            Ok(result)
+        } else {
+            Ok(9027)
         };
-        memory
-            .write(
-                &mut caller,
-                id_u64_ptr as usize,
-                &iter_or_error_id.to_le_bytes(),
-            )
-            .or_trap("lunatic::networking::resolve")?;
-        Ok(result)
+        return_
     })
 }
 
@@ -462,17 +498,20 @@ fn tcp_accept(
 //%     port: u32,
 //%     flow_info: u32,
 //%     scope_id: u32,
-//%     id_u64_ptr: u32
+//%     timeout: u32,
+//%     id_u64_ptr: u32,
 //% ) -> u32
 //%
 //% Returns:
 //% * 0 on success - The ID of the newly created TCP stream is written to **id_ptr**.
 //% * 1 on error   - The error ID is written to **id_ptr**
+//% * 9027 on timeout
 //%
 //% Traps:
 //% * If **addr_type** is neither 4 or 6.
 //% * If **addr_u8_ptr** is outside the memory
 //% * If **id_u64_ptr** is outside the memory.
+#[allow(clippy::too_many_arguments)]
 fn tcp_connect(
     mut caller: Caller<ProcessState>,
     addr_type: u32,
@@ -480,6 +519,7 @@ fn tcp_connect(
     port: u32,
     flow_info: u32,
     scope_id: u32,
+    timeout: u32,
     id_u64_ptr: u32,
 ) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_> {
     Box::new(async move {
@@ -494,26 +534,33 @@ fn tcp_connect(
             scope_id,
         )?;
 
-        let (stream_or_error_id, result) = match TcpStream::connect(socket_addr).await {
-            Ok(stream) => (
-                caller
-                    .data_mut()
-                    .resources
-                    .tcp_streams
-                    .add(Arc::new(Mutex::new(stream))),
-                0,
-            ),
-            Err(error) => (caller.data_mut().errors.add(error.into()), 1),
-        };
+        if let Some(result) = tokio::select! {
+            _ = tokio::time::sleep(Duration::from_millis(timeout as u64)), if timeout != 0 => None,
+            result = TcpStream::connect(socket_addr) => Some(result)
+        } {
+            let (stream_or_error_id, result) = match result {
+                Ok(stream) => (
+                    caller
+                        .data_mut()
+                        .resources
+                        .tcp_streams
+                        .add(Arc::new(Mutex::new(stream))),
+                    0,
+                ),
+                Err(error) => (caller.data_mut().errors.add(error.into()), 1),
+            };
 
-        memory
-            .write(
-                &mut caller,
-                id_u64_ptr as usize,
-                &stream_or_error_id.to_le_bytes(),
-            )
-            .or_trap("lunatic::process::tcp_connect")?;
-        Ok(result)
+            memory
+                .write(
+                    &mut caller,
+                    id_u64_ptr as usize,
+                    &stream_or_error_id.to_le_bytes(),
+                )
+                .or_trap("lunatic::process::tcp_connect")?;
+            Ok(result)
+        } else {
+            Ok(9027)
+        }
     })
 }
 
@@ -555,12 +602,14 @@ fn clone_tcp_stream(mut caller: Caller<ProcessState>, tcp_stream_id: u64) -> Res
 //%     stream_id: u64,
 //%     ciovec_array_ptr: u32,
 //%     ciovec_array_len: u32,
+//%     timeout: u32,
 //%     i64_opaque_ptr: u32,
 //% ) -> u32
 //%
 //% Returns:
 //% * 0 on success - The number of bytes written is written to **opaque_ptr**
 //% * 1 on error   - The error ID is written to **opaque_ptr**
+//% * 9027 on timeout
 //%
 //% Gathers data from the vector buffers and writes them to the stream. **ciovec_array_ptr** points
 //% to an array of (ciovec_ptr, ciovec_len) pairs where each pair represents a buffer to be written.
@@ -575,6 +624,7 @@ fn tcp_write_vectored(
     stream_id: u64,
     ciovec_array_ptr: u32,
     ciovec_array_len: u32,
+    timeout: u32,
     opaque_ptr: u32,
 ) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_> {
     Box::new(async move {
@@ -609,17 +659,24 @@ fn tcp_write_vectored(
             .or_trap("lunatic::network::tcp_write_vectored")?
             .clone();
         let mut stream = stream_mutex.lock().await;
+        // Check for timeout
+        if let Some(result) = tokio::select! {
+            _ = tokio::time::sleep(Duration::from_millis(timeout as u64)), if timeout != 0 => None,
+            result = stream.write_vectored(vec_slices.as_slice()) => Some(result)
+        } {
+            let (opaque, return_) = match result {
+                Ok(bytes) => (bytes as u64, 0),
+                Err(error) => (caller.data_mut().errors.add(error.into()), 1),
+            };
 
-        let (opaque, result) = match stream.write_vectored(vec_slices.as_slice()).await {
-            Ok(bytes) => (bytes as u64, 0),
-            Err(error) => (caller.data_mut().errors.add(error.into()), 1),
-        };
-
-        let memory = get_memory(&mut caller)?;
-        memory
-            .write(&mut caller, opaque_ptr as usize, &opaque.to_le_bytes())
-            .or_trap("lunatic::process::tcp_write_vectored")?;
-        Ok(result)
+            let memory = get_memory(&mut caller)?;
+            memory
+                .write(&mut caller, opaque_ptr as usize, &opaque.to_le_bytes())
+                .or_trap("lunatic::process::tcp_write_vectored")?;
+            Ok(return_)
+        } else {
+            Ok(9027)
+        }
     })
 }
 
@@ -627,12 +684,14 @@ fn tcp_write_vectored(
 //%     stream_id: u64,
 //%     buffer_ptr: u32,
 //%     buffer_len: u32,
+//%     timeout: u32,
 //%     i64_opaque_ptr: u32,
 //% ) -> i32
 //%
 //% Returns:
 //% * 0 on success - The number of bytes read is written to **opaque_ptr**
 //% * 1 on error   - The error ID is written to **opaque_ptr**
+//% * 9027 on timeout
 //%
 //% Reads data from TCP stream and writes it to the buffer.
 //%
@@ -645,6 +704,7 @@ fn tcp_read(
     stream_id: u64,
     buffer_ptr: u32,
     buffer_len: u32,
+    timeout: u32,
     opaque_ptr: u32,
 ) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_> {
     Box::new(async move {
@@ -653,8 +713,9 @@ fn tcp_read(
             .resources
             .tcp_streams
             .get(stream_id)
-            .or_trap("lunatic::network::tcp_write_vectored")?
+            .or_trap("lunatic::network::tcp_read")?
             .clone();
+
         let mut stream = stream_mutex.lock().await;
 
         let memory = get_memory(&mut caller)?;
@@ -662,16 +723,25 @@ fn tcp_read(
             .data_mut(&mut caller)
             .get_mut(buffer_ptr as usize..(buffer_ptr + buffer_len) as usize)
             .or_trap("lunatic::networking::tcp_read")?;
-        let (opaque, result) = match stream.read(buffer).await {
-            Ok(bytes) => (bytes as u64, 0),
-            Err(error) => (caller.data_mut().errors.add(error.into()), 1),
-        };
 
-        let memory = get_memory(&mut caller)?;
-        memory
-            .write(&mut caller, opaque_ptr as usize, &opaque.to_le_bytes())
-            .or_trap("lunatic::process::tcp_write_vectored")?;
-        Ok(result)
+        // Check for timeout first
+        if let Some(result) = tokio::select! {
+            _ = tokio::time::sleep(Duration::from_millis(timeout as u64)), if timeout != 0 => None,
+            result = stream.read(buffer) => Some(result)
+        } {
+            let (opaque, return_) = match result {
+                Ok(bytes) => (bytes as u64, 0),
+                Err(error) => (caller.data_mut().errors.add(error.into()), 1),
+            };
+
+            let memory = get_memory(&mut caller)?;
+            memory
+                .write(&mut caller, opaque_ptr as usize, &opaque.to_le_bytes())
+                .or_trap("lunatic::process::tcp_read")?;
+            Ok(return_)
+        } else {
+            Ok(9027)
+        }
     })
 }
 
@@ -698,7 +768,7 @@ fn tcp_flush(
             .resources
             .tcp_streams
             .get(stream_id)
-            .or_trap("lunatic::network::tcp_write_vectored")?
+            .or_trap("lunatic::network::tcp_flush")?
             .clone();
         let mut stream = stream_mutex.lock().await;
 
@@ -710,7 +780,7 @@ fn tcp_flush(
         let memory = get_memory(&mut caller)?;
         memory
             .write(&mut caller, error_id_ptr as usize, &error_id.to_le_bytes())
-            .or_trap("lunatic::process::tcp_write_vectored")?;
+            .or_trap("lunatic::process::tcp_flush")?;
         Ok(result)
     })
 }
@@ -729,7 +799,7 @@ fn socket_address(
             let ip = memory
                 .data(&caller)
                 .get(addr_u8_ptr as usize..(addr_u8_ptr + 4) as usize)
-                .or_trap("lunatic::network::tcp_bind")?;
+                .or_trap("lunatic::network::socket_address*")?;
             let addr = <Ipv4Addr as From<[u8; 4]>>::from(ip.try_into().expect("exactly 4 bytes"));
             SocketAddrV4::new(addr, port as u16).into()
         }
@@ -737,10 +807,10 @@ fn socket_address(
             let ip = memory
                 .data(&caller)
                 .get(addr_u8_ptr as usize..(addr_u8_ptr + 16) as usize)
-                .or_trap("lunatic::network::tcp_bind")?;
+                .or_trap("lunatic::network::socket_address*")?;
             let addr = <Ipv6Addr as From<[u8; 16]>>::from(ip.try_into().expect("exactly 16 bytes"));
             SocketAddrV6::new(addr, port as u16, flow_info, scope_id).into()
         }
-        _ => return Err(Trap::new("Unsupported address type in tcp_bind")),
+        _ => return Err(Trap::new("Unsupported address type in socket_address*")),
     })
 }
