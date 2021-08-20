@@ -96,6 +96,7 @@ pub(crate) async fn new<F>(
 ) where
     F: Future<Output = Result<Box<[Val]>>> + Send + 'static,
 {
+    // TODO: Check how big this future is. Would it make more sense to use a `Box:pin()` here?
     tokio::pin!(fut);
 
     // Defines what happens if one of the linked processes dies.
