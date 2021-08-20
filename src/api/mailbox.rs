@@ -55,6 +55,14 @@ pub(crate) fn register(
     link_if_match(
         linker,
         "lunatic::message",
+        "data_size",
+        FuncType::new([], [ValType::I64]),
+        data_size,
+        namespace_filter,
+    )?;
+    link_if_match(
+        linker,
+        "lunatic::message",
         "push_process",
         FuncType::new([ValType::I64], [ValType::I64]),
         push_process,
@@ -277,6 +285,28 @@ fn seek_data(mut caller: Caller<ProcessState>, index: u64) -> Result<(), Trap> {
         }
     };
     Ok(())
+}
+
+//% lunatic::message::data_size() -> u64
+//%
+//% Returns the size in bytes of the message buffer.
+//%
+//% Traps:
+//% * If it's called without a data message being inside of the scratch area.
+fn data_size(mut caller: Caller<ProcessState>) -> Result<u64, Trap> {
+    let message = caller
+        .data_mut()
+        .message
+        .as_ref()
+        .or_trap("lunatic::message::write_data")?;
+    let bytes = match message {
+        Message::Data(data) => data.size(),
+        Message::Signal(_) => {
+            return Err(Trap::new("Unexpected `Message::Signal` in scratch area"))
+        }
+    };
+
+    Ok(bytes as u64)
 }
 
 //% lunatic::message::push_process(process_id: u64) -> u64

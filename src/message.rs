@@ -102,6 +102,10 @@ impl DataMessage {
     pub fn seek(&mut self, index: usize) {
         self.read_ptr = index;
     }
+
+    pub fn size(&self) -> usize {
+        self.buffer.len()
+    }
 }
 
 impl Write for DataMessage {
