@@ -20,6 +20,7 @@ pub trait Process {
     fn send(&self, signal: Signal);
 }
 
+/// Signals can be sent to processes to interact with them.
 #[derive(Debug)]
 pub enum Signal {
     Message(Message),

@@ -1,3 +1,5 @@
+/*! Wasm modules */
+
 use anyhow::{anyhow, Result};
 use tokio::{sync::mpsc::unbounded_channel, task::JoinHandle};
 use uuid::Uuid;
@@ -13,6 +15,11 @@ use crate::{
     Environment,
 };
 
+/// A compiled WebAssembly module that can be used to spawn [`WasmProcesses`][0].
+///
+/// Modules are created from [`Environments`](crate::environment::Environment).
+///
+/// [0]: crate::WasmProcess
 #[derive(Clone)]
 pub struct Module {
     inner: Arc<InnerModule>,
@@ -25,7 +32,7 @@ struct InnerModule {
 }
 
 impl Module {
-    pub fn new(data: Vec<u8>, env: Environment, wasmtime_module: wasmtime::Module) -> Self {
+    pub(crate) fn new(data: Vec<u8>, env: Environment, wasmtime_module: wasmtime::Module) -> Self {
         Self {
             inner: Arc::new(InnerModule {
                 data,
@@ -134,6 +141,7 @@ impl Module {
         &self.inner.wasmtime_module
     }
 
+    /// The raw WebAssembly data that the Module was created from.
     pub fn data(&self) -> Vec<u8> {
         self.inner.data.clone()
     }

@@ -1,3 +1,8 @@
+/*!
+Registries allow you to define "well-known" processes in the environment that can be looked up by
+name and version.
+*/
+
 use std::{
     collections::HashMap,
     sync::{Arc, RwLock},
@@ -6,7 +11,7 @@ use std::{
 use anyhow::Result;
 use semver::{Version, VersionReq};
 
-use crate::process::Process;
+use crate::Process;
 
 /// A local (belonging to an Environment) registry of `WasmProcesses`.
 ///
@@ -96,7 +101,7 @@ impl<P: Process + Clone> RegistryEntry<P> {
 
 #[cfg(test)]
 mod tests {
-    use crate::process::{Process, Signal};
+    use crate::{Process, Signal};
 
     use super::LocalRegistry;
 

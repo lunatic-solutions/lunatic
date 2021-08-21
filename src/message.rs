@@ -1,3 +1,9 @@
+/*!
+The [`Message`] is a special variant of a [`Signal`](crate::Signal) that can be sent to
+processes. The most common kind of Message is a [`DataMessage`], but there are also some special
+kinds of messages, like the [`Message::Signal`], that is received if a linked process dies.
+*/
+
 use std::{
     io::{Read, Write},
     sync::Arc,
@@ -5,13 +11,15 @@ use std::{
 
 use tokio::{net::TcpStream, sync::Mutex};
 
-use crate::process::WasmProcess;
+use crate::WasmProcess;
 
-/// Messages can be sent between processes.
+/// Can be sent between processes by being embedded into a  [`Signal::Message`][0]
 ///
-/// A [`Message`] can have 2 types:
+/// A [`Message`] has 2 variants:
 /// * Data - Regular message containing a tag, buffer and resources.
 /// * Signal - A signal (`LinkDied`) that was turned into a message.
+///
+/// [0]: crate::Signal
 #[derive(Debug)]
 pub enum Message {
     Data(DataMessage),
@@ -27,6 +35,9 @@ impl Message {
     }
 }
 
+/// A variant of a [`Message`] that has a buffer of data and resources attached to it.
+///
+/// It implements the [`Read`](std::io::Read) and [`Write`](std::io::Write) traits.
 #[derive(Debug, Default)]
 pub struct DataMessage {
     tag: Option<i64>,
@@ -135,6 +146,8 @@ impl Read for DataMessage {
     }
 }
 
+/// A resource ([`WasmProcess`](crate::WasmProcess), [`TcpStream`](tokio::net::TcpStream),
+/// ...) that is attached to a [`DataMessage`].
 #[derive(Debug)]
 pub enum Resource {
     None,

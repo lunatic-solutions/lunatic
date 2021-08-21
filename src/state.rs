@@ -16,7 +16,7 @@ use wasmtime_wasi::{WasiCtx, WasiCtxBuilder};
 use crate::mailbox::MessageMailbox;
 use crate::module::Module;
 use crate::plugin::ModuleContext;
-use crate::process::Signal;
+use crate::Signal;
 use crate::{message::Message, process::WasmProcess, EnvConfig, Environment};
 
 // The internal state of Plugins.
@@ -142,7 +142,7 @@ pub(crate) struct Resources {
 }
 
 /// HashMap wrapper with incremental ID (u64) assignment.
-pub struct HashMapId<T> {
+pub(crate) struct HashMapId<T> {
     id_seed: u64,
     store: HashMap<u64, T>,
 }
