@@ -2,9 +2,11 @@ use std::{collections::HashMap, future::Future, hash::Hash};
 
 use anyhow::Result;
 use log::debug;
-use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+use tokio::{
+    sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender},
+    task::JoinHandle,
+};
 use uuid::Uuid;
-use wasmtime::Val;
 
 use crate::{mailbox::MessageMailbox, message::Message};
 
@@ -42,9 +44,11 @@ pub enum Signal {
 
 /// The reason of a process finishing
 pub enum Finished<T> {
-    /// The Wasm function finished or trapped
-    Wasm(T),
-    /// The process was terminated by an external signal
+    /// This just means that the process finished without external interaction.
+    /// In case of Wasm this could mean that the entry function returned normally or that it
+    /// **trapped**.
+    Normal(T),
+    /// The process was terminated by an external signal.
     Signal(Signal),
 }
 
@@ -90,12 +94,12 @@ impl Process for WasmProcess {
 }
 
 // Turns a Future into a process, enabling signals (e.g. kill).
-pub(crate) async fn new<F>(
+pub(crate) async fn new<F, T>(
     fut: F,
     mut signal_mailbox: UnboundedReceiver<Signal>,
     message_mailbox: MessageMailbox,
 ) where
-    F: Future<Output = Result<Box<[Val]>>> + Send + 'static,
+    F: Future<Output = Result<T>> + Send + 'static,
 {
     // TODO: Check how big this future is. Would it make more sense to use a `Box:pin()` here?
     tokio::pin!(fut);
@@ -137,13 +141,13 @@ pub(crate) async fn new<F>(
                 }
             }
             // Run process
-            output = &mut fut => { break Finished::Wasm(output); }
+            output = &mut fut => { break Finished::Normal(output); }
         }
     };
     match result {
-        Finished::Wasm(Result::Err(err)) => {
+        Finished::Normal(Result::Err(err)) => {
             debug!("Process failed: {}", err);
-            // Notify all links that we finished with a trap
+            // Notify all links that we finished with an error
             links.iter().for_each(|(proc, tag)| {
                 let _ = proc.send(Signal::LinkDied(*tag));
             });
@@ -156,5 +160,70 @@ pub(crate) async fn new<F>(
             });
         }
         _ => {} // Finished normally
+    }
+}
+
+/// A process spawned from a native Rust closure.
+#[derive(Clone, Debug)]
+pub struct NativeProcess {
+    id: Uuid,
+    signal_mailbox: UnboundedSender<Signal>,
+}
+
+/// Spawns a process from a closure.
+///
+/// ## Example:
+///
+/// ```no_run
+/// let _proc = lunatic_runtime::spawn(|mailbox| async move {
+///     // Wait on a message with the tag `27`.
+///     mailbox.pop(Some(27)).await;
+///     Ok(())
+/// });
+/// ```
+///
+/// ## Safety:
+///
+/// This uses `tokio::spawn` internally and needs to be called from inside a tokio context or it will panic.
+pub fn spawn<F, K, T>(func: F) -> (JoinHandle<()>, NativeProcess)
+where
+    T: 'static,
+    K: Future<Output = Result<T>> + Send + 'static,
+    F: Fn(MessageMailbox) -> K,
+{
+    // TODO: Switch to new_v1() for distributed Lunatic to assure uniqueness across nodes.
+    let id = Uuid::new_v4();
+    let (signal_sender, signal_mailbox) = unbounded_channel::<Signal>();
+    let message_mailbox = MessageMailbox::default();
+    let process = NativeProcess {
+        id,
+        signal_mailbox: signal_sender,
+    };
+    let fut = func(message_mailbox.clone());
+    let join = tokio::spawn(new(fut, signal_mailbox, message_mailbox));
+    (join, process)
+}
+
+impl PartialEq for NativeProcess {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+    }
+}
+
+impl Eq for NativeProcess {}
+
+impl Hash for NativeProcess {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.id.hash(state);
+    }
+}
+
+impl Process for NativeProcess {
+    fn send(&self, signal: Signal) {
+        // If the receiver doesn't exist or is closed, just ignore it and drop the `signal`.
+        // lunatic can't guarantee that a message was successfully seen by the receiving side even
+        // if this call succeeds. We deliberately don't expose this API, as it would not make sense
+        // to relay on it and could signal wrong guarantees to users.
+        let _ = self.signal_mailbox.send(signal);
     }
 }

@@ -46,4 +46,4 @@ pub(crate) mod state;
 
 pub use config::EnvConfig;
 pub use environment::Environment;
-pub use process::{Finished, Process, Signal, WasmProcess};
+pub use process::{spawn, Finished, Process, Signal, WasmProcess};
