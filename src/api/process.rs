@@ -1,4 +1,4 @@
-use std::{convert::TryInto, future::Future, time::Duration};
+use std::{convert::TryInto, future::Future, sync::Arc, time::Duration};
 
 use anyhow::{anyhow, Result};
 use wasmtime::{Caller, FuncType, Linker, Trap, Val, ValType};
@@ -10,7 +10,7 @@ use super::{
 use crate::{
     api::error::IntoTrap,
     module::Module,
-    process::{Process, Signal, WasmProcess},
+    process::{Signal, WasmProcess},
     state::ProcessState,
     EnvConfig, Environment,
 };
@@ -682,7 +682,10 @@ async fn spawn_from_module(
         }
     };
     let (proc_or_error_id, result) = match module.spawn(function, params, link).await {
-        Ok((_, process)) => (caller.data_mut().resources.processes.add(process), 0),
+        Ok((_, process)) => (
+            caller.data_mut().resources.processes.add(Arc::new(process)),
+            0,
+        ),
         Err(error) => (caller.data_mut().errors.add(error), 1),
     };
     memory
@@ -763,7 +766,7 @@ fn this(mut caller: Caller<ProcessState>) -> u64 {
     let id = caller.data().id;
     let signal_mailbox = caller.data().signal_mailbox.clone();
     let process = WasmProcess::new(id, signal_mailbox);
-    caller.data_mut().resources.processes.add(process)
+    caller.data_mut().resources.processes.add(Arc::new(process))
 }
 
 //% lunatic::process::link(tag: i64, process_id: u64)
@@ -791,7 +794,7 @@ fn link(mut caller: Caller<ProcessState>, tag: i64, process_id: u64) -> Result<(
         .get(process_id)
         .or_trap("lunatic::process::link")?
         .clone();
-    process.send(Signal::Link(tag, this_process));
+    process.send(Signal::Link(tag, Arc::new(this_process)));
 
     // Send link signal to itself
     caller
@@ -822,7 +825,7 @@ fn unlink(mut caller: Caller<ProcessState>, process_id: u64) -> Result<(), Trap>
         .get(process_id)
         .or_trap("lunatic::process::link")?
         .clone();
-    process.send(Signal::UnLink(this_process));
+    process.send(Signal::UnLink(Arc::new(this_process)));
 
     // Send unlink signal to itself
     caller

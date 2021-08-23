@@ -5,8 +5,7 @@ use wasmtime::{Config, Engine, InstanceAllocationStrategy, Linker, OptLevel, Pro
 
 use super::config::EnvConfig;
 use crate::{
-    api, module::Module, plugin::patch_module, process::WasmProcess, registry::LocalRegistry,
-    state::ProcessState,
+    api, module::Module, plugin::patch_module, registry::LocalRegistry, state::ProcessState,
 };
 
 // One unit of fuel represents around 100k instructions.
@@ -26,7 +25,7 @@ pub struct Environment {
     engine: Engine,
     linker: Linker<ProcessState>,
     config: EnvConfig,
-    registry: LocalRegistry<WasmProcess>,
+    registry: LocalRegistry,
 }
 
 impl Environment {
@@ -100,7 +99,7 @@ impl Environment {
         &self.linker
     }
 
-    pub fn registry(&self) -> &LocalRegistry<WasmProcess> {
+    pub fn registry(&self) -> &LocalRegistry {
         &self.registry
     }
 }

@@ -16,8 +16,8 @@ use wasmtime_wasi::{WasiCtx, WasiCtxBuilder};
 use crate::mailbox::MessageMailbox;
 use crate::module::Module;
 use crate::plugin::ModuleContext;
-use crate::Signal;
-use crate::{message::Message, process::WasmProcess, EnvConfig, Environment};
+use crate::{message::Message, EnvConfig, Environment};
+use crate::{Process, Signal};
 
 // The internal state of Plugins.
 pub(crate) struct PluginState<'a, 'b> {
@@ -135,7 +135,7 @@ pub(crate) struct Resources {
     pub(crate) configs: HashMapId<EnvConfig>,
     pub(crate) environments: HashMapId<Environment>,
     pub(crate) modules: HashMapId<Module>,
-    pub(crate) processes: HashMapId<WasmProcess>,
+    pub(crate) processes: HashMapId<Arc<dyn Process>>,
     pub(crate) dns_iterators: HashMapId<DnsIterator>,
     pub(crate) tcp_listeners: HashMapId<TcpListener>,
     pub(crate) tcp_streams: HashMapId<Arc<Mutex<TcpStream>>>,

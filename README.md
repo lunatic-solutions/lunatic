@@ -46,6 +46,8 @@ brew install lunatic
 To build the project from source you will need to have [rustup][7] installed:
 
 ```bash
+# Add wasm32 compilation target
+rustup target add wasm32-unknown-unknown
 # Clone the repository
 git clone https://github.com/lunatic-solutions/lunatic.git
 # Jump into the cloned folder
@@ -59,8 +61,9 @@ cargo install --path .
 After installation you can use the `lunatic` binary to run WASM modules.
 
 To learn how to build modules, check out language-specific bindings:
-* [Rust](https://github.com/lunatic-solutions/rust-lib) 
-* [AssemblyScript](https://github.com/lunatic-solutions/as-lunatic)
+
+- [Rust](https://github.com/lunatic-solutions/rust-lib)
+- [AssemblyScript](https://github.com/lunatic-solutions/as-lunatic)
 
 ## Architecture
 

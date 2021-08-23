@@ -18,11 +18,11 @@ use crate::Process;
 /// Processed are registered by `name` and `version`. Semver rules are used when looking up
 /// processes.
 #[derive(Clone, Default)]
-pub struct LocalRegistry<P: Process + Clone> {
-    map: Arc<RwLock<HashMap<String, Vec<RegistryEntry<P>>>>>,
+pub struct LocalRegistry {
+    map: Arc<RwLock<HashMap<String, Vec<RegistryEntry>>>>,
 }
 
-impl<P: Process + Clone> LocalRegistry<P> {
+impl LocalRegistry {
     /// Create new LocalRegistry
     pub fn new() -> Self {
         LocalRegistry {
@@ -34,7 +34,7 @@ impl<P: Process + Clone> LocalRegistry<P> {
     ///
     /// The version needs to be a correct semver string (e.g "1.2.3-alpha3") or the insertion will
     /// fail. If the exact same version and name exists it will be overwritten.
-    pub fn insert(&self, name: String, version: &str, process: P) -> Result<()> {
+    pub fn insert(&self, name: String, version: &str, process: Arc<dyn Process>) -> Result<()> {
         let mut writer = self.map.as_ref().write().unwrap();
         let results = writer.entry(name).or_default();
         let version = Version::parse(version)?;
@@ -48,7 +48,7 @@ impl<P: Process + Clone> LocalRegistry<P> {
     /// Remove process under name & version from registry
     ///
     /// Exact version matching is used for lookup.
-    pub fn remove(&self, name: &str, version: &str) -> Result<Option<P>> {
+    pub fn remove(&self, name: &str, version: &str) -> Result<Option<Arc<dyn Process>>> {
         let mut writer = self.map.as_ref().write().unwrap();
         if let Some(results) = writer.get_mut(name) {
             let version = Version::parse(version)?;
@@ -63,16 +63,16 @@ impl<P: Process + Clone> LocalRegistry<P> {
     /// Returns process under name & version.
     ///
     /// Semver is used for matching.
-    pub fn get(&self, name: &str, version_query: &str) -> Result<Option<P>> {
+    pub fn get(&self, name: &str, version_query: &str) -> Result<Option<Arc<dyn Process>>> {
         let reader = self.map.as_ref().read().unwrap();
         if let Some(results) = reader.get(name) {
             let version_query = VersionReq::parse(version_query)?;
-            if let Some(index) = results
+            if let Some(entry) = results
                 .iter()
                 .rev()
-                .position(|entry| version_query.matches(entry.version()))
+                .find(|entry| version_query.matches(entry.version()))
             {
-                return Ok(Some(results[index].process()));
+                return Ok(Some(entry.process()));
             }
         };
 
@@ -80,17 +80,17 @@ impl<P: Process + Clone> LocalRegistry<P> {
     }
 }
 
-struct RegistryEntry<P> {
+struct RegistryEntry {
     version: Version,
-    process: P,
+    process: Arc<dyn Process>,
 }
 
-impl<P: Process + Clone> RegistryEntry<P> {
-    fn new(version: Version, process: P) -> Result<Self> {
+impl RegistryEntry {
+    fn new(version: Version, process: Arc<dyn Process>) -> Result<Self> {
         Ok(Self { version, process })
     }
 
-    fn process(&self) -> P {
+    fn process(&self) -> Arc<dyn Process> {
         self.process.clone()
     }
 
@@ -101,20 +101,24 @@ impl<P: Process + Clone> RegistryEntry<P> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{Process, Signal};
-
     use super::LocalRegistry;
+    use crate::{Process, Signal};
+    use std::sync::Arc;
+    use uuid::Uuid;
 
-    #[derive(PartialEq, Clone, Debug)]
-    struct IdentityProcess(u32);
+    #[derive(Clone, Debug)]
+    struct IdentityProcess(Uuid);
     impl Process for IdentityProcess {
+        fn id(&self) -> Uuid {
+            self.0
+        }
         fn send(&self, _: Signal) {}
     }
 
     #[test]
     fn registry_test() {
         let registry = LocalRegistry::new();
-        let proc = IdentityProcess(0);
+        let proc = Arc::new(IdentityProcess(Uuid::new_v4()));
         // Inserting an incorrect version fails
         let result = registry.insert("test".to_string(), "", proc.clone());
         assert!(result.is_err());
@@ -126,27 +130,27 @@ mod tests {
         assert!(result.is_err());
         // Wildcard should match any version
         let result = registry.get("test", "*").unwrap().unwrap();
-        assert_eq!(result, proc);
+        assert_eq!(result.id(), proc.id());
         // Removing 0.0.0 should return the correct process
         let result = registry.remove("test", "0.0.0").unwrap().unwrap();
-        assert_eq!(result, proc);
+        assert_eq!(result.id(), proc.id());
 
         // Insert version 1.1.0
-        let proc1 = IdentityProcess(1);
+        let proc1 = Arc::new(IdentityProcess(Uuid::new_v4()));
         let result = registry.insert("test".to_string(), "1.1.0", proc1.clone());
         assert!(result.is_ok());
         // Insert version 1.2.0
-        let proc2 = IdentityProcess(1);
+        let proc2 = Arc::new(IdentityProcess(Uuid::new_v4()));
         let result = registry.insert("test".to_string(), "1.2.0", proc2.clone());
         assert!(result.is_ok());
         // Looking up ^1 should return the latest insert
         let result = registry.get("test", "^1").unwrap().unwrap();
-        assert_eq!(result, proc2);
+        assert_eq!(result.id(), proc2.id());
         // Removing 1.2.0 should remove proc2
         let result = registry.remove("test", "1.2.0").unwrap().unwrap();
-        assert_eq!(result, proc2);
+        assert_eq!(result.id(), proc2.id());
         // Looking up ^1 again should return the only left match
         let result = registry.get("test", "^1").unwrap().unwrap();
-        assert_eq!(result, proc1);
+        assert_eq!(result.id(), proc1.id());
     }
 }

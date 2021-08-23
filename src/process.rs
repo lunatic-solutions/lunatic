@@ -1,4 +1,4 @@
-use std::{collections::HashMap, future::Future, hash::Hash};
+use std::{collections::HashMap, fmt::Debug, future::Future, hash::Hash, sync::Arc};
 
 use anyhow::Result;
 use log::debug;
@@ -18,12 +18,32 @@ use crate::{mailbox::MessageMailbox, message::Message};
 /// The only way of interacting with them is through signals. These signals can come in different
 /// shapes (message, kill, link, ...). Most signals have well defined meanings, but others such as
 /// a [`Message`] can be interpreted by the receiver in different ways.
-pub trait Process {
+pub trait Process: Send + Sync {
+    fn id(&self) -> Uuid;
     fn send(&self, signal: Signal);
 }
 
+impl Debug for dyn Process {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Point").field("id", &self.id()).finish()
+    }
+}
+
+impl PartialEq<dyn Process> for dyn Process {
+    fn eq(&self, other: &dyn Process) -> bool {
+        self.id() == other.id()
+    }
+}
+
+impl Eq for dyn Process {}
+
+impl Hash for dyn Process {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.id().hash(state);
+    }
+}
+
 /// Signals can be sent to processes to interact with them.
-#[derive(Debug)]
 pub enum Signal {
     Message(Message),
     // When received process should stop.
@@ -32,14 +52,27 @@ pub enum Signal {
     DieWhenLinkDies(bool),
     // Sent from a process that wants to be linked. In case of a death the tag will be returned
     // to the sender in form of a `LinkDied` signal.
-    Link(Option<i64>, WasmProcess),
+    Link(Option<i64>, Arc<dyn Process>),
     // Request from a process to be unlinked
-    UnLink(WasmProcess),
+    UnLink(Arc<dyn Process>),
     // Sent to linked processes when the link dies. Contains the tag used when the link was
     // established. Depending on the value of `die_when_link_dies` (default is `true`) this
     // receiving process will turn this signal into a message or the process will immediately
     // die as well.
     LinkDied(Option<i64>),
+}
+
+impl Debug for Signal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Message(_) => write!(f, "Message"),
+            Self::Kill => write!(f, "Kill"),
+            Self::DieWhenLinkDies(_) => write!(f, "DieWhenLinkDies"),
+            Self::Link(_, _) => write!(f, "Link"),
+            Self::UnLink(_) => write!(f, "UnLink"),
+            Self::LinkDied(_) => write!(f, "LinkDied"),
+        }
+    }
 }
 
 /// The reason of a process finishing
@@ -62,20 +95,6 @@ pub struct WasmProcess {
     signal_mailbox: UnboundedSender<Signal>,
 }
 
-impl PartialEq for WasmProcess {
-    fn eq(&self, other: &Self) -> bool {
-        self.id == other.id
-    }
-}
-
-impl Eq for WasmProcess {}
-
-impl Hash for WasmProcess {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.id.hash(state);
-    }
-}
-
 impl WasmProcess {
     /// Create a new WasmProcess
     pub fn new(id: Uuid, signal_mailbox: UnboundedSender<Signal>) -> Self {
@@ -84,6 +103,9 @@ impl WasmProcess {
 }
 
 impl Process for WasmProcess {
+    fn id(&self) -> Uuid {
+        self.id
+    }
     fn send(&self, signal: Signal) {
         // If the receiver doesn't exist or is closed, just ignore it and drop the `signal`.
         // lunatic can't guarantee that a message was successfully seen by the receiving side even
@@ -204,21 +226,10 @@ where
     (join, process)
 }
 
-impl PartialEq for NativeProcess {
-    fn eq(&self, other: &Self) -> bool {
-        self.id == other.id
-    }
-}
-
-impl Eq for NativeProcess {}
-
-impl Hash for NativeProcess {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.id.hash(state);
-    }
-}
-
 impl Process for NativeProcess {
+    fn id(&self) -> Uuid {
+        self.id
+    }
     fn send(&self, signal: Signal) {
         // If the receiver doesn't exist or is closed, just ignore it and drop the `signal`.
         // lunatic can't guarantee that a message was successfully seen by the receiving side even

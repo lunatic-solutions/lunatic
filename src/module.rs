@@ -117,13 +117,13 @@ impl Module {
         // call, so the child wouldn't even exist if the parent failed before.
         if let Some((tag, process)) = link {
             // Send signal to itself to perform the linking
-            process.send(Signal::Link(None, child_process_handle.clone()));
+            process.send(Signal::Link(None, Arc::new(child_process_handle.clone())));
             // Suspend itself to process all new signals
             tokio::task::yield_now().await;
             // Send signal to child to link it
             signal_mailbox
                 .0
-                .send(Signal::Link(tag, process))
+                .send(Signal::Link(tag, Arc::new(process)))
                 .expect("receiver must exist at this point");
         }
 

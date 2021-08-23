@@ -10,7 +10,7 @@ use wasmtime::{Caller, FuncType, Linker, Trap, ValType};
 use crate::{
     api::{error::IntoTrap, get_memory},
     message::{DataMessage, Message},
-    process::{Process, Signal},
+    process::Signal,
     state::ProcessState,
 };
 

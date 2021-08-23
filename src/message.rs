@@ -5,13 +5,14 @@ kinds of messages, like the [`Message::Signal`], that is received if a linked pr
 */
 
 use std::{
+    fmt::Debug,
     io::{Read, Write},
     sync::Arc,
 };
 
 use tokio::{net::TcpStream, sync::Mutex};
 
-use crate::WasmProcess;
+use crate::Process;
 
 /// Can be sent between processes by being embedded into a  [`Signal::Message`][0]
 ///
@@ -58,7 +59,7 @@ impl DataMessage {
     }
 
     /// Adds a process to the message and returns the index of it inside of the message
-    pub fn add_process(&mut self, process: WasmProcess) -> usize {
+    pub fn add_process(&mut self, process: Arc<dyn Process>) -> usize {
         self.resources.push(Resource::Process(process));
         self.resources.len() - 1
     }
@@ -73,7 +74,7 @@ impl DataMessage {
     ///
     /// If the index is out of bound or the resource is not a process the function will return
     /// None.
-    pub fn take_process(&mut self, index: usize) -> Option<WasmProcess> {
+    pub fn take_process(&mut self, index: usize) -> Option<Arc<dyn Process>> {
         if let Some(resource_ref) = self.resources.get_mut(index) {
             let resource = std::mem::replace(resource_ref, Resource::None);
             match resource {
@@ -148,9 +149,18 @@ impl Read for DataMessage {
 
 /// A resource ([`WasmProcess`](crate::WasmProcess), [`TcpStream`](tokio::net::TcpStream),
 /// ...) that is attached to a [`DataMessage`].
-#[derive(Debug)]
 pub enum Resource {
     None,
-    Process(WasmProcess),
+    Process(Arc<dyn Process>),
     TcpStream(Arc<Mutex<TcpStream>>),
+}
+
+impl Debug for Resource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::None => write!(f, "None"),
+            Self::Process(_) => write!(f, "Process"),
+            Self::TcpStream(_) => write!(f, "TcpStream"),
+        }
+    }
 }
