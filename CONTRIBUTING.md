@@ -38,7 +38,13 @@ Code changes to Lunatic are welcomed via the process below.
 
 ## Local development
 
-To build the project run:
+To build the project you will need to have Rust target wasm32 installed:
+
+```shell
+rustup target add wasm32-unknown-unknown
+```
+
+then run:
 
 ```shell
 cargo build
