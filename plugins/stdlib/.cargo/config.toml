@@ -1,8 +1,0 @@
-[build]
-# This crate is built from the parent's build.rs script. Using the same target-dir as the parent
-# would cause a dead-lock during the build.
-target-dir="../../target/stdlib"
-target = "wasm32-unknown-unknown"
-
-[target.wasm32-wasi]
-rustflags = ["-C", "target-feature=+multivalue"]

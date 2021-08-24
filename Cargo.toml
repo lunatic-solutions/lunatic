@@ -46,5 +46,4 @@ harness = false
 [workspace]
 members = [
     "plugins/heap_profiler",
-    "plugins/stdlib",
 ]
