@@ -105,13 +105,13 @@ impl Debug for ProcessState {
 
 // Limit the maximum memory of the process depending on the environment it was spawned in.
 impl ResourceLimiter for ProcessState {
-    fn memory_growing(&mut self, current: usize, desired: usize, _maximum: Option<usize>) -> bool {
-        current + desired <= self.module.environment().config().max_memory()
+    fn memory_growing(&mut self, _current: usize, desired: usize, _maximum: Option<usize>) -> bool {
+        desired <= self.module.environment().config().max_memory()
     }
 
     // TODO: What would be a reasonable table limit be?
-    fn table_growing(&mut self, current: u32, desired: u32, _maximum: Option<u32>) -> bool {
-        (current as u64 + desired as u64) < 10_000
+    fn table_growing(&mut self, _current: u32, desired: u32, _maximum: Option<u32>) -> bool {
+        desired < 10_000
     }
 
     // Allow one instance per store
