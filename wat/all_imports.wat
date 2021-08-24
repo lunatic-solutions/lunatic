@@ -9,6 +9,7 @@
     (import "lunatic::message" "write_data" (func (param i32 i32) (result i32)))
     (import "lunatic::message" "read_data" (func (param i32 i32) (result i32)))
     (import "lunatic::message" "seek_data" (func (param i64)))
+    (import "lunatic::message" "get_tag" (func (result i64)))
     (import "lunatic::message" "data_size" (func (result i64)))
     (import "lunatic::message" "push_process" (func (param i64) (result i64)))
     (import "lunatic::message" "take_process" (func (param i64) (result i64)))

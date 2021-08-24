@@ -56,6 +56,14 @@ pub(crate) fn register(
     link_if_match(
         linker,
         "lunatic::message",
+        "get_tag",
+        FuncType::new([], [ValType::I64]),
+        get_tag,
+        namespace_filter,
+    )?;
+    link_if_match(
+        linker,
+        "lunatic::message",
         "data_size",
         FuncType::new([], [ValType::I64]),
         data_size,
@@ -278,7 +286,7 @@ fn seek_data(mut caller: Caller<ProcessState>, index: u64) -> Result<(), Trap> {
         .data_mut()
         .message
         .as_mut()
-        .or_trap("lunatic::message::read_data")?;
+        .or_trap("lunatic::message::seek_data")?;
     match &mut message {
         Message::Data(data) => data.seek(index as usize),
         Message::Signal(_) => {
@@ -286,6 +294,24 @@ fn seek_data(mut caller: Caller<ProcessState>, index: u64) -> Result<(), Trap> {
         }
     };
     Ok(())
+}
+
+//% lunatic::message::get_tag() -> i64
+//%
+//% Returns the message tag or 0 if no tag was set.
+//%
+//% Traps:
+//% * If it's called without a message being inside of the scratch area.
+fn get_tag(caller: Caller<ProcessState>) -> Result<i64, Trap> {
+    let message = caller
+        .data()
+        .message
+        .as_ref()
+        .or_trap("lunatic::message::get_tag")?;
+    match message.tag() {
+        Some(tag) => Ok(tag),
+        None => Ok(0),
+    }
 }
 
 //% lunatic::message::data_size() -> u64
@@ -299,7 +325,7 @@ fn data_size(mut caller: Caller<ProcessState>) -> Result<u64, Trap> {
         .data_mut()
         .message
         .as_ref()
-        .or_trap("lunatic::message::write_data")?;
+        .or_trap("lunatic::message::data_size")?;
     let bytes = match message {
         Message::Data(data) => data.size(),
         Message::Signal(_) => {
