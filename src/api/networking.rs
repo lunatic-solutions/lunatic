@@ -187,7 +187,6 @@ pub(crate) fn register(
 //% Returns:
 //% * 0 on success - The ID of the newly created DNS iterator is written to **id_u64_ptr**
 //% * 1 on error   - The error ID is written to **id_u64_ptr**
-//% * 9027 on timeout
 //%
 //% Performs a DNS resolution. The returned iterator may not actually yield any values
 //% depending on the outcome of any resolution performed.
@@ -241,7 +240,13 @@ fn resolve(
                 .or_trap("lunatic::networking::resolve")?;
             Ok(result)
         } else {
-            Ok(9027)
+            // Call timed out
+            let error = std::io::Error::new(std::io::ErrorKind::TimedOut, "Resolve call timed out");
+            let error_id = caller.data_mut().errors.add(error.into());
+            memory
+                .write(&mut caller, id_u64_ptr as usize, &error_id.to_le_bytes())
+                .or_trap("lunatic::networking::resolve")?;
+            Ok(1)
         };
         return_
     })
@@ -404,7 +409,7 @@ fn tcp_bind(
                 id_u64_ptr as usize,
                 &tcp_listener_or_error_id.to_le_bytes(),
             )
-            .or_trap("lunatic::process::create_environment")?;
+            .or_trap("lunatic::networking::create_environment")?;
 
         Ok(result)
     })
@@ -412,7 +417,7 @@ fn tcp_bind(
 
 //% lunatic::networking::drop_tcp_listener(tcp_listener_id: i64)
 //%
-//% Drops the TCP listener resource..
+//% Drops the TCP listener resource.
 //%
 //% Traps:
 //% * If the DNS iterator ID doesn't exist.
@@ -480,14 +485,14 @@ fn tcp_accept(
                 id_ptr as usize,
                 &tcp_stream_or_error_id.to_le_bytes(),
             )
-            .or_trap("lunatic::process::tcp_accept")?;
+            .or_trap("lunatic::networking::tcp_accept")?;
         memory
             .write(
                 &mut caller,
                 socket_addr_id_ptr as usize,
                 &peer_addr_iter.to_le_bytes(),
             )
-            .or_trap("lunatic::process::tcp_accept")?;
+            .or_trap("lunatic::networking::tcp_accept")?;
         Ok(result)
     })
 }
@@ -505,7 +510,6 @@ fn tcp_accept(
 //% Returns:
 //% * 0 on success - The ID of the newly created TCP stream is written to **id_ptr**.
 //% * 1 on error   - The error ID is written to **id_ptr**
-//% * 9027 on timeout
 //%
 //% Traps:
 //% * If **addr_type** is neither 4 or 6.
@@ -556,10 +560,16 @@ fn tcp_connect(
                     id_u64_ptr as usize,
                     &stream_or_error_id.to_le_bytes(),
                 )
-                .or_trap("lunatic::process::tcp_connect")?;
+                .or_trap("lunatic::networking::tcp_connect")?;
             Ok(result)
         } else {
-            Ok(9027)
+            // Call timed out
+            let error = std::io::Error::new(std::io::ErrorKind::TimedOut, "Connect timed out");
+            let error_id = caller.data_mut().errors.add(error.into());
+            memory
+                .write(&mut caller, id_u64_ptr as usize, &error_id.to_le_bytes())
+                .or_trap("lunatic::networking::tcp_connect")?;
+            Ok(1)
         }
     })
 }
@@ -592,7 +602,7 @@ fn clone_tcp_stream(mut caller: Caller<ProcessState>, tcp_stream_id: u64) -> Res
         .resources
         .tcp_streams
         .get(tcp_stream_id)
-        .or_trap("lunatic::process::clone_process")?
+        .or_trap("lunatic::networking::clone_process")?
         .clone();
     let id = caller.data_mut().resources.tcp_streams.add(stream);
     Ok(id)
@@ -609,7 +619,6 @@ fn clone_tcp_stream(mut caller: Caller<ProcessState>, tcp_stream_id: u64) -> Res
 //% Returns:
 //% * 0 on success - The number of bytes written is written to **opaque_ptr**
 //% * 1 on error   - The error ID is written to **opaque_ptr**
-//% * 9027 on timeout
 //%
 //% Gathers data from the vector buffers and writes them to the stream. **ciovec_array_ptr** points
 //% to an array of (ciovec_ptr, ciovec_len) pairs where each pair represents a buffer to be written.
@@ -672,10 +681,16 @@ fn tcp_write_vectored(
             let memory = get_memory(&mut caller)?;
             memory
                 .write(&mut caller, opaque_ptr as usize, &opaque.to_le_bytes())
-                .or_trap("lunatic::process::tcp_write_vectored")?;
+                .or_trap("lunatic::networking::tcp_write_vectored")?;
             Ok(return_)
         } else {
-            Ok(9027)
+            // Call timed out
+            let error = std::io::Error::new(std::io::ErrorKind::TimedOut, "Write call timed out");
+            let error_id = caller.data_mut().errors.add(error.into());
+            memory
+                .write(&mut caller, opaque_ptr as usize, &error_id.to_le_bytes())
+                .or_trap("lunatic::networking::tcp_write_vectored")?;
+            Ok(1)
         }
     })
 }
@@ -691,7 +706,6 @@ fn tcp_write_vectored(
 //% Returns:
 //% * 0 on success - The number of bytes read is written to **opaque_ptr**
 //% * 1 on error   - The error ID is written to **opaque_ptr**
-//% * 9027 on timeout
 //%
 //% Reads data from TCP stream and writes it to the buffer.
 //%
@@ -737,10 +751,16 @@ fn tcp_read(
             let memory = get_memory(&mut caller)?;
             memory
                 .write(&mut caller, opaque_ptr as usize, &opaque.to_le_bytes())
-                .or_trap("lunatic::process::tcp_read")?;
+                .or_trap("lunatic::networking::tcp_read")?;
             Ok(return_)
         } else {
-            Ok(9027)
+            // Call timed out
+            let error = std::io::Error::new(std::io::ErrorKind::TimedOut, "Read call timed out");
+            let error_id = caller.data_mut().errors.add(error.into());
+            memory
+                .write(&mut caller, opaque_ptr as usize, &error_id.to_le_bytes())
+                .or_trap("lunatic::networking::tcp_read")?;
+            Ok(1)
         }
     })
 }
@@ -780,7 +800,7 @@ fn tcp_flush(
         let memory = get_memory(&mut caller)?;
         memory
             .write(&mut caller, error_id_ptr as usize, &error_id.to_le_bytes())
-            .or_trap("lunatic::process::tcp_flush")?;
+            .or_trap("lunatic::networking::tcp_flush")?;
         Ok(result)
     })
 }
