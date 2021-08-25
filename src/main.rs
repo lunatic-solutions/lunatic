@@ -1,4 +1,4 @@
-use std::{fs, path::Path};
+use std::{env, fs, path::Path};
 
 use clap::{crate_version, App, Arg, ArgSettings};
 
@@ -24,11 +24,32 @@ fn main() -> Result<()> {
             Arg::new("wasm")
                 .value_name("WASM")
                 .about("Entry .wasm file")
-                .required(true),
+                .required(true)
+                .index(1),
+        )
+        .arg(
+            Arg::new("wasm_args")
+                .value_name("WASM_ARGS")
+                .about("Arguments passed to the guest")
+                .required(false)
+                .multiple_values(true)
+                .index(2),
         )
         .get_matches();
 
     let mut config = EnvConfig::default();
+
+    // Set correct command line arguments for the guest
+    let wasi_args = args
+        .values_of("wasm_args")
+        .unwrap_or_default()
+        .map(|arg| arg.to_string())
+        .collect();
+    config.set_wasi_args(wasi_args);
+
+    // Inherit environment variables
+    config.set_wasi_envs(env::vars().collect());
+
     // Add plugins passed through the --plugin or -P flags to the environment
     if let Some(plugins) = args.values_of("plugin") {
         for plugin in plugins {

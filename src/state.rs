@@ -72,15 +72,18 @@ impl ProcessState {
         module: Module,
         signal_mailbox: UnboundedSender<Signal>,
         message_mailbox: MessageMailbox,
+        config: &EnvConfig,
     ) -> Result<Self> {
         let wasi = WasiCtxBuilder::new();
         let wasi = wasi.inherit_stdio();
-        let wasi = wasi.inherit_env()?;
-        // Skip the first argument (`lunatic`) from the args list. When compiling existing
-        // applications to Wasm, they assume that the first argument is going to be the binary
-        // name and all other arguments follow.
-        let args: Vec<String> = std::env::args().skip(1).collect();
-        let wasi = wasi.args(&args)?;
+        let wasi = match config.wasi_envs() {
+            Some(envs) => wasi.envs(envs)?,
+            None => wasi,
+        };
+        let wasi = match config.wasi_args() {
+            Some(args) => wasi.args(args)?,
+            None => wasi,
+        };
         let state = Self {
             id,
             module,

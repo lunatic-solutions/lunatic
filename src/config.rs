@@ -11,6 +11,8 @@ pub struct EnvConfig {
     max_fuel: Option<u64>,
     allowed_namespaces: Vec<String>,
     plugins: Vec<Plugin>,
+    wasi_args: Option<Vec<String>>,
+    wasi_envs: Option<Vec<(String, String)>>,
 }
 
 impl EnvConfig {
@@ -21,6 +23,8 @@ impl EnvConfig {
             max_fuel,
             allowed_namespaces: Vec::new(),
             plugins: Vec::new(),
+            wasi_args: None,
+            wasi_envs: None,
         }
     }
 
@@ -55,6 +59,22 @@ impl EnvConfig {
         self.plugins.push(plugin);
         Ok(())
     }
+
+    pub fn set_wasi_args(&mut self, args: Vec<String>) {
+        self.wasi_args = Some(args);
+    }
+
+    pub fn wasi_args(&self) -> &Option<Vec<String>> {
+        &self.wasi_args
+    }
+
+    pub fn set_wasi_envs(&mut self, envs: Vec<(String, String)>) {
+        self.wasi_envs = Some(envs);
+    }
+
+    pub fn wasi_envs(&self) -> &Option<Vec<(String, String)>> {
+        &self.wasi_envs
+    }
 }
 
 impl Default for EnvConfig {
@@ -67,6 +87,8 @@ impl Default for EnvConfig {
                 String::from("wasi_snapshot_preview1::"),
             ],
             plugins: vec![],
+            wasi_args: None,
+            wasi_envs: None,
         }
     }
 }

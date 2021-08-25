@@ -66,6 +66,7 @@ impl Module {
             self.clone(),
             signal_mailbox.0.clone(),
             message_mailbox.clone(),
+            self.environment().config(),
         )?;
 
         let mut store = Store::new(self.environment().engine(), state);
