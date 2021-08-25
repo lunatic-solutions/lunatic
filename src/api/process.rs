@@ -248,7 +248,7 @@ pub(crate) fn register(
 
 //% lunatic::process::create_config(max_memory: u64, max_fuel: u64) -> u64
 //%
-//% * **max_memory** - Maximum amount of memory in Wasm pages (64KB) that the process can use.
+//% * **max_memory** - Maximum amount of memory in bytes.
 //% * **max_fuel**   - Maximum amount of instructions in gallons that processes will be able to run
 //%                    before it traps. 1 gallon ~= 10k instructions. The special value of `0` means
 //%                    unlimited instructions.
