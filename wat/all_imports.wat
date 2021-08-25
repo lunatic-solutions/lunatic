@@ -48,6 +48,8 @@
     (import "lunatic::process" "sleep_ms" (func (param i64)))
     (import "lunatic::process" "die_when_link_dies" (func (param i32)))
     (import "lunatic::process" "this" (func (result i64)))
+    (import "lunatic::process" "id" (func (param i64 i32)))
+    (import "lunatic::process" "this_env" (func (result i64)))
     (import "lunatic::process" "link" (func (param i64 i64)))
     (import "lunatic::process" "unlink" (func (param i64)))
     (import "lunatic::process" "register" (func (param i32 i32 i32 i32 i64 i64)))

@@ -178,6 +178,22 @@ pub(crate) fn register(
     link_if_match(
         linker,
         "lunatic::process",
+        "id",
+        FuncType::new([ValType::I64, ValType::I32], []),
+        id,
+        namespace_filter,
+    )?;
+    link_if_match(
+        linker,
+        "lunatic::process",
+        "this_env",
+        FuncType::new([], [ValType::I64]),
+        this_env,
+        namespace_filter,
+    )?;
+    link_if_match(
+        linker,
+        "lunatic::process",
         "link",
         FuncType::new([ValType::I64, ValType::I64], []),
         link,
@@ -767,6 +783,37 @@ fn this(mut caller: Caller<ProcessState>) -> u64 {
     let signal_mailbox = caller.data().signal_mailbox.clone();
     let process = WasmProcess::new(id, signal_mailbox);
     caller.data_mut().resources.processes.add(Arc::new(process))
+}
+
+//% lunatic::process::id(process_id: u64, u128_ptr: u32)
+//%
+//% Returns UUID of a process as u128_ptr.
+//%
+//% Traps:
+//% * If the process ID doesn't exist.
+//% * If **u128_ptr** is outside the memory space.
+fn id(mut caller: Caller<ProcessState>, process_id: u64, u128_ptr: u32) -> Result<(), Trap> {
+    let id = caller
+        .data()
+        .resources
+        .processes
+        .get(process_id)
+        .or_trap("lunatic::process::id")?
+        .id()
+        .as_u128();
+    let memory = get_memory(&mut caller)?;
+    memory
+        .write(&mut caller, u128_ptr as usize, &id.to_le_bytes())
+        .or_trap("lunatic::process::id")?;
+    Ok(())
+}
+
+//% lunatic::process::this_env() -> u64
+//%
+//% Returns ID of the environment that this process was spawned from.
+fn this_env(mut caller: Caller<ProcessState>) -> u64 {
+    let env = caller.data().module.environment().clone();
+    caller.data_mut().resources.environments.add(env)
 }
 
 //% lunatic::process::link(tag: i64, process_id: u64)
