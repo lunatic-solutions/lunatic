@@ -41,7 +41,7 @@ impl Environment {
             .wasm_bulk_memory(true)
             .wasm_multi_value(true)
             .wasm_multi_memory(true)
-            .wasm_module_linking(true)
+            .wasm_module_linking(false)
             // Disable profiler
             .profiler(ProfilingStrategy::None)?
             .cranelift_opt_level(OptLevel::SpeedAndSize)
