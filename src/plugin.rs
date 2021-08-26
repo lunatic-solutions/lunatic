@@ -582,6 +582,11 @@ enum ContextExport<'a> {
 // * Adding imports & exports
 // * Wrapping existing host functions in additional instructions
 pub(crate) fn patch_module(module: &[u8], plugins: &[Plugin]) -> Result<Vec<u8>> {
+    // Return early if no plugins are used
+    if plugins.is_empty() {
+        return Ok(module.into());
+    }
+
     let mut module_context = ModuleContext::new(module)?;
     let state = PluginState::new(&mut module_context);
     let mut store = Store::new(&PLUGIN_ENV.engine, state);
