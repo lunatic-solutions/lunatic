@@ -52,7 +52,7 @@
     (import "lunatic::process" "this_env" (func (result i64)))
     (import "lunatic::process" "link" (func (param i64 i64)))
     (import "lunatic::process" "unlink" (func (param i64)))
-    (import "lunatic::process" "register" (func (param i32 i32 i32 i32 i64 i64)))
+    (import "lunatic::process" "register" (func (param i32 i32 i32 i32 i64 i64) (result i32)))
     (import "lunatic::process" "unregister" (func (param i32 i32 i32 i32 i64) (result i32)))
     (import "lunatic::process" "lookup" (func (param i32 i32 i32 i32 i32) (result i32)))
 

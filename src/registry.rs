@@ -39,8 +39,8 @@ impl LocalRegistry {
         let results = writer.entry(name).or_default();
         let version = Version::parse(version)?;
         match results.iter().position(|entry| version.eq(entry.version())) {
-            Some(index) => results[index] = RegistryEntry::new(version, process)?,
-            None => results.push(RegistryEntry::new(version, process)?),
+            Some(index) => results[index] = RegistryEntry::new(version, process),
+            None => results.push(RegistryEntry::new(version, process)),
         }
         Ok(())
     }
@@ -86,8 +86,8 @@ struct RegistryEntry {
 }
 
 impl RegistryEntry {
-    fn new(version: Version, process: Arc<dyn Process>) -> Result<Self> {
-        Ok(Self { version, process })
+    fn new(version: Version, process: Arc<dyn Process>) -> Self {
+        Self { version, process }
     }
 
     fn process(&self) -> Arc<dyn Process> {

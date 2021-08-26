@@ -220,7 +220,7 @@ pub(crate) fn register(
                 ValType::I64,
                 ValType::I64,
             ],
-            [],
+            [ValType::I32],
         ),
         register_proc,
         namespace_filter,
@@ -890,7 +890,9 @@ fn unlink(mut caller: Caller<ProcessState>, process_id: u64) -> Result<(), Trap>
 //%     version_len: u32,
 //%     env_id: u64
 //%     process_id: u64
-//%  )
+//%  ) -> u32
+//%
+//% Returns 0 in case of success or 1 if the version string didn't have a correct semver format.
 //%
 //% Registers process under **name** and **version** inside the specified environment. Processes
 //% that are spawned into this environment can look up the process using the **lookup** function.
@@ -898,7 +900,6 @@ fn unlink(mut caller: Caller<ProcessState>, process_id: u64) -> Result<(), Trap>
 //% Traps:
 //% * If the process ID doesn't exist.
 //% * If the environment ID doesn't exist.
-//% * If the version string is not in a correct semver format.
 //% * If **name_ptr + name_len** is outside the memory.
 //% * If **version_ptr + version_len** is outside the memory.
 fn register_proc(
@@ -909,7 +910,7 @@ fn register_proc(
     version_len: u32,
     env_id: u64,
     process_id: u64,
-) -> Result<(), Trap> {
+) -> Result<u32, Trap> {
     let memory = get_memory(&mut caller)?;
     let buffer = memory
         .data(&caller)
@@ -936,10 +937,10 @@ fn register_proc(
         .get(env_id)
         .or_trap("lunatic::process::register")?;
     let registry = environment.registry();
-    registry
-        .insert(name, version, process)
-        .or_trap("lunatic::process::register")?;
-    Ok(())
+    match registry.insert(name, version, process) {
+        Ok(()) => Ok(0),
+        Err(_) => Ok(1),
+    }
 }
 
 //% lunatic::process::unregister(
@@ -950,11 +951,15 @@ fn register_proc(
 //%     env_id: u64
 //%  ) -> u32
 //%
-//% Remove process from registry. Returns 0 if the process was removed, 1 if no match exists.
+//% Returns:
+//% * 0 if the process was removed
+//% * 1 if version string is not a correct semver string
+//% * 2 if no match exists
+//%
+//% Remove process from registry.
 //%
 //% Traps:
 //% * If the environment ID doesn't exist.
-//% * If the version string is not in a correct semver format.
 //% * If **name_ptr + name_len** is outside the memory.
 //% * If **version_ptr + version_len** is outside the memory.
 fn unregister(
@@ -969,26 +974,26 @@ fn unregister(
     let buffer = memory
         .data(&caller)
         .get(name_ptr as usize..(name_ptr + name_len) as usize)
-        .or_trap("lunatic::process::register")?;
-    let name = std::str::from_utf8(buffer).or_trap("lunatic::process::register")?;
+        .or_trap("lunatic::process::unregister")?;
+    let name = std::str::from_utf8(buffer).or_trap("lunatic::process::unregister")?;
     let buffer = memory
         .data(&caller)
         .get(version_ptr as usize..(version_ptr + version_len) as usize)
-        .or_trap("lunatic::process::register")?;
-    let version = std::str::from_utf8(buffer).or_trap("lunatic::process::register")?;
+        .or_trap("lunatic::process::unregister")?;
+    let version = std::str::from_utf8(buffer).or_trap("lunatic::process::unregister")?;
     let environment = caller
         .data()
         .resources
         .environments
         .get(env_id)
-        .or_trap("lunatic::process::register")?;
+        .or_trap("lunatic::process::unregister")?;
     let registry = environment.registry();
-    let result = registry
-        .remove(name, version)
-        .or_trap("lunatic::process::register")?;
-    match result {
-        Some(_) => Ok(0),
-        None => Ok(1),
+    match registry.remove(name, version) {
+        Ok(result) => match result {
+            Some(_) => Ok(0),
+            None => Ok(2),
+        },
+        Err(_) => Ok(1),
     }
 }
 
@@ -1000,13 +1005,15 @@ fn unregister(
 //%     id_u64_ptr: u32,
 //%  ) -> u32
 //%
-//% Returns a process that was registered inside the environment that the caller was spawned into.
-//% The query can be be an exact version or follow semver query rules (e.g. "^1.1"). If a process
-//% under this name and version was found the function will return 0 and write the process ID into
-//% **id_u64_ptr**, otherwise it will return 1.
+//% Returns:
+//% * 0 if the process was successfully returned
+//% * 1 if version string is not a correct semver string
+//% * 2 if no process was found
+//%
+//% Returns a process that was registered inside the environment that the caller belongs to.
+//% The query can be be an exact version or follow semver query rules (e.g. "^1.1").
 //%
 //% Traps:
-//% * If the query string is not in a correct semver query format.
 //% * If **name_ptr + name_len** is outside the memory.
 //% * If **query_ptr + query_len** is outside the memory.
 fn lookup(
@@ -1029,9 +1036,10 @@ fn lookup(
         .or_trap("lunatic::process::lookup")?;
     let query = std::str::from_utf8(buffer).or_trap("lunatic::process::lookup")?;
     let registry = caller.data().module.environment().registry();
-    let process = registry
-        .get(name, query)
-        .or_trap("lunatic::process::lookup")?;
+    let process = match registry.get(name, query) {
+        Ok(proc) => proc,
+        Err(_) => return Ok(1),
+    };
     match process {
         Some(process) => {
             let process_id = caller.data_mut().resources.processes.add(process);
@@ -1040,6 +1048,6 @@ fn lookup(
                 .or_trap("lunatic::process::lookup")?;
             Ok(0)
         }
-        None => Ok(1),
+        None => Ok(2),
     }
 }
