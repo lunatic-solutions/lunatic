@@ -117,6 +117,9 @@ impl MessageMailbox {
                 mailbox.found = Some(message);
                 waker.wake();
                 return;
+            } else {
+                // Put the waker back if this is not the message we are looking for.
+                mailbox.waker = Some(waker);
             }
         }
         // Otherwise put message into queue
@@ -205,7 +208,7 @@ mod tests {
         }
     }
     #[test]
-    fn correct_message_selected_on_await() {
+    fn waiting_on_none_activates_waker() {
         let mailbox = MessageMailbox::default();
         // Sending a message with any tag to a mailbox that is "awaiting" a `None` tag should
         // trigger the waker and return the tag.
@@ -228,7 +231,11 @@ mod tests {
         // Next poll will return the value
         let result = fut.as_mut().poll(&mut context);
         assert!(result.is_ready());
+    }
 
+    #[test]
+    fn waiting_on_tag_after_none() {
+        let mailbox = MessageMailbox::default();
         // "Awaiting" a specific tag and receiving a `None` message should not trigger the waker.
         let waker = FlagWaker(Arc::new(Mutex::new(false)));
         let waker_ref = waker.clone();
@@ -241,12 +248,20 @@ mod tests {
         let result = fut.as_mut().poll(&mut context);
         assert!(result.is_pending());
         assert_eq!(*waker_ref.0.lock().unwrap(), false);
-        // Pushing a message with the `None` tag should not call the waker
+        // Pushing a message with the `None` tag should not trigger the waker
         mailbox.push(Message::Signal(None));
         assert_eq!(*waker_ref.0.lock().unwrap(), false);
         // Next poll will still not have the value with the tag 1337
         let result = fut.as_mut().poll(&mut context);
         assert!(result.is_pending());
+        // Pushing another None in the meantime should not remove the waker
+        mailbox.push(Message::Signal(None));
+        // Pushing a message with tag 1337 should trigger the waker
+        mailbox.push(Message::Signal(Some(1337)));
+        assert_eq!(*waker_ref.0.lock().unwrap(), true);
+        // Next poll will have the message ready
+        let result = fut.as_mut().poll(&mut context);
+        assert!(result.is_ready());
     }
 
     #[test]
