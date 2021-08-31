@@ -2,6 +2,89 @@
 
 ---
 
+## v0.6.0
+
+Released 2021-08-31.
+
+### Changes
+
+This release contains mostly internal changes that should improve the developer experience of
+people working on the VM, but also adds some cool new features.
+
+#### VM
+
+- Processes now have a more general abstraction, the [`Process`][0] trait. It allows us to treat
+  anything that can receive a "message" as a process. At the moment this can only be a WebAssembly
+  process or [native Rust closures][1], but it could be extended in the future with other resources
+  that act as processes.
+
+- Tags were added to messages, allowing for selective receives. A common use case for them is to
+  make a request to a process and ignore all other messages until the response arrives. This can
+  be now done by giving the request message a specific tag (`i64` value) and waiting for a response
+  on that tag with [`lunatic::message::receive`][2]. The `receive` function will first search the
+  existing mailbox for the first message matching the tag or block until a message with the
+  specified tag arrives. If we know that such a tag can't yet exist in the mailbox, we can use the
+  atomic send and receive operation ([`send_receive_skip_search`][3]) that will not look through
+  the mailbox.
+
+- Messages are now just a [special kind of signals][4] that a process can receive. Other signals
+  are `Kill`, `Link`, `Unlink`, ...
+
+- A [test][5] was added for catching signature changes of host functions.
+
+- The messaging API was extended, including functions [`write_data`][6] and [`read_data`][7] that
+  allow for streaming zero-copy message de/serialization.
+
+- The `Environment` was extended with a concept of a `registry` and 3 host functions:
+  [`register`][8], [`unregister`][9] and [`lookup`][10]. Processes can now be registered inside the
+  `Environment` under a well known name and version number. When looking up processes inside the
+  `Environment` with a query, the lookup will follow semantic versioning rules for the version.
+  If we have a process under the name "test" and version "1.2.3", a lookup query with the name
+  "test" and version "^1.2" will match it.
+
+- Fixed [an issue][11] around async Rust cancellation safety and receives with timeouts.
+
+- [Improved handling][12] of command line arguments and environment variables.
+
+#### Rust library
+
+- The `Message` trait was removed and we now solely rely on serde's `Serialize` & `Deserialize`
+  traits to define what can be a message. Originally I was thinking that this is going to be an
+  issue once we get support for Rust's native `TcpStream` and we can't define serde's traits for
+  it, but this can be solved with [remote derives][13] in the future. This removes a really big
+  and complex macro from the library and allows us to use the new [`write_data`][6] and
+  [`read_data`][7] host functions for zero-copy de/serialization.
+
+- [MessagePack][14] is now used as the default message serialization format.
+
+- A [request/replay][15] API was added, that was built on the new selective receive functionality.
+
+- The [`Environment`][16] struct was extended with the new `registry` functionality.
+
+- New `lunatic::main` & `lunatic::test` macros were added to improve developer experiences.
+
+- [`lunatic::process::this_env`][17] was added to get the environment that the process was spawned
+  in.
+
+[0]: https://github.com/lunatic-solutions/lunatic/blob/main/src/process.rs#L21
+[1]: https://github.com/lunatic-solutions/lunatic/blob/main/src/process.rs#L195
+[2]: https://github.com/lunatic-solutions/lunatic/blob/main/src/api/mailbox.rs#L526
+[3]: https://github.com/lunatic-solutions/lunatic/blob/main/src/api/mailbox.rs#L474
+[4]: https://github.com/lunatic-solutions/lunatic/blob/main/src/process.rs#L48
+[5]: https://github.com/lunatic-solutions/lunatic/blob/main/wat/all_imports.wat
+[6]: https://github.com/lunatic-solutions/lunatic/blob/main/src/api/mailbox.rs#L216
+[7]: https://github.com/lunatic-solutions/lunatic/blob/main/src/api/mailbox.rs#L246
+[8]: https://github.com/lunatic-solutions/lunatic/blob/main/src/api/process.rs#L886
+[9]: https://github.com/lunatic-solutions/lunatic/blob/main/src/api/process.rs#L946
+[10]: https://github.com/lunatic-solutions/lunatic/blob/main/src/api/process.rs#L1019
+[11]: https://github.com/lunatic-solutions/lunatic/commit/a7188fed4b88484a9eb3874a082e1a0a163e916b
+[12]: https://github.com/lunatic-solutions/lunatic/commit/0c693985265ea00d7537e9cb62ec9b9390599915
+[13]: https://serde.rs/remote-derive.html
+[14]: https://msgpack.org/index.html
+[15]: https://docs.rs/lunatic/0.6.0/lunatic/index.html#requestreplay-architecture
+[16]: https://docs.rs/lunatic/0.6.0/lunatic/struct.Environment.html#
+[17]: https://docs.rs/lunatic/0.6.0/lunatic/process/fn.this_env.html
+
 ## v0.5.0
 
 Released 2021-07-29.
