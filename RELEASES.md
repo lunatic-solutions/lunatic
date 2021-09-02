@@ -57,7 +57,7 @@ people working on the VM, but also adds some cool new features.
 
 - [MessagePack][14] is now used as the default message serialization format.
 
-- A [request/replay][15] API was added, that was built on the new selective receive functionality.
+- A [request/reply][15] API was added, that was built on the new selective receive functionality.
 
 - The [`Environment`][16] struct was extended with the new `registry` functionality.
 
@@ -81,7 +81,7 @@ people working on the VM, but also adds some cool new features.
 [12]: https://github.com/lunatic-solutions/lunatic/commit/0c693985265ea00d7537e9cb62ec9b9390599915
 [13]: https://serde.rs/remote-derive.html
 [14]: https://msgpack.org/index.html
-[15]: https://docs.rs/lunatic/0.6.0/lunatic/index.html#requestreplay-architecture
+[15]: https://docs.rs/lunatic/0.6.0/lunatic/index.html#requestreply-architecture
 [16]: https://docs.rs/lunatic/0.6.0/lunatic/struct.Environment.html#
 [17]: https://docs.rs/lunatic/0.6.0/lunatic/process/fn.this_env.html
 

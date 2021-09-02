@@ -477,9 +477,9 @@ fn send(mut caller: Caller<ProcessState>, process_id: u64) -> Result<(), Trap> {
 //% * 0    if message arrived.
 //% * 9027 if call timed out.
 //%
-//% Sends the message to a process and waits for a replay, but doesn't look through existing
+//% Sends the message to a process and waits for a reply, but doesn't look through existing
 //% messages in the mailbox queue while waiting. This is an optimization that only makes sense
-//% with tagged messages. In a request/replay scenario we can tag the request message with an
+//% with tagged messages. In a request/reply scenario we can tag the request message with an
 //% unique tag and just wait on it specifically.
 //%
 //% This operation needs to be an atomic host function, if we jumped back into the guest we could

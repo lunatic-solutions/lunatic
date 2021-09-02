@@ -76,7 +76,7 @@ impl MessageMailbox {
     /// ### Safety
     ///
     /// It may not be clear right away why it's safe to skip looking through the queue. If we are
-    /// waiting on a replay, didn't we already send the message and couldn't it already have been
+    /// waiting on a reply, didn't we already send the message and couldn't it already have been
     /// received and pushed into our queue?
     ///
     /// The way processes work is that they run a bit of code, *stop*, look for new signals/messages
