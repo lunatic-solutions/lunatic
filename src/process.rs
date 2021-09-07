@@ -168,6 +168,14 @@ pub(crate) async fn new<F, T>(
     };
     match result {
         Finished::Normal(Result::Err(err)) => {
+            // If the trap is a result of calling `proc_exit(0)` treat it as an no-error finish.
+            if let Some(trap) = err.downcast_ref::<wasmtime::Trap>() {
+                if let Some(exit_status) = trap.i32_exit_status() {
+                    if exit_status == 0 {
+                        return;
+                    }
+                }
+            };
             debug!("Process failed: {}", err);
             // Notify all links that we finished with an error
             links.iter().for_each(|(proc, tag)| {
