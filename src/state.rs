@@ -6,9 +6,8 @@ use std::sync::Arc;
 use std::vec::IntoIter;
 
 use anyhow::Result;
-use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::mpsc::UnboundedSender;
-use tokio::sync::Mutex;
+use async_std::channel::Sender;
+use async_std::net::{TcpListener, TcpStream};
 use uuid::Uuid;
 use wasmtime::ResourceLimiter;
 use wasmtime_wasi::{WasiCtx, WasiCtxBuilder};
@@ -55,7 +54,7 @@ pub(crate) struct ProcessState {
     pub(crate) message: Option<Message>,
     // This field is only part of the state to make it possible to create a Wasm process handle
     // from inside itself. See the `lunatic::process::this()` Wasm API.
-    pub(crate) signal_mailbox: UnboundedSender<Signal>,
+    pub(crate) signal_mailbox: Sender<Signal>,
     // Messages sent to the process
     pub(crate) message_mailbox: MessageMailbox,
     // Errors belonging to the process
@@ -70,7 +69,7 @@ impl ProcessState {
     pub fn new(
         id: Uuid,
         module: Module,
-        signal_mailbox: UnboundedSender<Signal>,
+        signal_mailbox: Sender<Signal>,
         message_mailbox: MessageMailbox,
         config: &EnvConfig,
     ) -> Result<Self> {
@@ -141,7 +140,7 @@ pub(crate) struct Resources {
     pub(crate) processes: HashMapId<Arc<dyn Process>>,
     pub(crate) dns_iterators: HashMapId<DnsIterator>,
     pub(crate) tcp_listeners: HashMapId<TcpListener>,
-    pub(crate) tcp_streams: HashMapId<Arc<Mutex<TcpStream>>>,
+    pub(crate) tcp_streams: HashMapId<TcpStream>,
 }
 
 /// HashMap wrapper with incremental ID (u64) assignment.

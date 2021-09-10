@@ -754,7 +754,7 @@ fn clone_process(mut caller: Caller<ProcessState>, process_id: u64) -> Result<u6
 //% Suspend process for `millis`.
 fn sleep_ms(_: Caller<ProcessState>, millis: u64) -> Box<dyn Future<Output = ()> + Send + '_> {
     Box::new(async move {
-        tokio::time::sleep(Duration::from_millis(millis)).await;
+        async_std::task::sleep(Duration::from_millis(millis)).await;
     })
 }
 
@@ -771,7 +771,7 @@ fn die_when_link_dies(mut caller: Caller<ProcessState>, trap: u32) {
     caller
         .data_mut()
         .signal_mailbox
-        .send(Signal::DieWhenLinkDies(trap != 0))
+        .try_send(Signal::DieWhenLinkDies(trap != 0))
         .expect("The signal is sent to itself and the receiver must exist at this point");
 }
 
@@ -847,7 +847,7 @@ fn link(mut caller: Caller<ProcessState>, tag: i64, process_id: u64) -> Result<(
     caller
         .data_mut()
         .signal_mailbox
-        .send(Signal::Link(tag, process))
+        .try_send(Signal::Link(tag, process))
         .expect("The signal is sent to itself and the receiver must exist at this point");
     Ok(())
 }
@@ -878,7 +878,7 @@ fn unlink(mut caller: Caller<ProcessState>, process_id: u64) -> Result<(), Trap>
     caller
         .data_mut()
         .signal_mailbox
-        .send(Signal::UnLink(process))
+        .try_send(Signal::UnLink(process))
         .expect("The signal is sent to itself and the receiver must exist at this point");
     Ok(())
 }

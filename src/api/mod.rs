@@ -75,7 +75,7 @@ fn namespace_matches_filter(namespace: &str, name: &str, namespace_filter: &[Str
 }
 
 mod tests {
-    #[tokio::test]
+    #[async_std::test]
     async fn import_filter_signature_matches() {
         use crate::{EnvConfig, Environment};
 

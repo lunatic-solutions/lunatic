@@ -1,7 +1,9 @@
 /*! Wasm modules */
 
 use anyhow::{anyhow, Result};
-use tokio::{sync::mpsc::unbounded_channel, task::JoinHandle};
+use async_std::channel::unbounded;
+use async_std::task::JoinHandle;
+use log::trace;
 use uuid::Uuid;
 use wasmtime::{Store, Val};
 
@@ -59,7 +61,8 @@ impl Module {
     ) -> Result<(JoinHandle<()>, WasmProcess)> {
         // TODO: Switch to new_v1() for distributed Lunatic to assure uniqueness across nodes.
         let id = Uuid::new_v4();
-        let signal_mailbox = unbounded_channel::<Signal>();
+        trace!("Spawning process: {}", id);
+        let signal_mailbox = unbounded::<Signal>();
         let message_mailbox = MessageMailbox::default();
         let state = ProcessState::new(
             id,
@@ -95,7 +98,7 @@ impl Module {
             })?;
 
         let fut = async move { entry.call_async(&mut store, &params).await };
-        let child_process = process::new(fut, signal_mailbox.1, message_mailbox);
+        let child_process = process::new(fut, id, signal_mailbox.1, message_mailbox);
         let child_process_handle = WasmProcess::new(id, signal_mailbox.0.clone());
 
         // **Child link guarantees**:
@@ -120,17 +123,17 @@ impl Module {
             // Send signal to itself to perform the linking
             process.send(Signal::Link(None, Arc::new(child_process_handle.clone())));
             // Suspend itself to process all new signals
-            tokio::task::yield_now().await;
+            async_std::task::yield_now().await;
             // Send signal to child to link it
             signal_mailbox
                 .0
-                .send(Signal::Link(tag, Arc::new(process)))
+                .try_send(Signal::Link(tag, Arc::new(process)))
                 .expect("receiver must exist at this point");
         }
 
         // Spawn a background process
-        let join = tokio::spawn(child_process);
-
+        trace!("Process size: {}", std::mem::size_of_val(&child_process));
+        let join = async_std::task::spawn(child_process);
         Ok((join, child_process_handle))
     }
 

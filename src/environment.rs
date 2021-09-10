@@ -1,6 +1,5 @@
 use anyhow::Result;
 use lazy_static::lazy_static;
-use tokio::task;
 use wasmtime::{Config, Engine, InstanceAllocationStrategy, Linker, OptLevel, ProfilingStrategy};
 
 use super::config::EnvConfig;
@@ -77,13 +76,13 @@ impl Environment {
         let env = self.clone();
         let new_module = patch_module(&data, self.config.plugins())?;
         // The compilation of a module is a CPU intensive tasks and can take some time.
-        let module = task::spawn_blocking(move || {
+        let module = async_std::task::spawn_blocking(move || {
             match wasmtime::Module::new(env.engine(), new_module.as_slice()) {
                 Ok(wasmtime_module) => Ok(Module::new(data, env, wasmtime_module)),
                 Err(err) => Err(err),
             }
         })
-        .await??;
+        .await?;
         Ok(module)
     }
 

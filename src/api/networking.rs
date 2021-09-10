@@ -2,13 +2,11 @@ use std::convert::TryInto;
 use std::future::Future;
 use std::io::IoSlice;
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
-use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Result;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::Mutex;
+use async_std::io::{ReadExt, WriteExt};
+use async_std::net::{TcpListener, TcpStream};
 use wasmtime::{Caller, FuncType, Linker, ValType};
 use wasmtime::{Memory, Trap};
 
@@ -211,7 +209,7 @@ fn resolve(
         let name = std::str::from_utf8(buffer.as_slice()).or_trap("lunatic::network::resolve")?;
         // Check for timeout during lookup
         let return_ = if let Some(result) = tokio::select! {
-            _ = tokio::time::sleep(Duration::from_millis(timeout as u64)), if timeout != 0 => None,
+            _ = async_std::task::sleep(Duration::from_millis(timeout as u64)), if timeout != 0 => None,
             result = tokio::net::lookup_host(name) => Some(result)
         } {
             let (iter_or_error_id, result) = match result {
@@ -463,11 +461,7 @@ fn tcp_accept(
 
         let (tcp_stream_or_error_id, peer_addr_iter, result) = match tcp_listener.accept().await {
             Ok((stream, socket_addr)) => {
-                let stream_id = caller
-                    .data_mut()
-                    .resources
-                    .tcp_streams
-                    .add(Arc::new(Mutex::new(stream)));
+                let stream_id = caller.data_mut().resources.tcp_streams.add(stream);
                 let dns_iter_id = caller
                     .data_mut()
                     .resources
@@ -539,18 +533,11 @@ fn tcp_connect(
         )?;
 
         if let Some(result) = tokio::select! {
-            _ = tokio::time::sleep(Duration::from_millis(timeout as u64)), if timeout != 0 => None,
+            _ = async_std::task::sleep(Duration::from_millis(timeout as u64)), if timeout != 0 => None,
             result = TcpStream::connect(socket_addr) => Some(result)
         } {
             let (stream_or_error_id, result) = match result {
-                Ok(stream) => (
-                    caller
-                        .data_mut()
-                        .resources
-                        .tcp_streams
-                        .add(Arc::new(Mutex::new(stream))),
-                    0,
-                ),
+                Ok(stream) => (caller.data_mut().resources.tcp_streams.add(stream), 0),
                 Err(error) => (caller.data_mut().errors.add(error.into()), 1),
             };
 
@@ -660,17 +647,17 @@ fn tcp_write_vectored(
             .collect();
         let vec_slices = vec_slices?;
 
-        let stream_mutex = caller
+        let mut stream = caller
             .data()
             .resources
             .tcp_streams
             .get(stream_id)
             .or_trap("lunatic::network::tcp_write_vectored")?
             .clone();
-        let mut stream = stream_mutex.lock().await;
+
         // Check for timeout
         if let Some(result) = tokio::select! {
-            _ = tokio::time::sleep(Duration::from_millis(timeout as u64)), if timeout != 0 => None,
+            _ = async_std::task::sleep(Duration::from_millis(timeout as u64)), if timeout != 0 => None,
             result = stream.write_vectored(vec_slices.as_slice()) => Some(result)
         } {
             let (opaque, return_) = match result {
@@ -722,15 +709,13 @@ fn tcp_read(
     opaque_ptr: u32,
 ) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_> {
     Box::new(async move {
-        let stream_mutex = caller
+        let mut stream = caller
             .data()
             .resources
             .tcp_streams
             .get(stream_id)
             .or_trap("lunatic::network::tcp_read")?
             .clone();
-
-        let mut stream = stream_mutex.lock().await;
 
         let memory = get_memory(&mut caller)?;
         let buffer = memory
@@ -740,7 +725,7 @@ fn tcp_read(
 
         // Check for timeout first
         if let Some(result) = tokio::select! {
-            _ = tokio::time::sleep(Duration::from_millis(timeout as u64)), if timeout != 0 => None,
+            _ = async_std::task::sleep(Duration::from_millis(timeout as u64)), if timeout != 0 => None,
             result = stream.read(buffer) => Some(result)
         } {
             let (opaque, return_) = match result {
@@ -783,14 +768,13 @@ fn tcp_flush(
     error_id_ptr: u32,
 ) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_> {
     Box::new(async move {
-        let stream_mutex = caller
+        let mut stream = caller
             .data()
             .resources
             .tcp_streams
             .get(stream_id)
             .or_trap("lunatic::network::tcp_flush")?
             .clone();
-        let mut stream = stream_mutex.lock().await;
 
         let (error_id, result) = match stream.flush().await {
             Ok(()) => (0, 0),

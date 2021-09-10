@@ -5,7 +5,8 @@ use clap::{crate_version, App, Arg, ArgSettings};
 use anyhow::{Context, Result};
 use lunatic_runtime::{EnvConfig, Environment};
 
-fn main() -> Result<()> {
+#[async_std::main]
+async fn main() -> Result<()> {
     // Init logger
     env_logger::init();
     // Parse command line arguments
@@ -60,25 +61,19 @@ fn main() -> Result<()> {
     }
     let env = Environment::new(config)?;
 
-    let rt = tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .build()?;
-
-    rt.block_on(async {
-        // Spawn main process
-        let path = args.value_of("wasm").unwrap();
-        let path = Path::new(path);
-        let module = fs::read(path)?;
-        let module = env.create_module(module).await?;
-        let (task, _) = module
-            .spawn("_start", Vec::new(), None)
-            .await
-            .context(format!(
-                "Failed to spawn process from {}::_start()",
-                path.to_string_lossy()
-            ))?;
-        // Wait on the main process to finish
-        task.await?;
-        Ok(())
-    })
+    // Spawn main process
+    let path = args.value_of("wasm").unwrap();
+    let path = Path::new(path);
+    let module = fs::read(path)?;
+    let module = env.create_module(module).await?;
+    let (task, _) = module
+        .spawn("_start", Vec::new(), None)
+        .await
+        .context(format!(
+            "Failed to spawn process from {}::_start()",
+            path.to_string_lossy()
+        ))?;
+    // Wait on the main process to finish
+    task.await;
+    Ok(())
 }

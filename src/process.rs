@@ -1,11 +1,11 @@
 use std::{collections::HashMap, fmt::Debug, future::Future, hash::Hash, sync::Arc};
 
 use anyhow::Result;
-use log::debug;
-use tokio::{
-    sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender},
-    task::JoinHandle,
-};
+use log::{debug, trace};
+
+use async_std::channel::{unbounded, Receiver, Sender};
+use async_std::task::JoinHandle;
+
 use uuid::Uuid;
 
 use crate::{mailbox::MessageMailbox, message::Message};
@@ -92,12 +92,12 @@ pub enum Finished<T> {
 #[derive(Debug, Clone)]
 pub struct WasmProcess {
     id: Uuid,
-    signal_mailbox: UnboundedSender<Signal>,
+    signal_mailbox: Sender<Signal>,
 }
 
 impl WasmProcess {
     /// Create a new WasmProcess
-    pub fn new(id: Uuid, signal_mailbox: UnboundedSender<Signal>) -> Self {
+    pub fn new(id: Uuid, signal_mailbox: Sender<Signal>) -> Self {
         Self { id, signal_mailbox }
     }
 }
@@ -111,22 +111,25 @@ impl Process for WasmProcess {
         // lunatic can't guarantee that a message was successfully seen by the receiving side even
         // if this call succeeds. We deliberately don't expose this API, as it would not make sense
         // to relay on it and could signal wrong guarantees to users.
-        let _ = self.signal_mailbox.send(signal);
+        let _ = self.signal_mailbox.try_send(signal);
     }
 }
 
 // Turns a Future into a process, enabling signals (e.g. kill).
 pub(crate) async fn new<F, T>(
     fut: F,
-    mut signal_mailbox: UnboundedReceiver<Signal>,
+    id: Uuid,
+    signal_mailbox: Receiver<Signal>,
     message_mailbox: MessageMailbox,
 ) where
     F: Future<Output = Result<T>> + Send + 'static,
 {
-    // TODO: Check how big this future is. Would it make more sense to use a `Box:pin()` here?
+    trace!("Process {} spawned", id);
     tokio::pin!(fut);
 
     // Defines what happens if one of the linked processes dies.
+    // If the value is set to false, instead of dying too the process will receive a message about
+    // the linked process' death.
     let mut die_when_link_dies = true;
     // Process linked to this one
     let mut links = HashMap::new();
@@ -139,17 +142,17 @@ pub(crate) async fn new<F, T>(
             // Handle signals first
             signal = signal_mailbox.recv() => {
                 match signal {
-                    Some(Signal::Message(message)) => message_mailbox.push(message),
-                    Some(Signal::DieWhenLinkDies(value)) => die_when_link_dies = value,
+                    Ok(Signal::Message(message)) => message_mailbox.push(message),
+                    Ok(Signal::DieWhenLinkDies(value)) => die_when_link_dies = value,
                     // Put process into list of linked processes
-                    Some(Signal::Link(tag, proc)) => { links.insert(proc, tag); },
+                    Ok(Signal::Link(tag, proc)) => { links.insert(proc, tag); },
                     // Remove process from list
-                    Some(Signal::UnLink(proc)) => { links.remove(&proc); }
+                    Ok(Signal::UnLink(proc)) => { links.remove(&proc); }
                     // Exit loop and don't poll anymore the future if Signal::Kill received.
-                    Some(Signal::Kill) => break Finished::Signal(Signal::Kill),
+                    Ok(Signal::Kill) => break Finished::Signal(Signal::Kill),
                     // Depending if `die_when_link_dies` is set, process will die or turn the
                     // signal into a message
-                    Some(Signal::LinkDied(tag)) => {
+                    Ok(Signal::LinkDied(tag)) => {
                         if die_when_link_dies {
                             // Even this was not a **kill** signal it has the same effect on
                             // this process and should be propagated as such.
@@ -159,7 +162,7 @@ pub(crate) async fn new<F, T>(
                             message_mailbox.push(message);
                         }
                     },
-                    None => unreachable!("The process holds the sending side and is never closed")
+                    Err(_) => unreachable!("The process holds the sending side and is never closed")
                 }
             }
             // Run process
@@ -176,14 +179,14 @@ pub(crate) async fn new<F, T>(
                     }
                 }
             };
-            debug!("Process failed: {}", err);
+            debug!("Process {} failed: {}", id, err);
             // Notify all links that we finished with an error
             links.iter().for_each(|(proc, tag)| {
                 let _ = proc.send(Signal::LinkDied(*tag));
             });
         }
         Finished::Signal(Signal::Kill) => {
-            debug!("Process was killed");
+            debug!("Process {} was killed", id);
             // Notify all links that we finished because of a kill signal
             links.iter().for_each(|(proc, tag)| {
                 let _ = proc.send(Signal::LinkDied(*tag));
@@ -197,7 +200,7 @@ pub(crate) async fn new<F, T>(
 #[derive(Clone, Debug)]
 pub struct NativeProcess {
     id: Uuid,
-    signal_mailbox: UnboundedSender<Signal>,
+    signal_mailbox: Sender<Signal>,
 }
 
 /// Spawns a process from a closure.
@@ -211,10 +214,6 @@ pub struct NativeProcess {
 ///     Ok(())
 /// });
 /// ```
-///
-/// ## Safety:
-///
-/// This uses `tokio::spawn` internally and needs to be called from inside a tokio context or it will panic.
 pub fn spawn<F, K, T>(func: F) -> (JoinHandle<()>, NativeProcess)
 where
     T: 'static,
@@ -223,14 +222,14 @@ where
 {
     // TODO: Switch to new_v1() for distributed Lunatic to assure uniqueness across nodes.
     let id = Uuid::new_v4();
-    let (signal_sender, signal_mailbox) = unbounded_channel::<Signal>();
+    let (signal_sender, signal_mailbox) = unbounded::<Signal>();
     let message_mailbox = MessageMailbox::default();
     let process = NativeProcess {
         id,
         signal_mailbox: signal_sender,
     };
     let fut = func(message_mailbox.clone());
-    let join = tokio::spawn(new(fut, signal_mailbox, message_mailbox));
+    let join = async_std::task::spawn(new(fut, id, signal_mailbox, message_mailbox));
     (join, process)
 }
 
@@ -243,6 +242,6 @@ impl Process for NativeProcess {
         // lunatic can't guarantee that a message was successfully seen by the receiving side even
         // if this call succeeds. We deliberately don't expose this API, as it would not make sense
         // to relay on it and could signal wrong guarantees to users.
-        let _ = self.signal_mailbox.send(signal);
+        let _ = self.signal_mailbox.try_send(signal);
     }
 }
