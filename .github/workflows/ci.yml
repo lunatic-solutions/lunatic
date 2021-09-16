@@ -68,9 +68,10 @@ jobs:
           draft: true
           files: ${{ matrix.asset_name }}
       - name: Update homebrew version
-        if: startsWith(github.ref, 'refs/tags/')
+        # Only update homebrew once from the linux release
+        if: startsWith(github.ref, 'refs/tags/') && matrix.os == 'ubuntu-latest'
         run: |
-          export VERSION=$(echo ${{ steps.getReleaseName.outputs.RELEASE_NAME }} | sed -E 's/v(.+)/\1/')
+          export VERSION=$(echo ${{ steps.getReleaseName.outputs.RELEASE_NAME }} | sed -E 's/.*v([[:digit:]]+\.[[:digit:]]+\.[[:digit:]]+)/\1/')
           curl -u ":${{ secrets.HOMEBREW }}" \
           -X POST \
           -H "Accept: application/vnd.github.v3+json" \
