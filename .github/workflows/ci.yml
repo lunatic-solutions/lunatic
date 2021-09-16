@@ -72,11 +72,10 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/') && matrix.os == 'ubuntu-latest'
         run: |
           export VERSION=$(echo ${{ steps.getReleaseName.outputs.RELEASE_NAME }} | sed -E 's/.*v([[:digit:]]+\.[[:digit:]]+\.[[:digit:]]+)/\1/')
-          curl -u ":${{ secrets.HOMEBREW }}" \
-          -X POST \
+          curl -X POST \
+          -H 'Authorization: token ${{ secrets.HOMEBREW }}' \
           -H "Accept: application/vnd.github.v3+json" \
           https://api.github.com/repos/lunatic-solutions/homebrew-lunatic/actions/workflows/ci.yml/dispatches \
-          -d '{"ref": "main", \
-               "inputs": { \
-                   "version": "'$VERSION'", \
+          -d '{"ref": "main",
+               "inputs": { "version": "'$VERSION'" }
           }'
