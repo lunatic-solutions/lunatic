@@ -67,3 +67,15 @@ jobs:
           name: Release ${{ steps.getReleaseName.outputs.RELEASE_NAME }}
           draft: true
           files: ${{ matrix.asset_name }}
+      - name: Update homebrew version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          export VERSION=$(echo ${{ steps.getReleaseName.outputs.RELEASE_NAME }} | sed -E 's/v(.+)/\1/')
+          curl -u ":${{ secrets.HOMEBREW }}" \
+          -X POST \
+          -H "Accept: application/vnd.github.v3+json" \
+          https://api.github.com/repos/lunatic-solutions/homebrew-lunatic/actions/workflows/ci.yml/dispatches \
+          -d '{"ref": "main", \
+               "inputs": { \
+                   "version": "'$VERSION'", \
+          }'
