@@ -210,18 +210,17 @@ fn resolve(
         // Check for timeout during lookup
         let return_ = if let Some(result) = tokio::select! {
             _ = async_std::task::sleep(Duration::from_millis(timeout as u64)), if timeout != 0 => None,
-            result = tokio::net::lookup_host(name) => Some(result)
+            result = async_net::resolve(name) => Some(result)
         } {
             let (iter_or_error_id, result) = match result {
-                Ok(iter) => {
+                Ok(sockets) => {
                     // This is a bug in clippy, this collect is not needless
                     #[allow(clippy::needless_collect)]
-                    let vec: Vec<SocketAddr> = iter.collect();
                     let id = caller
                         .data_mut()
                         .resources
                         .dns_iterators
-                        .add(DnsIterator::new(vec.into_iter()));
+                        .add(DnsIterator::new(sockets.into_iter()));
                     (id, 0)
                 }
                 Err(error) => {
