@@ -39,7 +39,7 @@ mod environment;
 pub(crate) mod mailbox;
 pub mod message;
 pub(crate) mod module;
-// pub mod node;
+pub mod node;
 pub mod plugin;
 pub(crate) mod process;
 pub mod registry;

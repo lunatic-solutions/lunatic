@@ -208,7 +208,7 @@ pub struct NativeProcess {
 /// ## Example:
 ///
 /// ```no_run
-/// let _proc = lunatic_runtime::spawn(|mailbox| async move {
+/// let _proc = lunatic_runtime::spawn(|_this, mailbox| async move {
 ///     // Wait on a message with the tag `27`.
 ///     mailbox.pop(Some(&[27])).await;
 ///     Ok(())
@@ -218,7 +218,7 @@ pub fn spawn<F, K, T>(func: F) -> (JoinHandle<()>, NativeProcess)
 where
     T: 'static,
     K: Future<Output = Result<T>> + Send + 'static,
-    F: Fn(MessageMailbox) -> K,
+    F: Fn(NativeProcess, MessageMailbox) -> K,
 {
     // TODO: Switch to new_v1() for distributed Lunatic to assure uniqueness across nodes.
     let id = Uuid::new_v4();
@@ -228,7 +228,7 @@ where
         id,
         signal_mailbox: signal_sender,
     };
-    let fut = func(message_mailbox.clone());
+    let fut = func(process.clone(), message_mailbox.clone());
     let join = async_std::task::spawn(new(fut, id, signal_mailbox, message_mailbox));
     (join, process)
 }
