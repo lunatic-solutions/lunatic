@@ -35,6 +35,7 @@
     (import "lunatic::process" "create_config" (func (param i64 i64) (result i64)))
     (import "lunatic::process" "drop_config" (func (param i64)))
     (import "lunatic::process" "allow_namespace" (func (param i64 i32 i32)))
+    (import "lunatic::process" "preopen_dir" (func (param i64 i32 i32 i32) (result i32)))
     (import "lunatic::process" "add_plugin" (func (param i64 i32 i32 i32) (result i32)))
     (import "lunatic::process" "create_environment" (func (param i64 i32) (result i32)))
     (import "lunatic::process" "drop_environment" (func (param i64)))

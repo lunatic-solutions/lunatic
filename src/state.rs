@@ -10,7 +10,7 @@ use async_std::channel::Sender;
 use async_std::net::{TcpListener, TcpStream};
 use uuid::Uuid;
 use wasmtime::ResourceLimiter;
-use wasmtime_wasi::{WasiCtx, WasiCtxBuilder};
+use wasmtime_wasi::{ambient_authority, Dir, WasiCtx, WasiCtxBuilder};
 
 use crate::mailbox::MessageMailbox;
 use crate::module::Module;
@@ -73,16 +73,17 @@ impl ProcessState {
         message_mailbox: MessageMailbox,
         config: &EnvConfig,
     ) -> Result<Self> {
-        let wasi = WasiCtxBuilder::new();
-        let wasi = wasi.inherit_stdio();
-        let wasi = match config.wasi_envs() {
-            Some(envs) => wasi.envs(envs)?,
-            None => wasi,
-        };
-        let wasi = match config.wasi_args() {
-            Some(args) => wasi.args(args)?,
-            None => wasi,
-        };
+        let mut wasi = WasiCtxBuilder::new().inherit_stdio();
+        if let Some(envs) = config.wasi_envs() {
+            wasi = wasi.envs(envs)?;
+        }
+        if let Some(args) = config.wasi_args() {
+            wasi = wasi.args(args)?;
+        }
+        for preopen_dir_path in config.preopened_dirs() {
+            let preopen_dir = Dir::open_ambient_dir(preopen_dir_path, ambient_authority())?;
+            wasi = wasi.preopened_dir(preopen_dir, preopen_dir_path)?;
+        }
         let state = Self {
             id,
             module,

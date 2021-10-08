@@ -22,6 +22,14 @@ async fn main() -> Result<()> {
                 .setting(ArgSettings::TakesValue),
         )
         .arg(
+            Arg::new("dir")
+                .long("dir")
+                .value_name("DIRECTORY")
+                .about("Grant access to the given host directory")
+                .setting(ArgSettings::MultipleOccurrences)
+                .setting(ArgSettings::TakesValue),
+        )
+        .arg(
             Arg::new("wasm")
                 .value_name("WASM")
                 .about("Entry .wasm file")
@@ -57,6 +65,11 @@ async fn main() -> Result<()> {
             let path = Path::new(plugin);
             let module = fs::read(path)?;
             config.add_plugin(module)?;
+        }
+    }
+    if let Some(dirs) = args.values_of("dir") {
+        for dir in dirs {
+            config.preopen_dir(dir);
         }
     }
     let env = Environment::new(config)?;

@@ -10,6 +10,7 @@ pub struct EnvConfig {
     // Maximum amount of compute expressed in units of 100k instructions.
     max_fuel: Option<u64>,
     allowed_namespaces: Vec<String>,
+    preopened_dirs: Vec<String>,
     plugins: Vec<Plugin>,
     wasi_args: Option<Vec<String>>,
     wasi_envs: Option<Vec<(String, String)>>,
@@ -22,6 +23,7 @@ impl EnvConfig {
             max_memory,
             max_fuel,
             allowed_namespaces: Vec::new(),
+            preopened_dirs: Vec::new(),
             plugins: Vec::new(),
             wasi_args: None,
             wasi_envs: None,
@@ -43,6 +45,15 @@ impl EnvConfig {
     /// Allow a WebAssembly host function namespace to be used with this config.
     pub fn allow_namespace<S: Into<String>>(&mut self, namespace: S) {
         self.allowed_namespaces.push(namespace.into())
+    }
+
+    pub fn preopened_dirs(&self) -> &[String] {
+        &self.preopened_dirs
+    }
+
+    /// Grant access to the given directory with this config.
+    pub fn preopen_dir<S: Into<String>>(&mut self, dir: S) {
+        self.preopened_dirs.push(dir.into())
     }
 
     pub fn plugins(&self) -> &Vec<Plugin> {
@@ -86,6 +97,7 @@ impl Default for EnvConfig {
                 String::from("lunatic::"),
                 String::from("wasi_snapshot_preview1::"),
             ],
+            preopened_dirs: vec![],
             plugins: vec![],
             wasi_args: None,
             wasi_envs: None,
