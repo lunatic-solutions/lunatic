@@ -1,4 +1,4 @@
-use std::{convert::TryInto, future::Future, sync::Arc, time::Duration};
+use std::{convert::TryInto, future::Future, path::Path, sync::Arc, time::Duration};
 
 use anyhow::{anyhow, Result};
 use wasmtime::{Caller, FuncType, Linker, Trap, Val, ValType};
@@ -42,6 +42,17 @@ pub(crate) fn register(
         "allow_namespace",
         FuncType::new([ValType::I64, ValType::I32, ValType::I32], []),
         allow_namespace,
+        namespace_filter,
+    )?;
+    link_if_match(
+        linker,
+        "lunatic::process",
+        "preopen_dir",
+        FuncType::new(
+            [ValType::I64, ValType::I32, ValType::I32, ValType::I32],
+            [ValType::I32],
+        ),
+        preopen_dir,
         namespace_filter,
     )?;
     link_if_match(
@@ -322,6 +333,76 @@ fn allow_namespace(
         .or_trap("lunatic::process::allow_namespace")?;
     config.allow_namespace(namespace);
     Ok(())
+}
+
+//% lunatic::process::preopen_dir(
+//%     config_id: u64,
+//%     dir_str_ptr: u32,
+//%     dir_str_len: u32,
+//%     id_ptr: u32
+//% ) -> u32
+//%
+//% Returns:
+//% * 0 on success
+//% * 1 on error   - The error ID is written to **id_ptr**
+//%
+//% Grant access to the given host directory.
+//% Returns error if host does not have access to directory.
+//%
+//% Traps:
+//% * If the config ID doesn't exist.
+//% * If the **dir** string is not a valid utf8 string.
+//% * If **dir_str_ptr + dir_str_len** is outside the memory.
+//% * If **id_ptr** is outside the memory.
+fn preopen_dir(
+    mut caller: Caller<ProcessState>,
+    config_id: u64,
+    dir_str_ptr: u32,
+    dir_str_len: u32,
+    id_ptr: u32,
+) -> Result<u32, Trap> {
+    let memory = get_memory(&mut caller)?;
+    let mut buffer = vec![0; dir_str_len as usize];
+    memory
+        .read(&caller, dir_str_ptr as usize, &mut buffer)
+        .or_trap("lunatic::process::preopen_dir")?;
+    let dir = std::str::from_utf8(buffer.as_slice()).or_trap("lunatic::process::preopen_dir")?;
+
+    let dir_path = Path::new(dir);
+    let can_grant_access = caller
+        .data()
+        .module
+        .environment()
+        .config()
+        .preopened_dirs()
+        .iter()
+        .any(|caller_preopened_dir| Path::new(caller_preopened_dir).ends_with(dir_path));
+    let (error_id, result) = if can_grant_access {
+        let config = caller
+            .data_mut()
+            .resources
+            .configs
+            .get_mut(config_id)
+            .or_trap("lunatic::process::preopen_dir")?;
+        config.preopen_dir(dir);
+        (0, 0)
+    } else {
+        let error_id = caller.data_mut().errors.add(
+            Trap::new(format!(
+                "Host does not have access to directory \"{}\"",
+                dir
+            ))
+            .into(),
+        );
+        (error_id, 1)
+    };
+
+    let memory = get_memory(&mut caller)?;
+    memory
+        .write(&mut caller, id_ptr as usize, &error_id.to_le_bytes())
+        .or_trap("lunatic::process::preopen_dir")?;
+
+    Ok(result)
 }
 
 //% lunatic::process::add_plugin(
