@@ -1,4 +1,5 @@
 use std::{
+    convert::TryInto,
     future::Future,
     io::{Read, Write},
     time::Duration,
@@ -14,7 +15,7 @@ use crate::{
     state::ProcessState,
 };
 
-use super::{link_async2_if_match, link_if_match};
+use super::{link_async2_if_match, link_async3_if_match, link_if_match};
 
 // Register the mailbox APIs to the linker
 pub(crate) fn register(
@@ -117,11 +118,11 @@ pub(crate) fn register(
         send_receive_skip_search,
         namespace_filter,
     )?;
-    link_async2_if_match(
+    link_async3_if_match(
         linker,
         "lunatic::message",
         "receive",
-        FuncType::new([ValType::I64, ValType::I32], [ValType::I32]),
+        FuncType::new([ValType::I32, ValType::I32, ValType::I32], [ValType::I32]),
         receive,
         namespace_filter,
     )?;
@@ -502,7 +503,13 @@ fn send_receive_skip_search(
             .message
             .take()
             .or_trap("lunatic::message::send_receive_skip_search")?;
-        let tag = message.tag();
+        let mut _tags = [0; 1];
+        let tags = if let Some(tag) = message.tag() {
+            _tags = [tag];
+            Some(&_tags[..])
+        } else {
+            None
+        };
         let process = caller
             .data()
             .resources
@@ -512,7 +519,7 @@ fn send_receive_skip_search(
         process.send(Signal::Message(message));
         if let Some(message) = tokio::select! {
             _ = async_std::task::sleep(Duration::from_millis(timeout as u64)), if timeout != 0 => None,
-            message = caller.data_mut().message_mailbox.pop_skip_search(tag) => Some(message)
+            message = caller.data_mut().message_mailbox.pop_skip_search(tags) => Some(message)
         } {
             // Put the message into the scratch area
             caller.data_mut().message = Some(message);
@@ -523,7 +530,7 @@ fn send_receive_skip_search(
     })
 }
 
-//% lunatic::message::receive(tag: i64, timeout: u32) -> u32
+//% lunatic::message::receive(tag_ptr: u32, tag_len: u32, timeout: u32) -> u32
 //%
 //% Returns:
 //% * 0    if it's a data message.
@@ -531,27 +538,47 @@ fn send_receive_skip_search(
 //% * 9027 if call timed out.
 //%
 //% Takes the next message out of the queue or blocks until the next message is received if queue
-//% is empty. If **tag** is a value different from 0 it will block until a message with such a tag
-//% is received and return it.
+//% is empty.
+//%
+//% If **tag_len** is a value greater than 0 it will block until a message is received matching any
+//% of the supplied tags. **tag_ptr** points to an array containing i64 value encoded as little
+//% endian values.
 //%
 //% If timeout is specified (value different from 0), the function will return on timeout
 //% expiration with value 9027.
 //%
 //% Once the message is received, functions like `lunatic::message::read_data()` can be used to
 //% extract data out of it.
+//%
+//% Traps:
+//% * If **tag_ptr + (ciovec_array_len * 8) is outside the memory
 fn receive(
     mut caller: Caller<ProcessState>,
-    tag: i64,
+    tag_ptr: u32,
+    tag_len: u32,
     timeout: u32,
-) -> Box<dyn Future<Output = u32> + Send + '_> {
+) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_> {
     Box::new(async move {
-        let tag = match tag {
-            0 => None,
-            tag => Some(tag),
+        let tags = if tag_len > 0 {
+            let memory = get_memory(&mut caller)?;
+            let buffer = memory
+                .data(&caller)
+                .get(tag_ptr as usize..(tag_ptr + tag_len * 8) as usize)
+                .or_trap("lunatic::message::receive")?;
+
+            // Gether all tags
+            let tags: Vec<i64> = buffer
+                .chunks_exact(8)
+                .map(|chunk| i64::from_le_bytes(chunk.try_into().expect("works")))
+                .collect();
+            Some(tags)
+        } else {
+            None
         };
+
         if let Some(message) = tokio::select! {
             _ = async_std::task::sleep(Duration::from_millis(timeout as u64)), if timeout != 0 => None,
-            message = caller.data_mut().message_mailbox.pop(tag) => Some(message)
+            message = caller.data_mut().message_mailbox.pop(tags.as_deref()) => Some(message)
         } {
             let result = match message {
                 Message::Data(_) => 0,
@@ -559,9 +586,9 @@ fn receive(
             };
             // Put the message into the scratch area
             caller.data_mut().message = Some(message);
-            result
+            Ok(result)
         } else {
-            9027
+            Ok(9027)
         }
     })
 }
