@@ -1,9 +1,9 @@
-use std::{collections::HashMap, net::SocketAddr, sync::Arc};
+use std::{collections::HashMap, sync::Arc};
 
 use anyhow::{anyhow, Result};
 use async_std::{
     io::{ReadExt, WriteExt},
-    net::{TcpListener, TcpStream},
+    net::{SocketAddr, TcpListener, TcpStream, ToSocketAddrs},
     sync::{Mutex, RwLock},
 };
 use bincode::{deserialize, serialize};
@@ -26,16 +26,18 @@ struct InnerNode {
 }
 
 impl Node {
-    pub async fn new(
+    pub async fn new<A: ToSocketAddrs>(
         name: String,
-        socket: SocketAddr,
-        bootstrap: Option<SocketAddr>,
+        socket: A,
+        bootstrap: Option<A>,
     ) -> Result<Node> {
+        let socket = socket.to_socket_addrs().await?.next().unwrap();
         // Bind itself to a socket
         let listener = TcpListener::bind(socket).await?;
 
         // Bootstrap all peers from one.
         let peers = if let Some(bootstrap) = bootstrap {
+            let bootstrap = bootstrap.to_socket_addrs().await?.next().unwrap();
             let bootstrap_conn = TcpStream::connect(bootstrap).await?;
             let mut bootstrap_peer = Peer {
                 conn: bootstrap_conn,
@@ -44,30 +46,36 @@ impl Node {
             };
             // Register ourself at the bootstrap peer
             bootstrap_peer
-                .send(Message::Register(name.clone(), socket))
+                .send(Message::Register(name.clone(), socket.into()))
                 .await?;
             // Ask the bootstrap for all other peers. The returned list will also contain the
             // bootstrap one.
             bootstrap_peer.send(Message::GetPeers).await?;
             if let Message::Peers(peer_infos) = bootstrap_peer.receive().await? {
                 let mut peers = HashMap::new();
-                for (name, addr) in peer_infos.into_iter() {
-                    let peer_conn = TcpStream::connect(addr).await?;
-                    let peer = Peer {
+                for (peer_name, peer_addr) in peer_infos.into_iter() {
+                    // At this point we are also a peer of the bootstrap node and we want to skip
+                    // over ourself.
+                    if socket == peer_addr {
+                        continue;
+                    }
+
+                    let peer_conn = TcpStream::connect(peer_addr).await?;
+                    let mut peer = Peer {
                         conn: peer_conn,
-                        addr,
+                        addr: peer_addr,
                         send_mutex: Arc::new(Mutex::new(())),
                     };
                     // Register ourself
-                    bootstrap_peer
-                        .send(Message::Register(name.clone(), socket))
-                        .await?;
-                    peers.insert(name, peer);
+                    peer.send(Message::Register(name.clone(), socket)).await?;
+                    peers.insert(peer_name, peer);
                 }
                 peers
             } else {
                 return Err(anyhow!("Unexpected message from bootstrap node"));
             }
+            // The `bootstrap_peer` is dropped here, but we still have a connection to it that we
+            // established when receiving it from the `GetPeers` request.
         } else {
             HashMap::new()
         };
@@ -82,9 +90,23 @@ impl Node {
             inner: Arc::new(RwLock::new(inner)),
         };
 
+        {
+            let node_read = node.inner.read().await;
+            // Handle incoming messages of connected peers.
+            for (_, peer) in node_read.peers.iter() {
+                async_std::task::spawn(peer_task(node.clone(), peer.clone()));
+            }
+        }
+
+        // Listen for new incoming connections.
         async_std::task::spawn(node_server(node.clone(), listener));
 
         Ok(node)
+    }
+
+    pub async fn peers(&self) -> HashMap<String, Peer> {
+        let node = self.inner.read().await;
+        node.peers.clone()
     }
 }
 
@@ -103,7 +125,9 @@ async fn node_server(node: Node, listener: TcpListener) {
             peer.addr = new_addr;
             async_std::task::spawn(peer_task(node.clone(), peer.clone()));
             let mut node = node.inner.write().await;
-            // TODO: Check if peer under this name exists and report error.
+            // TODO: Check if peer under this name exists or we already have this name and report error.
+            // TODO: During the bootstrap process we will double connect to the bootstrap node,
+            //       once to get all peers, and once we receive the bootstrap node as a peer
             node.peers.insert(name, peer);
         } else {
             todo!("Handle wrong first message");
@@ -136,7 +160,7 @@ async fn peer_task(node: Node, mut peer: Peer) {
 }
 
 #[derive(Clone)]
-struct Peer {
+pub struct Peer {
     conn: TcpStream,
     addr: SocketAddr,
     send_mutex: Arc<Mutex<()>>,
@@ -181,4 +205,57 @@ enum Resource {
     Environment(Environment),
     Module(Module),
     Process(Box<dyn Process>),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Node;
+
+    #[async_std::test]
+    async fn single_node_startup() {
+        let node1 = Node::new("node1".into(), "localhost:35555", None)
+            .await
+            .unwrap();
+        let peers1 = node1.peers().await;
+        assert_eq!(peers1.len(), 0);
+    }
+
+    #[async_std::test]
+    async fn dual_node_startup() {
+        let node1 = Node::new("node1".into(), "localhost:35556", None)
+            .await
+            .unwrap();
+        let node2 = Node::new("node2".into(), "localhost:35557", Some("localhost:35556"))
+            .await
+            .unwrap();
+        let peers1 = node1.peers().await;
+        assert_eq!(peers1.len(), 1);
+        let peer1_name = peers1.iter().next().unwrap().0;
+        assert_eq!(peer1_name, "node2");
+
+        let peers2 = node2.peers().await;
+        assert_eq!(peers2.len(), 1);
+        let peer2_name = peers2.iter().next().unwrap().0;
+        assert_eq!(peer2_name, "node1");
+    }
+
+    #[async_std::test]
+    async fn triple_node_setup() {
+        let node1 = Node::new("node1".into(), "localhost:35558", None)
+            .await
+            .unwrap();
+        let node2 = Node::new("node2".into(), "localhost:35559", Some("localhost:35558"))
+            .await
+            .unwrap();
+        let node3 = Node::new("node3".into(), "localhost:35560", Some("localhost:35559"))
+            .await
+            .unwrap();
+
+        let peers1 = node1.peers().await;
+        assert_eq!(peers1.len(), 2);
+        let peers2 = node2.peers().await;
+        assert_eq!(peers2.len(), 2);
+        let peers3 = node3.peers().await;
+        assert_eq!(peers3.len(), 2);
+    }
 }
