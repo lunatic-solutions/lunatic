@@ -2,14 +2,16 @@ use std::{collections::HashMap, sync::Arc};
 
 use anyhow::{anyhow, Result};
 use async_std::{
+    channel::{unbounded, Receiver, Sender},
     io::{ReadExt, WriteExt},
     net::{SocketAddr, TcpListener, TcpStream, ToSocketAddrs},
     sync::{Mutex, RwLock},
 };
 use bincode::{deserialize, serialize};
+use log::trace;
 use serde::{Deserialize, Serialize};
 
-use crate::{module::Module, state::HashMapId, Environment, Process};
+use crate::{module::Module, state::HashMapId, EnvConfig, Environment, Process};
 
 /// A node holds information of other peers in the distributed system and resources belonging to
 /// these remote nodes.
@@ -42,6 +44,7 @@ impl Node {
             let mut bootstrap_peer = Peer {
                 conn: bootstrap_conn,
                 addr: bootstrap,
+                response: unbounded(),
                 send_mutex: Arc::new(Mutex::new(())),
             };
             // Register ourself at the bootstrap peer
@@ -64,6 +67,7 @@ impl Node {
                     let mut peer = Peer {
                         conn: peer_conn,
                         addr: peer_addr,
+                        response: unbounded(),
                         send_mutex: Arc::new(Mutex::new(())),
                     };
                     // Register ourself
@@ -108,6 +112,11 @@ impl Node {
         let node = self.inner.read().await;
         node.peers.clone()
     }
+
+    pub async fn addr(&self) -> SocketAddr {
+        let node = self.inner.read().await;
+        node.socket
+    }
 }
 
 // Handle new peer connections
@@ -116,6 +125,7 @@ async fn node_server(node: Node, listener: TcpListener) {
         let mut peer = Peer {
             conn,
             addr,
+            response: unbounded(),
             send_mutex: Arc::new(Mutex::new(())),
         };
         // The first message will always be the name.
@@ -137,7 +147,9 @@ async fn node_server(node: Node, listener: TcpListener) {
 
 // A task running in the background and responding to messages from a peer connection.
 async fn peer_task(node: Node, mut peer: Peer) {
+    trace!("{} listening to {}", node.addr().await, peer.addr);
     while let Ok(message) = peer.receive().await {
+        trace!("receiving from {}: {:?}", peer.addr, message);
         match message {
             Message::Register(_, _) => unreachable!("Can't get a name message at this point"),
             Message::GetPeers => {
@@ -150,11 +162,57 @@ async fn peer_task(node: Node, mut peer: Peer) {
                 // Add itself to the peer list.
                 peers.push((node.name.clone(), node.socket));
                 if peer.send(Message::Peers(peers)).await.is_err() {
-                    // TODO: If message can't be send declare node as dead
+                    // TODO: If message can't be sent declare node as dead
                     break;
                 }
             }
             Message::Peers(_) => unreachable!("Peers are only received during bootstrap"),
+            Message::CreateEnvironment(config) => {
+                let env = Environment::new(config);
+                if let Ok(env) = env {
+                    let mut node = node.inner.write().await;
+                    let id = node.resources.add(Resource::Environment(env));
+                    // TODO: Deal with error
+                    peer.send(Message::Resource(id)).await.unwrap();
+                } else {
+                    // TODO: Deal with error
+                    peer.send(Message::Error(env.err().unwrap().to_string()))
+                        .await
+                        .unwrap();
+                }
+            }
+            Message::CreateModule(env_id, data) => {
+                let mut node = node.inner.write().await;
+                match node.resources.get(env_id) {
+                    Some(Resource::Environment(ref env)) => {
+                        let module = env.create_module(data).await.unwrap();
+                        let id = node.resources.add(Resource::Module(module));
+                        peer.send(Message::Resource(id)).await.unwrap();
+                    }
+                    _ => {
+                        peer.send(Message::Error("Resource is not an environment".to_string()))
+                            .await
+                            .unwrap();
+                    }
+                };
+            }
+            Message::Spawn(module_id, entry) => {
+                let mut node = node.inner.write().await;
+                match node.resources.get(module_id) {
+                    Some(Resource::Module(ref module)) => {
+                        let (_, process) = module.spawn(&entry, vec![], None).await.unwrap();
+                        let id = node.resources.add(Resource::Process(Box::new(process)));
+                        peer.send(Message::Resource(id)).await.unwrap();
+                    }
+                    _ => {
+                        peer.send(Message::Error("Resource is not a module".to_string()))
+                            .await
+                            .unwrap();
+                    }
+                };
+            }
+            Message::Resource(id) => peer.set_response(Response::Resource(id)).await,
+            Message::Error(error) => peer.set_response(Response::Error(error)).await,
         }
     }
 }
@@ -163,6 +221,7 @@ async fn peer_task(node: Node, mut peer: Peer) {
 pub struct Peer {
     conn: TcpStream,
     addr: SocketAddr,
+    response: (Sender<Response>, Receiver<Response>),
     send_mutex: Arc<Mutex<()>>,
 }
 
@@ -171,6 +230,7 @@ impl Peer {
         // Multiple parts of the VM hold onto the peer and can send messages to it.
         // To avoid interleaved messages a mutex is used.
         // TODO: Should this be a queue instead?
+        trace!("sending to {}: {:?}", self.addr, msg);
         let _lock = self.send_mutex.lock().await;
 
         let message = serialize(&msg)?;
@@ -189,9 +249,37 @@ impl Peer {
         self.conn.read_exact(&mut buffer).await?;
         Ok(deserialize(&buffer)?)
     }
+
+    async fn set_response(&mut self, res: Response) {
+        // The receiver side can't be closed at this time and it's safe to unwrap here.
+        self.response.0.send(res).await.unwrap();
+    }
+
+    async fn response(&mut self) -> Response {
+        // The sender side can't be closed at this time and it's safe to unwrap here.
+        self.response.1.recv().await.unwrap()
+    }
+
+    pub async fn create_environment(&mut self, config: EnvConfig) -> Result<u64> {
+        self.send(Message::CreateEnvironment(config)).await.unwrap();
+        match self.response().await {
+            Response::Resource(id) => Ok(id),
+            Response::Error(error) => Err(anyhow!(error)),
+        }
+    }
+
+    pub async fn create_module(&mut self, env_id: u64, data: Vec<u8>) -> Result<u64> {
+        self.send(Message::CreateModule(env_id, data))
+            .await
+            .unwrap();
+        match self.response().await {
+            Response::Resource(id) => Ok(id),
+            Response::Error(error) => Err(anyhow!(error)),
+        }
+    }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 enum Message {
     // Register yourself to another node
     Register(String, SocketAddr),
@@ -199,6 +287,23 @@ enum Message {
     GetPeers,
     // Receive peers from a node
     Peers(Vec<(String, SocketAddr)>),
+    // Create environment on remote node.
+    CreateEnvironment(EnvConfig),
+    // Send module to remote node's environment.
+    CreateModule(u64, Vec<u8>),
+    // Spawn a process on a remote node.
+    Spawn(u64, String),
+    // Remote resource
+    Resource(u64),
+    // Error message
+    Error(String),
+}
+
+enum Response {
+    // Remote resource
+    Resource(u64),
+    // Error message
+    Error(String),
 }
 
 enum Resource {
@@ -209,6 +314,8 @@ enum Resource {
 
 #[cfg(test)]
 mod tests {
+    use crate::EnvConfig;
+
     use super::Node;
 
     #[async_std::test]
@@ -228,6 +335,9 @@ mod tests {
         let node2 = Node::new("node2".into(), "localhost:35557", Some("localhost:35556"))
             .await
             .unwrap();
+        // Let the nodes sync up before continuing
+        async_std::task::sleep(std::time::Duration::from_millis(100)).await;
+
         let peers1 = node1.peers().await;
         assert_eq!(peers1.len(), 1);
         let peer1_name = peers1.iter().next().unwrap().0;
@@ -250,6 +360,8 @@ mod tests {
         let node3 = Node::new("node3".into(), "localhost:35560", Some("localhost:35559"))
             .await
             .unwrap();
+        // Let the nodes sync up before continuing
+        async_std::task::sleep(std::time::Duration::from_millis(100)).await;
 
         let peers1 = node1.peers().await;
         assert_eq!(peers1.len(), 2);
@@ -257,5 +369,31 @@ mod tests {
         assert_eq!(peers2.len(), 2);
         let peers3 = node3.peers().await;
         assert_eq!(peers3.len(), 2);
+    }
+
+    #[async_std::test]
+    async fn create_remote_env() {
+        // Capture log in test
+        let _ = env_logger::builder().is_test(true).try_init();
+
+        let node1 = Node::new("node1".into(), "localhost:35561", None)
+            .await
+            .unwrap();
+        let node2 = Node::new("node2".into(), "localhost:35562", Some("localhost:35561"))
+            .await
+            .unwrap();
+        // Let the nodes sync up before continuing
+        async_std::task::sleep(std::time::Duration::from_millis(100)).await;
+
+        // Create environment on node2
+        let mut peers1 = node1.peers().await;
+        let peer2 = peers1.get_mut("node2").unwrap();
+        let config = EnvConfig::default();
+        let id = peer2.create_environment(config).await.unwrap();
+
+        // Check if config exists on node2
+        let node2 = node2.inner.read().await;
+        let resource = node2.resources.get(id);
+        assert!(resource.is_some());
     }
 }
