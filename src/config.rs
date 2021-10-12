@@ -1,9 +1,12 @@
+use std::fmt::Debug;
+
 use anyhow::Result;
+use serde::{Deserialize, Serialize};
 
 use crate::plugin::Plugin;
 
 /// Configuration structure for environments.
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct EnvConfig {
     // Maximum amount of memory that can be used by processes in bytes
     max_memory: usize,
@@ -11,9 +14,24 @@ pub struct EnvConfig {
     max_fuel: Option<u64>,
     allowed_namespaces: Vec<String>,
     preopened_dirs: Vec<String>,
+    // TODO: Plugins are compiled units and can't be sent between nodes at the moment
+    #[serde(skip)]
     plugins: Vec<Plugin>,
     wasi_args: Option<Vec<String>>,
     wasi_envs: Option<Vec<(String, String)>>,
+}
+
+impl Debug for EnvConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+        f.debug_struct("EnvConfig")
+            .field("max_memory", &self.max_memory)
+            .field("max_fuel", &self.max_fuel)
+            .field("allowed_namespaces", &self.allowed_namespaces)
+            .field("preopened_dirs", &self.preopened_dirs)
+            .field("wasi_args", &self.wasi_args)
+            .field("wasi_envs", &self.wasi_envs)
+            .finish()
+    }
 }
 
 impl EnvConfig {
