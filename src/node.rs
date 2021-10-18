@@ -1,8 +1,13 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::HashMap,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc,
+    },
+};
 
 use anyhow::{anyhow, Result};
 use async_std::{
-    channel::{unbounded, Receiver, Sender},
     io::{ReadExt, WriteExt},
     net::{SocketAddr, TcpListener, TcpStream, ToSocketAddrs},
     sync::{Mutex, RwLock},
@@ -10,6 +15,7 @@ use async_std::{
 use bincode::{deserialize, serialize};
 use log::trace;
 use serde::{Deserialize, Serialize};
+use waitmap::WaitMap;
 
 use crate::{module::Module, state::HashMapId, EnvConfig, Environment, Process};
 
@@ -41,12 +47,7 @@ impl Node {
         let peers = if let Some(bootstrap) = bootstrap {
             let bootstrap = bootstrap.to_socket_addrs().await?.next().unwrap();
             let bootstrap_conn = TcpStream::connect(bootstrap).await?;
-            let mut bootstrap_peer = Peer {
-                conn: bootstrap_conn,
-                addr: bootstrap,
-                response: unbounded(),
-                send_mutex: Arc::new(Mutex::new(())),
-            };
+            let mut bootstrap_peer = Peer::new(bootstrap_conn, bootstrap);
             // Register ourself at the bootstrap peer
             bootstrap_peer
                 .send(Message::Register(name.clone(), socket.into()))
@@ -64,12 +65,7 @@ impl Node {
                     }
 
                     let peer_conn = TcpStream::connect(peer_addr).await?;
-                    let mut peer = Peer {
-                        conn: peer_conn,
-                        addr: peer_addr,
-                        response: unbounded(),
-                        send_mutex: Arc::new(Mutex::new(())),
-                    };
+                    let mut peer = Peer::new(peer_conn, peer_addr);
                     // Register ourself
                     peer.send(Message::Register(name.clone(), socket)).await?;
                     peers.insert(peer_name, peer);
@@ -122,17 +118,12 @@ impl Node {
 // Handle new peer connections
 async fn node_server(node: Node, listener: TcpListener) {
     while let Ok((conn, addr)) = listener.accept().await {
-        let mut peer = Peer {
-            conn,
-            addr,
-            response: unbounded(),
-            send_mutex: Arc::new(Mutex::new(())),
-        };
+        let mut peer = Peer::new(conn, addr);
         // The first message will always be the name.
         // TODO: Have a time-out here because other connections are blocked until the name arrives.
         if let Ok(Message::Register(name, new_addr)) = peer.receive().await {
             // Update address of peer to the one sent by it.
-            peer.addr = new_addr;
+            peer.set_addr(new_addr);
             async_std::task::spawn(peer_task(node.clone(), peer.clone()));
             let mut node = node.inner.write().await;
             // TODO: Check if peer under this name exists or we already have this name and report error.
@@ -147,9 +138,11 @@ async fn node_server(node: Node, listener: TcpListener) {
 
 // A task running in the background and responding to messages from a peer connection.
 async fn peer_task(node: Node, mut peer: Peer) {
-    trace!("{} listening to {}", node.addr().await, peer.addr);
+    trace!("{} listening to {}", node.addr().await, peer.addr());
     while let Ok(message) = peer.receive().await {
-        trace!("receiving from {}: {:?}", peer.addr, message);
+        trace!("receiving from {}: {:?}", peer.addr(), message);
+        let tag = message.tag;
+        let message = message.data;
         match message {
             Message::Register(_, _) => unreachable!("Can't get a name message at this point"),
             Message::GetPeers => {
@@ -157,7 +150,7 @@ async fn peer_task(node: Node, mut peer: Peer) {
                 let mut peers: Vec<(String, SocketAddr)> = node
                     .peers
                     .iter()
-                    .map(|(name, peer)| (name.clone(), peer.addr))
+                    .map(|(name, peer)| (name.clone(), peer.addr()))
                     .collect();
                 // Add itself to the peer list.
                 peers.push((node.name.clone(), node.socket));
@@ -167,7 +160,7 @@ async fn peer_task(node: Node, mut peer: Peer) {
                 }
             }
             Message::Peers(_) => unreachable!("Peers are only received during bootstrap"),
-            Message::CreateEnvironment(config) => {
+            Message::CreateEnvironment(resp_id, config) => {
                 let env = Environment::new(config);
                 if let Ok(env) = env {
                     let mut node = node.inner.write().await;
@@ -211,53 +204,72 @@ async fn peer_task(node: Node, mut peer: Peer) {
                     }
                 };
             }
-            Message::Resource(id) => peer.set_response(Response::Resource(id)).await,
-            Message::Error(error) => peer.set_response(Response::Error(error)).await,
+            Message::Resource(id) => peer.add_response(Response::Resource(id)).await,
+            Message::Error(error) => peer.add_response(Response::Error(error)).await,
         }
     }
 }
 
 #[derive(Clone)]
 pub struct Peer {
-    conn: TcpStream,
+    inner: Arc<InnerPeer>,
+}
+
+pub struct InnerPeer {
+    reader: Mutex<TcpStream>,
+    writer: Mutex<TcpStream>,
     addr: SocketAddr,
-    response: (Sender<Response>, Receiver<Response>),
-    send_mutex: Arc<Mutex<()>>,
+    request_id: AtomicU64,
+    response: WaitMap<u64, Message>,
 }
 
 impl Peer {
-    async fn send(&mut self, msg: Message) -> Result<()> {
-        // Multiple parts of the VM hold onto the peer and can send messages to it.
-        // To avoid interleaved messages a mutex is used.
-        // TODO: Should this be a queue instead?
-        trace!("sending to {}: {:?}", self.addr, msg);
-        let _lock = self.send_mutex.lock().await;
+    fn new(conn: TcpStream, addr: SocketAddr) -> Self {
+        Peer {
+            inner: Arc::new(InnerPeer {
+                reader: Mutex::new(conn.clone()),
+                writer: Mutex::new(conn),
+                addr,
+                request_id: AtomicU64::new(0),
+                response: WaitMap::new(),
+            }),
+        }
+    }
 
+    async fn send(&mut self, msg: TaggedMessage) -> Result<()> {
+        trace!("sending to {}: {:?}", self.inner.addr, msg);
         let message = serialize(&msg)?;
         // Prefix message with size as little-endian u32 value.
         let size = (message.len() as u32).to_le_bytes();
-        self.conn.write_all(&size).await?;
-        self.conn.write_all(&message).await?;
+        let mut writer = self.inner.writer.lock().await;
+        writer.write_all(&size).await?;
+        writer.write_all(&message).await?;
         Ok(())
     }
 
-    async fn receive(&mut self) -> Result<Message> {
+    async fn receive(&mut self) -> Result<TaggedMessage> {
+        let mut reader = self.inner.reader.lock().await;
         let mut size = [0u8; 4];
-        self.conn.read_exact(&mut size).await?;
+        reader.read_exact(&mut size).await?;
         let size = u32::from_le_bytes(size);
         let mut buffer = vec![0u8; size as usize];
-        self.conn.read_exact(&mut buffer).await?;
+        reader.read_exact(&mut buffer).await?;
         Ok(deserialize(&buffer)?)
     }
 
-    async fn set_response(&mut self, res: Response) {
-        // The receiver side can't be closed at this time and it's safe to unwrap here.
-        self.response.0.send(res).await.unwrap();
+    fn set_addr(&mut self, addr: SocketAddr) {
+        self.inner.addr = addr;
     }
 
-    async fn response(&mut self) -> Response {
-        // The sender side can't be closed at this time and it's safe to unwrap here.
-        self.response.1.recv().await.unwrap()
+    fn addr(&self) -> SocketAddr {
+        self.inner.addr
+    }
+
+    async fn request(&mut self, msg: Message) -> Result<Response> {
+        let tag = self.inner.request_id.fetch_add(1, Ordering::SeqCst);
+        let msg = msg.add_tag(tag);
+        self.send(msg).await?;
+        Ok(self.inner.response.wait(&tag).await.unwrap().clone())
     }
 
     pub async fn create_environment(&mut self, config: EnvConfig) -> Result<u64> {
@@ -280,6 +292,21 @@ impl Peer {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
+struct TaggedMessage {
+    tag: u64,
+    data: Message,
+}
+
+impl From<Message> for TaggedMessage {
+    fn from(message: Message) -> Self {
+        TaggedMessage {
+            tag: 0,
+            data: message,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
 enum Message {
     // Register yourself to another node
     Register(String, SocketAddr),
@@ -288,7 +315,7 @@ enum Message {
     // Receive peers from a node
     Peers(Vec<(String, SocketAddr)>),
     // Create environment on remote node.
-    CreateEnvironment(EnvConfig),
+    CreateEnvironmentReq(EnvConfig),
     // Send module to remote node's environment.
     CreateModule(u64, Vec<u8>),
     // Spawn a process on a remote node.
@@ -297,6 +324,12 @@ enum Message {
     Resource(u64),
     // Error message
     Error(String),
+}
+
+impl Message {
+    fn add_tag(self, tag: u64) -> TaggedMessage {
+        TaggedMessage { tag: 0, data: self }
+    }
 }
 
 enum Response {

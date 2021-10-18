@@ -701,6 +701,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "dashmap"
+version = "4.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e77a43b28d0668df09411cb0bc9a8c2adc40f9a048afe863e05fd43251e8e39c"
+dependencies = [
+ "cfg-if",
+ "num_cpus",
+]
+
+[[package]]
 name = "diff"
 version = "0.1.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1168,6 +1178,7 @@ dependencies = [
  "bincode",
  "clap 3.0.0-beta.4",
  "criterion",
+ "dashmap",
  "env_logger 0.9.0",
  "lazy_static",
  "log",
@@ -1175,6 +1186,7 @@ dependencies = [
  "pretty_assertions",
  "semver",
  "serde",
+ "smallvec",
  "tokio",
  "uuid",
  "wabt",
