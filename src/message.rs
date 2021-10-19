@@ -7,6 +7,7 @@ kinds of messages, like the [`Message::Signal`], that is received if a linked pr
 use std::{
     fmt::Debug,
     io::{Read, Write},
+    num::NonZeroU64,
     sync::Arc,
 };
 
@@ -34,14 +35,23 @@ impl Message {
             Message::Signal(tag) => *tag,
         }
     }
+
+    pub fn id(&self) -> Option<NonZeroU64> {
+        match self {
+            Message::Data(message) => Some(message.id),
+            Message::Signal(_) => None,
+        }
+    }
 }
 
 /// A variant of a [`Message`] that has a buffer of data and resources attached to it.
 ///
 /// It implements the [`Read`](std::io::Read) and [`Write`](std::io::Write) traits.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct DataMessage {
+    id: NonZeroU64,
     tag: Option<i64>,
+    reply_id: Option<NonZeroU64>,
     read_ptr: usize,
     buffer: Vec<u8>,
     resources: Vec<Resource>,
@@ -49,9 +59,11 @@ pub struct DataMessage {
 
 impl DataMessage {
     /// Create a new message.
-    pub fn new(tag: Option<i64>, buffer_capacity: usize) -> Self {
+    pub fn new(id: NonZeroU64, tag: Option<i64>, buffer_capacity: usize) -> Self {
         Self {
+            id,
             tag,
+            reply_id: None,
             read_ptr: 0,
             buffer: Vec::with_capacity(buffer_capacity),
             resources: Vec::new(),

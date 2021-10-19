@@ -2,6 +2,7 @@ use std::any::type_name;
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::net::SocketAddr;
+use std::num::NonZeroU64;
 use std::sync::Arc;
 use std::vec::IntoIter;
 
@@ -9,7 +10,7 @@ use anyhow::Result;
 use async_std::channel::Sender;
 use async_std::net::{TcpListener, TcpStream};
 use uuid::Uuid;
-use wasmtime::ResourceLimiter;
+use wasmtime::{ResourceLimiter, Trap};
 use wasmtime_wasi::{ambient_authority, Dir, WasiCtx, WasiCtxBuilder};
 
 use crate::mailbox::MessageMailbox;
@@ -52,6 +53,8 @@ pub(crate) struct ProcessState {
     // guest to reserve enough space and then the it's received. Both of those actions use
     // `message` as a temp space to store messages across host calls.
     pub(crate) message: Option<Message>,
+    // Message id local to the sending process. It's used for reply ids.
+    last_message_id: NonZeroU64,
     // This field is only part of the state to make it possible to create a Wasm process handle
     // from inside itself. See the `lunatic::process::this()` Wasm API.
     pub(crate) signal_mailbox: Sender<Signal>,
@@ -88,6 +91,7 @@ impl ProcessState {
             id,
             module,
             message: None,
+            last_message_id: NonZeroU64::new(1).unwrap(),
             signal_mailbox,
             message_mailbox,
             errors: HashMapId::new(),
@@ -95,6 +99,12 @@ impl ProcessState {
             wasi: wasi.build(),
         };
         Ok(state)
+    }
+
+    pub fn generate_message_id(&mut self) -> Result<NonZeroU64, Trap> {
+        self.last_message_id = NonZeroU64::new(self.last_message_id.get() + 1)
+            .ok_or_else(|| Trap::new("Last message id overflowed"))?;
+        Ok(self.last_message_id)
     }
 }
 

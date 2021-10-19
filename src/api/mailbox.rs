@@ -205,13 +205,19 @@ pub(crate) fn register(
 //%
 //% Creates a new data message. This message is intended to be modified by other functions in this
 //% namespace. Once `lunatic::message::send` is called it will be sent to another process.
-fn create_data(mut caller: Caller<ProcessState>, tag: i64, buffer_capacity: u64) {
+fn create_data(
+    mut caller: Caller<ProcessState>,
+    tag: i64,
+    buffer_capacity: u64,
+) -> Result<(), Trap> {
     let tag = match tag {
         0 => None,
         tag => Some(tag),
     };
-    let message = DataMessage::new(tag, buffer_capacity as usize);
+    let message_id = caller.data_mut().generate_message_id()?;
+    let message = DataMessage::new(message_id, tag, buffer_capacity as usize);
     caller.data_mut().message = Some(Message::Data(message));
+    Ok(())
 }
 
 //% lunatic::message::write_data(data_ptr: u32, data_len: u32) -> u32
@@ -446,22 +452,26 @@ fn take_tcp_stream(mut caller: Caller<ProcessState>, index: u64) -> Result<u64, 
     Ok(caller.data_mut().resources.tcp_streams.add(tcp_stream))
 }
 
-//% lunatic::message::send(
-//%     process_id: u64,
-//% )
+//% lunatic::message::send(process_id: u64) -> u64
 //%
-//% Sends the message to a process. There are no guarantees that the process will ever receive
-//% the message.
+//% Sends the message to a process and returns local message id.
+//% If the message is signal it does not have an id so 0 is returned.
+//% The message id is used when listening for a reply.
+//%
+//% There are no guarantees that the process will ever receive the message.
+//%
+//% Returns: local message id or 0 if the message is a signal
 //%
 //% Traps:
 //% * If the process ID doesn't exist.
 //% * If it's called before creating the next message.
-fn send(mut caller: Caller<ProcessState>, process_id: u64) -> Result<(), Trap> {
+fn send(mut caller: Caller<ProcessState>, process_id: u64) -> Result<u64, Trap> {
     let message = caller
         .data_mut()
         .message
         .take()
         .or_trap("lunatic::message::send")?;
+    let id = message.id().map(|id| id.get()).unwrap_or(0);
     let process = caller
         .data()
         .resources
@@ -469,7 +479,7 @@ fn send(mut caller: Caller<ProcessState>, process_id: u64) -> Result<(), Trap> {
         .get(process_id)
         .or_trap("lunatic::message::send")?;
     process.send(Signal::Message(message));
-    Ok(())
+    Ok(id)
 }
 
 //% lunatic::message::send_receive_skip_search(process_id: u64, timeout: u32) -> u32
