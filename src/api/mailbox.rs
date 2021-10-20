@@ -130,7 +130,7 @@ pub(crate) fn register(
         linker,
         "lunatic::message",
         "send",
-        FuncType::new([ValType::I64], []),
+        FuncType::new([ValType::I64], [ValType::I64]),
         send,
         namespace_filter,
     )?;
