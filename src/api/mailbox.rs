@@ -386,7 +386,7 @@ fn set_reply(mut caller: Caller<ProcessState>, reply_handle: u64) -> Result<(), 
         .as_mut()
         .or_trap("lunatic::message::set_reply::no_scratch_message")?;
 
-    if let &mut Message::Data(ref mut m) = message {
+    if let Message::Data(ref mut m) = message {
         m.set_reply(reply_id);
     }
 
