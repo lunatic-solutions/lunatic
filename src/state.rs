@@ -55,6 +55,8 @@ pub(crate) struct ProcessState {
     pub(crate) message: Option<Message>,
     // Message id local to the sending process. It's used for reply ids.
     last_message_id: NonZeroU64,
+    // Reply id handles. This makes message and reply ids opaque for the guest code.
+    pub(crate) reply_ids: HashMapId<NonZeroU64>,
     // This field is only part of the state to make it possible to create a Wasm process handle
     // from inside itself. See the `lunatic::process::this()` Wasm API.
     pub(crate) signal_mailbox: Sender<Signal>,
@@ -92,6 +94,7 @@ impl ProcessState {
             module,
             message: None,
             last_message_id: NonZeroU64::new(1).unwrap(),
+            reply_ids: HashMapId::new(),
             signal_mailbox,
             message_mailbox,
             errors: HashMapId::new(),

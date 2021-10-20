@@ -130,6 +130,10 @@ impl DataMessage {
     pub fn size(&self) -> usize {
         self.buffer.len()
     }
+
+    pub fn set_reply(&mut self, reply_id: NonZeroU64) {
+        self.reply_id = Some(reply_id);
+    }
 }
 
 impl Write for DataMessage {
