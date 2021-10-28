@@ -14,6 +14,7 @@ use wasmtime::{ResourceLimiter, Trap};
 use wasmtime_wasi::{ambient_authority, Dir, WasiCtx, WasiCtxBuilder};
 
 use crate::mailbox::MessageMailbox;
+use crate::message::DataMessage;
 use crate::module::Module;
 use crate::plugin::ModuleContext;
 use crate::{message::Message, EnvConfig, Environment};
@@ -48,9 +49,9 @@ pub(crate) struct ProcessState {
     // The module that this process was spawned from
     pub(crate) module: Module,
     // A message currently being written.
-    pub(crate) draft: Option<Message>,
+    pub(crate) draft: Option<DataMessage>,
     // A message currently being read. Host functions operate on this message after it is received.
-    // For example, a guest might want to read message bytes, get reply handle, etc. 
+    // For example, a guest might want to read message bytes, get reply handle, etc.
     pub(crate) reading: Option<Message>,
     // Message id local to the sending process. It's used for reply ids.
     last_message_id: NonZeroU64,

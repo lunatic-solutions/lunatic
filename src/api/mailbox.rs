@@ -240,7 +240,7 @@ fn create_data(
     };
     let message_id = caller.data_mut().generate_message_id()?;
     let message = DataMessage::new(message_id, tag, buffer_capacity as usize);
-    caller.data_mut().draft = Some(Message::Data(message));
+    caller.data_mut().draft = Some(message);
     Ok(())
 }
 
@@ -250,7 +250,6 @@ fn create_data(
 //%
 //% Traps:
 //% * If **data_ptr + data_len** is outside the memory.
-//% * If it's called without a draft data message.
 fn write_data(mut caller: Caller<ProcessState>, data_ptr: u32, data_len: u32) -> Result<u32, Trap> {
     let memory = get_memory(&mut caller)?;
     let mut message = caller
@@ -262,12 +261,11 @@ fn write_data(mut caller: Caller<ProcessState>, data_ptr: u32, data_len: u32) ->
         .data(&caller)
         .get(data_ptr as usize..(data_ptr as usize + data_len as usize))
         .or_trap("lunatic::message::write_data")?;
-    let bytes = match &mut message {
-        Message::Data(data) => data.write(buffer).or_trap("lunatic::message::write_data")?,
-        Message::Signal(_) => {
-            return Err(Trap::new("Unexpected `Message::Signal` in draft"))
-        }
-    };
+
+    let bytes = message
+        .write(buffer)
+        .or_trap("lunatic::message::write_data")?;
+
     // Put message back after writing to it.
     caller.data_mut().draft = Some(message);
 
@@ -294,11 +292,9 @@ fn read_data(mut caller: Caller<ProcessState>, data_ptr: u32, data_len: u32) -> 
         .or_trap("lunatic::message::read_data")?;
     let bytes = match &mut message {
         Message::Data(data) => data.read(buffer).or_trap("lunatic::message::read_data")?,
-        Message::Signal(_) => {
-            return Err(Trap::new("Unexpected `Message::Signal` in reading"))
-        }
+        Message::Signal(_) => return Err(Trap::new("Unexpected `Message::Signal` in reading")),
     };
-    
+
     // Put message back after reading from it.
     caller.data_mut().reading = Some(message);
 
@@ -321,9 +317,7 @@ fn seek_data(mut caller: Caller<ProcessState>, index: u64) -> Result<(), Trap> {
         .or_trap("lunatic::message::seek_data")?;
     match &mut message {
         Message::Data(data) => data.seek(index as usize),
-        Message::Signal(_) => {
-            return Err(Trap::new("Unexpected `Message::Signal` in reading"))
-        }
+        Message::Signal(_) => return Err(Trap::new("Unexpected `Message::Signal` in reading")),
     };
     Ok(())
 }
@@ -371,7 +365,7 @@ fn get_reply_handle(mut caller: Caller<ProcessState>) -> Result<u64, Trap> {
 //% If the draft message is not a data message, nothing is set.
 //%
 //% Traps:
-//% * If it's called without a draft data message.
+//% * If it's called without a draft message.
 //% * The reply handle is invalid
 fn set_reply(mut caller: Caller<ProcessState>, reply_handle: u64) -> Result<(), Trap> {
     let reply_id = caller
@@ -387,9 +381,7 @@ fn set_reply(mut caller: Caller<ProcessState>, reply_handle: u64) -> Result<(), 
         .as_mut()
         .or_trap("lunatic::message::set_reply::no_draft_message")?;
 
-    if let Message::Data(ref mut m) = message {
-        m.set_reply(reply_id);
-    }
+    message.set_reply(reply_id);
 
     Ok(())
 }
@@ -418,9 +410,7 @@ fn data_size(mut caller: Caller<ProcessState>) -> Result<u64, Trap> {
         .or_trap("lunatic::message::data_size")?;
     let bytes = match message {
         Message::Data(data) => data.size(),
-        Message::Signal(_) => {
-            return Err(Trap::new("Unexpected `Message::Signal` in reading"))
-        }
+        Message::Signal(_) => return Err(Trap::new("Unexpected `Message::Signal` in reading")),
     };
 
     Ok(bytes as u64)
@@ -434,7 +424,7 @@ fn data_size(mut caller: Caller<ProcessState>) -> Result<u64, Trap> {
 //%
 //% Traps:
 //% * If process ID doesn't exist
-//% * If there is no data draft message
+//% * If there is no draft message
 fn push_process(mut caller: Caller<ProcessState>, process_id: u64) -> Result<u64, Trap> {
     let process = caller
         .data_mut()
@@ -447,12 +437,7 @@ fn push_process(mut caller: Caller<ProcessState>, process_id: u64) -> Result<u64
         .draft
         .as_mut()
         .or_trap("lunatic::message::push_process")?;
-    let index = match message {
-        Message::Data(data) => data.add_process(process) as u64,
-        Message::Signal(_) => {
-            return Err(Trap::new("Unexpected `Message::Signal` in draft area"))
-        }
-    };
+    let index = message.add_process(process) as u64;
     Ok(index)
 }
 
@@ -474,9 +459,7 @@ fn take_process(mut caller: Caller<ProcessState>, index: u64) -> Result<u64, Tra
         Message::Data(data) => data
             .take_process(index as usize)
             .or_trap("lunatic::message::take_process")?,
-        Message::Signal(_) => {
-            return Err(Trap::new("Unexpected `Message::Signal` in reading"))
-        }
+        Message::Signal(_) => return Err(Trap::new("Unexpected `Message::Signal` in reading")),
     };
     Ok(caller.data_mut().resources.processes.add(process))
 }
@@ -501,12 +484,7 @@ fn push_tcp_stream(mut caller: Caller<ProcessState>, stream_id: u64) -> Result<u
         .draft
         .as_mut()
         .or_trap("lunatic::message::push_tcp_stream")?;
-    let index = match message {
-        Message::Data(data) => data.add_tcp_stream(stream) as u64,
-        Message::Signal(_) => {
-            return Err(Trap::new("Unexpected `Message::Signal` in draft area"))
-        }
-    };
+    let index = message.add_tcp_stream(stream) as u64;
     Ok(index)
 }
 
@@ -528,9 +506,7 @@ fn take_tcp_stream(mut caller: Caller<ProcessState>, index: u64) -> Result<u64, 
         Message::Data(data) => data
             .take_tcp_stream(index as usize)
             .or_trap("lunatic::message::take_tcp_stream")?,
-        Message::Signal(_) => {
-            return Err(Trap::new("Unexpected `Message::Signal` in reading"))
-        }
+        Message::Signal(_) => return Err(Trap::new("Unexpected `Message::Signal` in reading")),
     };
     Ok(caller.data_mut().resources.tcp_streams.add(tcp_stream))
 }
@@ -543,7 +519,7 @@ fn take_tcp_stream(mut caller: Caller<ProcessState>, index: u64) -> Result<u64, 
 //%
 //% There are no guarantees that the process will ever receive the message.
 //%
-//% Returns: local message id or 0 if the message is a signal
+//% Returns: message id unique only to this process
 //%
 //% Traps:
 //% * If the process ID doesn't exist.
@@ -554,14 +530,14 @@ fn send(mut caller: Caller<ProcessState>, process_id: u64) -> Result<u64, Trap> 
         .draft
         .take()
         .or_trap("lunatic::message::send")?;
-    let id = message.id().map(|id| id.get()).unwrap_or(0);
+    let id = message.id().get();
     let process = caller
         .data()
         .resources
         .processes
         .get(process_id)
         .or_trap("lunatic::message::send")?;
-    process.send(Signal::Message(message));
+    process.send(Signal::Message(Message::Data(message)));
     Ok(id)
 }
 
