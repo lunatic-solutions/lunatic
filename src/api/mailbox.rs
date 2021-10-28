@@ -73,14 +73,6 @@ pub(crate) fn register(
     link_if_match(
         linker,
         "lunatic::message",
-        "set_reply",
-        FuncType::new([ValType::I64], []),
-        set_reply,
-        namespace_filter,
-    )?;
-    link_if_match(
-        linker,
-        "lunatic::message",
         "drop_reply_handle",
         FuncType::new([ValType::I64], []),
         drop_reply_handle,
@@ -130,7 +122,7 @@ pub(crate) fn register(
         linker,
         "lunatic::message",
         "send",
-        FuncType::new([ValType::I64], [ValType::I64]),
+        FuncType::new([ValType::I64, ValType::I64], [ValType::I64]),
         send,
         namespace_filter,
     )?;
@@ -239,7 +231,8 @@ fn create_data(
         tag => Some(tag),
     };
     let message_id = caller.data_mut().generate_message_id()?;
-    let message = DataMessage::new(message_id, tag, buffer_capacity as usize);
+    let process_id = caller.data_mut().id;
+    let message = DataMessage::new(message_id, process_id, tag, buffer_capacity as usize);
     caller.data_mut().message = Some(Message::Data(message));
     Ok(())
 }
@@ -351,46 +344,17 @@ fn get_tag(caller: Caller<ProcessState>) -> Result<i64, Trap> {
 //%
 //% Traps:
 //% * If it's called without a message being inside of the scratch area.
-//% * The message doesn't have a message id
+//% * The message doesn't have a message/process id
 fn get_reply_handle(mut caller: Caller<ProcessState>) -> Result<u64, Trap> {
     let message = caller
         .data()
         .message
         .as_ref()
         .or_trap("lunatic::message::get_reply_handle::no_scratch_message")?;
-    match message.id() {
-        Some(id) => Ok(caller.data_mut().reply_ids.add(id)),
-        None => Err(Trap::new("lunatic::message::get_reply_handle::no_id")),
+    match (message.id(), message.process_id()) {
+        (Some(id), Some(process_id)) => Ok(caller.data_mut().reply_ids.add((process_id, id))),
+        (_, _) => Err(Trap::new("lunatic::message::get_reply_handle::no_id")),
     }
-}
-
-//% lunatic::message::set_reply(reply_handle: u64)
-//%
-//% Sets the reply id in the scratch area using the reply handle.
-//% If the scratch message is not a data message, nothing is set.
-//%
-//% Traps:
-//% * If it's called without a message being inside of the scratch area.
-//% * The reply handle is invalid
-fn set_reply(mut caller: Caller<ProcessState>, reply_handle: u64) -> Result<(), Trap> {
-    let reply_id = caller
-        .data()
-        .reply_ids
-        .get(reply_handle)
-        .cloned()
-        .ok_or_else(|| Trap::new("lunatic::message::set_reply::no_id"))?;
-
-    let message = caller
-        .data_mut()
-        .message
-        .as_mut()
-        .or_trap("lunatic::message::set_reply::no_scratch_message")?;
-
-    if let Message::Data(ref mut m) = message {
-        m.set_reply(reply_id);
-    }
-
-    Ok(())
 }
 
 //% lunatic::message::drop_reply_handle(reply_handle: u64)
@@ -532,7 +496,7 @@ fn take_tcp_stream(mut caller: Caller<ProcessState>, index: u64) -> Result<u64, 
     Ok(caller.data_mut().resources.tcp_streams.add(tcp_stream))
 }
 
-//% lunatic::message::send(process_id: u64) -> u64
+//% lunatic::message::send(process_handle: u64, reply_handle: u64) -> u64
 //%
 //% Sends the message to a process and returns local message id.
 //% If the message is signal it does not have an id so 0 is returned.
@@ -543,21 +507,48 @@ fn take_tcp_stream(mut caller: Caller<ProcessState>, index: u64) -> Result<u64, 
 //% Returns: local message id or 0 if the message is a signal
 //%
 //% Traps:
-//% * If the process ID doesn't exist.
+//% * If the process handle doesn't exist.
+//% * If the reply handle doesn't exist.
 //% * If it's called before creating the next message.
-fn send(mut caller: Caller<ProcessState>, process_id: u64) -> Result<u64, Trap> {
-    let message = caller
+//% * If the reply handle process ID is not the same as the receiving process id
+fn send(
+    mut caller: Caller<ProcessState>,
+    process_handle: u64,
+    reply_handle: u64,
+) -> Result<u64, Trap> {
+    let mut message = caller
         .data_mut()
         .message
         .take()
-        .or_trap("lunatic::message::send")?;
+        .or_trap("lunatic::message::send::no_draft_message")?;
     let id = message.id().map(|id| id.get()).unwrap_or(0);
     let process = caller
         .data()
         .resources
         .processes
-        .get(process_id)
-        .or_trap("lunatic::message::send")?;
+        .get(process_handle)
+        .or_trap("lunatic::message::send::no_process")?;
+
+    // If the reply handle is non-zero, use it to set the reply id only
+    // if the process id matches, otherwise trap
+    if reply_handle != 0 {
+        let (process_id, message_id) = caller
+            .data()
+            .reply_ids
+            .get(reply_handle)
+            .or_trap("lunatic::message::send::no_reply_id")?;
+
+        if *process_id != process.id() {
+            return Err(Trap::new(
+                "lunatic::message::send::invalid_reply_handle_process_id_mismatch",
+            ));
+        }
+
+        if let Message::Data(msg) = &mut message {
+            msg.set_reply(*message_id);
+        }
+    }
+
     process.send(Signal::Message(message));
     Ok(id)
 }

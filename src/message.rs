@@ -12,6 +12,7 @@ use std::{
 };
 
 use async_std::net::TcpStream;
+use uuid::Uuid;
 
 use crate::Process;
 
@@ -42,6 +43,13 @@ impl Message {
             Message::Signal(_) => None,
         }
     }
+
+    pub fn process_id(&self) -> Option<Uuid> {
+        match self {
+            Message::Data(message) => Some(message.process_id),
+            Message::Signal(_) => None,
+        }
+    }
 }
 
 /// A variant of a [`Message`] that has a buffer of data and resources attached to it.
@@ -50,6 +58,7 @@ impl Message {
 #[derive(Debug)]
 pub struct DataMessage {
     id: NonZeroU64,
+    process_id: Uuid,
     tag: Option<i64>,
     reply_id: Option<NonZeroU64>,
     read_ptr: usize,
@@ -59,9 +68,10 @@ pub struct DataMessage {
 
 impl DataMessage {
     /// Create a new message.
-    pub fn new(id: NonZeroU64, tag: Option<i64>, buffer_capacity: usize) -> Self {
+    pub fn new(id: NonZeroU64, process_id: Uuid, tag: Option<i64>, buffer_capacity: usize) -> Self {
         Self {
             id,
+            process_id,
             tag,
             reply_id: None,
             read_ptr: 0,
