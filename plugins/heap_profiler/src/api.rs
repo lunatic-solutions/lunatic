@@ -47,6 +47,7 @@ impl HeapProfilerState {
     // 0.1       10
     // 0.2       15
     // ...
+    #[allow(dead_code)]
     pub fn write_dat(&self, fd: &mut File) -> std::io::Result<()> {
         let mut graph = Vec::new();
         let mut heap_size: u64 = 0;

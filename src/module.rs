@@ -4,7 +4,6 @@ use anyhow::{anyhow, Result};
 use async_std::channel::unbounded;
 use async_std::task::JoinHandle;
 use log::trace;
-use uuid::Uuid;
 use wasmtime::{Store, Val};
 
 use std::sync::Arc;
@@ -12,7 +11,7 @@ use std::sync::Arc;
 use crate::{
     environment::UNIT_OF_COMPUTE_IN_INSTRUCTIONS,
     mailbox::MessageMailbox,
-    process::{self, Process, Signal, WasmProcess},
+    process::{self, Process, ProcessId, Signal, WasmProcess},
     state::ProcessState,
     Environment,
 };
@@ -59,8 +58,7 @@ impl Module {
         params: Vec<Val>,
         link: Option<(Option<i64>, WasmProcess)>,
     ) -> Result<(JoinHandle<()>, WasmProcess)> {
-        // TODO: Switch to new_v1() for distributed Lunatic to assure uniqueness across nodes.
-        let id = Uuid::new_v4();
+        let id = ProcessId::new();
         trace!("Spawning process: {}", id);
         let signal_mailbox = unbounded::<Signal>();
         let message_mailbox = MessageMailbox::default();

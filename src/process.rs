@@ -10,6 +10,26 @@ use uuid::Uuid;
 
 use crate::{mailbox::MessageMailbox, message::Message};
 
+// TODO: Consider switching to different type id, maybe a custom or uuid v1?
+#[derive(Debug, PartialEq, Hash, Clone, Copy)]
+pub struct ProcessId(Uuid);
+
+impl ProcessId {
+    pub fn new() -> Self {
+        ProcessId(Uuid::new_v4())
+    }
+
+    pub fn as_u128(&self) -> u128 {
+        self.0.as_u128()
+    }
+}
+
+impl std::fmt::Display for ProcessId {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 /// The `Process` is the main abstraction unit in lunatic.
 ///
 /// It usually represents some code that is being executed (Wasm instance or V8 isolate), but it
@@ -19,7 +39,7 @@ use crate::{mailbox::MessageMailbox, message::Message};
 /// shapes (message, kill, link, ...). Most signals have well defined meanings, but others such as
 /// a [`Message`] can be interpreted by the receiver in different ways.
 pub trait Process: Send + Sync {
-    fn id(&self) -> Uuid;
+    fn id(&self) -> ProcessId;
     fn send(&self, signal: Signal);
 }
 
@@ -91,19 +111,19 @@ pub enum Finished<T> {
 /// in the background and can't be observed directly.
 #[derive(Debug, Clone)]
 pub struct WasmProcess {
-    id: Uuid,
+    id: ProcessId,
     signal_mailbox: Sender<Signal>,
 }
 
 impl WasmProcess {
     /// Create a new WasmProcess
-    pub fn new(id: Uuid, signal_mailbox: Sender<Signal>) -> Self {
+    pub fn new(id: ProcessId, signal_mailbox: Sender<Signal>) -> Self {
         Self { id, signal_mailbox }
     }
 }
 
 impl Process for WasmProcess {
-    fn id(&self) -> Uuid {
+    fn id(&self) -> ProcessId {
         self.id
     }
     fn send(&self, signal: Signal) {
@@ -118,7 +138,7 @@ impl Process for WasmProcess {
 // Turns a Future into a process, enabling signals (e.g. kill).
 pub(crate) async fn new<F, T>(
     fut: F,
-    id: Uuid,
+    id: ProcessId,
     signal_mailbox: Receiver<Signal>,
     message_mailbox: MessageMailbox,
 ) where
@@ -199,7 +219,7 @@ pub(crate) async fn new<F, T>(
 /// A process spawned from a native Rust closure.
 #[derive(Clone, Debug)]
 pub struct NativeProcess {
-    id: Uuid,
+    id: ProcessId,
     signal_mailbox: Sender<Signal>,
 }
 
@@ -220,8 +240,7 @@ where
     K: Future<Output = Result<T>> + Send + 'static,
     F: Fn(MessageMailbox) -> K,
 {
-    // TODO: Switch to new_v1() for distributed Lunatic to assure uniqueness across nodes.
-    let id = Uuid::new_v4();
+    let id = ProcessId::new();
     let (signal_sender, signal_mailbox) = unbounded::<Signal>();
     let message_mailbox = MessageMailbox::default();
     let process = NativeProcess {
@@ -234,7 +253,7 @@ where
 }
 
 impl Process for NativeProcess {
-    fn id(&self) -> Uuid {
+    fn id(&self) -> ProcessId {
         self.id
     }
     fn send(&self, signal: Signal) {

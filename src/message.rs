@@ -12,9 +12,8 @@ use std::{
 };
 
 use async_std::net::TcpStream;
-use uuid::Uuid;
 
-use crate::Process;
+use crate::{process::ProcessId, Process};
 
 /// Can be sent between processes by being embedded into a  [`Signal::Message`][0]
 ///
@@ -44,7 +43,7 @@ impl Message {
         }
     }
 
-    pub fn process_id(&self) -> Option<Uuid> {
+    pub fn process_id(&self) -> Option<ProcessId> {
         match self {
             Message::Data(message) => Some(message.process_id),
             Message::Signal(_) => None,
@@ -58,7 +57,7 @@ impl Message {
 #[derive(Debug)]
 pub struct DataMessage {
     id: NonZeroU64,
-    process_id: Uuid,
+    process_id: ProcessId,
     tag: Option<i64>,
     reply_id: Option<NonZeroU64>,
     read_ptr: usize,
@@ -68,7 +67,12 @@ pub struct DataMessage {
 
 impl DataMessage {
     /// Create a new message.
-    pub fn new(id: NonZeroU64, process_id: Uuid, tag: Option<i64>, buffer_capacity: usize) -> Self {
+    pub fn new(
+        id: NonZeroU64,
+        process_id: ProcessId,
+        tag: Option<i64>,
+        buffer_capacity: usize,
+    ) -> Self {
         Self {
             id,
             process_id,

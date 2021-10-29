@@ -9,7 +9,6 @@ use std::vec::IntoIter;
 use anyhow::Result;
 use async_std::channel::Sender;
 use async_std::net::{TcpListener, TcpStream};
-use uuid::Uuid;
 use wasmtime::{ResourceLimiter, Trap};
 use wasmtime_wasi::{ambient_authority, Dir, WasiCtx, WasiCtxBuilder};
 
@@ -17,6 +16,7 @@ use crate::mailbox::MessageMailbox;
 use crate::message::DataMessage;
 use crate::module::Module;
 use crate::plugin::ModuleContext;
+use crate::process::ProcessId;
 use crate::{message::Message, EnvConfig, Environment};
 use crate::{Process, Signal};
 
@@ -45,7 +45,7 @@ impl<'a, 'b> PluginState<'a, 'b> {
 // Host functions will share one state.
 pub(crate) struct ProcessState {
     // Process id
-    pub(crate) id: Uuid,
+    pub(crate) id: ProcessId,
     // The module that this process was spawned from
     pub(crate) module: Module,
     // A message currently being written.
@@ -56,7 +56,7 @@ pub(crate) struct ProcessState {
     // Message id local to the sending process. It's used for reply ids.
     last_message_id: NonZeroU64,
     // Reply id handles. This makes message and reply ids opaque for the guest code.
-    pub(crate) reply_ids: HashMapId<(Uuid, NonZeroU64)>,
+    pub(crate) reply_ids: HashMapId<(ProcessId, NonZeroU64)>,
     // This field is only part of the state to make it possible to create a Wasm process handle
     // from inside itself. See the `lunatic::process::this()` Wasm API.
     pub(crate) signal_mailbox: Sender<Signal>,
@@ -72,7 +72,7 @@ pub(crate) struct ProcessState {
 
 impl ProcessState {
     pub fn new(
-        id: Uuid,
+        id: ProcessId,
         module: Module,
         signal_mailbox: Sender<Signal>,
         message_mailbox: MessageMailbox,

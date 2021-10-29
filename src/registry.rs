@@ -102,14 +102,13 @@ impl RegistryEntry {
 #[cfg(test)]
 mod tests {
     use super::LocalRegistry;
-    use crate::{Process, Signal};
+    use crate::{process::ProcessId, Process, Signal};
     use std::sync::Arc;
-    use uuid::Uuid;
 
     #[derive(Clone, Debug)]
-    struct IdentityProcess(Uuid);
+    struct IdentityProcess(ProcessId);
     impl Process for IdentityProcess {
-        fn id(&self) -> Uuid {
+        fn id(&self) -> ProcessId {
             self.0
         }
         fn send(&self, _: Signal) {}
@@ -118,7 +117,7 @@ mod tests {
     #[test]
     fn registry_test() {
         let registry = LocalRegistry::new();
-        let proc = Arc::new(IdentityProcess(Uuid::new_v4()));
+        let proc = Arc::new(IdentityProcess(ProcessId::new()));
         // Inserting an incorrect version fails
         let result = registry.insert("test".to_string(), "", proc.clone());
         assert!(result.is_err());
@@ -136,11 +135,11 @@ mod tests {
         assert_eq!(result.id(), proc.id());
 
         // Insert version 1.1.0
-        let proc1 = Arc::new(IdentityProcess(Uuid::new_v4()));
+        let proc1 = Arc::new(IdentityProcess(ProcessId::new()));
         let result = registry.insert("test".to_string(), "1.1.0", proc1.clone());
         assert!(result.is_ok());
         // Insert version 1.2.0
-        let proc2 = Arc::new(IdentityProcess(Uuid::new_v4()));
+        let proc2 = Arc::new(IdentityProcess(ProcessId::new()));
         let result = registry.insert("test".to_string(), "1.2.0", proc2.clone());
         assert!(result.is_ok());
         // Looking up ^1 should return the latest insert
