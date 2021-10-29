@@ -15,6 +15,7 @@ use crate::{mailbox::MessageMailbox, message::Message};
 pub struct ProcessId(Uuid);
 
 impl ProcessId {
+    #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         ProcessId(Uuid::new_v4())
     }
