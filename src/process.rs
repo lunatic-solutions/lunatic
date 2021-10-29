@@ -1,3 +1,4 @@
+use std::num::NonZeroU64;
 use std::{collections::HashMap, fmt::Debug, future::Future, hash::Hash, sync::Arc};
 
 use anyhow::Result;
@@ -179,7 +180,8 @@ pub(crate) async fn new<F, T>(
                             // this process and should be propagated as such.
                             break Finished::Signal(Signal::Kill)
                         } else {
-                            let message = Message::Signal(tag);
+                            // TODO message id?
+                            let message = Message::new_signal(NonZeroU64::new(1).unwrap(), id, tag);
                             message_mailbox.push(message);
                         }
                     },

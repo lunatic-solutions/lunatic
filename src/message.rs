@@ -16,48 +16,14 @@ use async_std::net::TcpStream;
 use crate::{process::ProcessId, Process};
 
 /// Can be sent between processes by being embedded into a  [`Signal::Message`][0]
-///
-/// A [`Message`] has 2 variants:
-/// * Data - Regular message containing a tag, buffer and resources.
-/// * Signal - A signal (`LinkDied`) that was turned into a message.
-///
-/// [0]: crate::Signal
-#[derive(Debug)]
-pub enum Message {
-    Data(DataMessage),
-    Signal(Option<i64>),
-}
-
-impl Message {
-    pub fn tag(&self) -> Option<i64> {
-        match self {
-            Message::Data(message) => message.tag,
-            Message::Signal(tag) => *tag,
-        }
-    }
-
-    pub fn id(&self) -> Option<NonZeroU64> {
-        match self {
-            Message::Data(message) => Some(message.id),
-            Message::Signal(_) => None,
-        }
-    }
-
-    pub fn process_id(&self) -> Option<ProcessId> {
-        match self {
-            Message::Data(message) => Some(message.process_id),
-            Message::Signal(_) => None,
-        }
-    }
-}
-
-/// A variant of a [`Message`] that has a buffer of data and resources attached to it.
+/// It has a buffer of data and resources attached to it.
 ///
 /// It implements the [`Read`](std::io::Read) and [`Write`](std::io::Write) traits.
 #[derive(Debug)]
-pub struct DataMessage {
+pub struct Message {
     id: NonZeroU64,
     process_id: ProcessId,
+    is_signal: bool,
     tag: Option<i64>,
     reply_id: Option<NonZeroU64>,
     read_ptr: usize,
@@ -65,7 +31,7 @@ pub struct DataMessage {
     resources: Vec<Resource>,
 }
 
-impl DataMessage {
+impl Message {
     /// Create a new message.
     pub fn new(
         id: NonZeroU64,
@@ -75,6 +41,7 @@ impl DataMessage {
     ) -> Self {
         Self {
             id,
+            is_signal: false,
             process_id,
             tag,
             reply_id: None,
@@ -84,8 +51,34 @@ impl DataMessage {
         }
     }
 
+    /// Create a new message with signal set
+    pub fn new_signal(id: NonZeroU64, process_id: ProcessId, tag: Option<i64>) -> Self {
+        Self {
+            id,
+            is_signal: true,
+            process_id,
+            tag,
+            reply_id: None,
+            read_ptr: 0,
+            buffer: Vec::with_capacity(0),
+            resources: Vec::new(),
+        }
+    }
+
     pub fn id(&self) -> NonZeroU64 {
         self.id
+    }
+
+    pub fn tag(&self) -> Option<i64> {
+        self.tag
+    }
+
+    pub fn process_id(&self) -> ProcessId {
+        self.process_id
+    }
+
+    pub fn is_signal(&self) -> bool {
+        self.is_signal
     }
 
     /// Adds a process to the message and returns the index of it inside of the message
@@ -154,7 +147,7 @@ impl DataMessage {
     }
 }
 
-impl Write for DataMessage {
+impl Write for Message {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         self.buffer.extend(buf);
         Ok(buf.len())
@@ -165,7 +158,7 @@ impl Write for DataMessage {
     }
 }
 
-impl Read for DataMessage {
+impl Read for Message {
     fn read(&mut self, mut buf: &mut [u8]) -> std::io::Result<usize> {
         let slice = if let Some(slice) = self.buffer.get(self.read_ptr..) {
             slice

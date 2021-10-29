@@ -10,7 +10,7 @@ use wasmtime::{Caller, FuncType, Linker, Trap, ValType};
 
 use crate::{
     api::{error::IntoTrap, get_memory},
-    message::{DataMessage, Message},
+    message::Message,
     process::Signal,
     state::ProcessState,
 };
@@ -232,7 +232,7 @@ fn create_data(
     };
     let message_id = caller.data_mut().generate_message_id()?;
     let process_id = caller.data_mut().id;
-    let message = DataMessage::new(message_id, process_id, tag, buffer_capacity as usize);
+    let message = Message::new(message_id, process_id, tag, buffer_capacity as usize);
     caller.data_mut().draft = Some(message);
     Ok(())
 }
@@ -271,7 +271,7 @@ fn write_data(mut caller: Caller<ProcessState>, data_ptr: u32, data_len: u32) ->
 //%
 //% Traps:
 //% * If **data_ptr + data_len** is outside the memory.
-//% * If the message being read is `None` or not a data message
+//% * If the message being read is `None`
 fn read_data(mut caller: Caller<ProcessState>, data_ptr: u32, data_len: u32) -> Result<u32, Trap> {
     let memory = get_memory(&mut caller)?;
     let mut message = caller
@@ -283,10 +283,9 @@ fn read_data(mut caller: Caller<ProcessState>, data_ptr: u32, data_len: u32) -> 
         .data_mut(&mut caller)
         .get_mut(data_ptr as usize..(data_ptr as usize + data_len as usize))
         .or_trap("lunatic::message::read_data")?;
-    let bytes = match &mut message {
-        Message::Data(data) => data.read(buffer).or_trap("lunatic::message::read_data")?,
-        Message::Signal(_) => return Err(Trap::new("Unexpected `Message::Signal` in reading")),
-    };
+    let bytes = message
+        .read(buffer)
+        .or_trap("lunatic::message::read_data")?;
 
     // Put message back after reading from it.
     caller.data_mut().reading = Some(message);
@@ -301,17 +300,14 @@ fn read_data(mut caller: Caller<ProcessState>, data_ptr: u32, data_len: u32) -> 
 //% position for the new receiver and `send` it to another process.
 //%
 //% Traps:
-//% * If the message being read is `None` or not a data message
+//% * If the message being read is `None`
 fn seek_data(mut caller: Caller<ProcessState>, index: u64) -> Result<(), Trap> {
-    let mut message = caller
+    let message = caller
         .data_mut()
         .reading
         .as_mut()
         .or_trap("lunatic::message::seek_data")?;
-    match &mut message {
-        Message::Data(data) => data.seek(index as usize),
-        Message::Signal(_) => return Err(Trap::new("Unexpected `Message::Signal` in reading")),
-    };
+    message.seek(index as usize);
     Ok(())
 }
 
@@ -339,17 +335,14 @@ fn get_tag(caller: Caller<ProcessState>) -> Result<i64, Trap> {
 //%
 //% Traps:
 //% * If the message being read is `None`
-//% * The message doesn't have a message/process id
 fn get_reply_handle(mut caller: Caller<ProcessState>) -> Result<u64, Trap> {
     let message = caller
         .data()
         .reading
         .as_ref()
         .or_trap("lunatic::message::get_reply_handle::no_reading_message")?;
-    match (message.id(), message.process_id()) {
-        (Some(id), Some(process_id)) => Ok(caller.data_mut().reply_ids.add((process_id, id))),
-        (_, _) => Err(Trap::new("lunatic::message::get_reply_handle::no_id")),
-    }
+    let rid = (message.process_id(), message.id());
+    Ok(caller.data_mut().reply_ids.add(rid))
 }
 
 //% lunatic::message::drop_reply_handle(reply_handle: u64)
@@ -365,7 +358,7 @@ fn drop_reply_handle(mut caller: Caller<ProcessState>, reply_handle: u64) {
 //% Returns the size in bytes of the message buffer.
 //%
 //% Traps:
-//% * If the message being read is `None` or not a data message
+//% * If the message being read is `None`
 fn data_size(mut caller: Caller<ProcessState>) -> Result<u64, Trap> {
     // TODO is this needed for draft?
 
@@ -374,12 +367,8 @@ fn data_size(mut caller: Caller<ProcessState>) -> Result<u64, Trap> {
         .reading
         .as_ref()
         .or_trap("lunatic::message::data_size")?;
-    let bytes = match message {
-        Message::Data(data) => data.size(),
-        Message::Signal(_) => return Err(Trap::new("Unexpected `Message::Signal` in reading")),
-    };
 
-    Ok(bytes as u64)
+    Ok(message.size() as u64)
 }
 
 //% lunatic::message::push_process(process_id: u64) -> u64
@@ -414,20 +403,17 @@ fn push_process(mut caller: Caller<ProcessState>, process_id: u64) -> Result<u64
 //%
 //% Traps:
 //% * If index ID doesn't exist or matches the wrong resource (not process).
-//% * If the message being read is `None` or not a data message
+//% * If the message being read is `None`
 fn take_process(mut caller: Caller<ProcessState>, index: u64) -> Result<u64, Trap> {
     let message = caller
         .data_mut()
         .reading
         .as_mut()
         .or_trap("lunatic::message::take_process")?;
-    let process = match message {
-        Message::Data(data) => data
-            .take_process(index as usize)
-            .or_trap("lunatic::message::take_process")?,
-        Message::Signal(_) => return Err(Trap::new("Unexpected `Message::Signal` in reading")),
-    };
-    Ok(caller.data_mut().resources.processes.add(process))
+    let proc = message
+        .take_process(index as usize)
+        .or_trap("lunatic::message::take_process")?;
+    Ok(caller.data_mut().resources.processes.add(proc))
 }
 
 //% lunatic::message::push_tcp_stream(stream_id: u64) -> u64
@@ -461,19 +447,16 @@ fn push_tcp_stream(mut caller: Caller<ProcessState>, stream_id: u64) -> Result<u
 //%
 //% Traps:
 //% * If index ID doesn't exist or matches the wrong resource (not a tcp stream).
-//% * If the message being read is `None` or not a data message
+//% * If the message being read is `None`
 fn take_tcp_stream(mut caller: Caller<ProcessState>, index: u64) -> Result<u64, Trap> {
     let message = caller
         .data_mut()
         .reading
         .as_mut()
         .or_trap("lunatic::message::take_tcp_stream")?;
-    let tcp_stream = match message {
-        Message::Data(data) => data
-            .take_tcp_stream(index as usize)
-            .or_trap("lunatic::message::take_tcp_stream")?,
-        Message::Signal(_) => return Err(Trap::new("Unexpected `Message::Signal` in reading")),
-    };
+    let tcp_stream = message
+        .take_tcp_stream(index as usize)
+        .or_trap("lunatic::message::take_tcp_stream")?;
     Ok(caller.data_mut().resources.tcp_streams.add(tcp_stream))
 }
 
@@ -528,7 +511,7 @@ fn send(
         message.set_reply(*message_id);
     }
 
-    process.send(Signal::Message(Message::Data(message)));
+    process.send(Signal::Message(message));
     Ok(id)
 }
 
@@ -640,11 +623,7 @@ fn receive(
             _ = async_std::task::sleep(Duration::from_millis(timeout as u64)), if timeout != 0 => None,
             message = caller.data_mut().message_mailbox.pop(tags.as_deref()) => Some(message)
         } {
-            let result = match message {
-                Message::Data(_) => 0,
-                Message::Signal(_) => 1,
-            };
-            // Put the message into the reading area
+            let result = if message.is_signal() { 1 } else { 0 };
             caller.data_mut().reading = Some(message);
             Ok(result)
         } else {

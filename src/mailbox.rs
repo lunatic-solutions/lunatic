@@ -158,29 +158,35 @@ impl Future for &MessageMailbox {
 mod tests {
     use std::{
         future::Future,
+        num::NonZeroU64,
         sync::{Arc, Mutex},
         task::{Context, Poll, Wake},
     };
+
+    use crate::process::ProcessId;
 
     use super::{Message, MessageMailbox};
 
     #[async_std::test]
     async fn no_tags_signal_message() {
+        let proc_id = ProcessId::new();
+        let msg_id = NonZeroU64::new(1).unwrap();
+
         let mailbox = MessageMailbox::default();
-        let message = Message::Signal(None);
+        let message = Message::new_signal(msg_id, proc_id, None);
         mailbox.push(message);
         let result = mailbox.pop(None).await;
-        match result {
-            Message::Signal(None) => (),
-            _ => panic!("Wrong message received"),
-        }
+        assert_eq!(result.is_signal(), true);
     }
 
     #[async_std::test]
     async fn tag_signal_message() {
+        let proc_id = ProcessId::new();
+        let msg_id = NonZeroU64::new(1).unwrap();
+
         let mailbox = MessageMailbox::default();
         let tag = 1337;
-        let message = Message::Signal(Some(tag));
+        let message = Message::new_signal(msg_id, proc_id, Some(tag));
         mailbox.push(message);
         let message = mailbox.pop(None).await;
         assert_eq!(message.tag(), Some(tag));
@@ -188,17 +194,20 @@ mod tests {
 
     #[async_std::test]
     async fn selective_receive_tag_signal_message() {
+        let proc_id = ProcessId::new();
+        let msg_id = NonZeroU64::new(1).unwrap();
+
         let mailbox = MessageMailbox::default();
         let tag1 = 1;
         let tag2 = 2;
         let tag3 = 3;
         let tag4 = 4;
         let tag5 = 5;
-        mailbox.push(Message::Signal(Some(tag1)));
-        mailbox.push(Message::Signal(Some(tag2)));
-        mailbox.push(Message::Signal(Some(tag3)));
-        mailbox.push(Message::Signal(Some(tag4)));
-        mailbox.push(Message::Signal(Some(tag5)));
+        mailbox.push(Message::new_signal(msg_id, proc_id, Some(tag1)));
+        mailbox.push(Message::new_signal(msg_id, proc_id, Some(tag2)));
+        mailbox.push(Message::new_signal(msg_id, proc_id, Some(tag3)));
+        mailbox.push(Message::new_signal(msg_id, proc_id, Some(tag4)));
+        mailbox.push(Message::new_signal(msg_id, proc_id, Some(tag5)));
         let message = mailbox.pop(Some(&[tag2])).await;
         assert_eq!(message.tag(), Some(tag2));
         let message = mailbox.pop(Some(&[tag1])).await;
@@ -214,17 +223,20 @@ mod tests {
 
     #[async_std::test]
     async fn multiple_receive_tags_signal_message() {
+        let proc_id = ProcessId::new();
+        let msg_id = NonZeroU64::new(1).unwrap();
+
         let mailbox = MessageMailbox::default();
         let tag1 = 1;
         let tag2 = 2;
         let tag3 = 3;
         let tag4 = 4;
         let tag5 = 5;
-        mailbox.push(Message::Signal(Some(tag1)));
-        mailbox.push(Message::Signal(Some(tag2)));
-        mailbox.push(Message::Signal(Some(tag3)));
-        mailbox.push(Message::Signal(Some(tag4)));
-        mailbox.push(Message::Signal(Some(tag5)));
+        mailbox.push(Message::new_signal(msg_id, proc_id, Some(tag1)));
+        mailbox.push(Message::new_signal(msg_id, proc_id, Some(tag2)));
+        mailbox.push(Message::new_signal(msg_id, proc_id, Some(tag3)));
+        mailbox.push(Message::new_signal(msg_id, proc_id, Some(tag4)));
+        mailbox.push(Message::new_signal(msg_id, proc_id, Some(tag5)));
         let message = mailbox.pop(Some(&[tag2, tag1, tag3])).await;
         assert_eq!(message.tag(), Some(tag1));
         let message = mailbox.pop(Some(&[tag2, tag1, tag3])).await;
@@ -248,6 +260,9 @@ mod tests {
     }
     #[test]
     fn waiting_on_none_activates_waker() {
+        let proc_id = ProcessId::new();
+        let msg_id = NonZeroU64::new(1).unwrap();
+
         let mailbox = MessageMailbox::default();
         // Sending a message with any tags to a mailbox that is "awaiting" a `None` tags should
         // trigger the waker and return the tags.
@@ -265,7 +280,7 @@ mod tests {
         assert!(result.is_pending());
         assert_eq!(*waker_ref.0.lock().unwrap(), false);
         // Pushing a message to the mailbox will call the waker
-        mailbox.push(Message::Signal(tags));
+        mailbox.push(Message::new_signal(msg_id, proc_id, tags));
         assert_eq!(*waker_ref.0.lock().unwrap(), true);
         // Next poll will return the value
         let result = fut.as_mut().poll(&mut context);
@@ -274,6 +289,9 @@ mod tests {
 
     #[test]
     fn waiting_on_tag_after_none() {
+        let proc_id = ProcessId::new();
+        let msg_id = NonZeroU64::new(1).unwrap();
+
         let mailbox = MessageMailbox::default();
         // "Awaiting" a specific tags and receiving a `None` message should not trigger the waker.
         let waker = FlagWaker(Arc::new(Mutex::new(false)));
@@ -288,15 +306,15 @@ mod tests {
         assert!(result.is_pending());
         assert_eq!(*waker_ref.0.lock().unwrap(), false);
         // Pushing a message with the `None` tags should not trigger the waker
-        mailbox.push(Message::Signal(None));
+        mailbox.push(Message::new_signal(msg_id, proc_id, None));
         assert_eq!(*waker_ref.0.lock().unwrap(), false);
         // Next poll will still not have the value with the tags 1337
         let result = fut.as_mut().poll(&mut context);
         assert!(result.is_pending());
         // Pushing another None in the meantime should not remove the waker
-        mailbox.push(Message::Signal(None));
+        mailbox.push(Message::new_signal(msg_id, proc_id, None));
         // Pushing a message with tags 1337 should trigger the waker
-        mailbox.push(Message::Signal(Some(1337)));
+        mailbox.push(Message::new_signal(msg_id, proc_id, Some(1337)));
         assert_eq!(*waker_ref.0.lock().unwrap(), true);
         // Next poll will have the message ready
         let result = fut.as_mut().poll(&mut context);
@@ -305,6 +323,9 @@ mod tests {
 
     #[test]
     fn cancellation_safety() {
+        let proc_id = ProcessId::new();
+        let msg_id = NonZeroU64::new(1).unwrap();
+
         let mailbox = MessageMailbox::default();
         // Manually poll future
         let waker = FlagWaker(Arc::new(Mutex::new(false)));
@@ -318,7 +339,7 @@ mod tests {
         assert!(result.is_pending());
         assert_eq!(*waker_ref.0.lock().unwrap(), false);
         // Pushing a message with the `None` tags should call the waker()
-        mailbox.push(Message::Signal(None));
+        mailbox.push(Message::new_signal(msg_id, proc_id, None));
         assert_eq!(*waker_ref.0.lock().unwrap(), true);
         // Dropping the future will cancel it
         drop(fut);
@@ -332,10 +353,10 @@ mod tests {
         tokio::pin!(fut);
         let result = fut.poll(&mut context);
         match result {
-            Poll::Ready(message) => match message {
-                Message::Signal(tags) => assert_eq!(tags, None),
-                _ => panic!("Unexpected message"),
-            },
+            Poll::Ready(message) => {
+                assert_eq!(message.is_signal(), true);
+                assert_eq!(message.tag(), None);
+            }
             _ => panic!("Unexpected message"),
         }
     }
