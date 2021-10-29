@@ -50,9 +50,13 @@ pub(crate) struct ProcessState {
     pub(crate) module: Module,
     // A message currently being written.
     pub(crate) draft: Option<Message>,
+
     // A message currently being read. Host functions operate on this message after it is received.
     // For example, a guest might want to read message bytes, get reply handle, etc.
-    pub(crate) reading: Option<Message>,
+    // Reading is private because when the message is set, seek pointer is reset to 0.
+    reading: Message,
+    pub reading_seek_ptr: usize,
+
     // Message id local to the sending process. It's used for reply ids.
     last_message_id: NonZeroU64,
     // Reply id handles. This makes message and reply ids opaque for the guest code.
@@ -93,8 +97,10 @@ impl ProcessState {
             id,
             module,
             draft: None,
-            reading: None,
-            last_message_id: NonZeroU64::new(1).unwrap(),
+            reading: Message::new(NonZeroU64::new(1).unwrap(), id, None, 0),
+            reading_seek_ptr: 0,
+            // Because we use message id 1 in reading, we start with the last message id 2
+            last_message_id: NonZeroU64::new(2).unwrap(),
             reply_ids: HashMapId::new(),
             signal_mailbox,
             message_mailbox,
@@ -109,6 +115,23 @@ impl ProcessState {
         self.last_message_id = NonZeroU64::new(self.last_message_id.get() + 1)
             .ok_or_else(|| Trap::new("Last message id overflowed"))?;
         Ok(self.last_message_id)
+    }
+
+    pub fn reading_mut(&mut self) -> &mut Message {
+        &mut self.reading
+    }
+
+    pub fn reading(&self) -> &Message {
+        &self.reading
+    }
+
+    pub fn set_reading(&mut self, message: Message) {
+        self.reading = message;
+        self.reading_seek_ptr = 0;
+    }
+
+    pub fn seek(&mut self, seek: usize) {
+        self.reading_seek_ptr = seek;
     }
 }
 

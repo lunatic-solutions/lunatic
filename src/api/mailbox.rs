@@ -1,9 +1,4 @@
-use std::{
-    convert::TryInto,
-    future::Future,
-    io::{Read, Write},
-    time::Duration,
-};
+use std::{convert::TryInto, future::Future, io::Write, time::Duration};
 
 use anyhow::Result;
 use wasmtime::{Caller, FuncType, Linker, Trap, ValType};
@@ -15,7 +10,7 @@ use crate::{
     state::ProcessState,
 };
 
-use super::{link_async2_if_match, link_async3_if_match, link_if_match};
+use super::{link_async3_if_match, link_if_match};
 
 // Register the mailbox APIs to the linker
 pub(crate) fn register(
@@ -126,14 +121,14 @@ pub(crate) fn register(
         send,
         namespace_filter,
     )?;
-    link_async2_if_match(
-        linker,
-        "lunatic::message",
-        "send_receive_skip_search",
-        FuncType::new([ValType::I64, ValType::I32], [ValType::I32]),
-        send_receive_skip_search,
-        namespace_filter,
-    )?;
+    //link_async2_if_match(
+    //    linker,
+    //    "lunatic::message",
+    //    "send_receive_skip_search",
+    //    FuncType::new([ValType::I64, ValType::I32], [ValType::I32]),
+    //    send_receive_skip_search,
+    //    namespace_filter,
+    //)?;
     link_async3_if_match(
         linker,
         "lunatic::message",
@@ -268,29 +263,42 @@ fn write_data(mut caller: Caller<ProcessState>, data_ptr: u32, data_len: u32) ->
 //% lunatic::message::read_data(data_ptr: u32, data_len: u32) -> u32
 //%
 //% Reads some data from the message buffer and returns how much data is read in bytes.
+//% If the content was moved then it doesn't read anything and returns 0.
 //%
 //% Traps:
-//% * If **data_ptr + data_len** is outside the memory.
-//% * If the message being read is `None`
+//% * If **data_ptr + data_len** is outside the guest memory.
+//% * If trying to read outside of message content
 fn read_data(mut caller: Caller<ProcessState>, data_ptr: u32, data_len: u32) -> Result<u32, Trap> {
     let memory = get_memory(&mut caller)?;
-    let mut message = caller
-        .data_mut()
-        .reading
-        .take()
-        .or_trap("lunatic::message::read_data")?;
-    let buffer = memory
-        .data_mut(&mut caller)
-        .get_mut(data_ptr as usize..(data_ptr as usize + data_len as usize))
-        .or_trap("lunatic::message::read_data")?;
-    let bytes = message
-        .read(buffer)
-        .or_trap("lunatic::message::read_data")?;
 
-    // Put message back after reading from it.
-    caller.data_mut().reading = Some(message);
+    let read_ptr = caller.data().reading_seek_ptr;
 
-    Ok(bytes as u32)
+    if let Some(content) = caller.data_mut().reading_mut().take_data() {
+        let mut buffer = memory
+            .data_mut(&mut caller)
+            .get_mut(data_ptr as usize..(data_ptr as usize + data_len as usize))
+            .or_trap("lunatic::message::read_data::guest_buffer_overflow")?;
+
+        let slice = if let Some(slice) = content.get(read_ptr..) {
+            slice
+        } else {
+            return Err(Trap::new(
+                "lunatic::message::read_data::host_content_outside_memory",
+            ));
+        };
+
+        let bytes = buffer
+            .write(slice)
+            .or_trap("lunatic::message::read_data::guest_buffer_overflow")?;
+        caller.data_mut().reading_seek_ptr += bytes;
+
+        // Put content back after reading from it.
+        caller.data_mut().reading_mut().set_data(content);
+
+        Ok(bytes as u32)
+    } else {
+        Ok(0)
+    }
 }
 
 //% lunatic::message::seek_data(index: u64)
@@ -298,51 +306,24 @@ fn read_data(mut caller: Caller<ProcessState>, data_ptr: u32, data_len: u32) -> 
 //% Moves reading head of the internal message buffer. It's useful if you wish to read the a bit
 //% of a message, decide that someone else will handle it, `seek_data(0)` to reset the read
 //% position for the new receiver and `send` it to another process.
-//%
-//% Traps:
-//% * If the message being read is `None`
-fn seek_data(mut caller: Caller<ProcessState>, index: u64) -> Result<(), Trap> {
-    let message = caller
-        .data_mut()
-        .reading
-        .as_mut()
-        .or_trap("lunatic::message::seek_data")?;
-    message.seek(index as usize);
-    Ok(())
+fn seek_data(mut caller: Caller<ProcessState>, index: u64) {
+    caller.data_mut().seek(index as usize);
 }
 
 //% lunatic::message::get_tag() -> i64
 //%
 //% Returns the message tag or 0 if no tag was set.
-//%
-//% Traps:
-//% * If the message being read is `None`
-fn get_tag(caller: Caller<ProcessState>) -> Result<i64, Trap> {
-    let message = caller
-        .data()
-        .reading
-        .as_ref()
-        .or_trap("lunatic::message::get_tag")?;
-    match message.tag() {
-        Some(tag) => Ok(tag),
-        None => Ok(0),
-    }
+fn get_tag(caller: Caller<ProcessState>) -> i64 {
+    caller.data().reading().tag().unwrap_or(0)
 }
 
 //% lunatic::message::get_reply_handle() -> u64
 //%
 //% Returns a reply handle which can be used to set the reply id for the draft message.
-//%
-//% Traps:
-//% * If the message being read is `None`
-fn get_reply_handle(mut caller: Caller<ProcessState>) -> Result<u64, Trap> {
-    let message = caller
-        .data()
-        .reading
-        .as_ref()
-        .or_trap("lunatic::message::get_reply_handle::no_reading_message")?;
+fn get_reply_handle(mut caller: Caller<ProcessState>) -> u64 {
+    let message = &caller.data().reading();
     let rid = (message.process_id(), message.id());
-    Ok(caller.data_mut().reply_ids.add(rid))
+    caller.data_mut().reply_ids.add(rid)
 }
 
 //% lunatic::message::drop_reply_handle(reply_handle: u64)
@@ -356,19 +337,8 @@ fn drop_reply_handle(mut caller: Caller<ProcessState>, reply_handle: u64) {
 //% lunatic::message::data_size() -> u64
 //%
 //% Returns the size in bytes of the message buffer.
-//%
-//% Traps:
-//% * If the message being read is `None`
-fn data_size(mut caller: Caller<ProcessState>) -> Result<u64, Trap> {
-    // TODO is this needed for draft?
-
-    let message = caller
-        .data_mut()
-        .reading
-        .as_ref()
-        .or_trap("lunatic::message::data_size")?;
-
-    Ok(message.size() as u64)
+fn data_size(mut caller: Caller<ProcessState>) -> u64 {
+    caller.data_mut().reading_mut().size() as u64
 }
 
 //% lunatic::message::push_process(process_id: u64) -> u64
@@ -403,14 +373,10 @@ fn push_process(mut caller: Caller<ProcessState>, process_id: u64) -> Result<u64
 //%
 //% Traps:
 //% * If index ID doesn't exist or matches the wrong resource (not process).
-//% * If the message being read is `None`
 fn take_process(mut caller: Caller<ProcessState>, index: u64) -> Result<u64, Trap> {
-    let message = caller
+    let proc = caller
         .data_mut()
-        .reading
-        .as_mut()
-        .or_trap("lunatic::message::take_process")?;
-    let proc = message
+        .reading_mut()
         .take_process(index as usize)
         .or_trap("lunatic::message::take_process")?;
     Ok(caller.data_mut().resources.processes.add(proc))
@@ -447,14 +413,10 @@ fn push_tcp_stream(mut caller: Caller<ProcessState>, stream_id: u64) -> Result<u
 //%
 //% Traps:
 //% * If index ID doesn't exist or matches the wrong resource (not a tcp stream).
-//% * If the message being read is `None`
 fn take_tcp_stream(mut caller: Caller<ProcessState>, index: u64) -> Result<u64, Trap> {
-    let message = caller
+    let tcp_stream = caller
         .data_mut()
-        .reading
-        .as_mut()
-        .or_trap("lunatic::message::take_tcp_stream")?;
-    let tcp_stream = message
+        .reading_mut()
         .take_tcp_stream(index as usize)
         .or_trap("lunatic::message::take_tcp_stream")?;
     Ok(caller.data_mut().resources.tcp_streams.add(tcp_stream))
@@ -535,43 +497,42 @@ fn send(
 //% Traps:
 //% * If the process ID doesn't exist.
 //% * If it's called with wrong data in the reading area.
-fn send_receive_skip_search(
-    mut caller: Caller<ProcessState>,
-    process_id: u64,
-    timeout: u32,
-) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_> {
-    Box::new(async move {
-        let message = caller
-            .data_mut()
-            .reading
-            .take()
-            .or_trap("lunatic::message::send_receive_skip_search")?;
-        let mut _tags = [0; 1];
-        let tags = if let Some(tag) = message.tag() {
-            _tags = [tag];
-            Some(&_tags[..])
-        } else {
-            None
-        };
-        let process = caller
-            .data()
-            .resources
-            .processes
-            .get(process_id)
-            .or_trap("lunatic::message::send_receive_skip_search")?;
-        process.send(Signal::Message(message));
-        if let Some(message) = tokio::select! {
-            _ = async_std::task::sleep(Duration::from_millis(timeout as u64)), if timeout != 0 => None,
-            message = caller.data_mut().message_mailbox.pop_skip_search(tags) => Some(message)
-        } {
-            // Put the message into the reading area
-            caller.data_mut().reading = Some(message);
-            Ok(0)
-        } else {
-            Ok(9027)
-        }
-    })
-}
+// TODO
+//fn send_receive_skip_search(
+//    mut caller: Caller<ProcessState>,
+//    process_id: u64,
+//    timeout: u32,
+//) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_> {
+//    Box::new(async move {
+//        let message = caller
+//            .data_mut()
+//            .reading;
+//        let mut _tags = [0; 1];
+//        let tags = if let Some(tag) = message.tag() {
+//            _tags = [tag];
+//            Some(&_tags[..])
+//        } else {
+//            None
+//        };
+//        let process = caller
+//            .data()
+//            .resources
+//            .processes
+//            .get(process_id)
+//            .or_trap("lunatic::message::send_receive_skip_search")?;
+//        process.send(Signal::Message(message));
+//        if let Some(message) = tokio::select! {
+//            _ = async_std::task::sleep(Duration::from_millis(timeout as u64)), if timeout != 0 => None,
+//            message = caller.data_mut().message_mailbox.pop_skip_search(tags) => Some(message)
+//        } {
+//            // Put the message into the reading area
+//            caller.data_mut().reading = message;
+//            Ok(0)
+//        } else {
+//            Ok(9027)
+//        }
+//    })
+//}
 
 //% lunatic::message::receive(tag_ptr: u32, tag_len: u32, timeout: u32) -> u32
 //%
@@ -624,7 +585,7 @@ fn receive(
             message = caller.data_mut().message_mailbox.pop(tags.as_deref()) => Some(message)
         } {
             let result = if message.is_signal() { 1 } else { 0 };
-            caller.data_mut().reading = Some(message);
+            caller.data_mut().set_reading(message);
             Ok(result)
         } else {
             Ok(9027)

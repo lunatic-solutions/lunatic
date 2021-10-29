@@ -6,7 +6,7 @@ kinds of messages, like the [`Message::Signal`], that is received if a linked pr
 
 use std::{
     fmt::Debug,
-    io::{Read, Write},
+    io::{Write},
     num::NonZeroU64,
     sync::Arc,
 };
@@ -26,8 +26,7 @@ pub struct Message {
     is_signal: bool,
     tag: Option<i64>,
     reply_id: Option<NonZeroU64>,
-    read_ptr: usize,
-    buffer: Vec<u8>,
+    data: Option<Vec<u8>>,
     resources: Vec<Resource>,
 }
 
@@ -37,7 +36,7 @@ impl Message {
         id: NonZeroU64,
         process_id: ProcessId,
         tag: Option<i64>,
-        buffer_capacity: usize,
+        _buffer_capacity: usize, // TODO remove?
     ) -> Self {
         Self {
             id,
@@ -45,8 +44,7 @@ impl Message {
             process_id,
             tag,
             reply_id: None,
-            read_ptr: 0,
-            buffer: Vec::with_capacity(buffer_capacity),
+            data: None,
             resources: Vec::new(),
         }
     }
@@ -59,8 +57,7 @@ impl Message {
             process_id,
             tag,
             reply_id: None,
-            read_ptr: 0,
-            buffer: Vec::with_capacity(0),
+            data: None,
             resources: Vec::new(),
         }
     }
@@ -133,44 +130,37 @@ impl Message {
         None
     }
 
-    /// Moves read pointer to index.
-    pub fn seek(&mut self, index: usize) {
-        self.read_ptr = index;
-    }
-
     pub fn size(&self) -> usize {
-        self.buffer.len()
+        match &self.data {
+            Some(v) => v.len(),
+            None => 0,
+        }
     }
 
     pub fn set_reply(&mut self, reply_id: NonZeroU64) {
         self.reply_id = Some(reply_id);
     }
+
+    pub fn take_data(&mut self) -> Option<Vec<u8>> {
+        self.data.take()
+    }
+
+    pub fn set_data(&mut self, content: Vec<u8>) {
+        self.data = Some(content);
+    }
 }
 
 impl Write for Message {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        self.buffer.extend(buf);
+        if self.data.is_none() {
+            self.data = Some(Vec::with_capacity(buf.len()));
+        }
+        self.data.as_mut().unwrap().extend(buf);
         Ok(buf.len())
     }
 
     fn flush(&mut self) -> std::io::Result<()> {
         Ok(())
-    }
-}
-
-impl Read for Message {
-    fn read(&mut self, mut buf: &mut [u8]) -> std::io::Result<usize> {
-        let slice = if let Some(slice) = self.buffer.get(self.read_ptr..) {
-            slice
-        } else {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::OutOfMemory,
-                "Reading outside of message buffer",
-            ));
-        };
-        let bytes = buf.write(slice)?;
-        self.read_ptr += bytes;
-        Ok(bytes)
     }
 }
 
