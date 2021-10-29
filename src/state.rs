@@ -159,6 +159,7 @@ pub(crate) struct Resources {
 }
 
 /// HashMap wrapper with incremental ID (u64) assignment.
+/// ID is never zero.
 pub(crate) struct HashMapId<T> {
     id_seed: u64,
     store: HashMap<u64, T>,
@@ -170,7 +171,10 @@ where
 {
     pub fn new() -> Self {
         Self {
-            id_seed: 0,
+            // Start seed from 1. Using `NonZeroU64` makes things complicated
+            // because main users of `HashMapId` are host functions.
+            // It's convenient to have zero for None values.
+            id_seed: 1,
             store: HashMap::new(),
         }
     }
@@ -179,6 +183,9 @@ where
         let id = self.id_seed;
         self.store.insert(id, item);
         self.id_seed += 1;
+        if self.id_seed == 0 {
+            self.id_seed = 1;
+        }
         id
     }
 
