@@ -233,7 +233,7 @@ fn create_data(
     let message_id = caller.data_mut().generate_message_id()?;
     let process_id = caller.data_mut().id;
     let message = DataMessage::new(message_id, process_id, tag, buffer_capacity as usize);
-    caller.data_mut().message = Some(Message::Data(message));
+    caller.data_mut().draft = Some(message);
     Ok(())
 }
 
@@ -243,26 +243,24 @@ fn create_data(
 //%
 //% Traps:
 //% * If **data_ptr + data_len** is outside the memory.
-//% * If it's called without a data message being inside of the scratch area.
 fn write_data(mut caller: Caller<ProcessState>, data_ptr: u32, data_len: u32) -> Result<u32, Trap> {
     let memory = get_memory(&mut caller)?;
     let mut message = caller
         .data_mut()
-        .message
+        .draft
         .take()
         .or_trap("lunatic::message::write_data")?;
     let buffer = memory
         .data(&caller)
         .get(data_ptr as usize..(data_ptr as usize + data_len as usize))
         .or_trap("lunatic::message::write_data")?;
-    let bytes = match &mut message {
-        Message::Data(data) => data.write(buffer).or_trap("lunatic::message::write_data")?,
-        Message::Signal(_) => {
-            return Err(Trap::new("Unexpected `Message::Signal` in scratch area"))
-        }
-    };
+
+    let bytes = message
+        .write(buffer)
+        .or_trap("lunatic::message::write_data")?;
+
     // Put message back after writing to it.
-    caller.data_mut().message = Some(message);
+    caller.data_mut().draft = Some(message);
 
     Ok(bytes as u32)
 }
@@ -273,12 +271,12 @@ fn write_data(mut caller: Caller<ProcessState>, data_ptr: u32, data_len: u32) ->
 //%
 //% Traps:
 //% * If **data_ptr + data_len** is outside the memory.
-//% * If it's called without a data message being inside of the scratch area.
+//% * If the message being read is `None` or not a data message
 fn read_data(mut caller: Caller<ProcessState>, data_ptr: u32, data_len: u32) -> Result<u32, Trap> {
     let memory = get_memory(&mut caller)?;
     let mut message = caller
         .data_mut()
-        .message
+        .reading
         .take()
         .or_trap("lunatic::message::read_data")?;
     let buffer = memory
@@ -287,12 +285,11 @@ fn read_data(mut caller: Caller<ProcessState>, data_ptr: u32, data_len: u32) -> 
         .or_trap("lunatic::message::read_data")?;
     let bytes = match &mut message {
         Message::Data(data) => data.read(buffer).or_trap("lunatic::message::read_data")?,
-        Message::Signal(_) => {
-            return Err(Trap::new("Unexpected `Message::Signal` in scratch area"))
-        }
+        Message::Signal(_) => return Err(Trap::new("Unexpected `Message::Signal` in reading")),
     };
+
     // Put message back after reading from it.
-    caller.data_mut().message = Some(message);
+    caller.data_mut().reading = Some(message);
 
     Ok(bytes as u32)
 }
@@ -304,18 +301,16 @@ fn read_data(mut caller: Caller<ProcessState>, data_ptr: u32, data_len: u32) -> 
 //% position for the new receiver and `send` it to another process.
 //%
 //% Traps:
-//% * If it's called without a data message being inside of the scratch area.
+//% * If the message being read is `None` or not a data message
 fn seek_data(mut caller: Caller<ProcessState>, index: u64) -> Result<(), Trap> {
     let mut message = caller
         .data_mut()
-        .message
+        .reading
         .as_mut()
         .or_trap("lunatic::message::seek_data")?;
     match &mut message {
         Message::Data(data) => data.seek(index as usize),
-        Message::Signal(_) => {
-            return Err(Trap::new("Unexpected `Message::Signal` in scratch area"))
-        }
+        Message::Signal(_) => return Err(Trap::new("Unexpected `Message::Signal` in reading")),
     };
     Ok(())
 }
@@ -325,11 +320,11 @@ fn seek_data(mut caller: Caller<ProcessState>, index: u64) -> Result<(), Trap> {
 //% Returns the message tag or 0 if no tag was set.
 //%
 //% Traps:
-//% * If it's called without a message being inside of the scratch area.
+//% * If the message being read is `None`
 fn get_tag(caller: Caller<ProcessState>) -> Result<i64, Trap> {
     let message = caller
         .data()
-        .message
+        .reading
         .as_ref()
         .or_trap("lunatic::message::get_tag")?;
     match message.tag() {
@@ -340,17 +335,17 @@ fn get_tag(caller: Caller<ProcessState>) -> Result<i64, Trap> {
 
 //% lunatic::message::get_reply_handle() -> u64
 //%
-//% Returns a reply handle which can be used to set the reply id in the scratch area.
+//% Returns a reply handle which can be used to set the reply id for the draft message.
 //%
 //% Traps:
-//% * If it's called without a message being inside of the scratch area.
+//% * If the message being read is `None`
 //% * The message doesn't have a message/process id
 fn get_reply_handle(mut caller: Caller<ProcessState>) -> Result<u64, Trap> {
     let message = caller
         .data()
-        .message
+        .reading
         .as_ref()
-        .or_trap("lunatic::message::get_reply_handle::no_scratch_message")?;
+        .or_trap("lunatic::message::get_reply_handle::no_reading_message")?;
     match (message.id(), message.process_id()) {
         (Some(id), Some(process_id)) => Ok(caller.data_mut().reply_ids.add((process_id, id))),
         (_, _) => Err(Trap::new("lunatic::message::get_reply_handle::no_id")),
@@ -370,18 +365,18 @@ fn drop_reply_handle(mut caller: Caller<ProcessState>, reply_handle: u64) {
 //% Returns the size in bytes of the message buffer.
 //%
 //% Traps:
-//% * If it's called without a data message being inside of the scratch area.
+//% * If the message being read is `None` or not a data message
 fn data_size(mut caller: Caller<ProcessState>) -> Result<u64, Trap> {
+    // TODO is this needed for draft?
+
     let message = caller
         .data_mut()
-        .message
+        .reading
         .as_ref()
         .or_trap("lunatic::message::data_size")?;
     let bytes = match message {
         Message::Data(data) => data.size(),
-        Message::Signal(_) => {
-            return Err(Trap::new("Unexpected `Message::Signal` in scratch area"))
-        }
+        Message::Signal(_) => return Err(Trap::new("Unexpected `Message::Signal` in reading")),
     };
 
     Ok(bytes as u64)
@@ -389,13 +384,13 @@ fn data_size(mut caller: Caller<ProcessState>) -> Result<u64, Trap> {
 
 //% lunatic::message::push_process(process_id: u64) -> u64
 //%
-//% Adds a process resource to the message that is currently in the scratch area and returns
+//% Adds a process resource to the message that is currently in the draft area and returns
 //% the location in the array the process was added to. This will remove the process handle from
 //% the current process' resources.
 //%
 //% Traps:
 //% * If process ID doesn't exist
-//% * If no data message is in the scratch area.
+//% * If there is no draft message
 fn push_process(mut caller: Caller<ProcessState>, process_id: u64) -> Result<u64, Trap> {
     let process = caller
         .data_mut()
@@ -405,51 +400,44 @@ fn push_process(mut caller: Caller<ProcessState>, process_id: u64) -> Result<u64
         .or_trap("lunatic::message::push_process")?;
     let message = caller
         .data_mut()
-        .message
+        .draft
         .as_mut()
         .or_trap("lunatic::message::push_process")?;
-    let index = match message {
-        Message::Data(data) => data.add_process(process) as u64,
-        Message::Signal(_) => {
-            return Err(Trap::new("Unexpected `Message::Signal` in scratch area"))
-        }
-    };
+    let index = message.add_process(process) as u64;
     Ok(index)
 }
 
 //% lunatic::message::take_process(index: u64) -> u64
 //%
-//% Takes the process handle from the message that is currently in the scratch area by index, puts
+//% Takes the process handle from the message that is currently in the reading area by index, puts
 //% it into the process' resources and returns the resource ID.
 //%
 //% Traps:
 //% * If index ID doesn't exist or matches the wrong resource (not process).
-//% * If no data message is in the scratch area.
+//% * If the message being read is `None` or not a data message
 fn take_process(mut caller: Caller<ProcessState>, index: u64) -> Result<u64, Trap> {
     let message = caller
         .data_mut()
-        .message
+        .reading
         .as_mut()
         .or_trap("lunatic::message::take_process")?;
     let process = match message {
         Message::Data(data) => data
             .take_process(index as usize)
             .or_trap("lunatic::message::take_process")?,
-        Message::Signal(_) => {
-            return Err(Trap::new("Unexpected `Message::Signal` in scratch area"))
-        }
+        Message::Signal(_) => return Err(Trap::new("Unexpected `Message::Signal` in reading")),
     };
     Ok(caller.data_mut().resources.processes.add(process))
 }
 
 //% lunatic::message::push_tcp_stream(stream_id: u64) -> u64
 //%
-//% Adds a tcp stream resource to the message that is currently in the scratch area and returns
+//% Adds a tcp stream resource to the message that is currently in the draft area and returns
 //% the new location of it. This will remove the tcp stream from  the current process' resources.
 //%
 //% Traps:
 //% * If TCP stream ID doesn't exist
-//% * If no data message is in the scratch area.
+//% * If it's called without a draft data message.
 fn push_tcp_stream(mut caller: Caller<ProcessState>, stream_id: u64) -> Result<u64, Trap> {
     let stream = caller
         .data_mut()
@@ -459,39 +447,32 @@ fn push_tcp_stream(mut caller: Caller<ProcessState>, stream_id: u64) -> Result<u
         .or_trap("lunatic::message::push_tcp_stream")?;
     let message = caller
         .data_mut()
-        .message
+        .draft
         .as_mut()
         .or_trap("lunatic::message::push_tcp_stream")?;
-    let index = match message {
-        Message::Data(data) => data.add_tcp_stream(stream) as u64,
-        Message::Signal(_) => {
-            return Err(Trap::new("Unexpected `Message::Signal` in scratch area"))
-        }
-    };
+    let index = message.add_tcp_stream(stream) as u64;
     Ok(index)
 }
 
 //% lunatic::message::take_tcp_stream(index: u64) -> u64
 //%
-//% Takes the tcp stream from the message that is currently in the scratch area by index, puts
+//% Takes the tcp stream from the message that is currently in the reading area by index, puts
 //% it into the process' resources and returns the resource ID.
 //%
 //% Traps:
 //% * If index ID doesn't exist or matches the wrong resource (not a tcp stream).
-//% * If no data message is in the scratch area.
+//% * If the message being read is `None` or not a data message
 fn take_tcp_stream(mut caller: Caller<ProcessState>, index: u64) -> Result<u64, Trap> {
     let message = caller
         .data_mut()
-        .message
+        .reading
         .as_mut()
         .or_trap("lunatic::message::take_tcp_stream")?;
     let tcp_stream = match message {
         Message::Data(data) => data
             .take_tcp_stream(index as usize)
             .or_trap("lunatic::message::take_tcp_stream")?,
-        Message::Signal(_) => {
-            return Err(Trap::new("Unexpected `Message::Signal` in scratch area"))
-        }
+        Message::Signal(_) => return Err(Trap::new("Unexpected `Message::Signal` in reading")),
     };
     Ok(caller.data_mut().resources.tcp_streams.add(tcp_stream))
 }
@@ -504,7 +485,7 @@ fn take_tcp_stream(mut caller: Caller<ProcessState>, index: u64) -> Result<u64, 
 //%
 //% There are no guarantees that the process will ever receive the message.
 //%
-//% Returns: local message id or 0 if the message is a signal
+//% Returns: message id unique only to this process
 //%
 //% Traps:
 //% * If the process handle doesn't exist.
@@ -518,10 +499,10 @@ fn send(
 ) -> Result<u64, Trap> {
     let mut message = caller
         .data_mut()
-        .message
+        .draft
         .take()
-        .or_trap("lunatic::message::send::no_draft_message")?;
-    let id = message.id().map(|id| id.get()).unwrap_or(0);
+        .or_trap("lunatic::message::send")?;
+    let id = message.id().get();
     let process = caller
         .data()
         .resources
@@ -544,12 +525,10 @@ fn send(
             ));
         }
 
-        if let Message::Data(msg) = &mut message {
-            msg.set_reply(*message_id);
-        }
+        message.set_reply(*message_id);
     }
 
-    process.send(Signal::Message(message));
+    process.send(Signal::Message(Message::Data(message)));
     Ok(id)
 }
 
@@ -572,7 +551,7 @@ fn send(
 //%
 //% Traps:
 //% * If the process ID doesn't exist.
-//% * If it's called with wrong data in the scratch area.
+//% * If it's called with wrong data in the reading area.
 fn send_receive_skip_search(
     mut caller: Caller<ProcessState>,
     process_id: u64,
@@ -581,7 +560,7 @@ fn send_receive_skip_search(
     Box::new(async move {
         let message = caller
             .data_mut()
-            .message
+            .reading
             .take()
             .or_trap("lunatic::message::send_receive_skip_search")?;
         let mut _tags = [0; 1];
@@ -602,8 +581,8 @@ fn send_receive_skip_search(
             _ = async_std::task::sleep(Duration::from_millis(timeout as u64)), if timeout != 0 => None,
             message = caller.data_mut().message_mailbox.pop_skip_search(tags) => Some(message)
         } {
-            // Put the message into the scratch area
-            caller.data_mut().message = Some(message);
+            // Put the message into the reading area
+            caller.data_mut().reading = Some(message);
             Ok(0)
         } else {
             Ok(9027)
@@ -665,8 +644,8 @@ fn receive(
                 Message::Data(_) => 0,
                 Message::Signal(_) => 1,
             };
-            // Put the message into the scratch area
-            caller.data_mut().message = Some(message);
+            // Put the message into the reading area
+            caller.data_mut().reading = Some(message);
             Ok(result)
         } else {
             Ok(9027)

@@ -14,6 +14,7 @@ use wasmtime::{ResourceLimiter, Trap};
 use wasmtime_wasi::{ambient_authority, Dir, WasiCtx, WasiCtxBuilder};
 
 use crate::mailbox::MessageMailbox;
+use crate::message::DataMessage;
 use crate::module::Module;
 use crate::plugin::ModuleContext;
 use crate::{message::Message, EnvConfig, Environment};
@@ -47,12 +48,11 @@ pub(crate) struct ProcessState {
     pub(crate) id: Uuid,
     // The module that this process was spawned from
     pub(crate) module: Module,
-    // A space that can be used to temporarily store messages when sending or receiving them.
-    // Messages can contain resources that need to be added across multiple host. Likewise,
-    // receiving messages is done in two steps, first the message size is returned to allow the
-    // guest to reserve enough space and then the it's received. Both of those actions use
-    // `message` as a temp space to store messages across host calls.
-    pub(crate) message: Option<Message>,
+    // A message currently being written.
+    pub(crate) draft: Option<DataMessage>,
+    // A message currently being read. Host functions operate on this message after it is received.
+    // For example, a guest might want to read message bytes, get reply handle, etc.
+    pub(crate) reading: Option<Message>,
     // Message id local to the sending process. It's used for reply ids.
     last_message_id: NonZeroU64,
     // Reply id handles. This makes message and reply ids opaque for the guest code.
@@ -92,7 +92,8 @@ impl ProcessState {
         let state = Self {
             id,
             module,
-            message: None,
+            draft: None,
+            reading: None,
             last_message_id: NonZeroU64::new(1).unwrap(),
             reply_ids: HashMapId::new(),
             signal_mailbox,

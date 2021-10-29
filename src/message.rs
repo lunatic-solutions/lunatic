@@ -80,6 +80,10 @@ impl DataMessage {
         }
     }
 
+    pub fn id(&self) -> NonZeroU64 {
+        self.id
+    }
+
     /// Adds a process to the message and returns the index of it inside of the message
     pub fn add_process(&mut self, process: Arc<dyn Process>) -> usize {
         self.resources.push(Resource::Process(process));
