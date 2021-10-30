@@ -5,7 +5,7 @@
     (import "lunatic::error" "to_string" (func (param i64 i32)))
     (import "lunatic::error" "drop" (func (param i64)))
 
-    (import "lunatic::message" "create_data" (func (param i64 i64)))
+    ;; (import "lunatic::message" "create_data" (func (param i64 i64)))
     (import "lunatic::message" "write_data" (func (param i32 i32) (result i32)))
     (import "lunatic::message" "read_data" (func (param i32 i32) (result i32)))
     (import "lunatic::message" "seek_data" (func (param i64)))

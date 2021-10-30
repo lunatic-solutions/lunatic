@@ -9,7 +9,7 @@ use std::vec::IntoIter;
 use anyhow::Result;
 use async_std::channel::Sender;
 use async_std::net::{TcpListener, TcpStream};
-use wasmtime::{ResourceLimiter, Trap};
+use wasmtime::ResourceLimiter;
 use wasmtime_wasi::{ambient_authority, Dir, WasiCtx, WasiCtxBuilder};
 
 use crate::mailbox::MessageMailbox;
@@ -49,7 +49,7 @@ pub(crate) struct ProcessState {
     // The module that this process was spawned from
     pub(crate) module: Module,
     // A message currently being written.
-    pub(crate) draft: Option<Message>,
+    pub(crate) draft: Message,
 
     // A message currently being read. Host functions operate on this message after it is received.
     // For example, a guest might want to read message bytes, get reply handle, etc.
@@ -96,10 +96,11 @@ impl ProcessState {
         let state = Self {
             id,
             module,
-            draft: None,
-            reading: Message::new(NonZeroU64::new(1).unwrap(), id, None, 0),
+            reading: Message::new(NonZeroU64::new(1).unwrap(), id, None),
             reading_seek_ptr: 0,
-            // Because we use message id 1 in reading, we start with the last message id 2
+            draft: Message::new(NonZeroU64::new(2).unwrap(), id, None),
+            // Because we use message id 1 in reading (a message to yourself), id 2 is used for the first draft,
+            // so we start with the last message id 2
             last_message_id: NonZeroU64::new(2).unwrap(),
             reply_ids: HashMapId::new(),
             signal_mailbox,
@@ -111,10 +112,10 @@ impl ProcessState {
         Ok(state)
     }
 
-    pub fn generate_message_id(&mut self) -> Result<NonZeroU64, Trap> {
+    pub fn generate_message_id(&mut self) -> NonZeroU64 {
         self.last_message_id = NonZeroU64::new(self.last_message_id.get() + 1)
-            .ok_or_else(|| Trap::new("Last message id overflowed"))?;
-        Ok(self.last_message_id)
+            .unwrap_or_else(|| NonZeroU64::new(1).unwrap());
+        self.last_message_id
     }
 
     pub fn reading_mut(&mut self) -> &mut Message {
@@ -132,6 +133,12 @@ impl ProcessState {
 
     pub fn seek(&mut self, seek: usize) {
         self.reading_seek_ptr = seek;
+    }
+
+    pub fn take_draft(&mut self) -> Message {
+        let mut new_draft = Message::new(self.generate_message_id(), self.id, None);
+        std::mem::swap(&mut self.draft, &mut new_draft);
+        new_draft
     }
 }
 

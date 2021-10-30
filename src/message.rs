@@ -4,12 +4,7 @@ processes. The most common kind of Message is a [`DataMessage`], but there are a
 kinds of messages, like the [`Message::Signal`], that is received if a linked process dies.
 */
 
-use std::{
-    fmt::Debug,
-    io::{Write},
-    num::NonZeroU64,
-    sync::Arc,
-};
+use std::{fmt::Debug, io::Write, num::NonZeroU64, sync::Arc};
 
 use async_std::net::TcpStream;
 
@@ -32,12 +27,7 @@ pub struct Message {
 
 impl Message {
     /// Create a new message.
-    pub fn new(
-        id: NonZeroU64,
-        process_id: ProcessId,
-        tag: Option<i64>,
-        _buffer_capacity: usize, // TODO remove?
-    ) -> Self {
+    pub fn new(id: NonZeroU64, process_id: ProcessId, tag: Option<i64>) -> Self {
         Self {
             id,
             is_signal: false,

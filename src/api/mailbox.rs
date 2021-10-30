@@ -5,7 +5,6 @@ use wasmtime::{Caller, FuncType, Linker, Trap, ValType};
 
 use crate::{
     api::{error::IntoTrap, get_memory},
-    message::Message,
     process::Signal,
     state::ProcessState,
 };
@@ -17,14 +16,14 @@ pub(crate) fn register(
     linker: &mut Linker<ProcessState>,
     namespace_filter: &[String],
 ) -> Result<()> {
-    link_if_match(
-        linker,
-        "lunatic::message",
-        "create_data",
-        FuncType::new([ValType::I64, ValType::I64], []),
-        create_data,
-        namespace_filter,
-    )?;
+    //link_if_match(
+    //    linker,
+    //    "lunatic::message",
+    //    "create_data",
+    //    FuncType::new([ValType::I64, ValType::I64], []),
+    //    create_data,
+    //    namespace_filter,
+    //)?;
     link_if_match(
         linker,
         "lunatic::message",
@@ -216,46 +215,44 @@ pub(crate) fn register(
 //%
 //% Creates a new data message. This message is intended to be modified by other functions in this
 //% namespace. Once `lunatic::message::send` is called it will be sent to another process.
-fn create_data(
-    mut caller: Caller<ProcessState>,
-    tag: i64,
-    buffer_capacity: u64,
-) -> Result<(), Trap> {
-    let tag = match tag {
-        0 => None,
-        tag => Some(tag),
-    };
-    let message_id = caller.data_mut().generate_message_id()?;
-    let process_id = caller.data_mut().id;
-    let message = Message::new(message_id, process_id, tag, buffer_capacity as usize);
-    caller.data_mut().draft = Some(message);
-    Ok(())
-}
+//fn create_data(
+//    mut caller: Caller<ProcessState>,
+//    tag: i64,
+//    buffer_capacity: u64,
+//) -> Result<(), Trap> {
+//    let tag = match tag {
+//        0 => None,
+//        tag => Some(tag),
+//    };
+//    let message_id = caller.data_mut().generate_message_id()?;
+//    let process_id = caller.data_mut().id;
+//    let message = Message::new(message_id, process_id, tag, buffer_capacity as usize);
+//    caller.data_mut().draft = Some(message);
+//    Ok(())
+//}
 
 //% lunatic::message::write_data(data_ptr: u32, data_len: u32) -> u32
 //%
-//% Writes some data into the message buffer and returns how much data is written in bytes.
+//% Writes some data into the draft message and returns how much data is written in bytes.
 //%
 //% Traps:
 //% * If **data_ptr + data_len** is outside the memory.
 fn write_data(mut caller: Caller<ProcessState>, data_ptr: u32, data_len: u32) -> Result<u32, Trap> {
     let memory = get_memory(&mut caller)?;
-    let mut message = caller
+    let mut data = caller
         .data_mut()
         .draft
-        .take()
-        .or_trap("lunatic::message::write_data")?;
+        .take_data()
+        .or_trap("lunatic::message::write_data::data_already_taken")?;
     let buffer = memory
         .data(&caller)
         .get(data_ptr as usize..(data_ptr as usize + data_len as usize))
-        .or_trap("lunatic::message::write_data")?;
+        .or_trap("lunatic::message::write_data::guest_memory_overflow")?;
 
-    let bytes = message
-        .write(buffer)
-        .or_trap("lunatic::message::write_data")?;
+    let bytes = data.write(buffer).or_trap("lunatic::message::write_data")?;
 
-    // Put message back after writing to it.
-    caller.data_mut().draft = Some(message);
+    // Put data back after writing to it.
+    caller.data_mut().draft.set_data(data);
 
     Ok(bytes as u32)
 }
@@ -349,7 +346,6 @@ fn data_size(mut caller: Caller<ProcessState>) -> u64 {
 //%
 //% Traps:
 //% * If process ID doesn't exist
-//% * If there is no draft message
 fn push_process(mut caller: Caller<ProcessState>, process_id: u64) -> Result<u64, Trap> {
     let process = caller
         .data_mut()
@@ -357,13 +353,7 @@ fn push_process(mut caller: Caller<ProcessState>, process_id: u64) -> Result<u64
         .processes
         .remove(process_id)
         .or_trap("lunatic::message::push_process")?;
-    let message = caller
-        .data_mut()
-        .draft
-        .as_mut()
-        .or_trap("lunatic::message::push_process")?;
-    let index = message.add_process(process) as u64;
-    Ok(index)
+    Ok(caller.data_mut().draft.add_process(process) as u64)
 }
 
 //% lunatic::message::take_process(index: u64) -> u64
@@ -389,7 +379,6 @@ fn take_process(mut caller: Caller<ProcessState>, index: u64) -> Result<u64, Tra
 //%
 //% Traps:
 //% * If TCP stream ID doesn't exist
-//% * If it's called without a draft data message.
 fn push_tcp_stream(mut caller: Caller<ProcessState>, stream_id: u64) -> Result<u64, Trap> {
     let stream = caller
         .data_mut()
@@ -397,13 +386,7 @@ fn push_tcp_stream(mut caller: Caller<ProcessState>, stream_id: u64) -> Result<u
         .tcp_streams
         .remove(stream_id)
         .or_trap("lunatic::message::push_tcp_stream")?;
-    let message = caller
-        .data_mut()
-        .draft
-        .as_mut()
-        .or_trap("lunatic::message::push_tcp_stream")?;
-    let index = message.add_tcp_stream(stream) as u64;
-    Ok(index)
+    Ok(caller.data_mut().draft.add_tcp_stream(stream) as u64)
 }
 
 //% lunatic::message::take_tcp_stream(index: u64) -> u64
@@ -435,18 +418,13 @@ fn take_tcp_stream(mut caller: Caller<ProcessState>, index: u64) -> Result<u64, 
 //% Traps:
 //% * If the process handle doesn't exist.
 //% * If the reply handle doesn't exist.
-//% * If it's called before creating the next message.
 //% * If the reply handle process ID is not the same as the receiving process id
 fn send(
     mut caller: Caller<ProcessState>,
     process_handle: u64,
     reply_handle: u64,
 ) -> Result<u64, Trap> {
-    let mut message = caller
-        .data_mut()
-        .draft
-        .take()
-        .or_trap("lunatic::message::send")?;
+    let mut message = caller.data_mut().take_draft();
     let id = message.id().get();
     let process = caller
         .data()
