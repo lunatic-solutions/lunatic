@@ -136,6 +136,14 @@ pub(crate) fn register(
         receive,
         namespace_filter,
     )?;
+    link_if_match(
+        linker,
+        "lunatic::message",
+        "process_id",
+        FuncType::new([ValType::I32], []),
+        process_id,
+        namespace_filter,
+    )?;
     Ok(())
 }
 
@@ -569,4 +577,19 @@ fn receive(
             Ok(9027)
         }
     })
+}
+
+//% lunatic::message::process_id(u128_ptr: u32)
+//%
+//% Returns UUID of a current reading message sender as u128_ptr.
+//%
+//% Traps:
+//% * If **u128_ptr** is outside the memory space.
+fn process_id(mut caller: Caller<ProcessState>, u128_ptr: u32) -> Result<(), Trap> {
+    let id = caller.data().reading().process_id().as_u128();
+    let memory = get_memory(&mut caller)?;
+    memory
+        .write(&mut caller, u128_ptr as usize, &id.to_le_bytes())
+        .or_trap("lunatic::message::process_id::guest_memory_overflow")?;
+    Ok(())
 }
