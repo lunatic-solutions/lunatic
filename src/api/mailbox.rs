@@ -16,14 +16,6 @@ pub(crate) fn register(
     linker: &mut Linker<ProcessState>,
     namespace_filter: &[String],
 ) -> Result<()> {
-    //link_if_match(
-    //    linker,
-    //    "lunatic::message",
-    //    "create_data",
-    //    FuncType::new([ValType::I64, ValType::I64], []),
-    //    create_data,
-    //    namespace_filter,
-    //)?;
     link_if_match(
         linker,
         "lunatic::message",
@@ -120,14 +112,6 @@ pub(crate) fn register(
         send,
         namespace_filter,
     )?;
-    //link_async2_if_match(
-    //    linker,
-    //    "lunatic::message",
-    //    "send_receive_skip_search",
-    //    FuncType::new([ValType::I64, ValType::I32], [ValType::I32]),
-    //    send_receive_skip_search,
-    //    namespace_filter,
-    //)?;
     link_async3_if_match(
         linker,
         "lunatic::message",
@@ -462,63 +446,6 @@ fn send(
     process.send(Signal::Message(message));
     Ok(id)
 }
-
-//% lunatic::message::send_receive_skip_search(process_id: u64, timeout: u32) -> u32
-//%
-//% Returns:
-//% * 0    if message arrived.
-//% * 9027 if call timed out.
-//%
-//% Sends the message to a process and waits for a reply, but doesn't look through existing
-//% messages in the mailbox queue while waiting. This is an optimization that only makes sense
-//% with tagged messages. In a request/reply scenario we can tag the request message with an
-//% unique tag and just wait on it specifically.
-//%
-//% This operation needs to be an atomic host function, if we jumped back into the guest we could
-//% miss out on the incoming message before `receive` is called.
-//%
-//% If timeout is specified (value different from 0), the function will return on timeout
-//% expiration with value 9027.
-//%
-//% Traps:
-//% * If the process ID doesn't exist.
-//% * If it's called with wrong data in the reading area.
-// TODO
-//fn send_receive_skip_search(
-//    mut caller: Caller<ProcessState>,
-//    process_id: u64,
-//    timeout: u32,
-//) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_> {
-//    Box::new(async move {
-//        let message = caller
-//            .data_mut()
-//            .reading;
-//        let mut _tags = [0; 1];
-//        let tags = if let Some(tag) = message.tag() {
-//            _tags = [tag];
-//            Some(&_tags[..])
-//        } else {
-//            None
-//        };
-//        let process = caller
-//            .data()
-//            .resources
-//            .processes
-//            .get(process_id)
-//            .or_trap("lunatic::message::send_receive_skip_search")?;
-//        process.send(Signal::Message(message));
-//        if let Some(message) = tokio::select! {
-//            _ = async_std::task::sleep(Duration::from_millis(timeout as u64)), if timeout != 0 => None,
-//            message = caller.data_mut().message_mailbox.pop_skip_search(tags) => Some(message)
-//        } {
-//            // Put the message into the reading area
-//            caller.data_mut().reading = message;
-//            Ok(0)
-//        } else {
-//            Ok(9027)
-//        }
-//    })
-//}
 
 //% lunatic::message::receive(tag_ptr: u32, tag_len: u32, timeout: u32) -> u32
 //%
