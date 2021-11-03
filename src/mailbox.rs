@@ -1,5 +1,6 @@
 use std::collections::VecDeque;
 use std::future::Future;
+use std::num::NonZeroU64;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll, Waker};
@@ -24,7 +25,7 @@ pub struct MessageMailbox {
 #[derive(Default)]
 struct InnerMessageMailbox {
     waker: Option<Waker>,
-    tags: Option<Vec<i64>>,
+    reply_id: Option<NonZeroU64>,
     found: Option<Message>,
     messages: VecDeque<Message>,
 }
@@ -36,7 +37,7 @@ impl MessageMailbox {
     /// message matching any of the tags.
     ///
     /// If no message exist, blocks until a message is received.
-    pub async fn pop(&self, tags: Option<&[i64]>) -> Message {
+    pub async fn pop(&self, reply_id: Option<NonZeroU64>) -> Message {
         // Mailbox lock must be released before .await
         {
             let mut mailbox = self.inner.lock().expect("only accessed by one process");
@@ -48,15 +49,11 @@ impl MessageMailbox {
             }
 
             // When looking for specific tags, loop through all messages to check for it
-            if let Some(tags) = tags {
-                let index = mailbox.messages.iter().position(|x| {
-                    // Only consider messages that also have a tag.
-                    if let Some(tag) = x.tag() {
-                        tags.contains(&tag)
-                    } else {
-                        false
-                    }
-                });
+            if let Some(reply_id) = reply_id {
+                let index = mailbox
+                    .messages
+                    .iter()
+                    .position(|m| m.is_reply_equal(reply_id));
                 // If message matching tags is found, remove it.
                 if let Some(index) = index {
                     return mailbox.messages.remove(index).expect("must exist");
@@ -67,44 +64,9 @@ impl MessageMailbox {
                     return message;
                 }
             }
-            // Mark the tags to wait on.
-            mailbox.tags = tags.map(|tags| tags.into());
-        }
-        self.await
-    }
-
-    /// Similar to `pop`, but will assume right away that no message with this tags exists.
-    ///
-    /// Sometimes we know that the message we are waiting on can't have a particular tags already in
-    /// the queue, so we can save ourself a search through the queue. This is often the case in a
-    /// request/response architecture where we sent the tags to the remote server but couldn't have
-    /// gotten it back yet.
-    ///
-    /// ### Safety
-    ///
-    /// It may not be clear right away why it's safe to skip looking through the queue. If we are
-    /// waiting on a reply, didn't we already send the message and couldn't it already have been
-    /// received and pushed into our queue?
-    ///
-    /// The way processes work is that they run a bit of code, *stop*, look for new signals/messages
-    /// before running more code. This stop can only happen if there is an `.await` point in the
-    /// code. Sending signals/messages is not an async task and we don't need to `.await` on it.
-    /// When using this function we need to make sure that sending a specific tags and waiting for it
-    /// doesn't contain any `.await` calls in-between. This implementation detail can be hidden
-    /// inside of atomic host function calls so that end users don't need to worry about it.
-    pub async fn pop_skip_search(&self, tags: Option<&[i64]>) -> Message {
-        // Mailbox lock must be released before .await
-        {
-            let mut mailbox = self.inner.lock().expect("only accessed by one process");
-
-            // If a found message exists here, it means that the previous `.await` was canceled
-            // after a `wake()` call. To not lose this message it should be put into the queue.
-            if let Some(found) = mailbox.found.take() {
-                mailbox.messages.push_back(found);
-            }
 
             // Mark the tags to wait on.
-            mailbox.tags = tags.map(|tags| tags.into());
+            mailbox.reply_id = reply_id;
         }
         self.await
     }
@@ -119,13 +81,11 @@ impl MessageMailbox {
         if let Some(waker) = mailbox.waker.take() {
             // If waiting on specific tags only notify if tags are matched, otherwise forward every message.
             // Note that because of the short-circuit rule in Rust it's safe to use `unwrap()` here.
-            if mailbox.tags.is_none()
-                || (message.tag().is_some()
-                    && mailbox
-                        .tags
-                        .as_ref()
-                        .unwrap()
-                        .contains(&message.tag().unwrap()))
+            if mailbox.reply_id.is_none()
+                || mailbox
+                    .reply_id
+                    .map(|rid| message.is_reply_equal(rid))
+                    .unwrap_or(false)
             {
                 mailbox.found = Some(message);
                 waker.wake();
@@ -167,13 +127,20 @@ mod tests {
 
     use super::{Message, MessageMailbox};
 
+    fn msg_with_reply_id(proc_id: ProcessId, msg_id: u64, reply_id: NonZeroU64) -> Message {
+        let msg_id = NonZeroU64::new(msg_id).unwrap();
+        let mut msg = Message::new(msg_id, proc_id);
+        msg.set_reply(reply_id);
+        msg
+    }
+
     #[async_std::test]
-    async fn no_tags_signal_message() {
+    async fn no_reply_signal_message() {
         let proc_id = ProcessId::new();
         let msg_id = NonZeroU64::new(1).unwrap();
 
         let mailbox = MessageMailbox::default();
-        let message = Message::new_signal(msg_id, proc_id, None);
+        let message = Message::new_signal(msg_id, proc_id);
         mailbox.push(message);
         let result = mailbox.pop(None).await;
         assert_eq!(result.is_signal(), true);
@@ -185,69 +152,36 @@ mod tests {
         let msg_id = NonZeroU64::new(1).unwrap();
 
         let mailbox = MessageMailbox::default();
-        let tag = 1337;
-        let message = Message::new_signal(msg_id, proc_id, Some(tag));
+        let mut message = Message::new(msg_id, proc_id);
+        let rid = NonZeroU64::new(1337).unwrap();
+        message.set_reply(rid);
         mailbox.push(message);
         let message = mailbox.pop(None).await;
-        assert_eq!(message.tag(), Some(tag));
+        assert_eq!(message.is_reply_equal(rid), true);
     }
 
     #[async_std::test]
     async fn selective_receive_tag_signal_message() {
         let proc_id = ProcessId::new();
-        let msg_id = NonZeroU64::new(1).unwrap();
 
         let mailbox = MessageMailbox::default();
-        let tag1 = 1;
-        let tag2 = 2;
-        let tag3 = 3;
-        let tag4 = 4;
-        let tag5 = 5;
-        mailbox.push(Message::new_signal(msg_id, proc_id, Some(tag1)));
-        mailbox.push(Message::new_signal(msg_id, proc_id, Some(tag2)));
-        mailbox.push(Message::new_signal(msg_id, proc_id, Some(tag3)));
-        mailbox.push(Message::new_signal(msg_id, proc_id, Some(tag4)));
-        mailbox.push(Message::new_signal(msg_id, proc_id, Some(tag5)));
-        let message = mailbox.pop(Some(&[tag2])).await;
-        assert_eq!(message.tag(), Some(tag2));
-        let message = mailbox.pop(Some(&[tag1])).await;
-        assert_eq!(message.tag(), Some(tag1));
-        let message = mailbox.pop(Some(&[tag3])).await;
-        assert_eq!(message.tag(), Some(tag3));
-        // The only 2 left over are 4 & 5
-        let message = mailbox.pop(None).await;
-        assert_eq!(message.tag(), Some(tag4));
-        let message = mailbox.pop(None).await;
-        assert_eq!(message.tag(), Some(tag5));
-    }
 
-    #[async_std::test]
-    async fn multiple_receive_tags_signal_message() {
-        let proc_id = ProcessId::new();
-        let msg_id = NonZeroU64::new(1).unwrap();
+        let mut rids: Vec<NonZeroU64> = vec![];
+        for i in 1..10 {
+            let rid = NonZeroU64::new(i).unwrap();
+            mailbox.push(msg_with_reply_id(proc_id, 100 + i, rid));
+            rids.push(rid);
+        }
 
-        let mailbox = MessageMailbox::default();
-        let tag1 = 1;
-        let tag2 = 2;
-        let tag3 = 3;
-        let tag4 = 4;
-        let tag5 = 5;
-        mailbox.push(Message::new_signal(msg_id, proc_id, Some(tag1)));
-        mailbox.push(Message::new_signal(msg_id, proc_id, Some(tag2)));
-        mailbox.push(Message::new_signal(msg_id, proc_id, Some(tag3)));
-        mailbox.push(Message::new_signal(msg_id, proc_id, Some(tag4)));
-        mailbox.push(Message::new_signal(msg_id, proc_id, Some(tag5)));
-        let message = mailbox.pop(Some(&[tag2, tag1, tag3])).await;
-        assert_eq!(message.tag(), Some(tag1));
-        let message = mailbox.pop(Some(&[tag2, tag1, tag3])).await;
-        assert_eq!(message.tag(), Some(tag2));
-        let message = mailbox.pop(Some(&[tag2, tag1, tag3])).await;
-        assert_eq!(message.tag(), Some(tag3));
-        // The only 2 left over are 4 & 5
-        let message = mailbox.pop(None).await;
-        assert_eq!(message.tag(), Some(tag4));
-        let message = mailbox.pop(None).await;
-        assert_eq!(message.tag(), Some(tag5));
+        // shuffle some elements to get replys in a different order
+        rids.swap(0, 2);
+        rids.swap(1, 5);
+        rids.swap(6, 7);
+
+        for rid in rids {
+            let message = mailbox.pop(Some(rid)).await;
+            assert_eq!(message.is_reply_equal(rid), true);
+        }
     }
 
     #[derive(Clone)]
@@ -266,7 +200,6 @@ mod tests {
         let mailbox = MessageMailbox::default();
         // Sending a message with any tags to a mailbox that is "awaiting" a `None` tags should
         // trigger the waker and return the tags.
-        let tags = Some(1337);
         // Manually poll future
         let waker = FlagWaker(Arc::new(Mutex::new(false)));
         let waker_ref = waker.clone();
@@ -280,7 +213,7 @@ mod tests {
         assert!(result.is_pending());
         assert_eq!(*waker_ref.0.lock().unwrap(), false);
         // Pushing a message to the mailbox will call the waker
-        mailbox.push(Message::new_signal(msg_id, proc_id, tags));
+        mailbox.push(Message::new(msg_id, proc_id));
         assert_eq!(*waker_ref.0.lock().unwrap(), true);
         // Next poll will return the value
         let result = fut.as_mut().poll(&mut context);
@@ -288,33 +221,37 @@ mod tests {
     }
 
     #[test]
-    fn waiting_on_tag_after_none() {
+    fn waiting_on_reply_after_none() {
         let proc_id = ProcessId::new();
         let msg_id = NonZeroU64::new(1).unwrap();
 
         let mailbox = MessageMailbox::default();
-        // "Awaiting" a specific tags and receiving a `None` message should not trigger the waker.
+        // "Awaiting" a specific reply and receiving a `None` message should not trigger the waker.
         let waker = FlagWaker(Arc::new(Mutex::new(false)));
         let waker_ref = waker.clone();
         let waker = &Arc::new(waker).into();
         let mut context = Context::from_waker(waker);
-        // Request tags 1337
-        let fut = mailbox.pop(Some(&[1337]));
+        // Request reply 1337
+        let fut = mailbox.pop(Some(NonZeroU64::new(1337).unwrap()));
         let mut fut = Box::pin(fut);
         // First poll will block
         let result = fut.as_mut().poll(&mut context);
         assert!(result.is_pending());
         assert_eq!(*waker_ref.0.lock().unwrap(), false);
-        // Pushing a message with the `None` tags should not trigger the waker
-        mailbox.push(Message::new_signal(msg_id, proc_id, None));
+        // Pushing a message without reply id 1337 should not trigger the waker
+        mailbox.push(Message::new(msg_id, proc_id));
         assert_eq!(*waker_ref.0.lock().unwrap(), false);
-        // Next poll will still not have the value with the tags 1337
+        // Next poll will still not have the value with the reply id 1337
         let result = fut.as_mut().poll(&mut context);
         assert!(result.is_pending());
-        // Pushing another None in the meantime should not remove the waker
-        mailbox.push(Message::new_signal(msg_id, proc_id, None));
-        // Pushing a message with tags 1337 should trigger the waker
-        mailbox.push(Message::new_signal(msg_id, proc_id, Some(1337)));
+        // Pushing another in the meantime should not remove the waker
+        mailbox.push(Message::new(msg_id, proc_id));
+        // Pushing a message with reply id 1337 should trigger the waker
+        mailbox.push(msg_with_reply_id(
+            proc_id,
+            msg_id.get(),
+            NonZeroU64::new(1337).unwrap(),
+        ));
         assert_eq!(*waker_ref.0.lock().unwrap(), true);
         // Next poll will have the message ready
         let result = fut.as_mut().poll(&mut context);
@@ -338,13 +275,13 @@ mod tests {
         let result = fut.as_mut().poll(&mut context);
         assert!(result.is_pending());
         assert_eq!(*waker_ref.0.lock().unwrap(), false);
-        // Pushing a message with the `None` tags should call the waker()
-        mailbox.push(Message::new_signal(msg_id, proc_id, None));
+        // Pushing a message with no reply id should call the waker()
+        mailbox.push(Message::new(msg_id, proc_id));
         assert_eq!(*waker_ref.0.lock().unwrap(), true);
         // Dropping the future will cancel it
         drop(fut);
-        // Next poll will not have the value with the tags 1337
-        let fut = mailbox.pop(Some(&[1337]));
+        // Next poll will not have the value with the reply id 1337
+        let fut = mailbox.pop(Some(NonZeroU64::new(1337).unwrap()));
         tokio::pin!(fut);
         let result = fut.poll(&mut context);
         assert!(result.is_pending());
@@ -354,8 +291,7 @@ mod tests {
         let result = fut.poll(&mut context);
         match result {
             Poll::Ready(message) => {
-                assert_eq!(message.is_signal(), true);
-                assert_eq!(message.tag(), None);
+                assert_eq!(message.is_reply(), false);
             }
             _ => panic!("Unexpected message"),
         }

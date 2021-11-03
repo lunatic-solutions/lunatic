@@ -96,9 +96,9 @@ impl ProcessState {
         let state = Self {
             id,
             module,
-            reading: Message::new(NonZeroU64::new(1).unwrap(), id, None),
+            reading: Message::new(NonZeroU64::new(1).unwrap(), id),
             reading_seek_ptr: 0,
-            draft: Message::new(NonZeroU64::new(2).unwrap(), id, None),
+            draft: Message::new(NonZeroU64::new(2).unwrap(), id),
             // Because we use message id 1 in reading (a message to yourself), id 2 is used for the first draft,
             // so we start with the last message id 2
             last_message_id: NonZeroU64::new(2).unwrap(),
@@ -136,7 +136,7 @@ impl ProcessState {
     }
 
     pub fn take_draft(&mut self) -> Message {
-        let mut new_draft = Message::new(self.generate_message_id(), self.id, None);
+        let mut new_draft = Message::new(self.generate_message_id(), self.id);
         std::mem::swap(&mut self.draft, &mut new_draft);
         new_draft
     }

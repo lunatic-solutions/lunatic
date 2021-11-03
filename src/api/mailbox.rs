@@ -1,4 +1,4 @@
-use std::{convert::TryInto, future::Future, io::Write, time::Duration};
+use std::{future::Future, io::Write, num::NonZeroU64, time::Duration};
 
 use anyhow::Result;
 use wasmtime::{Caller, FuncType, Linker, Trap, ValType};
@@ -9,7 +9,7 @@ use crate::{
     state::ProcessState,
 };
 
-use super::{link_async3_if_match, link_if_match};
+use super::{link_async2_if_match, link_if_match};
 
 // Register the mailbox APIs to the linker
 pub(crate) fn register(
@@ -46,14 +46,6 @@ pub(crate) fn register(
         "seek_data",
         FuncType::new([ValType::I64], []),
         seek_data,
-        namespace_filter,
-    )?;
-    link_if_match(
-        linker,
-        "lunatic::message",
-        "get_tag",
-        FuncType::new([], [ValType::I64]),
-        get_tag,
         namespace_filter,
     )?;
     link_if_match(
@@ -120,19 +112,11 @@ pub(crate) fn register(
         send,
         namespace_filter,
     )?;
-    //link_async2_if_match(
-    //    linker,
-    //    "lunatic::message",
-    //    "send_receive_skip_search",
-    //    FuncType::new([ValType::I64, ValType::I32], [ValType::I32]),
-    //    send_receive_skip_search,
-    //    namespace_filter,
-    //)?;
-    link_async3_if_match(
+    link_async2_if_match(
         linker,
         "lunatic::message",
         "receive",
-        FuncType::new([ValType::I32, ValType::I32, ValType::I32], [ValType::I32]),
+        FuncType::new([ValType::I64, ValType::I32], [ValType::I32]),
         receive,
         namespace_filter,
     )?;
@@ -315,13 +299,6 @@ fn seek_data(mut caller: Caller<ProcessState>, index: u64) {
     caller.data_mut().seek(index as usize);
 }
 
-//% lunatic::message::get_tag() -> i64
-//%
-//% Returns the message tag or 0 if no tag was set.
-fn get_tag(caller: Caller<ProcessState>) -> i64 {
-    caller.data().reading().tag().unwrap_or(0)
-}
-
 //% lunatic::message::get_reply_handle() -> u64
 //%
 //% Returns a reply handle which can be used to set the reply id for the draft message.
@@ -463,64 +440,7 @@ fn send(
     Ok(id)
 }
 
-//% lunatic::message::send_receive_skip_search(process_id: u64, timeout: u32) -> u32
-//%
-//% Returns:
-//% * 0    if message arrived.
-//% * 9027 if call timed out.
-//%
-//% Sends the message to a process and waits for a reply, but doesn't look through existing
-//% messages in the mailbox queue while waiting. This is an optimization that only makes sense
-//% with tagged messages. In a request/reply scenario we can tag the request message with an
-//% unique tag and just wait on it specifically.
-//%
-//% This operation needs to be an atomic host function, if we jumped back into the guest we could
-//% miss out on the incoming message before `receive` is called.
-//%
-//% If timeout is specified (value different from 0), the function will return on timeout
-//% expiration with value 9027.
-//%
-//% Traps:
-//% * If the process ID doesn't exist.
-//% * If it's called with wrong data in the reading area.
-// TODO
-//fn send_receive_skip_search(
-//    mut caller: Caller<ProcessState>,
-//    process_id: u64,
-//    timeout: u32,
-//) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_> {
-//    Box::new(async move {
-//        let message = caller
-//            .data_mut()
-//            .reading;
-//        let mut _tags = [0; 1];
-//        let tags = if let Some(tag) = message.tag() {
-//            _tags = [tag];
-//            Some(&_tags[..])
-//        } else {
-//            None
-//        };
-//        let process = caller
-//            .data()
-//            .resources
-//            .processes
-//            .get(process_id)
-//            .or_trap("lunatic::message::send_receive_skip_search")?;
-//        process.send(Signal::Message(message));
-//        if let Some(message) = tokio::select! {
-//            _ = async_std::task::sleep(Duration::from_millis(timeout as u64)), if timeout != 0 => None,
-//            message = caller.data_mut().message_mailbox.pop_skip_search(tags) => Some(message)
-//        } {
-//            // Put the message into the reading area
-//            caller.data_mut().reading = message;
-//            Ok(0)
-//        } else {
-//            Ok(9027)
-//        }
-//    })
-//}
-
-//% lunatic::message::receive(tag_ptr: u32, tag_len: u32, timeout: u32) -> u32
+//% lunatic::message::receive(reply_id: u64, timeout: u32) -> u32
 //%
 //% Returns:
 //% * 0    if it's a data message.
@@ -530,9 +450,8 @@ fn send(
 //% Takes the next message out of the queue or blocks until the next message is received if queue
 //% is empty.
 //%
-//% If **tag_len** is a value greater than 0 it will block until a message is received matching any
-//% of the supplied tags. **tag_ptr** points to an array containing i64 value encoded as little
-//% endian values.
+//% If **reply_id** is non-zero it will block until a message is received with reply id equal to
+//% **reply_id**.
 //%
 //% If timeout is specified (value different from 0), the function will return on timeout
 //% expiration with value 9027.
@@ -544,31 +463,15 @@ fn send(
 //% * If **tag_ptr + (ciovec_array_len * 8) is outside the memory
 fn receive(
     mut caller: Caller<ProcessState>,
-    tag_ptr: u32,
-    tag_len: u32,
+    reply_id: u64,
     timeout: u32,
 ) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_> {
+    let reply_id = NonZeroU64::new(reply_id);
+
     Box::new(async move {
-        let tags = if tag_len > 0 {
-            let memory = get_memory(&mut caller)?;
-            let buffer = memory
-                .data(&caller)
-                .get(tag_ptr as usize..(tag_ptr + tag_len * 8) as usize)
-                .or_trap("lunatic::message::receive")?;
-
-            // Gether all tags
-            let tags: Vec<i64> = buffer
-                .chunks_exact(8)
-                .map(|chunk| i64::from_le_bytes(chunk.try_into().expect("works")))
-                .collect();
-            Some(tags)
-        } else {
-            None
-        };
-
         if let Some(message) = tokio::select! {
             _ = async_std::task::sleep(Duration::from_millis(timeout as u64)), if timeout != 0 => None,
-            message = caller.data_mut().message_mailbox.pop(tags.as_deref()) => Some(message)
+            message = caller.data_mut().message_mailbox.pop(reply_id) => Some(message)
         } {
             let result = if message.is_signal() { 1 } else { 0 };
             caller.data_mut().set_reading(message);

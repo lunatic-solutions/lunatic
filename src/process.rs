@@ -181,7 +181,10 @@ pub(crate) async fn new<F, T>(
                             break Finished::Signal(Signal::Kill)
                         } else {
                             // TODO message id?
-                            let message = Message::new_signal(NonZeroU64::new(1).unwrap(), id, tag);
+                            let mut message = Message::new_signal(NonZeroU64::new(1).unwrap(), id);
+                            if let Some(tag) = tag {
+                                message.set_data(tag.to_le_bytes().into());
+                            }
                             message_mailbox.push(message);
                         }
                     },
@@ -232,8 +235,8 @@ pub struct NativeProcess {
 ///
 /// ```no_run
 /// let _proc = lunatic_runtime::spawn(|mailbox| async move {
-///     // Wait on a message with the tag `27`.
-///     mailbox.pop(Some(&[27])).await;
+///     // Wait on a message
+///     mailbox.pop(None).await;
 ///     Ok(())
 /// });
 /// ```

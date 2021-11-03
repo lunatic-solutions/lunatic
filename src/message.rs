@@ -19,7 +19,6 @@ pub struct Message {
     id: NonZeroU64,
     process_id: ProcessId,
     is_signal: bool,
-    tag: Option<i64>,
     reply_id: Option<NonZeroU64>,
     data: Option<Vec<u8>>,
     resources: Vec<Resource>,
@@ -27,12 +26,11 @@ pub struct Message {
 
 impl Message {
     /// Create a new message.
-    pub fn new(id: NonZeroU64, process_id: ProcessId, tag: Option<i64>) -> Self {
+    pub fn new(id: NonZeroU64, process_id: ProcessId) -> Self {
         Self {
             id,
             is_signal: false,
             process_id,
-            tag,
             reply_id: None,
             data: None,
             resources: Vec::new(),
@@ -40,12 +38,11 @@ impl Message {
     }
 
     /// Create a new message with signal set
-    pub fn new_signal(id: NonZeroU64, process_id: ProcessId, tag: Option<i64>) -> Self {
+    pub fn new_signal(id: NonZeroU64, process_id: ProcessId) -> Self {
         Self {
             id,
             is_signal: true,
             process_id,
-            tag,
             reply_id: None,
             data: None,
             resources: Vec::new(),
@@ -54,10 +51,6 @@ impl Message {
 
     pub fn id(&self) -> NonZeroU64 {
         self.id
-    }
-
-    pub fn tag(&self) -> Option<i64> {
-        self.tag
     }
 
     pub fn process_id(&self) -> ProcessId {
@@ -129,6 +122,14 @@ impl Message {
 
     pub fn set_reply(&mut self, reply_id: NonZeroU64) {
         self.reply_id = Some(reply_id);
+    }
+
+    pub fn is_reply(&self) -> bool {
+        self.reply_id.is_some()
+    }
+
+    pub fn is_reply_equal(&self, reply_id: NonZeroU64) -> bool {
+        self.reply_id.map(|r| r == reply_id).unwrap_or(false)
     }
 
     pub fn take_data(&mut self) -> Option<Vec<u8>> {
