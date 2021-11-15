@@ -37,6 +37,18 @@ pub(crate) fn get_memory<T>(caller: &mut Caller<T>) -> std::result::Result<Memor
         .or_trap("Export `memory` is not a memory")
 }
 
+// Get exported memory and state
+pub(crate) fn get_memory_and_data<'a, T>(
+    caller: &'a mut Caller<T>,
+) -> std::result::Result<(&'a mut [u8], &'a mut T), Trap> {
+    Ok(caller
+        .get_export("memory")
+        .or_trap("No export `memory` found")?
+        .into_memory()
+        .or_trap("Export `memory` is not a memory")?
+        .data_and_store_mut(caller))
+}
+
 // Adds function to linker if the namespace matches the allowed list.
 pub(crate) fn link_if_match<T, Params, Results>(
     linker: &mut Linker<T>,

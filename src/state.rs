@@ -13,7 +13,7 @@ use wasmtime::ResourceLimiter;
 use wasmtime_wasi::{ambient_authority, Dir, WasiCtx, WasiCtxBuilder};
 
 use crate::mailbox::MessageMailbox;
-use crate::message::Message;
+use crate::message::{Message, ReadingMessage};
 use crate::module::Module;
 use crate::plugin::ModuleContext;
 use crate::process::ProcessId;
@@ -51,11 +51,8 @@ pub(crate) struct ProcessState {
     // A message currently being written.
     pub(crate) draft: Message,
 
-    // A message currently being read. Host functions operate on this message after it is received.
-    // For example, a guest might want to read message bytes, get reply handle, etc.
-    // Reading is private because when the message is set, seek pointer is reset to 0.
-    reading: Message,
-    pub reading_seek_ptr: usize,
+    // Received messages
+    pub messages: HashMapId<ReadingMessage>,
 
     // Message id local to the sending process. It's used for reply ids.
     last_message_id: NonZeroU64,
@@ -96,8 +93,7 @@ impl ProcessState {
         let state = Self {
             id,
             module,
-            reading: Message::new(NonZeroU64::new(1).unwrap(), id),
-            reading_seek_ptr: 0,
+            messages: HashMapId::new(),
             draft: Message::new(NonZeroU64::new(2).unwrap(), id),
             // Because we use message id 1 in reading (a message to yourself), id 2 is used for the first draft,
             // so we start with the last message id 2
@@ -116,23 +112,6 @@ impl ProcessState {
         self.last_message_id = NonZeroU64::new(self.last_message_id.get() + 1)
             .unwrap_or_else(|| NonZeroU64::new(1).unwrap());
         self.last_message_id
-    }
-
-    pub fn reading_mut(&mut self) -> &mut Message {
-        &mut self.reading
-    }
-
-    pub fn reading(&self) -> &Message {
-        &self.reading
-    }
-
-    pub fn set_reading(&mut self, message: Message) {
-        self.reading = message;
-        self.reading_seek_ptr = 0;
-    }
-
-    pub fn seek(&mut self, seek: usize) {
-        self.reading_seek_ptr = seek;
     }
 
     pub fn take_draft(&mut self) -> Message {

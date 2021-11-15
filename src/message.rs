@@ -20,7 +20,7 @@ pub struct Message {
     process_id: ProcessId,
     is_signal: bool,
     reply_id: Option<NonZeroU64>,
-    data: Option<Vec<u8>>,
+    pub data: Vec<u8>,
     resources: Vec<Resource>,
 }
 
@@ -32,7 +32,7 @@ impl Message {
             is_signal: false,
             process_id,
             reply_id: None,
-            data: None,
+            data: Vec::new(),
             resources: Vec::new(),
         }
     }
@@ -44,7 +44,7 @@ impl Message {
             is_signal: true,
             process_id,
             reply_id: None,
-            data: None,
+            data: Vec::new(),
             resources: Vec::new(),
         }
     }
@@ -113,13 +113,6 @@ impl Message {
         None
     }
 
-    pub fn size(&self) -> usize {
-        match &self.data {
-            Some(v) => v.len(),
-            None => 0,
-        }
-    }
-
     pub fn set_reply(&mut self, reply_id: NonZeroU64) {
         self.reply_id = Some(reply_id);
     }
@@ -131,22 +124,11 @@ impl Message {
     pub fn is_reply_equal(&self, reply_id: NonZeroU64) -> bool {
         self.reply_id.map(|r| r == reply_id).unwrap_or(false)
     }
-
-    pub fn take_data(&mut self) -> Option<Vec<u8>> {
-        self.data.take()
-    }
-
-    pub fn set_data(&mut self, content: Vec<u8>) {
-        self.data = Some(content);
-    }
 }
 
 impl Write for Message {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        if self.data.is_none() {
-            self.data = Some(Vec::with_capacity(buf.len()));
-        }
-        self.data.as_mut().unwrap().extend(buf);
+        self.data.extend(buf);
         Ok(buf.len())
     }
 
@@ -169,6 +151,20 @@ impl Debug for Resource {
             Self::None => write!(f, "None"),
             Self::Process(_) => write!(f, "Process"),
             Self::TcpStream(_) => write!(f, "TcpStream"),
+        }
+    }
+}
+
+pub struct ReadingMessage {
+    pub message: Message,
+    pub seek_ptr: usize,
+}
+
+impl ReadingMessage {
+    pub fn new(message: Message) -> Self {
+        Self {
+            message,
+            seek_ptr: 0,
         }
     }
 }
