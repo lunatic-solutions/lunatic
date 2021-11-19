@@ -1,0 +1,13 @@
+[package]
+name = "lunatic"
+version = "0.8.0"
+edition = "2018"
+authors = ["Bernard Kolobara <bernard@lunatic.solutions>", "Hrvoje Bandov <hrvoje@lunatic.solutions>"]
+description = "This library contains higher level wrappers for low level Lunatic syscalls."
+license = "Apache-2.0/MIT"
+readme = "README.md"
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+
+[workspace]
