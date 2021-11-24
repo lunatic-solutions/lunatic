@@ -1,195 +1,154 @@
-/*!
-Async concurrent hashmap built on top of [dashmap](https://docs.rs/dashmap/). The majority of the
-implementation was taken from [AsyncMap](https://github.com/withoutboats/waitmap), but reduced to
-only export one method that is needed for .
-
-It allows you to wait on a key until someone puts something under this key into the map.
-*/
-
-use std::borrow::Borrow;
-use std::collections::hash_map::RandomState;
 use std::future::Future;
-use std::hash::{BuildHasher, Hash};
-use std::mem;
+use std::hash::Hash;
 use std::pin::Pin;
 use std::task::Waker;
 use std::task::{Context, Poll};
 
-use dashmap::mapref::entry::Entry::{self, *};
+use dashmap::mapref::entry::Entry;
 use dashmap::DashMap;
-use smallvec::SmallVec;
 
-use WaitEntry::*;
-
-/// An asynchronous concurrent hashmap.
-pub struct AsyncMap<K, V, S = RandomState> {
-    map: DashMap<K, WaitEntry<V>, S>,
+/// Async concurrent hashmap built on top of [dashmap](https://docs.rs/dashmap/).
+/// It allows you to wait on a key until someone puts a value under this key into the map.
+pub struct AsyncMap<K, V> {
+    map: DashMap<K, WaitEntry<V>>,
 }
 
-impl<K: Hash + Eq, V> AsyncMap<K, V> {
-    /// Make a new `AsyncMap` using the default hasher.
-    pub fn new() -> AsyncMap<K, V> {
-        AsyncMap {
-            map: DashMap::with_hasher(RandomState::default()),
+impl<K: Hash + Eq + Copy, V> Default for AsyncMap<K, V> {
+    fn default() -> Self {
+        Self {
+            map: DashMap::new(),
         }
     }
 }
 
-impl<K: Hash + Eq, V, S: BuildHasher + Clone> AsyncMap<K, V, S> {
+impl<K: Hash + Eq + Copy, V> AsyncMap<K, V> {
     /// Inserts a key-value pair into the map.
     ///
     /// If the map did not have this key present, `None` is returned.
     ///
-    /// If there are any pending `remove` calls for this key, they are woken up.
+    /// If there are any pending `wait_remove` calls for this key, they are woken up.
     ///
     /// If the map did have this key present, the value is updated and the old value is returned.
     pub fn insert(&self, key: K, value: V) -> Option<V> {
         match self.map.entry(key) {
-            Occupied(mut entry) => {
-                match mem::replace(entry.get_mut(), Filled(value)) {
-                    Waiting(wakers) => {
+            Entry::Occupied(mut entry) => {
+                match std::mem::replace(entry.get_mut(), WaitEntry::Filled(value)) {
+                    WaitEntry::Waiting(waker) => {
                         drop(entry); // drop early to release lock before waking other tasks
-                        wakers.wake();
+                        waker.wake();
                         None
                     }
-                    Filled(value) => Some(value),
+                    WaitEntry::Filled(value) => Some(value),
                 }
             }
-            Vacant(slot) => {
-                slot.insert(Filled(value));
+            Entry::Vacant(slot) => {
+                slot.insert(WaitEntry::Filled(value));
                 None
             }
         }
     }
 
-    pub fn wait_remove<'a: 'f, 'b: 'f, 'f, Q: ?Sized + Hash + Eq>(
-        &'a self,
-        qey: &'b Q,
-    ) -> impl Future<Output = Option<V>> + 'f
-    where
-        K: Borrow<Q> + From<&'b Q>,
-    {
-        let key = K::from(qey);
-        self.map.entry(key).or_insert(Waiting(WakerSet::new()));
-        Wait::new(&self.map, qey)
+    /// Blocks until a value under `key` is present in the map.
+    ///
+    /// Panics if it's called twice on the same key.
+    pub async fn wait_remove(&self, key: K) -> V {
+        match self.map.entry(key) {
+            Entry::Occupied(o_slot) => match o_slot.remove() {
+                WaitEntry::Waiting(_) => panic!("already waiting on the key"),
+                WaitEntry::Filled(v) => v,
+            },
+            Entry::Vacant(v_slot) => {
+                // drop early to release lock before usint the entry API again in `Wait::poll`.
+                drop(v_slot);
+                Wait {
+                    map: &self.map,
+                    key,
+                }
+                .await
+            }
+        }
     }
 }
 
 enum WaitEntry<V> {
-    Waiting(WakerSet),
+    Waiting(Waker),
     Filled(V),
 }
 
 impl<V> WaitEntry<V> {
-    fn remove_value(self) -> V {
+    // Returns the value if it's filled, panics otherwise.
+    fn value(self) -> V {
         match self {
-            Waiting(_) => unreachable!("remove_value cal only be called if entry exists"),
-            Filled(v) => v,
+            WaitEntry::Waiting(_) => panic!("remove called on vacant value"),
+            WaitEntry::Filled(v) => v,
         }
     }
 }
 
-pub struct Wait<'a, 'b, K, V, S, Q>
-where
-    K: Hash + Eq + Borrow<Q>,
-    S: BuildHasher + Clone,
-    Q: ?Sized + Hash + Eq,
-{
-    map: &'a DashMap<K, WaitEntry<V>, S>,
-    key: &'b Q,
-    idx: usize,
+pub struct Wait<'a, K, V> {
+    map: &'a DashMap<K, WaitEntry<V>>,
+    key: K,
 }
 
-impl<'a, 'b, K, V, S, Q> Wait<'a, 'b, K, V, S, Q>
-where
-    K: Hash + Eq + Borrow<Q>,
-    S: BuildHasher + Clone,
-    Q: ?Sized + Hash + Eq,
-{
-    pub(crate) fn new(map: &'a DashMap<K, WaitEntry<V>, S>, key: &'b Q) -> Self {
-        Wait {
-            map,
-            key,
-            idx: std::usize::MAX,
-        }
-    }
-}
+impl<'a, K: Hash + Eq + Copy, V> Future for Wait<'a, K, V> {
+    type Output = V;
 
-impl<'a, 'b, K, V, S, Q> Future for Wait<'a, 'b, K, V, S, Q>
-where
-    K: Hash + Eq + Borrow<Q>,
-    S: BuildHasher + Clone,
-    Q: ?Sized + Hash + Eq,
-{
-    type Output = Option<V>;
-
-    fn poll(mut self: Pin<&mut Self>, ctx: &mut Context<'_>) -> Poll<Self::Output> {
+    fn poll(self: Pin<&mut Self>, ctx: &mut Context<'_>) -> Poll<Self::Output> {
         match self.map.entry(self.key) {
             Entry::Occupied(mut entry) => match entry.get_mut() {
-                Waiting(wakers) => {
-                    wakers.replace(ctx.waker().clone(), &mut self.idx);
+                WaitEntry::Waiting(waker) => {
+                    let _ = std::mem::replace(waker, ctx.waker().clone());
                     Poll::Pending
                 }
-                Filled(_) => {
-                    self.idx = std::usize::MAX;
+                WaitEntry::Filled(_) => {
                     let wait_entry = entry.remove();
-                    Poll::Ready(Some(wait_entry.remove_value()))
+                    Poll::Ready(wait_entry.value())
                 }
             },
-            Entry::Vacant(_) => Poll::Ready(None),
-        }
-    }
-}
-
-impl<'a, 'b, K, V, S, Q> Drop for Wait<'a, 'b, K, V, S, Q>
-where
-    K: Hash + Eq + Borrow<Q>,
-    S: BuildHasher + Clone,
-    Q: ?Sized + Hash + Eq,
-{
-    fn drop(&mut self) {
-        if self.idx == std::usize::MAX {
-            return;
-        }
-        if let Some(mut entry) = self.map.get_mut(self.key) {
-            if let Waiting(wakers) = entry.value_mut() {
-                wakers.remove(self.idx);
+            Entry::Vacant(slot) => {
+                slot.insert(WaitEntry::Waiting(ctx.waker().clone()));
+                Poll::Pending
             }
         }
     }
 }
 
-pub struct WakerSet {
-    wakers: SmallVec<[Option<Waker>; 1]>,
-}
+#[cfg(test)]
+mod tests {
+    use std::{
+        future::Future,
+        sync::{Arc, Mutex},
+        task::{Context, Poll, Wake},
+    };
 
-impl WakerSet {
-    pub fn new() -> WakerSet {
-        WakerSet {
-            wakers: SmallVec::new(),
+    use super::AsyncMap;
+
+    #[derive(Clone)]
+    struct FlagWaker(Arc<Mutex<bool>>);
+    impl Wake for FlagWaker {
+        fn wake(self: Arc<Self>) {
+            let mut called = self.0.lock().unwrap();
+            *called = true;
         }
     }
 
-    pub fn replace(&mut self, waker: Waker, idx: &mut usize) {
-        let len = self.wakers.len();
-        if *idx >= len {
-            debug_assert!(len != std::usize::MAX); // usize::MAX is used as a sentinel
-            *idx = len;
-            self.wakers.push(Some(waker));
-        } else {
-            self.wakers[*idx] = Some(waker);
-        }
-    }
-
-    pub fn remove(&mut self, idx: usize) {
-        self.wakers[idx] = None;
-    }
-
-    pub fn wake(self) {
-        for waker in self.wakers {
-            if let Some(waker) = waker {
-                waker.wake()
-            }
-        }
+    #[async_std::test]
+    async fn simple_insert_test() {
+        let async_map = AsyncMap::default();
+        let value = async_map.wait_remove(0);
+        let mut fut = Box::pin(value);
+        // Manually poll future before insert
+        let waker = FlagWaker(Arc::new(Mutex::new(false)));
+        let waker_ref = waker.clone();
+        let waker = &Arc::new(waker).into();
+        let mut context = Context::from_waker(waker);
+        let result = fut.as_mut().poll(&mut context);
+        assert_eq!(result, Poll::Pending);
+        // Insert
+        async_map.insert(0, 1337);
+        assert_eq!(*waker_ref.0.lock().unwrap(), true);
+        // Manually poll future after insert
+        let result = fut.as_mut().poll(&mut context);
+        assert_eq!(result, Poll::Ready(1337));
     }
 }
