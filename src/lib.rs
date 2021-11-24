@@ -34,13 +34,13 @@ TODO
 */
 
 pub(crate) mod api;
+pub mod async_map;
 mod config;
 mod environment;
 pub(crate) mod mailbox;
 pub mod message;
 pub(crate) mod module;
-// pub mod node;
-pub mod async_map;
+pub mod node;
 pub mod plugin;
 pub(crate) mod process;
 pub mod registry;

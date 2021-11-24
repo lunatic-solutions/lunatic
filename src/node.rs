@@ -7,6 +7,7 @@ use std::{
 };
 
 use anyhow::{anyhow, Result};
+use async_map::AsyncMap;
 use async_std::{
     io::{ReadExt, WriteExt},
     net::{SocketAddr, TcpListener, TcpStream, ToSocketAddrs},
@@ -15,9 +16,8 @@ use async_std::{
 use bincode::{deserialize, serialize};
 use log::trace;
 use serde::{Deserialize, Serialize};
-use waitmap::WaitMap;
 
-use crate::{module::Module, state::HashMapId, EnvConfig, Environment, Process};
+use crate::{async_map, module::Module, state::HashMapId, EnvConfig, Environment, Process};
 
 /// A node holds information of other peers in the distributed system and resources belonging to
 /// these remote nodes.
@@ -50,12 +50,12 @@ impl Node {
             let mut bootstrap_peer = Peer::new(bootstrap_conn, bootstrap);
             // Register ourself at the bootstrap peer
             bootstrap_peer
-                .send(Message::Register(name.clone(), socket.into()))
+                .send(Message::Register(name.clone(), socket))
                 .await?;
             // Ask the bootstrap for all other peers. The returned list will also contain the
             // bootstrap one.
             bootstrap_peer.send(Message::GetPeers).await?;
-            if let Message::Peers(peer_infos) = bootstrap_peer.receive().await? {
+            if let Message::Peers(peer_infos) = bootstrap_peer.receive().await?.into() {
                 let mut peers = HashMap::new();
                 for (peer_name, peer_addr) in peer_infos.into_iter() {
                     // At this point we are also a peer of the bootstrap node and we want to skip
@@ -118,20 +118,24 @@ impl Node {
 // Handle new peer connections
 async fn node_server(node: Node, listener: TcpListener) {
     while let Ok((conn, addr)) = listener.accept().await {
-        let mut peer = Peer::new(conn, addr);
+        let mut peer = Peer::new(conn.clone(), addr);
         // The first message will always be the name.
         // TODO: Have a time-out here because other connections are blocked until the name arrives.
-        if let Ok(Message::Register(name, new_addr)) = peer.receive().await {
-            // Update address of peer to the one sent by it.
-            peer.set_addr(new_addr);
-            async_std::task::spawn(peer_task(node.clone(), peer.clone()));
-            let mut node = node.inner.write().await;
-            // TODO: Check if peer under this name exists or we already have this name and report error.
-            // TODO: During the bootstrap process we will double connect to the bootstrap node,
-            //       once to get all peers, and once we receive the bootstrap node as a peer
-            node.peers.insert(name, peer);
+        if let Ok(msg) = peer.receive().await {
+            if let Message::Register(name, new_addr) = msg.into() {
+                // Use address provided by the peer when sending it to other nodes
+                let peer = Peer::new(conn, new_addr);
+                async_std::task::spawn(peer_task(node.clone(), peer.clone()));
+                let mut node = node.inner.write().await;
+                // TODO: Check if peer under this name exists or we already have this name and report error.
+                // TODO: During the bootstrap process we will double connect to the bootstrap node,
+                //       once to get all peers, and once we receive the bootstrap node as a peer
+                node.peers.insert(name, peer);
+            } else {
+                todo!("Handle wrong first message");
+            }
         } else {
-            todo!("Handle wrong first message");
+            todo!("Handle error on receive");
         }
     }
 }
@@ -154,24 +158,25 @@ async fn peer_task(node: Node, mut peer: Peer) {
                     .collect();
                 // Add itself to the peer list.
                 peers.push((node.name.clone(), node.socket));
-                if peer.send(Message::Peers(peers)).await.is_err() {
+                let tagged_msg = Message::Peers(peers).add_tag(tag);
+                if peer.send(tagged_msg).await.is_err() {
                     // TODO: If message can't be sent declare node as dead
                     break;
                 }
             }
             Message::Peers(_) => unreachable!("Peers are only received during bootstrap"),
-            Message::CreateEnvironment(resp_id, config) => {
+            Message::CreateEnvironment(config) => {
                 let env = Environment::new(config);
                 if let Ok(env) = env {
                     let mut node = node.inner.write().await;
                     let id = node.resources.add(Resource::Environment(env));
                     // TODO: Deal with error
-                    peer.send(Message::Resource(id)).await.unwrap();
+                    let tagged_msg = Message::Resource(id).add_tag(tag);
+                    peer.send(tagged_msg).await.unwrap();
                 } else {
                     // TODO: Deal with error
-                    peer.send(Message::Error(env.err().unwrap().to_string()))
-                        .await
-                        .unwrap();
+                    let tagged_msg = Message::Error(env.err().unwrap().to_string()).add_tag(tag);
+                    peer.send(tagged_msg).await.unwrap();
                 }
             }
             Message::CreateModule(env_id, data) => {
@@ -180,12 +185,14 @@ async fn peer_task(node: Node, mut peer: Peer) {
                     Some(Resource::Environment(ref env)) => {
                         let module = env.create_module(data).await.unwrap();
                         let id = node.resources.add(Resource::Module(module));
-                        peer.send(Message::Resource(id)).await.unwrap();
+                        let tagged_msg = Message::Resource(id).add_tag(tag);
+                        peer.send(tagged_msg).await.unwrap();
                     }
                     _ => {
-                        peer.send(Message::Error("Resource is not an environment".to_string()))
-                            .await
-                            .unwrap();
+                        let tagged_msg =
+                            Message::Error("Resource is not an environment".to_string())
+                                .add_tag(tag);
+                        peer.send(tagged_msg).await.unwrap();
                     }
                 };
             }
@@ -195,17 +202,18 @@ async fn peer_task(node: Node, mut peer: Peer) {
                     Some(Resource::Module(ref module)) => {
                         let (_, process) = module.spawn(&entry, vec![], None).await.unwrap();
                         let id = node.resources.add(Resource::Process(Box::new(process)));
-                        peer.send(Message::Resource(id)).await.unwrap();
+                        let tagged_msg = Message::Resource(id).add_tag(tag);
+                        peer.send(tagged_msg).await.unwrap();
                     }
                     _ => {
-                        peer.send(Message::Error("Resource is not a module".to_string()))
-                            .await
-                            .unwrap();
+                        let tagged_msg =
+                            Message::Error("Resource is not a module".to_string()).add_tag(tag);
+                        peer.send(tagged_msg).await.unwrap();
                     }
                 };
             }
-            Message::Resource(id) => peer.add_response(Response::Resource(id)).await,
-            Message::Error(error) => peer.add_response(Response::Error(error)).await,
+            Message::Resource(id) => peer.add_response(tag, Response::Resource(id)),
+            Message::Error(error) => peer.add_response(tag, Response::Error(error)),
         }
     }
 }
@@ -220,7 +228,7 @@ pub struct InnerPeer {
     writer: Mutex<TcpStream>,
     addr: SocketAddr,
     request_id: AtomicU64,
-    response: WaitMap<u64, Message>,
+    response: AsyncMap<u64, Response>,
 }
 
 impl Peer {
@@ -231,12 +239,13 @@ impl Peer {
                 writer: Mutex::new(conn),
                 addr,
                 request_id: AtomicU64::new(0),
-                response: WaitMap::new(),
+                response: AsyncMap::default(),
             }),
         }
     }
 
-    async fn send(&mut self, msg: TaggedMessage) -> Result<()> {
+    async fn send<M: Into<TaggedMessage>>(&mut self, msg: M) -> Result<()> {
+        let msg: TaggedMessage = msg.into();
         trace!("sending to {}: {:?}", self.inner.addr, msg);
         let message = serialize(&msg)?;
         // Prefix message with size as little-endian u32 value.
@@ -257,10 +266,6 @@ impl Peer {
         Ok(deserialize(&buffer)?)
     }
 
-    fn set_addr(&mut self, addr: SocketAddr) {
-        self.inner.addr = addr;
-    }
-
     fn addr(&self) -> SocketAddr {
         self.inner.addr
     }
@@ -269,22 +274,24 @@ impl Peer {
         let tag = self.inner.request_id.fetch_add(1, Ordering::SeqCst);
         let msg = msg.add_tag(tag);
         self.send(msg).await?;
-        Ok(self.inner.response.wait(&tag).await.unwrap().clone())
+        Ok(self.inner.response.wait_remove(tag).await)
+    }
+
+    fn add_response(&mut self, tag: u64, response: Response) {
+        self.inner.response.insert(tag, response);
     }
 
     pub async fn create_environment(&mut self, config: EnvConfig) -> Result<u64> {
-        self.send(Message::CreateEnvironment(config)).await.unwrap();
-        match self.response().await {
+        let response = self.request(Message::CreateEnvironment(config)).await?;
+        match response {
             Response::Resource(id) => Ok(id),
             Response::Error(error) => Err(anyhow!(error)),
         }
     }
 
     pub async fn create_module(&mut self, env_id: u64, data: Vec<u8>) -> Result<u64> {
-        self.send(Message::CreateModule(env_id, data))
-            .await
-            .unwrap();
-        match self.response().await {
+        let response = self.request(Message::CreateModule(env_id, data)).await?;
+        match response {
             Response::Resource(id) => Ok(id),
             Response::Error(error) => Err(anyhow!(error)),
         }
@@ -306,6 +313,12 @@ impl From<Message> for TaggedMessage {
     }
 }
 
+impl From<TaggedMessage> for Message {
+    fn from(tagged_msg: TaggedMessage) -> Self {
+        tagged_msg.data
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 enum Message {
     // Register yourself to another node
@@ -315,7 +328,7 @@ enum Message {
     // Receive peers from a node
     Peers(Vec<(String, SocketAddr)>),
     // Create environment on remote node.
-    CreateEnvironmentReq(EnvConfig),
+    CreateEnvironment(EnvConfig),
     // Send module to remote node's environment.
     CreateModule(u64, Vec<u8>),
     // Spawn a process on a remote node.
@@ -328,10 +341,11 @@ enum Message {
 
 impl Message {
     fn add_tag(self, tag: u64) -> TaggedMessage {
-        TaggedMessage { tag: 0, data: self }
+        TaggedMessage { tag, data: self }
     }
 }
 
+#[derive(Debug)]
 enum Response {
     // Remote resource
     Resource(u64),
