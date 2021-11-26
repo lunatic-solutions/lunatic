@@ -53,11 +53,15 @@ impl Module {
     /// After it's spawned the process will keep running in the background. A process can be killed
     /// by sending a `Signal::Kill` to it. If you would like to block until the process is finished
     /// you can `.await` on the returned `JoinHandle<()>`.
-    pub async fn spawn(
-        &self,
-        function: &str,
+    ///
+    /// Note: The 'a lifetime is here just because Rust has a bug in handling `dyn Trait` in async:
+    /// https://github.com/rust-lang/rust/issues/63033
+    /// If it ever becomes an issue there are other workarounds that could be used instead.
+    pub async fn spawn<'a>(
+        &'a self,
+        function: &'a str,
         params: Vec<Val>,
-        link: Option<(Option<i64>, WasmProcess)>,
+        link: Option<(Option<i64>, Arc<dyn Process>)>,
     ) -> Result<(JoinHandle<()>, WasmProcess)> {
         // TODO: Switch to new_v1() for distributed Lunatic to assure uniqueness across nodes.
         let id = Uuid::new_v4();
@@ -119,6 +123,11 @@ impl Module {
         // Only after the yield function we can guarantee that the child is going to be notified
         // if the parent fails. This is ok, as the actual spawning of the child happens after the
         // call, so the child wouldn't even exist if the parent failed before.
+        //
+        // TODO: The guarantees provided here don't hold anymore in a distributed environment and
+        //       will require some rethinking. This function will be executed on a completly
+        //       different computer and needs to be synced in a more robust way with the parent
+        //       running somewhere else.
         if let Some((tag, process)) = link {
             // Send signal to itself to perform the linking
             process.send(Signal::Link(None, Arc::new(child_process_handle.clone())));
@@ -127,7 +136,7 @@ impl Module {
             // Send signal to child to link it
             signal_mailbox
                 .0
-                .try_send(Signal::Link(tag, Arc::new(process)))
+                .try_send(Signal::Link(tag, process))
                 .expect("receiver must exist at this point");
         }
 

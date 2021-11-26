@@ -41,10 +41,10 @@ impl Message {
 /// It implements the [`Read`](std::io::Read) and [`Write`](std::io::Write) traits.
 #[derive(Debug, Default)]
 pub struct DataMessage {
-    tag: Option<i64>,
-    read_ptr: usize,
-    buffer: Vec<u8>,
-    resources: Vec<Resource>,
+    pub(crate) tag: Option<i64>,
+    pub(crate) read_ptr: usize,
+    pub(crate) buffer: Vec<u8>,
+    pub(crate) resources: Vec<Resource>,
 }
 
 impl DataMessage {
