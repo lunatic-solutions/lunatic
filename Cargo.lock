@@ -1186,7 +1186,6 @@ dependencies = [
  "pretty_assertions",
  "semver",
  "serde",
- "smallvec",
  "tokio",
  "uuid",
  "wabt",

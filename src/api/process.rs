@@ -12,7 +12,7 @@ use crate::{
     module::Module,
     process::{Signal, WasmProcess},
     state::ProcessState,
-    EnvConfig, Environment,
+    EnvConfig, Environment, Process,
 };
 
 // Register the process APIs to the linker
@@ -769,13 +769,13 @@ async fn spawn_from_module(
         })
         .collect::<Result<Vec<_>>>()?;
     // Should processes be linked together?
-    let link = match link {
+    let link: Option<(Option<i64>, Arc<dyn Process>)> = match link {
         0 => None,
         tag => {
             let id = caller.data().id;
             let signal_mailbox = caller.data().signal_mailbox.clone();
             let process = WasmProcess::new(id, signal_mailbox);
-            Some((Some(tag), process))
+            Some((Some(tag), Arc::new(process)))
         }
     };
     let (proc_or_error_id, result) = match module.spawn(function, params, link).await {

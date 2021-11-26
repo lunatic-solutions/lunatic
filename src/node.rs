@@ -9,6 +9,7 @@ use std::{
 use anyhow::{anyhow, Result};
 use async_map::AsyncMap;
 use async_std::{
+    channel::{unbounded, Sender},
     io::{ReadExt, WriteExt},
     net::{SocketAddr, TcpListener, TcpStream, ToSocketAddrs},
     sync::{Mutex, RwLock},
@@ -16,8 +17,9 @@ use async_std::{
 use bincode::{deserialize, serialize};
 use log::trace;
 use serde::{Deserialize, Serialize};
+use wasmtime::Val;
 
-use crate::{async_map, module::Module, state::HashMapId, EnvConfig, Environment, Process};
+use crate::{async_map, module::Module, state::HashMapId, EnvConfig, Environment, Process, Signal};
 
 /// A node holds information of other peers in the distributed system and resources belonging to
 /// these remote nodes.
@@ -196,12 +198,22 @@ async fn peer_task(node: Node, mut peer: Peer) {
                     }
                 };
             }
-            Message::Spawn(module_id, entry) => {
+            Message::Spawn(module_id, entry, params, link) => {
+                // Create local link to forward info
+                let link: Option<(Option<i64>, Arc<dyn Process>)> = if let Some(link) = link {
+                    // Spawn local proxy process that will forward link breakage information to remote node.
+                    let proxy_process =
+                        ProxyProcess::new(link.process_resource_id, peer.clone(), node.clone());
+                    Some((link.tag, Arc::new(proxy_process)))
+                } else {
+                    None
+                };
                 let mut node = node.inner.write().await;
                 match node.resources.get(module_id) {
                     Some(Resource::Module(ref module)) => {
-                        let (_, process) = module.spawn(&entry, vec![], None).await.unwrap();
-                        let id = node.resources.add(Resource::Process(Box::new(process)));
+                        let params = params.into_iter().map(Val::I32).collect();
+                        let (_, process) = module.spawn(&entry, params, link).await.unwrap();
+                        let id = node.resources.add(Resource::Process(Arc::new(process)));
                         let tagged_msg = Message::Resource(id).add_tag(tag);
                         peer.send(tagged_msg).await.unwrap();
                     }
@@ -211,6 +223,18 @@ async fn peer_task(node: Node, mut peer: Peer) {
                         peer.send(tagged_msg).await.unwrap();
                     }
                 };
+            }
+            Message::Send(process_id, signal) => {
+                let process = {
+                    let node = node.inner.write().await;
+                    if let Some(Resource::Process(process)) = node.resources.get(process_id) {
+                        process.clone()
+                    } else {
+                        // TODO: Handle errror
+                        unreachable!("Resources are never dropped")
+                    }
+                };
+                process.send(signal.into(peer.clone(), node.clone()).await.unwrap());
             }
             Message::Resource(id) => peer.add_response(tag, Response::Resource(id)),
             Message::Error(error) => peer.add_response(tag, Response::Error(error)),
@@ -296,6 +320,27 @@ impl Peer {
             Response::Error(error) => Err(anyhow!(error)),
         }
     }
+
+    // TODO: Support other params types than i32
+    pub async fn spawn(
+        &mut self,
+        mod_id: u64,
+        entry: String,
+        params: Vec<i32>,
+        link: Option<Link>,
+    ) -> Result<u64> {
+        let response = self
+            .request(Message::Spawn(mod_id, entry, params, link))
+            .await?;
+        match response {
+            Response::Resource(id) => Ok(id),
+            Response::Error(error) => Err(anyhow!(error)),
+        }
+    }
+
+    pub async fn send_signal(&mut self, proc_id: u64, signal: SignalOverNetwork) -> Result<()> {
+        self.send(Message::Send(proc_id, signal)).await
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -319,7 +364,7 @@ impl From<TaggedMessage> for Message {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug)]
 enum Message {
     // Register yourself to another node
     Register(String, SocketAddr),
@@ -332,11 +377,155 @@ enum Message {
     // Send module to remote node's environment.
     CreateModule(u64, Vec<u8>),
     // Spawn a process on a remote node.
-    Spawn(u64, String),
+    Spawn(u64, String, Vec<i32>, Option<Link>),
+    // Send
+    Send(u64, SignalOverNetwork),
     // Remote resource
     Resource(u64),
     // Error message
     Error(String),
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub enum SignalOverNetwork {
+    DataMessage(DataMessageOverNetwork),
+    SignalMessage(Option<i64>),
+    Kill,
+    DieWhenLinkDies(bool),
+    Link(Option<i64>, u64),
+    LinkDied(Option<i64>),
+}
+
+impl SignalOverNetwork {
+    async fn from(signal: Signal, node: Node) -> Result<Self> {
+        match signal {
+            Signal::Message(message) => match message {
+                crate::message::Message::Data(message) => {
+                    let mut resources = Vec::with_capacity(message.resources.len());
+                    for resource in message.resources.into_iter() {
+                        match resource {
+                            crate::message::Resource::None => {
+                                return Err(anyhow!("Resource None can't be sent to another node"))
+                            }
+                            crate::message::Resource::Process(process) => {
+                                let mut node = node.inner.write().await;
+                                let id = node.resources.add(Resource::Process(process));
+                                resources.push(id);
+                            }
+                            crate::message::Resource::TcpStream(_) => {
+                                return Err(anyhow!(
+                                    "Resource TcpStream can't be sent to another node"
+                                ))
+                            }
+                        }
+                    }
+
+                    let msg = DataMessageOverNetwork {
+                        buffer: message.buffer,
+                        read_ptr: message.read_ptr,
+                        tag: message.tag,
+                        resources,
+                    };
+                    Ok(SignalOverNetwork::DataMessage(msg))
+                }
+                crate::message::Message::Signal(tag) => Ok(SignalOverNetwork::SignalMessage(tag)),
+            },
+            Signal::Kill => Ok(SignalOverNetwork::Kill),
+            Signal::DieWhenLinkDies(flag) => Ok(SignalOverNetwork::DieWhenLinkDies(flag)),
+            Signal::Link(tag, proc) => {
+                let mut node = node.inner.write().await;
+                let id = node.resources.add(Resource::Process(proc));
+                Ok(SignalOverNetwork::Link(tag, id))
+            }
+            // TODO: Link & unlink may not work as the ID is lost through the proxy?
+            Signal::UnLink(_) => todo!(),
+            Signal::LinkDied(tag) => Ok(SignalOverNetwork::LinkDied(tag)),
+        }
+    }
+
+    async fn into(self, peer: Peer, node: Node) -> Result<Signal> {
+        match self {
+            SignalOverNetwork::DataMessage(message) => {
+                let mut resources = Vec::with_capacity(message.resources.len());
+                for proc_id in message.resources.into_iter() {
+                    // Remote resources can only be processes for now. Spawn local proxy processes.
+                    let proxy_process = ProxyProcess::new(proc_id, peer.clone(), node.clone());
+                    resources.push(crate::message::Resource::Process(Arc::new(proxy_process)));
+                }
+                let msg = crate::message::DataMessage {
+                    buffer: message.buffer,
+                    read_ptr: message.read_ptr,
+                    tag: message.tag,
+                    resources,
+                };
+                Ok(Signal::Message(crate::message::Message::Data(msg)))
+            }
+            SignalOverNetwork::SignalMessage(tag) => {
+                Ok(Signal::Message(crate::message::Message::Signal(tag)))
+            }
+            SignalOverNetwork::Kill => Ok(Signal::Kill),
+            SignalOverNetwork::DieWhenLinkDies(flag) => Ok(Signal::DieWhenLinkDies(flag)),
+            SignalOverNetwork::Link(tag, id) => {
+                let proxy_process = ProxyProcess::new(id, peer, node);
+                Ok(Signal::Link(tag, Arc::new(proxy_process)))
+            }
+            SignalOverNetwork::LinkDied(tag) => Ok(Signal::LinkDied(tag)),
+        }
+    }
+}
+
+struct ProxyProcess {
+    signal_mailbox: Sender<Signal>,
+}
+
+impl ProxyProcess {
+    fn new(receiver_id: u64, mut peer: Peer, node: Node) -> ProxyProcess {
+        let (signal_mailbox, receiver) = unbounded::<Signal>();
+        let _ = async_std::task::spawn(async move {
+            // TODO: Sync when remote process is dropped and propagate info to clean up resources.
+            loop {
+                let signal = receiver.recv().await;
+                if let Ok(signal) = signal {
+                    let sendable_signal = SignalOverNetwork::from(signal, node.clone()).await;
+                    if let Ok(sendable_signal) = sendable_signal {
+                        let result = peer.send_signal(receiver_id, sendable_signal).await;
+                        if result.is_err() {
+                            break;
+                        }
+                    } else {
+                        break;
+                    }
+                } else {
+                    break;
+                };
+            }
+        });
+        ProxyProcess { signal_mailbox }
+    }
+}
+
+impl Process for ProxyProcess {
+    fn id(&self) -> uuid::Uuid {
+        uuid::Uuid::nil()
+    }
+
+    fn send(&self, signal: Signal) {
+        let _ = self.signal_mailbox.try_send(signal);
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct DataMessageOverNetwork {
+    buffer: Vec<u8>,
+    read_ptr: usize,
+    tag: Option<i64>,
+    resources: Vec<u64>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct Link {
+    tag: Option<i64>,
+    process_resource_id: u64,
 }
 
 impl Message {
@@ -356,14 +545,16 @@ enum Response {
 enum Resource {
     Environment(Environment),
     Module(Module),
-    Process(Box<dyn Process>),
+    Process(Arc<dyn Process>),
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::EnvConfig;
+    use std::sync::Arc;
 
-    use super::Node;
+    use crate::{node::Resource, EnvConfig, Process, Signal};
+
+    use super::{Link, Node};
 
     #[async_std::test]
     async fn single_node_startup() {
@@ -442,5 +633,99 @@ mod tests {
         let node2 = node2.inner.read().await;
         let resource = node2.resources.get(id);
         assert!(resource.is_some());
+    }
+
+    #[async_std::test]
+    async fn spawn_remote_process() {
+        let node1 = Node::new("node1".into(), "localhost:35563", None)
+            .await
+            .unwrap();
+        let node2 = Node::new("node2".into(), "localhost:35564", Some("localhost:35563"))
+            .await
+            .unwrap();
+        // Let the nodes sync up before continuing
+        async_std::task::sleep(std::time::Duration::from_millis(100)).await;
+
+        // Create environment on node2
+        let mut peers1 = node1.peers().await;
+        let peer2 = peers1.get_mut("node2").unwrap();
+        let config = EnvConfig::default();
+        let env_id = peer2.create_environment(config).await.unwrap();
+        let raw_module = std::fs::read("./target/wasm/hello.wasm").unwrap();
+        let mod_id = peer2.create_module(env_id, raw_module).await.unwrap();
+        let proc = peer2
+            .spawn(mod_id, "hello".to_string(), vec![], None)
+            .await
+            .unwrap();
+
+        // Check if config exists on node2
+        let node2 = node2.inner.read().await;
+        let resource = node2.resources.get(proc);
+        assert!(resource.is_some());
+    }
+
+    // This test may hang if there is a race condition while linking over the network.
+    #[async_std::test]
+    async fn spawn_linked_remote_process() {
+        // Capture log in test
+        let _ = env_logger::builder().is_test(true).try_init();
+
+        let node1 = Node::new("node1".into(), "localhost:35565", None)
+            .await
+            .unwrap();
+        let _node2 = Node::new("node2".into(), "localhost:35566", Some("localhost:35565"))
+            .await
+            .unwrap();
+        // Let the nodes sync up before continuing
+        async_std::task::sleep(std::time::Duration::from_millis(100)).await;
+
+        // Create environment on node2
+        let mut peers1 = node1.peers().await;
+        let peer2 = peers1.get_mut("node2").unwrap();
+        let config = EnvConfig::default();
+        let env_id = peer2.create_environment(config).await.unwrap();
+        let wasm_wat = r#"(module (func (export "hello") unreachable))"#;
+        let wasm = wat::parse_str(wasm_wat).unwrap();
+        let mod_id = peer2.create_module(env_id, wasm).await.unwrap();
+
+        // Create native process to link it with remote one
+        let (handle, process) = crate::spawn(|this, mailbox| async move {
+            // Don't die if one of the link dies.
+            this.send(Signal::DieWhenLinkDies(false));
+            // Wait on link death
+            match mailbox.pop(None).await {
+                crate::message::Message::Data(_) => {
+                    unreachable!("Only a signal can be received")
+                }
+                crate::message::Message::Signal(tag) => {
+                    assert_eq!(tag, Some(1337));
+                }
+            }
+            Ok(())
+        });
+
+        // Put the native process inside the local resources table of node1
+        let process: Arc<dyn Process> = Arc::new(process);
+        let id = {
+            let mut node1 = node1.inner.write().await;
+            node1.resources.add(Resource::Process(process))
+        };
+
+        // Spawn remote process and link them
+        let _proc = peer2
+            .spawn(
+                mod_id,
+                "hello".to_string(),
+                vec![],
+                Some(Link {
+                    tag: Some(1337),
+                    process_resource_id: id,
+                }),
+            )
+            .await
+            .unwrap();
+
+        // Wait on native process to finish, indicating it received the correct signal
+        handle.await;
     }
 }

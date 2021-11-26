@@ -156,6 +156,8 @@ pub(crate) async fn new<F, T>(
                         if die_when_link_dies {
                             // Even this was not a **kill** signal it has the same effect on
                             // this process and should be propagated as such.
+                            // TODO: Remove sender from our notify list, so we don't send back the
+                            //       same notification to an already dead process.
                             break Finished::Signal(Signal::Kill)
                         } else {
                             let message = Message::Signal(tag);
@@ -179,7 +181,12 @@ pub(crate) async fn new<F, T>(
                     }
                 }
             };
-            debug!("Process {} failed: {}", id, err);
+            debug!(
+                "Process {} failed, notifying: {} links; {}",
+                id,
+                links.len(),
+                err,
+            );
             // Notify all links that we finished with an error
             links.iter().for_each(|(proc, tag)| {
                 let _ = proc.send(Signal::LinkDied(*tag));
@@ -218,7 +225,7 @@ pub fn spawn<F, K, T>(func: F) -> (JoinHandle<()>, NativeProcess)
 where
     T: 'static,
     K: Future<Output = Result<T>> + Send + 'static,
-    F: Fn(NativeProcess, MessageMailbox) -> K,
+    F: FnOnce(NativeProcess, MessageMailbox) -> K,
 {
     // TODO: Switch to new_v1() for distributed Lunatic to assure uniqueness across nodes.
     let id = Uuid::new_v4();
