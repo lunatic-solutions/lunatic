@@ -9,12 +9,104 @@ use wasmtime::{Store, Val};
 
 use std::sync::Arc;
 
+use crate::node::{Link, ProxyProcess};
 use crate::{
-    environment::{Environment, EnvironmentLocal, UNIT_OF_COMPUTE_IN_INSTRUCTIONS},
+    environment::{EnvironmentLocal, UNIT_OF_COMPUTE_IN_INSTRUCTIONS},
     mailbox::MessageMailbox,
+    node::Peer,
     process::{self, Process, Signal, WasmProcess},
     state::ProcessState,
 };
+
+#[derive(Clone)]
+pub enum Module {
+    Local(ModuleLocal),
+    Remote(ModuleRemote),
+}
+
+impl Module {
+    pub fn local(data: Vec<u8>, env: EnvironmentLocal, wasmtime_module: wasmtime::Module) -> Self {
+        Self::Local(ModuleLocal::new(data, env, wasmtime_module))
+    }
+    pub async fn remote(env_id: u64, peer: Peer, data: Vec<u8>) -> Result<Self> {
+        Ok(Self::Remote(ModuleRemote::new(env_id, peer, data).await?))
+    }
+    pub fn environment(&self) -> &EnvironmentLocal {
+        match self {
+            Module::Local(local) => local.environment(),
+            Module::Remote(_) => unreachable!("Can't grab local environment on remote node"),
+        }
+    }
+    pub fn data(&self) -> Vec<u8> {
+        match self {
+            Module::Local(local) => local.data(),
+            Module::Remote(_) => unreachable!("Can't grab module data on remote node"),
+        }
+    }
+    pub async fn spawn<'a>(
+        &'a self,
+        function: &'a str,
+        params: Vec<Val>,
+        link: Option<(Option<i64>, Arc<dyn Process>)>,
+    ) -> Result<(JoinHandle<()>, Arc<dyn Process>)> {
+        match self {
+            Module::Local(local) => local.spawn(function, params, link).await,
+            Module::Remote(remote) => remote.spawn(function, params, link).await,
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct ModuleRemote {
+    id: u64,
+    peer: Peer,
+}
+
+impl ModuleRemote {
+    pub async fn new(env_id: u64, peer: Peer, data: Vec<u8>) -> Result<Self> {
+        let id = peer.create_module(env_id, data).await?;
+        Ok(Self { id, peer })
+    }
+    pub async fn spawn<'a>(
+        &'a self,
+        function: &'a str,
+        params: Vec<Val>,
+        link: Option<(Option<i64>, Arc<dyn Process>)>,
+    ) -> Result<(JoinHandle<()>, Arc<dyn Process>)> {
+        let params: Option<Vec<i32>> = params.into_iter().map(|param| param.i32()).collect();
+        if params.is_none() {
+            return Err(anyhow!(
+                "Only i32 arguments can be sent over the network the the spawn function"
+            ));
+        }
+        let node = {
+            crate::NODE
+                .write()
+                .await
+                .as_ref()
+                .expect("Must exist if remote environment exists")
+                .clone()
+        };
+        let link = if let Some((tag, process)) = link {
+            let link_id = node
+                .inner
+                .write()
+                .await
+                .resources
+                .add(crate::node::Resource::Process(process));
+            let link = Link::new(tag, link_id);
+            Some(link)
+        } else {
+            None
+        };
+        let remote_id = self
+            .peer
+            .spawn(self.id, function.to_string(), params.unwrap(), link)
+            .await?;
+        let (handle, proxy_process) = ProxyProcess::new(remote_id, self.peer.clone(), node);
+        Ok((handle, Arc::new(proxy_process)))
+    }
+}
 
 /// A compiled WebAssembly module that can be used to spawn [`WasmProcesses`][0].
 ///
@@ -22,7 +114,7 @@ use crate::{
 ///
 /// [0]: crate::WasmProcess
 #[derive(Clone)]
-pub struct Module {
+pub struct ModuleLocal {
     inner: Arc<InnerModule>,
 }
 
@@ -32,7 +124,7 @@ struct InnerModule {
     wasmtime_module: wasmtime::Module,
 }
 
-impl Module {
+impl ModuleLocal {
     pub(crate) fn new(
         data: Vec<u8>,
         env: EnvironmentLocal,
@@ -65,7 +157,7 @@ impl Module {
         function: &'a str,
         params: Vec<Val>,
         link: Option<(Option<i64>, Arc<dyn Process>)>,
-    ) -> Result<(JoinHandle<()>, WasmProcess)> {
+    ) -> Result<(JoinHandle<()>, Arc<dyn Process>)> {
         // TODO: Switch to new_v1() for distributed Lunatic to assure uniqueness across nodes.
         let id = Uuid::new_v4();
         trace!("Spawning process: {}", id);
@@ -73,19 +165,19 @@ impl Module {
         let message_mailbox = MessageMailbox::default();
         let state = ProcessState::new(
             id,
-            self.clone(),
+            Module::Local(self.clone()),
             signal_mailbox.0.clone(),
             message_mailbox.clone(),
-            self.environment_local().config(),
+            self.environment().config(),
         )?;
 
-        let mut store = Store::new(self.environment_local().engine(), state);
+        let mut store = Store::new(self.environment().engine(), state);
         store.limiter(|state| state);
 
         // Trap if out of fuel
         store.out_of_fuel_trap();
         // Define maximum fuel
-        match self.environment_local().config().max_fuel() {
+        match self.environment().config().max_fuel() {
             Some(max_fuel) => {
                 store.out_of_fuel_async_yield(max_fuel, UNIT_OF_COMPUTE_IN_INSTRUCTIONS)
             }
@@ -94,7 +186,7 @@ impl Module {
         };
 
         let instance = self
-            .environment_local()
+            .environment()
             .linker()
             .instantiate_async(&mut store, self.wasmtime_module())
             .await?;
@@ -146,15 +238,11 @@ impl Module {
         // Spawn a background process
         trace!("Process size: {}", std::mem::size_of_val(&child_process));
         let join = async_std::task::spawn(child_process);
-        Ok((join, child_process_handle))
+        Ok((join, Arc::new(child_process_handle)))
     }
 
-    pub fn environment_local(&self) -> &EnvironmentLocal {
+    pub fn environment(&self) -> &EnvironmentLocal {
         &self.inner.env
-    }
-
-    pub fn environment(&self) -> Environment {
-        Environment::Local(self.inner.env.clone())
     }
 
     pub fn wasmtime_module(&self) -> &wasmtime::Module {

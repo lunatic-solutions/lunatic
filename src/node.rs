@@ -13,6 +13,7 @@ use async_std::{
     io::{ReadExt, WriteExt},
     net::{SocketAddr, TcpListener, TcpStream, ToSocketAddrs},
     sync::{Mutex, RwLock},
+    task::JoinHandle,
 };
 use bincode::{deserialize, serialize};
 use log::trace;
@@ -32,7 +33,7 @@ pub(crate) struct InnerNode {
     name: String,
     socket: SocketAddr,
     pub(crate) peers: HashMap<String, Peer>,
-    resources: HashMapId<Resource>,
+    pub(crate) resources: HashMapId<Resource>,
 }
 
 impl Node {
@@ -49,7 +50,7 @@ impl Node {
         let peers = if let Some(bootstrap) = bootstrap {
             let bootstrap = bootstrap.to_socket_addrs().await?.next().unwrap();
             let bootstrap_conn = TcpStream::connect(bootstrap).await?;
-            let mut bootstrap_peer = Peer::new(bootstrap_conn, bootstrap);
+            let bootstrap_peer = Peer::new(bootstrap_conn, bootstrap);
             // Register ourself at the bootstrap peer
             bootstrap_peer
                 .send(Message::Register(name.clone(), socket))
@@ -67,7 +68,7 @@ impl Node {
                     }
 
                     let peer_conn = TcpStream::connect(peer_addr).await?;
-                    let mut peer = Peer::new(peer_conn, peer_addr);
+                    let peer = Peer::new(peer_conn, peer_addr);
                     // Register ourself
                     peer.send(Message::Register(name.clone(), socket)).await?;
                     peers.insert(peer_name, peer);
@@ -120,7 +121,7 @@ impl Node {
 // Handle new peer connections
 async fn node_server(node: Node, listener: TcpListener) {
     while let Ok((conn, addr)) = listener.accept().await {
-        let mut peer = Peer::new(conn.clone(), addr);
+        let peer = Peer::new(conn.clone(), addr);
         // The first message will always be the name.
         // TODO: Have a time-out here because other connections are blocked until the name arrives.
         if let Ok(msg) = peer.receive().await {
@@ -143,7 +144,7 @@ async fn node_server(node: Node, listener: TcpListener) {
 }
 
 // A task running in the background and responding to messages from a peer connection.
-async fn peer_task(node: Node, mut peer: Peer) {
+async fn peer_task(node: Node, peer: Peer) {
     trace!("{} listening to {}", node.addr().await, peer.addr());
     while let Ok(message) = peer.receive().await {
         trace!("receiving from {}: {:?}", peer.addr(), message);
@@ -202,7 +203,7 @@ async fn peer_task(node: Node, mut peer: Peer) {
                 // Create local link to forward info
                 let link: Option<(Option<i64>, Arc<dyn Process>)> = if let Some(link) = link {
                     // Spawn local proxy process that will forward link breakage information to remote node.
-                    let proxy_process =
+                    let (_, proxy_process) =
                         ProxyProcess::new(link.process_resource_id, peer.clone(), node.clone());
                     Some((link.tag, Arc::new(proxy_process)))
                 } else {
@@ -213,7 +214,7 @@ async fn peer_task(node: Node, mut peer: Peer) {
                     Some(Resource::Module(ref module)) => {
                         let params = params.into_iter().map(Val::I32).collect();
                         let (_, process) = module.spawn(&entry, params, link).await.unwrap();
-                        let id = node.resources.add(Resource::Process(Arc::new(process)));
+                        let id = node.resources.add(Resource::Process(process));
                         let tagged_msg = Message::Resource(id).add_tag(tag);
                         peer.send(tagged_msg).await.unwrap();
                     }
@@ -268,7 +269,7 @@ impl Peer {
         }
     }
 
-    async fn send<M: Into<TaggedMessage>>(&mut self, msg: M) -> Result<()> {
+    async fn send<M: Into<TaggedMessage>>(&self, msg: M) -> Result<()> {
         let msg: TaggedMessage = msg.into();
         trace!("sending to {}: {:?}", self.inner.addr, msg);
         let message = serialize(&msg)?;
@@ -280,7 +281,7 @@ impl Peer {
         Ok(())
     }
 
-    async fn receive(&mut self) -> Result<TaggedMessage> {
+    async fn receive(&self) -> Result<TaggedMessage> {
         let mut reader = self.inner.reader.lock().await;
         let mut size = [0u8; 4];
         reader.read_exact(&mut size).await?;
@@ -294,18 +295,18 @@ impl Peer {
         self.inner.addr
     }
 
-    async fn request(&mut self, msg: Message) -> Result<Response> {
+    async fn request(&self, msg: Message) -> Result<Response> {
         let tag = self.inner.request_id.fetch_add(1, Ordering::SeqCst);
         let msg = msg.add_tag(tag);
         self.send(msg).await?;
         Ok(self.inner.response.wait_remove(tag).await)
     }
 
-    fn add_response(&mut self, tag: u64, response: Response) {
+    fn add_response(&self, tag: u64, response: Response) {
         self.inner.response.insert(tag, response);
     }
 
-    pub async fn create_environment(&mut self, config: EnvConfig) -> Result<u64> {
+    pub async fn create_environment(&self, config: EnvConfig) -> Result<u64> {
         let response = self.request(Message::CreateEnvironment(config)).await?;
         match response {
             Response::Resource(id) => Ok(id),
@@ -313,7 +314,7 @@ impl Peer {
         }
     }
 
-    pub async fn create_module(&mut self, env_id: u64, data: Vec<u8>) -> Result<u64> {
+    pub async fn create_module(&self, env_id: u64, data: Vec<u8>) -> Result<u64> {
         let response = self.request(Message::CreateModule(env_id, data)).await?;
         match response {
             Response::Resource(id) => Ok(id),
@@ -323,7 +324,7 @@ impl Peer {
 
     // TODO: Support other params types than i32
     pub async fn spawn(
-        &mut self,
+        &self,
         mod_id: u64,
         entry: String,
         params: Vec<i32>,
@@ -449,7 +450,7 @@ impl SignalOverNetwork {
                 let mut resources = Vec::with_capacity(message.resources.len());
                 for proc_id in message.resources.into_iter() {
                     // Remote resources can only be processes for now. Spawn local proxy processes.
-                    let proxy_process = ProxyProcess::new(proc_id, peer.clone(), node.clone());
+                    let (_, proxy_process) = ProxyProcess::new(proc_id, peer.clone(), node.clone());
                     resources.push(crate::message::Resource::Process(Arc::new(proxy_process)));
                 }
                 let msg = crate::message::DataMessage {
@@ -466,7 +467,7 @@ impl SignalOverNetwork {
             SignalOverNetwork::Kill => Ok(Signal::Kill),
             SignalOverNetwork::DieWhenLinkDies(flag) => Ok(Signal::DieWhenLinkDies(flag)),
             SignalOverNetwork::Link(tag, id) => {
-                let proxy_process = ProxyProcess::new(id, peer, node);
+                let (_, proxy_process) = ProxyProcess::new(id, peer, node);
                 Ok(Signal::Link(tag, Arc::new(proxy_process)))
             }
             SignalOverNetwork::LinkDied(tag) => Ok(Signal::LinkDied(tag)),
@@ -474,14 +475,18 @@ impl SignalOverNetwork {
     }
 }
 
-struct ProxyProcess {
+pub(crate) struct ProxyProcess {
     signal_mailbox: Sender<Signal>,
 }
 
 impl ProxyProcess {
-    fn new(receiver_id: u64, mut peer: Peer, node: Node) -> ProxyProcess {
+    pub(crate) fn new(
+        receiver_id: u64,
+        mut peer: Peer,
+        node: Node,
+    ) -> (JoinHandle<()>, ProxyProcess) {
         let (signal_mailbox, receiver) = unbounded::<Signal>();
-        let _ = async_std::task::spawn(async move {
+        let join_handle = async_std::task::spawn(async move {
             // TODO: Sync when remote process is dropped and propagate info to clean up resources.
             loop {
                 let signal = receiver.recv().await;
@@ -500,7 +505,7 @@ impl ProxyProcess {
                 };
             }
         });
-        ProxyProcess { signal_mailbox }
+        (join_handle, ProxyProcess { signal_mailbox })
     }
 }
 
@@ -528,6 +533,15 @@ pub struct Link {
     process_resource_id: u64,
 }
 
+impl Link {
+    pub fn new(tag: Option<i64>, process_resource_id: u64) -> Self {
+        Link {
+            tag,
+            process_resource_id,
+        }
+    }
+}
+
 impl Message {
     fn add_tag(self, tag: u64) -> TaggedMessage {
         TaggedMessage { tag, data: self }
@@ -542,7 +556,7 @@ enum Response {
     Error(String),
 }
 
-enum Resource {
+pub(crate) enum Resource {
     Environment(Environment),
     Module(Module),
     Process(Arc<dyn Process>),

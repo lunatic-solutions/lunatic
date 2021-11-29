@@ -38,7 +38,7 @@ impl Environment {
     pub async fn create_module(&self, data: Vec<u8>) -> Result<Module> {
         match self {
             Environment::Local(local) => local.create_module(data).await,
-            Environment::Remote(_) => todo!(),
+            Environment::Remote(remote) => remote.create_module(remote.id, data).await,
         }
     }
     pub fn registry(&self) -> &LocalRegistry {
@@ -71,9 +71,13 @@ impl EnvironmentRemote {
                 "Can't create remote environment, node doesn't exist"
             ));
         }
-        let mut peer = peer.unwrap().clone();
+        let peer = peer.unwrap().clone();
         let id = peer.create_environment(config).await?;
         Ok(Self { peer, id })
+    }
+
+    pub async fn create_module(&self, env_id: u64, data: Vec<u8>) -> Result<Module> {
+        Ok(Module::remote(env_id, self.peer.clone(), data).await?)
     }
 }
 
@@ -136,7 +140,7 @@ impl EnvironmentLocal {
         // The compilation of a module is a CPU intensive tasks and can take some time.
         let module = async_std::task::spawn_blocking(move || {
             match wasmtime::Module::new(env.engine(), new_module.as_slice()) {
-                Ok(wasmtime_module) => Ok(Module::new(data, env, wasmtime_module)),
+                Ok(wasmtime_module) => Ok(Module::local(data, env, wasmtime_module)),
                 Err(err) => Err(err),
             }
         })

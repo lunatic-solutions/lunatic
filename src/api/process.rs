@@ -380,10 +380,11 @@ fn preopen_dir(
     let dir = std::str::from_utf8(buffer.as_slice()).or_trap("lunatic::process::preopen_dir")?;
 
     let dir_path = Path::new(dir);
+    // TODO: Explore what granting access means in a distributed environment
     let can_grant_access = caller
         .data()
         .module
-        .environment_local()
+        .environment()
         .config()
         .preopened_dirs()
         .iter()
@@ -844,10 +845,7 @@ async fn spawn_from_module(
         }
     };
     let (proc_or_error_id, result) = match module.spawn(function, params, link).await {
-        Ok((_, process)) => (
-            caller.data_mut().resources.processes.add(Arc::new(process)),
-            0,
-        ),
+        Ok((_, process)) => (caller.data_mut().resources.processes.add(process), 0),
         Err(error) => (caller.data_mut().errors.add(error), 1),
     };
     memory
@@ -958,7 +956,7 @@ fn id(mut caller: Caller<ProcessState>, process_id: u64, u128_ptr: u32) -> Resul
 //%
 //% Returns ID of the environment that this process was spawned from.
 fn this_env(mut caller: Caller<ProcessState>) -> u64 {
-    let env = caller.data().module.environment();
+    let env = Environment::Local(caller.data().module.environment().clone());
     caller.data_mut().resources.environments.add(env)
 }
 
@@ -1181,7 +1179,7 @@ fn lookup(
         .get(query_ptr as usize..(query_ptr + query_len) as usize)
         .or_trap("lunatic::process::lookup")?;
     let query = std::str::from_utf8(buffer).or_trap("lunatic::process::lookup")?;
-    let registry = caller.data().module.environment_local().registry();
+    let registry = caller.data().module.environment().registry();
     let process = match registry.get(name, query) {
         Ok(proc) => proc,
         Err(_) => return Ok(1),
