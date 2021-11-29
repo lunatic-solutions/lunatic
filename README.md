@@ -58,7 +58,7 @@ cargo install --path .
 
 ## Usage
 
-After installation you can use the `lunatic` binary to run WASM modules.
+After installation, you can use the `lunatic` binary to run WASM modules.
 
 To learn how to build modules, check out language-specific bindings:
 
@@ -83,13 +83,13 @@ Some common use cases for processes are:
 
 What makes the last use case possible are the sandboxing capabilities of [WebAssembly][1]. WebAssembly was
 originally developed to run in the browser and provides extremely strong sandboxing on multiple levels.
-Lunatic's processes inherit this properties.
+Lunatic's processes inherit these properties.
 
-Each process has their own stack, heap and even syscalls. If one process fails it will not affect the rest
+Each process has its own stack, heap, and even syscalls. If one process fails, it will not affect the rest
 of the system. This allows you to create very powerful and fault-tolerant abstraction.
 
 This is also true for some other runtimes, but Lunatic goes one step further and makes it possible to use C
-bindings directly in your app without any fear. If the C code contains any security vulnerabilities or crashes
+bindings directly in your app without any fear. If the C code contains any security vulnerabilities or crashes,
 those issues will only affect the process currently executing the code. The only requirement is that the C
 code can be compiled to WebAssembly.
 
@@ -102,13 +102,13 @@ All processes running on Lunatic are preemptively scheduled and executed by a [w
 gives you the freedom to write simple _blocking_ code, but the runtime is going to make sure it actually never blocks
 a thread if waiting on I/O.
 
-Even if you have an infinite loop somewhere in your code, the scheduling will always be fair and will not permanently block
+Even if you have an infinite loop somewhere in your code, the scheduling will always be fair and not permanently block
 the execution thread. The best part is that you don't need to do anything special to achieve this, the runtime will take
 care of it no matter which programming language you use.
 
 ### Compatibility
 
-We intend to eventually make Lunatic completely compatible with [WASI][10]. Ideally you could just take existing code,
+We intend to eventually make Lunatic completely compatible with [WASI][10]. Ideally, you could take existing code,
 compile it to WebAssembly and run on top of Lunatic; creating the best developer experience possible. We're not
 quite there yet.
 
