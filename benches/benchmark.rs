@@ -7,7 +7,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     let rt = tokio::runtime::Runtime::new().unwrap();
 
     let config = EnvConfig::default();
-    let environment = Environment::new(config).unwrap();
+    let environment = Environment::local(config).unwrap();
 
     let raw_module = std::fs::read("./target/wasm/hello.wasm").unwrap();
     let module = rt.block_on(environment.create_module(raw_module)).unwrap();

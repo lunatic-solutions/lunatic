@@ -38,6 +38,7 @@
     (import "lunatic::process" "preopen_dir" (func (param i64 i32 i32 i32) (result i32)))
     (import "lunatic::process" "add_plugin" (func (param i64 i32 i32 i32) (result i32)))
     (import "lunatic::process" "create_environment" (func (param i64 i32) (result i32)))
+    (import "lunatic::process" "create_remote_environment" (func (param i64 i32 i32 i32) (result i32)))
     (import "lunatic::process" "drop_environment" (func (param i64)))
     (import "lunatic::process" "add_module" (func (param i64 i32 i32 i32) (result i32)))
     (import "lunatic::process" "add_this_module" (func (param i64 i32) (result i32)))

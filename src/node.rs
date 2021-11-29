@@ -25,13 +25,13 @@ use crate::{async_map, module::Module, state::HashMapId, EnvConfig, Environment,
 /// these remote nodes.
 #[derive(Clone)]
 pub struct Node {
-    inner: Arc<RwLock<InnerNode>>,
+    pub(crate) inner: Arc<RwLock<InnerNode>>,
 }
 
-struct InnerNode {
+pub(crate) struct InnerNode {
     name: String,
     socket: SocketAddr,
-    peers: HashMap<String, Peer>,
+    pub(crate) peers: HashMap<String, Peer>,
     resources: HashMapId<Resource>,
 }
 
@@ -168,7 +168,7 @@ async fn peer_task(node: Node, mut peer: Peer) {
             }
             Message::Peers(_) => unreachable!("Peers are only received during bootstrap"),
             Message::CreateEnvironment(config) => {
-                let env = Environment::new(config);
+                let env = Environment::local(config);
                 if let Ok(env) = env {
                     let mut node = node.inner.write().await;
                     let id = node.resources.add(Resource::Environment(env));

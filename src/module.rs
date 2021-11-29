@@ -10,11 +10,10 @@ use wasmtime::{Store, Val};
 use std::sync::Arc;
 
 use crate::{
-    environment::UNIT_OF_COMPUTE_IN_INSTRUCTIONS,
+    environment::{Environment, EnvironmentLocal, UNIT_OF_COMPUTE_IN_INSTRUCTIONS},
     mailbox::MessageMailbox,
     process::{self, Process, Signal, WasmProcess},
     state::ProcessState,
-    Environment,
 };
 
 /// A compiled WebAssembly module that can be used to spawn [`WasmProcesses`][0].
@@ -29,12 +28,16 @@ pub struct Module {
 
 struct InnerModule {
     data: Vec<u8>,
-    env: Environment,
+    env: EnvironmentLocal,
     wasmtime_module: wasmtime::Module,
 }
 
 impl Module {
-    pub(crate) fn new(data: Vec<u8>, env: Environment, wasmtime_module: wasmtime::Module) -> Self {
+    pub(crate) fn new(
+        data: Vec<u8>,
+        env: EnvironmentLocal,
+        wasmtime_module: wasmtime::Module,
+    ) -> Self {
         Self {
             inner: Arc::new(InnerModule {
                 data,
@@ -73,16 +76,16 @@ impl Module {
             self.clone(),
             signal_mailbox.0.clone(),
             message_mailbox.clone(),
-            self.environment().config(),
+            self.environment_local().config(),
         )?;
 
-        let mut store = Store::new(self.environment().engine(), state);
+        let mut store = Store::new(self.environment_local().engine(), state);
         store.limiter(|state| state);
 
         // Trap if out of fuel
         store.out_of_fuel_trap();
         // Define maximum fuel
-        match self.environment().config().max_fuel() {
+        match self.environment_local().config().max_fuel() {
             Some(max_fuel) => {
                 store.out_of_fuel_async_yield(max_fuel, UNIT_OF_COMPUTE_IN_INSTRUCTIONS)
             }
@@ -91,7 +94,7 @@ impl Module {
         };
 
         let instance = self
-            .environment()
+            .environment_local()
             .linker()
             .instantiate_async(&mut store, self.wasmtime_module())
             .await?;
@@ -146,8 +149,12 @@ impl Module {
         Ok((join, child_process_handle))
     }
 
-    pub fn environment(&self) -> &Environment {
+    pub fn environment_local(&self) -> &EnvironmentLocal {
         &self.inner.env
+    }
+
+    pub fn environment(&self) -> Environment {
+        Environment::Local(self.inner.env.clone())
     }
 
     pub fn wasmtime_module(&self) -> &wasmtime::Module {
