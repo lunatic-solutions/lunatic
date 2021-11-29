@@ -63,6 +63,17 @@ pub(crate) fn register(
         create_environment,
         namespace_filter,
     )?;
+    link_async4_if_match(
+        linker,
+        "lunatic::process",
+        "create_remote_environment",
+        FuncType::new(
+            [ValType::I64, ValType::I32, ValType::I32, ValType::I32],
+            [ValType::I32],
+        ),
+        create_remote_environment,
+        namespace_filter,
+    )?;
     link_if_match(
         linker,
         "lunatic::process",
@@ -372,7 +383,7 @@ fn preopen_dir(
     let can_grant_access = caller
         .data()
         .module
-        .environment()
+        .environment_local()
         .config()
         .preopened_dirs()
         .iter()
@@ -479,7 +490,7 @@ fn create_environment(
         .or_trap("lunatic::process::create_environment")?
         .clone();
 
-    let (env_or_error_id, result) = match Environment::new(config) {
+    let (env_or_error_id, result) = match Environment::local(config) {
         Ok(env) => (caller.data_mut().resources.environments.add(env), 0),
         Err(error) => (caller.data_mut().errors.add(error), 1),
     };
@@ -490,6 +501,60 @@ fn create_environment(
         .or_trap("lunatic::process::create_environment")?;
 
     Ok(result)
+}
+
+//% lunatic::process::create_remote_environment(
+//%     config_id: u64,
+//%     node_name_ptr: u32,
+//%     name_name_len: u32,
+//%     id_ptr: u32
+//% ) -> u32
+//%
+//% Returns:
+//% * 0 on success - The ID of the newly created environment is written to **id_ptr**
+//% * 1 on error   - The error ID is written to **id_ptr**
+//%
+//% Consumes the config and creates a new environment on a remote node.
+//%
+//% Traps:
+//% * If the config ID doesn't exist.
+//% * If **node_name_ptr + name_name_len** is outside the memory.
+//% * If **id_ptr** is outside the memory.
+fn create_remote_environment(
+    mut caller: Caller<ProcessState>,
+    config_id: u64,
+    node_name_ptr: u32,
+    name_name_len: u32,
+    id_ptr: u32,
+) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_> {
+    Box::new(async move {
+        let config = caller
+            .data_mut()
+            .resources
+            .configs
+            .get(config_id)
+            .or_trap("lunatic::process::create_remote_environment")?
+            .clone();
+
+        let memory = get_memory(&mut caller)?;
+        let node_name = memory
+            .data(&caller)
+            .get(node_name_ptr as usize..(node_name_ptr + name_name_len) as usize)
+            .or_trap("lunatic::process::create_remote_environment")?;
+        let node_name = std::str::from_utf8(node_name)
+            .or_trap("lunatic::process::create_remote_environment")?;
+
+        let (env_or_error_id, result) = match Environment::remote(node_name, config).await {
+            Ok(env) => (caller.data_mut().resources.environments.add(env), 0),
+            Err(error) => (caller.data_mut().errors.add(error), 1),
+        };
+
+        memory
+            .write(&mut caller, id_ptr as usize, &env_or_error_id.to_le_bytes())
+            .or_trap("lunatic::process::create_remote_environment")?;
+
+        Ok(result)
+    })
 }
 
 //% lunatic::process::drop_environment(env_id: u64)
@@ -893,7 +958,7 @@ fn id(mut caller: Caller<ProcessState>, process_id: u64, u128_ptr: u32) -> Resul
 //%
 //% Returns ID of the environment that this process was spawned from.
 fn this_env(mut caller: Caller<ProcessState>) -> u64 {
-    let env = caller.data().module.environment().clone();
+    let env = caller.data().module.environment();
     caller.data_mut().resources.environments.add(env)
 }
 
@@ -1116,7 +1181,7 @@ fn lookup(
         .get(query_ptr as usize..(query_ptr + query_len) as usize)
         .or_trap("lunatic::process::lookup")?;
     let query = std::str::from_utf8(buffer).or_trap("lunatic::process::lookup")?;
-    let registry = caller.data().module.environment().registry();
+    let registry = caller.data().module.environment_local().registry();
     let process = match registry.get(name, query) {
         Ok(proc) => proc,
         Err(_) => return Ok(1),

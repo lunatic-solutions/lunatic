@@ -1,10 +1,11 @@
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use lazy_static::lazy_static;
 use wasmtime::{Config, Engine, InstanceAllocationStrategy, Linker, OptLevel, ProfilingStrategy};
 
 use super::config::EnvConfig;
 use crate::{
-    api, module::Module, plugin::patch_module, registry::LocalRegistry, state::ProcessState,
+    api, module::Module, node::Peer, plugin::patch_module, registry::LocalRegistry,
+    state::ProcessState,
 };
 
 // One unit of fuel represents around 100k instructions.
@@ -20,14 +21,71 @@ pub const UNIT_OF_COMPUTE_IN_INSTRUCTIONS: u64 = 100_000;
 /// They also define the set of plugins. Plugins can be used to modify loaded Wasm modules.
 /// Plugins are WIP and not well documented.
 #[derive(Clone)]
-pub struct Environment {
+pub enum Environment {
+    Local(EnvironmentLocal),
+    Remote(EnvironmentRemote),
+}
+
+impl Environment {
+    pub fn local(config: EnvConfig) -> Result<Self> {
+        Ok(Self::Local(EnvironmentLocal::new(config)?))
+    }
+    pub async fn remote(node_name: &str, config: EnvConfig) -> Result<Self> {
+        Ok(Self::Remote(
+            EnvironmentRemote::new(node_name, config).await?,
+        ))
+    }
+    pub async fn create_module(&self, data: Vec<u8>) -> Result<Module> {
+        match self {
+            Environment::Local(local) => local.create_module(data).await,
+            Environment::Remote(_) => todo!(),
+        }
+    }
+    pub fn registry(&self) -> &LocalRegistry {
+        match self {
+            Environment::Local(local) => local.registry(),
+            Environment::Remote(_) => todo!(),
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct EnvironmentRemote {
+    peer: Peer,
+    id: u64,
+}
+
+impl EnvironmentRemote {
+    pub async fn new(node_name: &str, config: EnvConfig) -> Result<Self> {
+        let node = crate::NODE.read().await;
+        if node.is_none() {
+            return Err(anyhow!(
+                "Can't create remote environment on a node not connected to others"
+            ));
+        }
+        let node = node.as_ref().unwrap();
+        let node = node.inner.read().await;
+        let peer = node.peers.get(node_name);
+        if peer.is_none() {
+            return Err(anyhow!(
+                "Can't create remote environment, node doesn't exist"
+            ));
+        }
+        let mut peer = peer.unwrap().clone();
+        let id = peer.create_environment(config).await?;
+        Ok(Self { peer, id })
+    }
+}
+
+#[derive(Clone)]
+pub struct EnvironmentLocal {
     engine: Engine,
     linker: Linker<ProcessState>,
     config: EnvConfig,
     registry: LocalRegistry,
 }
 
-impl Environment {
+impl EnvironmentLocal {
     /// Create a new environment from a configuration.
     pub fn new(config: EnvConfig) -> Result<Self> {
         let mut wasmtime_config = Config::new();

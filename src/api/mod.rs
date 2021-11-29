@@ -81,14 +81,14 @@ mod tests {
 
         // The default configuration includes both, the "lunatic::*" and "wasi_*" namespaces.
         let config = EnvConfig::default();
-        let environment = Environment::new(config).unwrap();
+        let environment = Environment::local(config).unwrap();
         let raw_module = std::fs::read("./target/wasm/all_imports.wasm").unwrap();
         let module = environment.create_module(raw_module).await.unwrap();
         module.spawn("hello", Vec::new(), None).await.unwrap();
 
         // This configuration should still compile, even all host calls will trap.
         let config = EnvConfig::new(0, None);
-        let environment = Environment::new(config).unwrap();
+        let environment = Environment::local(config).unwrap();
         let raw_module = std::fs::read("./target/wasm/all_imports.wasm").unwrap();
         let module = environment.create_module(raw_module).await.unwrap();
         module.spawn("hello", Vec::new(), None).await.unwrap();
