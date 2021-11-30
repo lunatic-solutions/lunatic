@@ -22,8 +22,14 @@ use wasmtime::Val;
 
 use crate::{async_map, module::Module, state::HashMapId, EnvConfig, Environment, Process, Signal};
 
-/// A node holds information of other peers in the distributed system and resources belonging to
-/// these remote nodes.
+/// A node holds information about other peers in a distributed system and local resources that can
+/// be accessed by remote peers.
+///
+/// Each node is identified by an unique name.
+///
+/// TODO: This could be separated out into an independent crate, making it possible to switch
+///       between different implementations of transport protocols. Or to run simulation tests in
+///       the spirit of https://sled.rs/simulation.html.
 #[derive(Clone)]
 pub struct Node {
     pub(crate) inner: Arc<RwLock<InnerNode>>,
@@ -37,6 +43,10 @@ pub(crate) struct InnerNode {
 }
 
 impl Node {
+    /// Create a new node, give it a name and bind it to a port.
+    ///
+    /// If the `bootstrap` argument is supplied the node will connect to the bootstrap peer and
+    /// request information about all other known nodes in the system.
     pub async fn new<A: ToSocketAddrs>(
         name: String,
         socket: A,
@@ -46,7 +56,7 @@ impl Node {
         // Bind itself to a socket
         let listener = TcpListener::bind(socket).await?;
 
-        // Bootstrap all peers from one.
+        // Discover all peers from bootstrap node.
         let peers = if let Some(bootstrap) = bootstrap {
             let bootstrap = bootstrap.to_socket_addrs().await?.next().unwrap();
             let bootstrap_conn = TcpStream::connect(bootstrap).await?;
@@ -55,8 +65,8 @@ impl Node {
             bootstrap_peer
                 .send(Message::Register(name.clone(), socket))
                 .await?;
-            // Ask the bootstrap for all other peers. The returned list will also contain the
-            // bootstrap one.
+            // Ask the bootstrap node for all other peers. The returned list will also contain the
+            // bootstrap node.
             bootstrap_peer.send(Message::GetPeers).await?;
             if let Message::Peers(peer_infos) = bootstrap_peer.receive().await?.into() {
                 let mut peers = HashMap::new();
@@ -123,16 +133,22 @@ async fn node_server(node: Node, listener: TcpListener) {
     while let Ok((conn, addr)) = listener.accept().await {
         let peer = Peer::new(conn.clone(), addr);
         // The first message will always be the name.
-        // TODO: Have a time-out here because other connections are blocked until the name arrives.
+        // TODO: Handle this part inside of a task to not block other incoming connections.
+        //       This will require using a consensus algorithm to decide what nodes are part of
+        //       the cluster or it could happen that we send back a list of peers before the new
+        //       node is added.
         if let Ok(msg) = peer.receive().await {
             if let Message::Register(name, new_addr) = msg.into() {
                 // Use address provided by the peer when sending it to other nodes
                 let peer = Peer::new(conn, new_addr);
+                // This task will just handle the GetPeers message and die
                 async_std::task::spawn(peer_task(node.clone(), peer.clone()));
                 let mut node = node.inner.write().await;
-                // TODO: Check if peer under this name exists or we already have this name and report error.
-                // TODO: During the bootstrap process we will double connect to the bootstrap node,
-                //       once to get all peers, and once we receive the bootstrap node as a peer
+                // TODO: Check if peer under this name exists or we already have this name and
+                //       report an error. We will be connecting multiple times to a node:
+                //       1. To get all the peers.
+                //       2. As part of connecting to all peers.
+                //       Because of this we can't simply ask if the name exists inside of peers.
                 node.peers.insert(name, peer);
             } else {
                 todo!("Handle wrong first message");
@@ -149,27 +165,31 @@ async fn peer_task(node: Node, peer: Peer) {
     while let Ok(message) = peer.receive().await {
         let node = node.clone();
         let peer = peer.clone();
+        // If the message is GetPeers we want to handle it outside of the task, because we need to
+        // terminate once it's done. Another connection will be established afterwards to handle
+        // other messages.
+        if let Message::GetPeers = message.data {
+            let node = node.inner.read().await;
+            let mut peers: Vec<(String, SocketAddr)> = node
+                .peers
+                .iter()
+                .map(|(name, peer)| (name.clone(), peer.addr()))
+                .collect();
+            // Add itself to the peer list.
+            peers.push((node.name.clone(), node.socket));
+            let tagged_msg = Message::Peers(peers).add_tag(message.tag);
+            let _ = peer.send(tagged_msg).await;
+            // Terminate this connection
+            break;
+        }
         // Handle the message in a separate task.
         async_std::task::spawn(async move {
             trace!("receiving from {}: {:?}", peer.addr(), message);
             let tag = message.tag;
             let message = message.data;
             match message {
-                Message::Register(_, _) => unreachable!("Can't get a name message at this point"),
-                Message::GetPeers => {
-                    let node = node.inner.read().await;
-                    let mut peers: Vec<(String, SocketAddr)> = node
-                        .peers
-                        .iter()
-                        .map(|(name, peer)| (name.clone(), peer.addr()))
-                        .collect();
-                    // Add itself to the peer list.
-                    peers.push((node.name.clone(), node.socket));
-                    let tagged_msg = Message::Peers(peers).add_tag(tag);
-                    if peer.send(tagged_msg).await.is_err() {
-                        // TODO: If message can't be sent declare node as dead
-                    }
-                }
+                Message::Register(_, _) => unreachable!("Can't get Register message at this point"),
+                Message::GetPeers => unreachable!("Can't get GetPeers message at this point"),
                 Message::Peers(_) => unreachable!("Peers are only received during bootstrap"),
                 Message::CreateEnvironment(config) => {
                     let env = Environment::local(config);
@@ -306,6 +326,7 @@ pub struct Peer {
     inner: Arc<InnerPeer>,
 }
 
+// TODO: Separate TcpStream from SocketAddr info into two structs.
 pub struct InnerPeer {
     reader: Mutex<TcpStream>,
     writer: Mutex<TcpStream>,
