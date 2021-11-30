@@ -196,30 +196,34 @@ async fn peer_task(node: Node, peer: Peer) {
                     if let Ok(env) = env {
                         let mut node = node.inner.write().await;
                         let id = node.resources.add(Resource::Environment(env));
-                        // TODO: Deal with error
                         let tagged_msg = Message::Resource(id).add_tag(tag);
-                        peer.send(tagged_msg).await.unwrap();
+                        let _ = peer.send(tagged_msg).await;
                     } else {
-                        // TODO: Deal with error
                         let tagged_msg =
                             Message::Error(env.err().unwrap().to_string()).add_tag(tag);
-                        peer.send(tagged_msg).await.unwrap();
+                        let _ = peer.send(tagged_msg).await;
                     }
                 }
                 Message::CreateModule(env_id, data) => {
                     let mut node = node.inner.write().await;
                     match node.resources.get(env_id) {
                         Some(Resource::Environment(ref env)) => {
-                            let module = env.create_module(data).await.unwrap();
-                            let id = node.resources.add(Resource::Module(module));
-                            let tagged_msg = Message::Resource(id).add_tag(tag);
-                            peer.send(tagged_msg).await.unwrap();
+                            let module = env.create_module(data).await;
+                            if let Ok(module) = module {
+                                let id = node.resources.add(Resource::Module(module));
+                                let tagged_msg = Message::Resource(id).add_tag(tag);
+                                let _ = peer.send(tagged_msg).await;
+                            } else {
+                                let tagged_msg =
+                                    Message::Error(module.err().unwrap().to_string()).add_tag(tag);
+                                let _ = peer.send(tagged_msg).await;
+                            }
                         }
                         _ => {
                             let tagged_msg =
                                 Message::Error("Resource is not an environment".to_string())
                                     .add_tag(tag);
-                            peer.send(tagged_msg).await.unwrap();
+                            let _ = peer.send(tagged_msg).await;
                         }
                     };
                 }
@@ -237,15 +241,21 @@ async fn peer_task(node: Node, peer: Peer) {
                     match node.resources.get(module_id) {
                         Some(Resource::Module(ref module)) => {
                             let params = params.into_iter().map(Val::I32).collect();
-                            let (_, process) = module.spawn(&entry, params, link).await.unwrap();
-                            let id = node.resources.add(Resource::Process(process));
-                            let tagged_msg = Message::Resource(id).add_tag(tag);
-                            peer.send(tagged_msg).await.unwrap();
+                            let result = module.spawn(&entry, params, link).await;
+                            if let Ok((_, process)) = result {
+                                let id = node.resources.add(Resource::Process(process));
+                                let tagged_msg = Message::Resource(id).add_tag(tag);
+                                let _ = peer.send(tagged_msg).await;
+                            } else {
+                                let tagged_msg =
+                                    Message::Error(result.err().unwrap().to_string()).add_tag(tag);
+                                let _ = peer.send(tagged_msg).await;
+                            }
                         }
                         _ => {
                             let tagged_msg =
                                 Message::Error("Resource is not a module".to_string()).add_tag(tag);
-                            peer.send(tagged_msg).await.unwrap();
+                            let _ = peer.send(tagged_msg).await;
                         }
                     };
                 }
@@ -255,11 +265,10 @@ async fn peer_task(node: Node, peer: Peer) {
                         if let Some(Resource::Process(process)) = node.resources.get(process_id) {
                             process.clone()
                         } else {
-                            // TODO: Handle error
                             unreachable!("Resources are never dropped")
                         }
                     };
-                    process.send(signal.into(peer.clone(), node.clone()).await.unwrap());
+                    let _ = process.send(signal.into(peer.clone(), node.clone()).await.unwrap());
                 }
                 Message::EnvRegistryInsert(env_id, name, version, process_id) => {
                     let node_clone = node.clone();
@@ -275,11 +284,11 @@ async fn peer_task(node: Node, peer: Peer) {
                             {
                                 Ok(()) => {
                                     let tagged_msg = Message::Resource(0).add_tag(tag);
-                                    peer.send(tagged_msg).await.unwrap();
+                                    let _ = peer.send(tagged_msg).await;
                                 }
                                 Err(err) => {
                                     let tagged_msg = Message::Error(err.to_string()).add_tag(tag);
-                                    peer.send(tagged_msg).await.unwrap();
+                                    let _ = peer.send(tagged_msg).await;
                                 }
                             }
                         }
@@ -287,7 +296,7 @@ async fn peer_task(node: Node, peer: Peer) {
                             let tagged_msg =
                                 Message::Error("Resource is not an environment".to_string())
                                     .add_tag(tag);
-                            peer.send(tagged_msg).await.unwrap();
+                            let _ = peer.send(tagged_msg).await;
                         }
                     };
                 }
@@ -298,11 +307,11 @@ async fn peer_task(node: Node, peer: Peer) {
                             match env.registry().remove(&name, &version).await {
                                 Ok(_) => {
                                     let tagged_msg = Message::Resource(0).add_tag(tag);
-                                    peer.send(tagged_msg).await.unwrap();
+                                    let _ = peer.send(tagged_msg).await;
                                 }
                                 Err(err) => {
                                     let tagged_msg = Message::Error(err.to_string()).add_tag(tag);
-                                    peer.send(tagged_msg).await.unwrap();
+                                    let _ = peer.send(tagged_msg).await;
                                 }
                             }
                         }
@@ -310,7 +319,7 @@ async fn peer_task(node: Node, peer: Peer) {
                             let tagged_msg =
                                 Message::Error("Resource is not an environment".to_string())
                                     .add_tag(tag);
-                            peer.send(tagged_msg).await.unwrap();
+                            let _ = peer.send(tagged_msg).await;
                         }
                     };
                 }
