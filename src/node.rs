@@ -147,99 +147,157 @@ async fn node_server(node: Node, listener: TcpListener) {
 async fn peer_task(node: Node, peer: Peer) {
     trace!("{} listening to {}", node.addr().await, peer.addr());
     while let Ok(message) = peer.receive().await {
-        trace!("receiving from {}: {:?}", peer.addr(), message);
-        let tag = message.tag;
-        let message = message.data;
-        match message {
-            Message::Register(_, _) => unreachable!("Can't get a name message at this point"),
-            Message::GetPeers => {
-                let node = node.inner.read().await;
-                let mut peers: Vec<(String, SocketAddr)> = node
-                    .peers
-                    .iter()
-                    .map(|(name, peer)| (name.clone(), peer.addr()))
-                    .collect();
-                // Add itself to the peer list.
-                peers.push((node.name.clone(), node.socket));
-                let tagged_msg = Message::Peers(peers).add_tag(tag);
-                if peer.send(tagged_msg).await.is_err() {
-                    // TODO: If message can't be sent declare node as dead
-                    break;
+        let node = node.clone();
+        let peer = peer.clone();
+        // Handle the message in a separate task.
+        async_std::task::spawn(async move {
+            trace!("receiving from {}: {:?}", peer.addr(), message);
+            let tag = message.tag;
+            let message = message.data;
+            match message {
+                Message::Register(_, _) => unreachable!("Can't get a name message at this point"),
+                Message::GetPeers => {
+                    let node = node.inner.read().await;
+                    let mut peers: Vec<(String, SocketAddr)> = node
+                        .peers
+                        .iter()
+                        .map(|(name, peer)| (name.clone(), peer.addr()))
+                        .collect();
+                    // Add itself to the peer list.
+                    peers.push((node.name.clone(), node.socket));
+                    let tagged_msg = Message::Peers(peers).add_tag(tag);
+                    if peer.send(tagged_msg).await.is_err() {
+                        // TODO: If message can't be sent declare node as dead
+                    }
                 }
-            }
-            Message::Peers(_) => unreachable!("Peers are only received during bootstrap"),
-            Message::CreateEnvironment(config) => {
-                let env = Environment::local(config);
-                if let Ok(env) = env {
-                    let mut node = node.inner.write().await;
-                    let id = node.resources.add(Resource::Environment(env));
-                    // TODO: Deal with error
-                    let tagged_msg = Message::Resource(id).add_tag(tag);
-                    peer.send(tagged_msg).await.unwrap();
-                } else {
-                    // TODO: Deal with error
-                    let tagged_msg = Message::Error(env.err().unwrap().to_string()).add_tag(tag);
-                    peer.send(tagged_msg).await.unwrap();
-                }
-            }
-            Message::CreateModule(env_id, data) => {
-                let mut node = node.inner.write().await;
-                match node.resources.get(env_id) {
-                    Some(Resource::Environment(ref env)) => {
-                        let module = env.create_module(data).await.unwrap();
-                        let id = node.resources.add(Resource::Module(module));
+                Message::Peers(_) => unreachable!("Peers are only received during bootstrap"),
+                Message::CreateEnvironment(config) => {
+                    let env = Environment::local(config);
+                    if let Ok(env) = env {
+                        let mut node = node.inner.write().await;
+                        let id = node.resources.add(Resource::Environment(env));
+                        // TODO: Deal with error
                         let tagged_msg = Message::Resource(id).add_tag(tag);
                         peer.send(tagged_msg).await.unwrap();
-                    }
-                    _ => {
-                        let tagged_msg =
-                            Message::Error("Resource is not an environment".to_string())
-                                .add_tag(tag);
-                        peer.send(tagged_msg).await.unwrap();
-                    }
-                };
-            }
-            Message::Spawn(module_id, entry, params, link) => {
-                // Create local link to forward info
-                let link: Option<(Option<i64>, Arc<dyn Process>)> = if let Some(link) = link {
-                    // Spawn local proxy process that will forward link breakage information to remote node.
-                    let (_, proxy_process) =
-                        ProxyProcess::new(link.process_resource_id, peer.clone(), node.clone());
-                    Some((link.tag, Arc::new(proxy_process)))
-                } else {
-                    None
-                };
-                let mut node = node.inner.write().await;
-                match node.resources.get(module_id) {
-                    Some(Resource::Module(ref module)) => {
-                        let params = params.into_iter().map(Val::I32).collect();
-                        let (_, process) = module.spawn(&entry, params, link).await.unwrap();
-                        let id = node.resources.add(Resource::Process(process));
-                        let tagged_msg = Message::Resource(id).add_tag(tag);
-                        peer.send(tagged_msg).await.unwrap();
-                    }
-                    _ => {
-                        let tagged_msg =
-                            Message::Error("Resource is not a module".to_string()).add_tag(tag);
-                        peer.send(tagged_msg).await.unwrap();
-                    }
-                };
-            }
-            Message::Send(process_id, signal) => {
-                let process = {
-                    let node = node.inner.write().await;
-                    if let Some(Resource::Process(process)) = node.resources.get(process_id) {
-                        process.clone()
                     } else {
-                        // TODO: Handle errror
-                        unreachable!("Resources are never dropped")
+                        // TODO: Deal with error
+                        let tagged_msg =
+                            Message::Error(env.err().unwrap().to_string()).add_tag(tag);
+                        peer.send(tagged_msg).await.unwrap();
                     }
-                };
-                process.send(signal.into(peer.clone(), node.clone()).await.unwrap());
+                }
+                Message::CreateModule(env_id, data) => {
+                    let mut node = node.inner.write().await;
+                    match node.resources.get(env_id) {
+                        Some(Resource::Environment(ref env)) => {
+                            let module = env.create_module(data).await.unwrap();
+                            let id = node.resources.add(Resource::Module(module));
+                            let tagged_msg = Message::Resource(id).add_tag(tag);
+                            peer.send(tagged_msg).await.unwrap();
+                        }
+                        _ => {
+                            let tagged_msg =
+                                Message::Error("Resource is not an environment".to_string())
+                                    .add_tag(tag);
+                            peer.send(tagged_msg).await.unwrap();
+                        }
+                    };
+                }
+                Message::Spawn(module_id, entry, params, link) => {
+                    // Create local link to forward info
+                    let link: Option<(Option<i64>, Arc<dyn Process>)> = if let Some(link) = link {
+                        // Spawn local proxy process that will forward link breakage information to remote node.
+                        let (_, proxy_process) =
+                            ProxyProcess::new(link.process_resource_id, peer.clone(), node.clone());
+                        Some((link.tag, Arc::new(proxy_process)))
+                    } else {
+                        None
+                    };
+                    let mut node = node.inner.write().await;
+                    match node.resources.get(module_id) {
+                        Some(Resource::Module(ref module)) => {
+                            let params = params.into_iter().map(Val::I32).collect();
+                            let (_, process) = module.spawn(&entry, params, link).await.unwrap();
+                            let id = node.resources.add(Resource::Process(process));
+                            let tagged_msg = Message::Resource(id).add_tag(tag);
+                            peer.send(tagged_msg).await.unwrap();
+                        }
+                        _ => {
+                            let tagged_msg =
+                                Message::Error("Resource is not a module".to_string()).add_tag(tag);
+                            peer.send(tagged_msg).await.unwrap();
+                        }
+                    };
+                }
+                Message::Send(process_id, signal) => {
+                    let process = {
+                        let node = node.inner.write().await;
+                        if let Some(Resource::Process(process)) = node.resources.get(process_id) {
+                            process.clone()
+                        } else {
+                            // TODO: Handle error
+                            unreachable!("Resources are never dropped")
+                        }
+                    };
+                    process.send(signal.into(peer.clone(), node.clone()).await.unwrap());
+                }
+                Message::EnvRegistryInsert(env_id, name, version, process_id) => {
+                    let node_clone = node.clone();
+                    let node = node.inner.read().await;
+                    match node.resources.get(env_id) {
+                        Some(Resource::Environment(ref env)) => {
+                            let (_, proxy_process) =
+                                ProxyProcess::new(process_id, peer.clone(), node_clone);
+                            match env
+                                .registry()
+                                .insert(name, &version, Arc::new(proxy_process))
+                                .await
+                            {
+                                Ok(()) => {
+                                    let tagged_msg = Message::Resource(0).add_tag(tag);
+                                    peer.send(tagged_msg).await.unwrap();
+                                }
+                                Err(err) => {
+                                    let tagged_msg = Message::Error(err.to_string()).add_tag(tag);
+                                    peer.send(tagged_msg).await.unwrap();
+                                }
+                            }
+                        }
+                        _ => {
+                            let tagged_msg =
+                                Message::Error("Resource is not an environment".to_string())
+                                    .add_tag(tag);
+                            peer.send(tagged_msg).await.unwrap();
+                        }
+                    };
+                }
+                Message::EnvRegistryRemove(env_id, name, version) => {
+                    let node = node.inner.read().await;
+                    match node.resources.get(env_id) {
+                        Some(Resource::Environment(ref env)) => {
+                            match env.registry().remove(&name, &version).await {
+                                Ok(_) => {
+                                    let tagged_msg = Message::Resource(0).add_tag(tag);
+                                    peer.send(tagged_msg).await.unwrap();
+                                }
+                                Err(err) => {
+                                    let tagged_msg = Message::Error(err.to_string()).add_tag(tag);
+                                    peer.send(tagged_msg).await.unwrap();
+                                }
+                            }
+                        }
+                        _ => {
+                            let tagged_msg =
+                                Message::Error("Resource is not an environment".to_string())
+                                    .add_tag(tag);
+                            peer.send(tagged_msg).await.unwrap();
+                        }
+                    };
+                }
+                Message::Resource(id) => peer.add_response(tag, Response::Resource(id)),
+                Message::Error(error) => peer.add_response(tag, Response::Error(error)),
             }
-            Message::Resource(id) => peer.add_response(tag, Response::Resource(id)),
-            Message::Error(error) => peer.add_response(tag, Response::Error(error)),
-        }
+        });
     }
 }
 
@@ -342,6 +400,39 @@ impl Peer {
     pub async fn send_signal(&mut self, proc_id: u64, signal: SignalOverNetwork) -> Result<()> {
         self.send(Message::Send(proc_id, signal)).await
     }
+
+    pub async fn env_registry_insert(
+        &self,
+        env_id: u64,
+        name: String,
+        version: String,
+        process_id: u64,
+    ) -> Result<()> {
+        let response = self
+            .request(Message::EnvRegistryInsert(
+                env_id, name, version, process_id,
+            ))
+            .await?;
+        match response {
+            Response::Resource(_) => Ok(()),
+            Response::Error(error) => Err(anyhow!(error)),
+        }
+    }
+
+    pub async fn env_registry_remove(
+        &self,
+        env_id: u64,
+        name: String,
+        version: String,
+    ) -> Result<()> {
+        let response = self
+            .request(Message::EnvRegistryRemove(env_id, name, version))
+            .await?;
+        match response {
+            Response::Resource(_) => Ok(()),
+            Response::Error(error) => Err(anyhow!(error)),
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -381,6 +472,10 @@ enum Message {
     Spawn(u64, String, Vec<i32>, Option<Link>),
     // Send
     Send(u64, SignalOverNetwork),
+    // Insert local process into remote registry (env_id, name, version, proc_id)
+    EnvRegistryInsert(u64, String, String, u64),
+    // Remove process from remote registry (env_id, name, version)
+    EnvRegistryRemove(u64, String, String),
     // Remote resource
     Resource(u64),
     // Error message
