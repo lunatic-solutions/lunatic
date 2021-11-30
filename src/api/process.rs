@@ -473,7 +473,7 @@ fn add_plugin(
 //% * 0 on success - The ID of the newly created environment is written to **id_ptr**
 //% * 1 on error   - The error ID is written to **id_ptr**
 //%
-//% Consumes the config and creates a new environment from it.
+//% Creates a new environment from a configuration.
 //%
 //% Traps:
 //% * If the config ID doesn't exist.
@@ -515,7 +515,7 @@ fn create_environment(
 //% * 0 on success - The ID of the newly created environment is written to **id_ptr**
 //% * 1 on error   - The error ID is written to **id_ptr**
 //%
-//% Consumes the config and creates a new environment on a remote node.
+//% Creates a new environment on a remote node from the configuration.
 //%
 //% Traps:
 //% * If the config ID doesn't exist.
