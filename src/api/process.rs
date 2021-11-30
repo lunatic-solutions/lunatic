@@ -5,7 +5,7 @@ use wasmtime::{Caller, FuncType, Linker, Trap, Val, ValType};
 
 use super::{
     get_memory, link_async1_if_match, link_async2_if_match, link_async4_if_match,
-    link_async6_if_match, link_async7_if_match, link_if_match,
+    link_async5_if_match, link_async6_if_match, link_async7_if_match, link_if_match,
 };
 use crate::{
     api::error::IntoTrap,
@@ -229,7 +229,7 @@ pub(crate) fn register(
         unlink,
         namespace_filter,
     )?;
-    link_if_match(
+    link_async6_if_match(
         linker,
         "lunatic::process",
         "register",
@@ -247,7 +247,7 @@ pub(crate) fn register(
         register_proc,
         namespace_filter,
     )?;
-    link_if_match(
+    link_async5_if_match(
         linker,
         "lunatic::process",
         "unregister",
@@ -1054,37 +1054,39 @@ fn register_proc(
     version_len: u32,
     env_id: u64,
     process_id: u64,
-) -> Result<u32, Trap> {
-    let memory = get_memory(&mut caller)?;
-    let buffer = memory
-        .data(&caller)
-        .get(name_ptr as usize..(name_ptr + name_len) as usize)
-        .or_trap("lunatic::process::register")?;
-    let name = std::str::from_utf8(buffer).or_trap("lunatic::process::register")?;
-    let name = String::from(name);
-    let buffer = memory
-        .data(&caller)
-        .get(version_ptr as usize..(version_ptr + version_len) as usize)
-        .or_trap("lunatic::process::register")?;
-    let version = std::str::from_utf8(buffer).or_trap("lunatic::process::register")?;
-    let process = caller
-        .data()
-        .resources
-        .processes
-        .get(process_id)
-        .or_trap("lunatic::process::register")?
-        .clone();
-    let environment = caller
-        .data()
-        .resources
-        .environments
-        .get(env_id)
-        .or_trap("lunatic::process::register")?;
-    let registry = environment.registry();
-    match registry.insert(name, version, process) {
-        Ok(()) => Ok(0),
-        Err(_) => Ok(1),
-    }
+) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_> {
+    Box::new(async move {
+        let memory = get_memory(&mut caller)?;
+        let buffer = memory
+            .data(&caller)
+            .get(name_ptr as usize..(name_ptr + name_len) as usize)
+            .or_trap("lunatic::process::register")?;
+        let name = std::str::from_utf8(buffer).or_trap("lunatic::process::register")?;
+        let name = String::from(name);
+        let buffer = memory
+            .data(&caller)
+            .get(version_ptr as usize..(version_ptr + version_len) as usize)
+            .or_trap("lunatic::process::register")?;
+        let version = std::str::from_utf8(buffer).or_trap("lunatic::process::register")?;
+        let process = caller
+            .data()
+            .resources
+            .processes
+            .get(process_id)
+            .or_trap("lunatic::process::register")?
+            .clone();
+        let environment = caller
+            .data()
+            .resources
+            .environments
+            .get(env_id)
+            .or_trap("lunatic::process::register")?;
+        let registry = environment.registry();
+        match registry.insert(name, version, process).await {
+            Ok(()) => Ok(0),
+            Err(_) => Ok(1),
+        }
+    })
 }
 
 //% lunatic::process::unregister(
@@ -1113,32 +1115,34 @@ fn unregister(
     version_ptr: u32,
     version_len: u32,
     env_id: u64,
-) -> Result<u32, Trap> {
-    let memory = get_memory(&mut caller)?;
-    let buffer = memory
-        .data(&caller)
-        .get(name_ptr as usize..(name_ptr + name_len) as usize)
-        .or_trap("lunatic::process::unregister")?;
-    let name = std::str::from_utf8(buffer).or_trap("lunatic::process::unregister")?;
-    let buffer = memory
-        .data(&caller)
-        .get(version_ptr as usize..(version_ptr + version_len) as usize)
-        .or_trap("lunatic::process::unregister")?;
-    let version = std::str::from_utf8(buffer).or_trap("lunatic::process::unregister")?;
-    let environment = caller
-        .data()
-        .resources
-        .environments
-        .get(env_id)
-        .or_trap("lunatic::process::unregister")?;
-    let registry = environment.registry();
-    match registry.remove(name, version) {
-        Ok(result) => match result {
-            Some(_) => Ok(0),
-            None => Ok(2),
-        },
-        Err(_) => Ok(1),
-    }
+) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_> {
+    Box::new(async move {
+        let memory = get_memory(&mut caller)?;
+        let buffer = memory
+            .data(&caller)
+            .get(name_ptr as usize..(name_ptr + name_len) as usize)
+            .or_trap("lunatic::process::unregister")?;
+        let name = std::str::from_utf8(buffer).or_trap("lunatic::process::unregister")?;
+        let buffer = memory
+            .data(&caller)
+            .get(version_ptr as usize..(version_ptr + version_len) as usize)
+            .or_trap("lunatic::process::unregister")?;
+        let version = std::str::from_utf8(buffer).or_trap("lunatic::process::unregister")?;
+        let environment = caller
+            .data()
+            .resources
+            .environments
+            .get(env_id)
+            .or_trap("lunatic::process::unregister")?;
+        let registry = environment.registry();
+        match registry.remove(name, version).await {
+            Ok(result) => match result {
+                Some(_) => Ok(0),
+                None => Ok(2),
+            },
+            Err(_) => Ok(1),
+        }
+    })
 }
 
 //% lunatic::process::lookup(

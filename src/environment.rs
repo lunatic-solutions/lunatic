@@ -4,7 +4,7 @@ use wasmtime::{Config, Engine, InstanceAllocationStrategy, Linker, OptLevel, Pro
 
 use super::config::EnvConfig;
 use crate::{
-    api, module::Module, node::Peer, plugin::patch_module, registry::LocalRegistry,
+    api, module::Module, node::Peer, plugin::patch_module, registry::EnvRegistry,
     state::ProcessState,
 };
 
@@ -41,18 +41,19 @@ impl Environment {
             Environment::Remote(remote) => remote.create_module(remote.id, data).await,
         }
     }
-    pub fn registry(&self) -> &LocalRegistry {
+    pub fn registry(&self) -> &EnvRegistry {
         match self {
             Environment::Local(local) => local.registry(),
-            Environment::Remote(_) => todo!(),
+            Environment::Remote(remote) => remote.registry(),
         }
     }
 }
 
 #[derive(Clone)]
 pub struct EnvironmentRemote {
-    peer: Peer,
     id: u64,
+    peer: Peer,
+    registry: EnvRegistry,
 }
 
 impl EnvironmentRemote {
@@ -73,11 +74,19 @@ impl EnvironmentRemote {
         }
         let peer = peer.unwrap().clone();
         let id = peer.create_environment(config).await?;
-        Ok(Self { peer, id })
+        Ok(Self {
+            id,
+            peer: peer.clone(),
+            registry: EnvRegistry::remote(id, peer),
+        })
     }
 
     pub async fn create_module(&self, env_id: u64, data: Vec<u8>) -> Result<Module> {
         Ok(Module::remote(env_id, self.peer.clone(), data).await?)
+    }
+
+    pub fn registry(&self) -> &EnvRegistry {
+        &self.registry
     }
 }
 
@@ -86,7 +95,7 @@ pub struct EnvironmentLocal {
     engine: Engine,
     linker: Linker<ProcessState>,
     config: EnvConfig,
-    registry: LocalRegistry,
+    registry: EnvRegistry,
 }
 
 impl EnvironmentLocal {
@@ -125,7 +134,7 @@ impl EnvironmentLocal {
             engine,
             linker,
             config,
-            registry: LocalRegistry::new(),
+            registry: EnvRegistry::local(),
         })
     }
 
@@ -160,7 +169,7 @@ impl EnvironmentLocal {
         &self.linker
     }
 
-    pub fn registry(&self) -> &LocalRegistry {
+    pub fn registry(&self) -> &EnvRegistry {
         &self.registry
     }
 }
