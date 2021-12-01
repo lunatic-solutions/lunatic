@@ -25,7 +25,7 @@ If you would like to see other languages supported or just follow the discussion
 - [x] Channel based message passing
 - [x] TCP networking
 - [x] Filesystem access
-- [ ] Distributed nodes
+- [x] Distributed nodes
 - [ ] Hot reloading
 
 ## Installation
