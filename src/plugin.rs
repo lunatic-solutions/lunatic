@@ -191,9 +191,9 @@ impl<'a> ModuleContext<'a> {
                     validator.memory_section(&memories)?;
                     self.add_section(wasm_encoder::SectionId::Memory, memories.range());
                 }
-                Payload::EventSection(events) => {
-                    validator.event_section(&events)?;
-                    self.add_section(wasm_encoder::SectionId::Memory, events.range());
+                Payload::TagSection(tags) => {
+                    validator.tag_section(&tags)?;
+                    self.add_section(wasm_encoder::SectionId::Tag, tags.range());
                 }
                 Payload::GlobalSection(globals) => {
                     validator.global_section(&globals)?;
@@ -454,14 +454,12 @@ impl<'a> ModuleContext<'a> {
                         wasmparser::ExternalKind::Memory => {
                             wasm_encoder::Export::Memory(export.index)
                         }
-                        wasmparser::ExternalKind::Event => {
-                            return Err(anyhow!("Unsupported Wasm export: 'Event'"))
-                        }
+                        wasmparser::ExternalKind::Tag => wasm_encoder::Export::Tag(export.index),
                         wasmparser::ExternalKind::Global => {
                             wasm_encoder::Export::Global(export.index)
                         }
                         wasmparser::ExternalKind::Type => {
-                            return Err(anyhow!("Unsupported Wasm type: 'Type'"))
+                            return Err(anyhow!("Unsupported Wasm export: 'Type'"))
                         }
                         wasmparser::ExternalKind::Module => {
                             wasm_encoder::Export::Module(export.index)
@@ -521,27 +519,22 @@ impl<'a> ModuleContext<'a> {
             wasmparser::ImportSectionEntryType::Table(table) => {
                 wasm_encoder::EntityType::Table(wasm_encoder::TableType {
                     element_type: Self::type_translate(&table.element_type)?,
-                    limits: wasm_encoder::Limits {
-                        min: table.limits.initial,
-                        max: table.limits.maximum,
-                    },
+                    minimum: table.initial,
+                    maximum: table.maximum,
                 })
             }
-            wasmparser::ImportSectionEntryType::Memory(memory) => match memory {
-                wasmparser::MemoryType::M32 { limits, .. } => {
-                    wasm_encoder::EntityType::Memory(wasm_encoder::MemoryType {
-                        limits: wasm_encoder::Limits {
-                            min: limits.initial,
-                            max: limits.maximum,
-                        },
-                    })
-                }
-                wasmparser::MemoryType::M64 { .. } => {
-                    return Err(anyhow!("Unsupported Wasm memory: '64bit'"))
-                }
-            },
-            wasmparser::ImportSectionEntryType::Event(_) => {
-                return Err(anyhow!("Unsupported Wasm entity type: 'Event'"))
+            wasmparser::ImportSectionEntryType::Memory(memory) => {
+                wasm_encoder::EntityType::Memory(wasm_encoder::MemoryType {
+                    minimum: memory.initial,
+                    maximum: memory.maximum,
+                    memory64: memory.memory64,
+                })
+            }
+            wasmparser::ImportSectionEntryType::Tag(tag) => {
+                wasm_encoder::EntityType::Tag(wasm_encoder::TagType {
+                    kind: wasm_encoder::TagKind::Exception,
+                    func_type_idx: tag.type_index,
+                })
             }
             wasmparser::ImportSectionEntryType::Global(global) => {
                 wasm_encoder::EntityType::Global(wasm_encoder::GlobalType {
@@ -598,10 +591,10 @@ pub(crate) fn patch_module(module: &[u8], plugins: &[Plugin]) -> Result<Vec<u8>>
         let instance = linker.instantiate(&mut store, &plugin.module)?;
         // Call the initialize method on the plugin if it exists
         if let Some(initialize) = instance.get_func(&mut store, "_initialize") {
-            initialize.call(&mut store, &[])?;
+            initialize.call(&mut store, &[], &mut [])?;
         }
         if let Some(hook) = instance.get_func(&mut store, "lunatic_create_module_hook") {
-            hook.call(&mut store, &[])?;
+            hook.call(&mut store, &[], &mut [])?;
         };
     }
     store.into_data().module_context().encode()

@@ -196,7 +196,7 @@ impl ModuleLocal {
                 Ok(func)
             })?;
 
-        let fut = async move { entry.call_async(&mut store, &params).await };
+        let fut = async move { entry.call_async(&mut store, &params, &mut []).await };
         let child_process = process::new(fut, id, signal_mailbox.1, message_mailbox);
         let child_process_handle = WasmProcess::new(id, signal_mailbox.0.clone());
 

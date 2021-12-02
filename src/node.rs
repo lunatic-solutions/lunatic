@@ -790,7 +790,7 @@ mod tests {
         let peer2 = peers1.get_mut("node2").unwrap();
         let config = EnvConfig::default();
         let env_id = peer2.create_environment(config).await.unwrap();
-        let raw_module = std::fs::read("./target/wasm/hello.wasm").unwrap();
+        let raw_module = wat::parse_file("./wat/hello.wat").unwrap();
         let mod_id = peer2.create_module(env_id, raw_module).await.unwrap();
         let proc = peer2
             .spawn(mod_id, "hello".to_string(), vec![], None)

@@ -116,13 +116,13 @@ impl Process for WasmProcess {
 }
 
 // Turns a Future into a process, enabling signals (e.g. kill).
-pub(crate) async fn new<F, T>(
+pub(crate) async fn new<F>(
     fut: F,
     id: Uuid,
     signal_mailbox: Receiver<Signal>,
     message_mailbox: MessageMailbox,
 ) where
-    F: Future<Output = Result<T>> + Send + 'static,
+    F: Future<Output = Result<()>> + Send + 'static,
 {
     trace!("Process {} spawned", id);
     tokio::pin!(fut);
@@ -221,10 +221,9 @@ pub struct NativeProcess {
 ///     Ok(())
 /// });
 /// ```
-pub fn spawn<F, K, T>(func: F) -> (JoinHandle<()>, NativeProcess)
+pub fn spawn<F, K>(func: F) -> (JoinHandle<()>, NativeProcess)
 where
-    T: 'static,
-    K: Future<Output = Result<T>> + Send + 'static,
+    K: Future<Output = Result<()>> + Send + 'static,
     F: FnOnce(NativeProcess, MessageMailbox) -> K,
 {
     // TODO: Switch to new_v1() for distributed Lunatic to assure uniqueness across nodes.
