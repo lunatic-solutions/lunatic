@@ -18,7 +18,7 @@ async fn main() -> Result<()> {
                 .short('P')
                 .long("plugin")
                 .value_name("PLUGIN")
-                .about("Adds plugin")
+                .help("Adds plugin")
                 .setting(ArgSettings::MultipleOccurrences)
                 .setting(ArgSettings::TakesValue),
         )
@@ -26,7 +26,7 @@ async fn main() -> Result<()> {
             Arg::new("dir")
                 .long("dir")
                 .value_name("DIRECTORY")
-                .about("Grant access to the given host directory")
+                .help("Grant access to the given host directory")
                 .setting(ArgSettings::MultipleOccurrences)
                 .setting(ArgSettings::TakesValue),
         )
@@ -34,7 +34,7 @@ async fn main() -> Result<()> {
             Arg::new("node")
                 .long("node")
                 .value_name("NODE_ADDRESS")
-                .about("Turns local process into a node and binds it to the provided address.")
+                .help("Turns local process into a node and binds it to the provided address.")
                 .requires("node_name")
                 .setting(ArgSettings::TakesValue),
         )
@@ -42,7 +42,7 @@ async fn main() -> Result<()> {
             Arg::new("node_name")
                 .long("node-name")
                 .value_name("NODE_NAME")
-                .about("Name of the node.")
+                .help("Name of the node.")
                 .requires("node")
                 .setting(ArgSettings::TakesValue),
         )
@@ -50,20 +50,20 @@ async fn main() -> Result<()> {
             Arg::new("peer")
                 .long("peer")
                 .value_name("PEER_ADDRESS")
-                .about("Address of another node inside the cluster that will be used for bootstrapping.")
+                .help("Address of another node inside the cluster that will be used for bootstrapping.")
                 .setting(ArgSettings::TakesValue)
                 .requires("node"),
         )
         .arg(
             Arg::new("no_entry")
                 .long("no-entry")
-                .about("If provided will join other nodes, but not require a .wasm entry file")
+                .help("If provided will join other nodes, but not require a .wasm entry file")
                 .requires("node"),
         )
         .arg(
             Arg::new("wasm")
                 .value_name("WASM")
-                .about("Entry .wasm file")
+                .help("Entry .wasm file")
                 .required_unless_present("no_entry")
                 .conflicts_with("no_entry")
                 .index(1),
@@ -71,7 +71,7 @@ async fn main() -> Result<()> {
         .arg(
             Arg::new("wasm_args")
                 .value_name("WASM_ARGS")
-                .about("Arguments passed to the guest")
+                .help("Arguments passed to the guest")
                 .required(false)
                 .conflicts_with("no_entry")
                 .multiple_values(true)
