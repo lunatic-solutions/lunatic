@@ -811,7 +811,7 @@ async fn spawn_from_module(
     params_len: u32,
     id_ptr: u32,
 ) -> Result<u32, Trap> {
-    let memory = get_memory(&mut caller)?;
+    let memory = get_memory(caller)?;
     let func_str = memory
         .data(&caller)
         .get(func_str_ptr as usize..(func_str_ptr + func_str_len) as usize)
@@ -956,7 +956,7 @@ fn id(mut caller: Caller<ProcessState>, process_id: u64, u128_ptr: u32) -> Resul
 //%
 //% Returns ID of the environment that this process was spawned from.
 fn this_env(mut caller: Caller<ProcessState>) -> u64 {
-    let env = Environment::Local(caller.data().module.environment().clone());
+    let env = Environment::Local(Box::new(caller.data().module.environment().clone()));
     caller.data_mut().resources.environments.add(env)
 }
 

@@ -34,7 +34,7 @@ impl<'a, 'b> PluginState<'a, 'b> {
     }
 
     pub fn module_context(&mut self) -> &mut ModuleContext<'b> {
-        &mut self.module_context
+        self.module_context
     }
 }
 

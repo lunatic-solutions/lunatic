@@ -22,7 +22,7 @@ pub const UNIT_OF_COMPUTE_IN_INSTRUCTIONS: u64 = 100_000;
 /// Plugins are WIP and not well documented.
 #[derive(Clone)]
 pub enum Environment {
-    Local(EnvironmentLocal),
+    Local(Box<EnvironmentLocal>),
     Remote(EnvironmentRemote),
 }
 
@@ -100,7 +100,7 @@ pub struct EnvironmentLocal {
 
 impl EnvironmentLocal {
     /// Create a new environment from a configuration.
-    pub fn new(config: EnvConfig) -> Result<Self> {
+    pub fn new(config: EnvConfig) -> Result<Box<Self>> {
         let mut wasmtime_config = Config::new();
         wasmtime_config
             .async_support(true)
@@ -130,12 +130,12 @@ impl EnvironmentLocal {
         // Register host functions for linker
         api::register(&mut linker, config.allowed_namespace())?;
 
-        Ok(Self {
+        Ok(Box::new(Self {
             engine,
             linker,
             config,
             registry: EnvRegistry::local(),
-        })
+        }))
     }
 
     /// Create a module from the environment.
