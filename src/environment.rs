@@ -117,11 +117,12 @@ impl EnvironmentLocal {
             .cranelift_opt_level(OptLevel::SpeedAndSize)
             // Allocate resources on demand because we can't predict how many process will exist
             .allocation_strategy(InstanceAllocationStrategy::OnDemand)
-            // Memories are always static (can't be bigger than max_memory)
+            // Always use static memories
+            .static_memory_forced(true)
+            // Limit static memories to the maximum possible size in the environment
             .static_memory_maximum_size(config.max_memory() as u64)
             // Set memory guards to 4 Mb
-            .static_memory_guard_size(0x400000)
-            .dynamic_memory_guard_size(0x400000);
+            .static_memory_guard_size(0x400000);
         let engine = Engine::new(&wasmtime_config)?;
         let mut linker = Linker::new(&engine);
         // Allow plugins to shadow host functions
