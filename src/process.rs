@@ -1,7 +1,7 @@
 use std::{collections::HashMap, fmt::Debug, future::Future, hash::Hash, sync::Arc};
 
 use anyhow::Result;
-use log::{trace, warn};
+use log::{debug, log_enabled, trace, warn, Level};
 
 use async_std::channel::{unbounded, Receiver, Sender};
 use async_std::task::JoinHandle;
@@ -164,7 +164,7 @@ pub(crate) async fn new<F>(
                             message_mailbox.push(message);
                         }
                     },
-                    Err(_) => unreachable!("The process holds the sending side and is never closed")
+                    Err(_) => unreachable!("The process holds the sending side and is not closed")
                 }
             }
             // Run process
@@ -182,11 +182,17 @@ pub(crate) async fn new<F>(
                 }
             };
             warn!(
-                "Process {} failed, notifying: {} links; {}",
+                "Process {} trapped, notifying: {} links {}",
                 id,
                 links.len(),
-                err,
+                // If the log level is WARN instruct user how to display the stacktrace
+                if !log_enabled!(Level::Debug) {
+                    "\n\t\t\t    (Set ENV variable `RUST_LOG=lunatic=debug` to show stacktrace)"
+                } else {
+                    ""
+                }
             );
+            debug!("{}", err);
             // Notify all links that we finished with an error
             links.iter().for_each(|(proc, tag)| {
                 let _ = proc.send(Signal::LinkDied(*tag));
