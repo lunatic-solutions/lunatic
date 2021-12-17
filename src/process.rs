@@ -1,7 +1,7 @@
 use std::{collections::HashMap, fmt::Debug, future::Future, hash::Hash, sync::Arc};
 
 use anyhow::Result;
-use log::{debug, trace};
+use log::{trace, warn};
 
 use async_std::channel::{unbounded, Receiver, Sender};
 use async_std::task::JoinHandle;
@@ -181,7 +181,7 @@ pub(crate) async fn new<F>(
                     }
                 }
             };
-            debug!(
+            warn!(
                 "Process {} failed, notifying: {} links; {}",
                 id,
                 links.len(),
@@ -193,7 +193,7 @@ pub(crate) async fn new<F>(
             });
         }
         Finished::Signal(Signal::Kill) => {
-            debug!("Process {} was killed", id);
+            warn!("Process {} was killed", id);
             // Notify all links that we finished because of a kill signal
             links.iter().for_each(|(proc, tag)| {
                 let _ = proc.send(Signal::LinkDied(*tag));

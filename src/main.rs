@@ -9,7 +9,8 @@ use lunatic_runtime::{node::Node, EnvConfig, Environment, NODE};
 #[async_std::main]
 async fn main() -> Result<()> {
     // Init logger
-    env_logger::init();
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).init();
+
     // Parse command line arguments
     let args = App::new("lunatic")
         .version(crate_version!())
