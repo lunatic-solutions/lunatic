@@ -58,6 +58,10 @@
     (import "lunatic::process" "unregister" (func (param i32 i32 i32 i32 i64) (result i32)))
     (import "lunatic::process" "lookup" (func (param i32 i32 i32 i32 i32) (result i32)))
 
+    (import "lunatic::version" "major" (func (result i32)))
+    (import "lunatic::version" "minor" (func (result i32)))
+    (import "lunatic::version" "patch" (func (result i32)))
+
     ;; TODO: Add all WASI imports
 
     (func (export "hello") nop)
