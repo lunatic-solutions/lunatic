@@ -33,6 +33,7 @@ jobs:
           target: wasm32-unknown-unknown
           override: true
           components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v1
       - name: "Run tests"
         run: cargo test
       - name: "Run clippy"
