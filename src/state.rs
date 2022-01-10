@@ -63,6 +63,8 @@ pub(crate) struct ProcessState {
     pub(crate) resources: Resources,
     // WASI
     pub(crate) wasi: WasiCtx,
+    // Set to true if the WASM module has been instantiated
+    pub(crate) initialized: bool,
 }
 
 impl ProcessState {
@@ -93,6 +95,7 @@ impl ProcessState {
             errors: HashMapId::new(),
             resources: Resources::default(),
             wasi: wasi.build(),
+            initialized: false,
         };
         Ok(state)
     }

@@ -190,6 +190,10 @@ impl ModuleLocal {
             .linker()
             .instantiate_async(&mut store, self.wasmtime_module())
             .await?;
+        // Once the module is initialized, set state.initialized to true
+        let state = store.data_mut();
+        state.initialized = true;
+
         let entry = instance
             .get_func(&mut store, function)
             .map_or(Err(anyhow!("Function '{}' not found", function)), |func| {
