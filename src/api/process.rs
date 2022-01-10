@@ -811,6 +811,10 @@ async fn spawn_from_module(
     params_len: u32,
     id_ptr: u32,
 ) -> Result<u32, Trap> {
+    let state = caller.data();
+    if !state.initialized {
+        return Err(anyhow!("Cannot spawn process during module initialization").into());
+    }
     let memory = get_memory(caller)?;
     let func_str = memory
         .data(&caller)
