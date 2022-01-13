@@ -199,7 +199,11 @@ pub(crate) async fn new<F>(
             });
         }
         Finished::Signal(Signal::Kill) => {
-            warn!("Process {} was killed", id);
+            warn!(
+                "Process {} was killed, notifying: {} links",
+                id,
+                links.len()
+            );
             // Notify all links that we finished because of a kill signal
             links.iter().for_each(|(proc, tag)| {
                 let _ = proc.send(Signal::LinkDied(*tag));
