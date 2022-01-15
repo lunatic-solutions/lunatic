@@ -24,6 +24,7 @@
     (import "lunatic::networking" "resolve_next" (func (param i64 i32 i32 i32 i32 i32) (result i32)))
     (import "lunatic::networking" "tcp_bind" (func (param i32 i32 i32 i32 i32 i32) (result i32)))
     (import "lunatic::networking" "drop_tcp_listener" (func (param i64)))
+    (import "lunatic::networking" "local_addr" (func (param i64 i32) (result i32)))
     (import "lunatic::networking" "tcp_accept" (func (param i64 i32 i32) (result i32)))
     (import "lunatic::networking" "tcp_connect" (func (param i32 i32 i32 i32 i32 i32 i32) (result i32)))
     (import "lunatic::networking" "drop_tcp_stream" (func (param i64)))

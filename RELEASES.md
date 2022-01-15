@@ -2,6 +2,18 @@
 
 ---
 
+## v0.7.4
+
+Released 2021-01-15.
+
+### Changes
+
+Adds `local_addr` host function for TCP listeners.
+Adds `version` host function.
+Adds check if processes are spawned before the Wasm module was initialized.
+
+Process traps are now logged by default to stdout.
+
 ## v0.7.0
 
 Released 2021-12-01.
