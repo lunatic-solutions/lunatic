@@ -7,6 +7,7 @@ use std::time::Duration;
 use anyhow::Result;
 use async_std::io::{ReadExt, WriteExt};
 use async_std::net::{TcpListener, TcpStream};
+use async_std::net::{UdpSocket};
 use wasmtime::{Caller, FuncType, Linker, ValType};
 use wasmtime::{Memory, Trap};
 
@@ -870,5 +871,65 @@ fn socket_address(
             SocketAddrV6::new(addr, port as u16, flow_info, scope_id).into()
         }
         _ => return Err(Trap::new("Unsupported address type in socket_address*")),
+    })
+}
+
+
+//% lunatic::networking::udp_bind(
+//%     addr_type: u32,
+//%     addr_u8_ptr: u32,
+//%     port: u32,
+//%     flow_info: u32,
+//%     scope_id: u32,
+//%     id_u64_ptr: u32
+//% ) -> u32
+//%
+//% Returns:
+//% * 0 on success - The ID of the newly created UDP listener is written to **id_u64_ptr**
+//% * 1 on error   - The error ID is written to **id_u64_ptr**
+//%
+//% Creates a new UDP listener, which will be bound to the specified address. The returned listener
+//% is ready for accepting connections.
+//%
+//% Binding with a port number of 0 will request that the OS assigns a port to this listener. The
+//% port allocated can be queried via the `local_addr` (TODO) method.
+//%
+//% Traps:
+//% * If **addr_type** is neither 4 or 6.
+//% * If **addr_u8_ptr** is outside the memory
+//% * If **id_u64_ptr** is outside the memory.
+fn udp_bind(
+    mut caller: Caller<ProcessState>,
+    addr_type: u32,
+    addr_u8_ptr: u32,
+    port: u32,
+    flow_info: u32,
+    scope_id: u32,
+    id_u64_ptr: u32,
+) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_> {
+    Box::new(async move {
+        let memory = get_memory(&mut caller)?;
+        let socket_addr = socket_address(
+            &caller,
+            &memory,
+            addr_type,
+            addr_u8_ptr,
+            port,
+            flow_info,
+            scope_id,
+        )?;
+        let (udp_listener_or_error_id, result) = match UdpSocket::bind(socket_addr).await {
+            Ok(listener) => (caller.data_mut().resources.udp_listeners.add(listener), 0),
+            Err(error) => (caller.data_mut().errors.add(error.into()), 1),
+        };
+        memory
+            .write(
+                &mut caller,
+                id_u64_ptr as usize,
+                &udp_listener_or_error_id.to_le_bytes(),
+            )
+            .or_trap("lunatic::networking::udp_bind")?;
+
+        Ok(result)
     })
 }

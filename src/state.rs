@@ -7,7 +7,7 @@ use std::vec::IntoIter;
 
 use anyhow::Result;
 use async_std::channel::Sender;
-use async_std::net::{TcpListener, TcpStream};
+use async_std::net::{TcpListener, TcpStream, UdpSocket};
 use uuid::Uuid;
 use wasmtime::ResourceLimiter;
 use wasmtime_wasi::{ambient_authority, Dir, WasiCtx, WasiCtxBuilder};
@@ -145,6 +145,7 @@ pub(crate) struct Resources {
     pub(crate) dns_iterators: HashMapId<DnsIterator>,
     pub(crate) tcp_listeners: HashMapId<TcpListener>,
     pub(crate) tcp_streams: HashMapId<TcpStream>,
+    pub(crate) udp_listeners: HashMapId<UdpSocket>,
 }
 
 /// HashMap wrapper with incremental ID (u64) assignment.
