@@ -181,6 +181,24 @@ pub(crate) fn register(
         tcp_flush,
         namespace_filter,
     )?;
+    link_async6_if_match(
+        linker,
+        "lunatic::networking",
+        "udp_bind",
+        FuncType::new(
+            [
+                ValType::I32,
+                ValType::I32,
+                ValType::I32,
+                ValType::I32,
+                ValType::I32,
+                ValType::I32,
+            ],
+            [ValType::I32],
+        ),
+        udp_bind,
+        namespace_filter,
+    )?;
     Ok(())
 }
 
