@@ -34,17 +34,27 @@ TODO
 */
 
 pub(crate) mod api;
+pub mod async_map;
 mod config;
 mod environment;
 pub(crate) mod mailbox;
 pub mod message;
 pub(crate) mod module;
-// pub mod node;
+pub mod node;
 pub mod plugin;
 pub(crate) mod process;
 pub mod registry;
 pub(crate) mod state;
 
+use async_std::sync::RwLock;
+use lazy_static::lazy_static;
+
 pub use config::EnvConfig;
 pub use environment::Environment;
+use node::Node;
 pub use process::{spawn, Finished, Process, Signal, WasmProcess};
+
+// Global node singleton.
+lazy_static! {
+    pub static ref NODE: RwLock<Option<Node>> = RwLock::new(None);
+}

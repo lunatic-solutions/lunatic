@@ -87,6 +87,14 @@ pub(crate) fn register(
         drop_tcp_listener,
         namespace_filter,
     )?;
+    link_if_match(
+        linker,
+        "lunatic::networking",
+        "local_addr",
+        FuncType::new([ValType::I64, ValType::I32], [ValType::I32]),
+        local_addr,
+        namespace_filter,
+    )?;
     link_async3_if_match(
         linker,
         "lunatic::networking",
@@ -417,7 +425,7 @@ fn tcp_bind(
 //% Drops the TCP listener resource.
 //%
 //% Traps:
-//% * If the DNS iterator ID doesn't exist.
+//% * If the TCP listener ID doesn't exist.
 fn drop_tcp_listener(mut caller: Caller<ProcessState>, tcp_listener_id: u64) -> Result<(), Trap> {
     caller
         .data_mut()
@@ -426,6 +434,53 @@ fn drop_tcp_listener(mut caller: Caller<ProcessState>, tcp_listener_id: u64) -> 
         .remove(tcp_listener_id)
         .or_trap("lunatic::networking::drop_tcp_listener")?;
     Ok(())
+}
+
+//% lunatic::networking::local_addr(tcp_listener_id: i64, id_u64_ptr: u32) -> i64
+//%
+//% Returns the local address that this listener is bound to as an DNS iterator with just one
+//% element.
+//% * 0 on success - The local address that this listener is bound to is returned as an DNS
+//%                  iterator with just one element and written to **id_ptr**.
+//%
+//% * 1 on error   - The error ID is written to **id_u64_ptr**
+//%
+//% Traps:
+//% * If the tcp listener ID doesn't exist.
+//% * If **peer_socket_addr_id_ptr** is outside the memory.
+fn local_addr(
+    mut caller: Caller<ProcessState>,
+    tcp_listener_id: u64,
+    id_u64_ptr: u32,
+) -> Result<u32, Trap> {
+    let tcp_listener = caller
+        .data()
+        .resources
+        .tcp_listeners
+        .get(tcp_listener_id)
+        .or_trap("lunatic::network::local_addr: listener ID doesn't exist")?;
+    let (dns_iter_or_error_id, result) = match tcp_listener.local_addr() {
+        Ok(socket_addr) => {
+            let dns_iter_id = caller
+                .data_mut()
+                .resources
+                .dns_iterators
+                .add(DnsIterator::new(vec![socket_addr].into_iter()));
+            (dns_iter_id, 0)
+        }
+        Err(error) => (caller.data_mut().errors.add(error.into()), 1),
+    };
+
+    let memory = get_memory(&mut caller)?;
+    memory
+        .write(
+            &mut caller,
+            id_u64_ptr as usize,
+            &dns_iter_or_error_id.to_le_bytes(),
+        )
+        .or_trap("lunatic::network::local_addr")?;
+
+    Ok(result)
 }
 
 //% lunatic::networking::tcp_accept(
@@ -447,7 +502,7 @@ fn drop_tcp_listener(mut caller: Caller<ProcessState>, tcp_listener_id: u64) -> 
 fn tcp_accept(
     mut caller: Caller<ProcessState>,
     listener_id: u64,
-    id_ptr: u32,
+    id_u64_ptr: u32,
     socket_addr_id_ptr: u32,
 ) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_> {
     Box::new(async move {
@@ -475,7 +530,7 @@ fn tcp_accept(
         memory
             .write(
                 &mut caller,
-                id_ptr as usize,
+                id_u64_ptr as usize,
                 &tcp_stream_or_error_id.to_le_bytes(),
             )
             .or_trap("lunatic::networking::tcp_accept")?;

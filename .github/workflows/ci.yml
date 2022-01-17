@@ -15,7 +15,7 @@ jobs:
             target_name: lunatic
             asset_name: lunatic-linux-amd64.tar.gz
             content_type: application/gzip
-          - os: macos-latest
+          - os: my-macbook
             target_name: lunatic
             asset_name: lunatic-macos-amd64.tar.gz
             content_type: application/gzip
@@ -33,11 +33,12 @@ jobs:
           target: wasm32-unknown-unknown
           override: true
           components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v1
       - name: "Run tests"
         run: cargo test
       - name: "Run clippy"
         run: cargo clippy -- -D warnings
-      - name: "Check formatting check"
+      - name: "Check formatting"
         run: cargo fmt -- --check
       # Create a release:
       # - The next steps will only run if a tag was added during the push
@@ -51,7 +52,7 @@ jobs:
           tar czf ${{ matrix.asset_name }} README.md LICENSE-MIT LICENSE-APACHE ${{ matrix.target_name }}
       - name: Zip release on Windows
         if: startsWith(github.ref, 'refs/tags/') && runner.os == 'Windows'
-        uses: papeloto/action-zip@v1
+        uses: vimtor/action-zip@v1
         with:
           files: README.md LICENSE-MIT LICENSE-APACHE ./target/release/${{ matrix.target_name }}
           dest: ${{ matrix.asset_name }}

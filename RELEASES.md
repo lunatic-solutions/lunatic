@@ -2,6 +2,102 @@
 
 ---
 
+## v0.7.4
+
+Released 2021-01-15.
+
+### Changes
+
+Adds `local_addr` host function for TCP listeners.
+Adds `version` host function.
+Adds check if processes are spawned before the Wasm module was initialized.
+
+Process traps are now logged by default to stdout.
+
+## v0.7.0
+
+Released 2021-12-01.
+
+### Changes
+
+This is the first release that supports connecting multiple lunatic instances togethe :tada:.
+From the perspective of developers that are targeting lunatic there should be no difference
+between locally running processes or remote ones. Spawning and sending messages to them uses the
+same APIs.
+
+To turn your local lunatic instance into a distributed node you will need to provide an unique
+_name_ and _socket_ to bind to. Both of them can be set through the cli.
+
+#### CLI
+
+To start a distributed node you can run:
+```
+lunatic --node 0.0.0.0:8333 --node-name foo --no-entry
+```
+This starts a lunatic node with the name `foo` listening the specified port. The `--no-entry` flag
+means that this node doesn't have a start function, it will just block forever.
+
+If you want to connect to a node you can pass in the `--peer` flag:
+```
+lunatic --node localhost:8334 --node-name bar --peer 0.0.0.0:8333 file.wasm
+```
+
+Once you connect to one node all others known ones will be dynamically discovered.
+
+#### Usage from guest code (Rust)
+
+A great thing about lunatic is that much of the functionality provided by the runtime is directly
+exposed to the code running inside of it. This allows you to dynamically load WebAssembly code
+from already running WebAssembly code, or to create sandboxed environments to execute some code
+on the fly.
+
+The abstraction of an [`Environment`][18], that we used previously to sandbox and limit process
+resources, fits perfectly into the world of distributed lunatic. Every time you create a new
+`Environment` you need to explicitly add Wasm [`Modules`][19] to it, because we may need to JIT
+re-compile the module with the new limitations that have been set. Spawning a process from the same
+function in different `Environments` may use different machine generated code to be more efficient
+in regards to the provided sandbox.
+
+Now that a `Module` may be sent over the network to a computer running a different operating system
+or even using a different CPU architecture, no changes need to be done to this already existing
+pattern inside of lunatic.
+
+Here is an example of using the new API from Rust guest code:
+```rust
+use lunatic::{Config, Environment, Mailbox};
+
+#[lunatic::main]
+fn main(_: Mailbox<()>) {
+  // Give full access to the remote environment.
+  let mut config = Config::new(0xA00000000, None);
+  config.allow_namespace("");
+  // Create a new environment on the remote node with the name "foo"
+  let mut env = Environment::new_remote("foo", config).unwrap();
+  // Add the currently running module to the environment.
+  // This allows us to spawn a process from a closure, because the remote module will have the same
+  // bytecode available.
+  let module = env.add_this_module().unwrap();
+
+  // Spawn a process on a remote machine as you would do it locally.
+  let _ = module.spawn(|_: Mailbox<()>| println!("Hello world"));
+}
+```
+
+This will print out `Hello world` on the node labeled `foo`. Adding this to the rust library
+required only a few lines of code changes. The whole implementation complexity stays inside of the
+VM. From the developer's perspective it's trivial to just send a closure to be executed on a
+completely different machine that may use a different operating system or CPU architecture.
+
+
+#### Known issues
+
+- At the moment nodes send plain text messages between each other and each node connects to each
+  other over TCP.
+- If a node disappears from the network linked processes will not be notified that the links broke.
+
+[18]: https://docs.rs/lunatic/0.7.1/lunatic/struct.Environment.html
+[19]: https://docs.rs/lunatic/0.7.1/lunatic/struct.Module.html
+
 ## v0.6.0
 
 Released 2021-08-31.

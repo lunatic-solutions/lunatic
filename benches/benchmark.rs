@@ -1,5 +1,3 @@
-// use std::{fs, path::Path};
-
 use criterion::{criterion_group, criterion_main, Criterion};
 use lunatic_runtime::{EnvConfig, Environment};
 
@@ -7,9 +5,9 @@ fn criterion_benchmark(c: &mut Criterion) {
     let rt = tokio::runtime::Runtime::new().unwrap();
 
     let config = EnvConfig::default();
-    let environment = Environment::new(config).unwrap();
+    let environment = Environment::local(config).unwrap();
 
-    let raw_module = std::fs::read("./target/wasm/hello.wasm").unwrap();
+    let raw_module = wat::parse_file("./wat/hello.wat").unwrap();
     let module = rt.block_on(environment.create_module(raw_module)).unwrap();
 
     c.bench_function("spawn process", |b| {
@@ -31,7 +29,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     // let environment = Environment::new(config).unwrap();
 
     // // Reload module into modified environment (added plugin)
-    // let raw_module = std::fs::read("./target/wasm/hello.wasm").unwrap();
+    // let raw_module =  wat::parse_file("./wat/hello.wat").unwrap();
     // let module = rt.block_on(environment.create_module(raw_module)).unwrap();
 
     // c.bench_function("spawn process with stdlib plugin", |b| {

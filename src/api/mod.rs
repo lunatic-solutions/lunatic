@@ -5,6 +5,7 @@ mod mailbox;
 mod networking;
 pub(crate) mod plugin;
 mod process;
+mod version;
 mod wasi;
 
 use std::future::Future;
@@ -15,7 +16,7 @@ use wasmtime::{Caller, FuncType, IntoFunc, Linker, Memory, Trap, WasmRet, WasmTy
 use self::error::IntoTrap;
 use crate::state::ProcessState;
 
-// Registers all sub-APIs to the `Linker`
+// Registers all sub-APIs to the `Linker`.
 pub(crate) fn register(
     linker: &mut Linker<ProcessState>,
     namespace_filter: &[String],
@@ -25,6 +26,7 @@ pub(crate) fn register(
     mailbox::register(linker, namespace_filter)?;
     networking::register(linker, namespace_filter)?;
     wasi::register(linker, namespace_filter)?;
+    version::register(linker, namespace_filter)?;
     Ok(())
 }
 
@@ -93,15 +95,15 @@ mod tests {
 
         // The default configuration includes both, the "lunatic::*" and "wasi_*" namespaces.
         let config = EnvConfig::default();
-        let environment = Environment::new(config).unwrap();
-        let raw_module = std::fs::read("./target/wasm/all_imports.wasm").unwrap();
+        let environment = Environment::local(config).unwrap();
+        let raw_module = wat::parse_file("./wat/all_imports.wat").unwrap();
         let module = environment.create_module(raw_module).await.unwrap();
         module.spawn("hello", Vec::new(), None).await.unwrap();
 
         // This configuration should still compile, even all host calls will trap.
         let config = EnvConfig::new(0, None);
-        let environment = Environment::new(config).unwrap();
-        let raw_module = std::fs::read("./target/wasm/all_imports.wasm").unwrap();
+        let environment = Environment::local(config).unwrap();
+        let raw_module = wat::parse_file("./wat/all_imports.wat").unwrap();
         let module = environment.create_module(raw_module).await.unwrap();
         module.spawn("hello", Vec::new(), None).await.unwrap();
     }

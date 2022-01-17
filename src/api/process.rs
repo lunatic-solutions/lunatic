@@ -5,14 +5,14 @@ use wasmtime::{Caller, FuncType, Linker, Trap, Val, ValType};
 
 use super::{
     get_memory, link_async1_if_match, link_async2_if_match, link_async4_if_match,
-    link_async6_if_match, link_async7_if_match, link_if_match,
+    link_async5_if_match, link_async6_if_match, link_async7_if_match, link_if_match,
 };
 use crate::{
     api::error::IntoTrap,
     module::Module,
     process::{Signal, WasmProcess},
     state::ProcessState,
-    EnvConfig, Environment,
+    EnvConfig, Environment, Process,
 };
 
 // Register the process APIs to the linker
@@ -61,6 +61,17 @@ pub(crate) fn register(
         "create_environment",
         FuncType::new([ValType::I64, ValType::I32], [ValType::I32]),
         create_environment,
+        namespace_filter,
+    )?;
+    link_async4_if_match(
+        linker,
+        "lunatic::process",
+        "create_remote_environment",
+        FuncType::new(
+            [ValType::I64, ValType::I32, ValType::I32, ValType::I32],
+            [ValType::I32],
+        ),
+        create_remote_environment,
         namespace_filter,
     )?;
     link_if_match(
@@ -218,7 +229,7 @@ pub(crate) fn register(
         unlink,
         namespace_filter,
     )?;
-    link_if_match(
+    link_async6_if_match(
         linker,
         "lunatic::process",
         "register",
@@ -236,7 +247,7 @@ pub(crate) fn register(
         register_proc,
         namespace_filter,
     )?;
-    link_if_match(
+    link_async5_if_match(
         linker,
         "lunatic::process",
         "unregister",
@@ -369,6 +380,7 @@ fn preopen_dir(
     let dir = std::str::from_utf8(buffer.as_slice()).or_trap("lunatic::process::preopen_dir")?;
 
     let dir_path = Path::new(dir);
+    // TODO: Explore what granting access means in a distributed environment
     let can_grant_access = caller
         .data()
         .module
@@ -461,7 +473,7 @@ fn add_plugin(
 //% * 0 on success - The ID of the newly created environment is written to **id_ptr**
 //% * 1 on error   - The error ID is written to **id_ptr**
 //%
-//% Consumes the config and creates a new environment from it.
+//% Creates a new environment from a configuration.
 //%
 //% Traps:
 //% * If the config ID doesn't exist.
@@ -479,7 +491,7 @@ fn create_environment(
         .or_trap("lunatic::process::create_environment")?
         .clone();
 
-    let (env_or_error_id, result) = match Environment::new(config) {
+    let (env_or_error_id, result) = match Environment::local(config) {
         Ok(env) => (caller.data_mut().resources.environments.add(env), 0),
         Err(error) => (caller.data_mut().errors.add(error), 1),
     };
@@ -490,6 +502,60 @@ fn create_environment(
         .or_trap("lunatic::process::create_environment")?;
 
     Ok(result)
+}
+
+//% lunatic::process::create_remote_environment(
+//%     config_id: u64,
+//%     node_name_ptr: u32,
+//%     name_name_len: u32,
+//%     id_ptr: u32
+//% ) -> u32
+//%
+//% Returns:
+//% * 0 on success - The ID of the newly created environment is written to **id_ptr**
+//% * 1 on error   - The error ID is written to **id_ptr**
+//%
+//% Creates a new environment on a remote node from the configuration.
+//%
+//% Traps:
+//% * If the config ID doesn't exist.
+//% * If **node_name_ptr + name_name_len** is outside the memory.
+//% * If **id_ptr** is outside the memory.
+fn create_remote_environment(
+    mut caller: Caller<ProcessState>,
+    config_id: u64,
+    node_name_ptr: u32,
+    name_name_len: u32,
+    id_ptr: u32,
+) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_> {
+    Box::new(async move {
+        let config = caller
+            .data_mut()
+            .resources
+            .configs
+            .get(config_id)
+            .or_trap("lunatic::process::create_remote_environment")?
+            .clone();
+
+        let memory = get_memory(&mut caller)?;
+        let node_name = memory
+            .data(&caller)
+            .get(node_name_ptr as usize..(node_name_ptr + name_name_len) as usize)
+            .or_trap("lunatic::process::create_remote_environment")?;
+        let node_name = std::str::from_utf8(node_name)
+            .or_trap("lunatic::process::create_remote_environment")?;
+
+        let (env_or_error_id, result) = match Environment::remote(node_name, config).await {
+            Ok(env) => (caller.data_mut().resources.environments.add(env), 0),
+            Err(error) => (caller.data_mut().errors.add(error), 1),
+        };
+
+        memory
+            .write(&mut caller, id_ptr as usize, &env_or_error_id.to_le_bytes())
+            .or_trap("lunatic::process::create_remote_environment")?;
+
+        Ok(result)
+    })
 }
 
 //% lunatic::process::drop_environment(env_id: u64)
@@ -745,7 +811,11 @@ async fn spawn_from_module(
     params_len: u32,
     id_ptr: u32,
 ) -> Result<u32, Trap> {
-    let memory = get_memory(&mut caller)?;
+    let state = caller.data();
+    if !state.initialized {
+        return Err(anyhow!("Cannot spawn process during module initialization").into());
+    }
+    let memory = get_memory(caller)?;
     let func_str = memory
         .data(&caller)
         .get(func_str_ptr as usize..(func_str_ptr + func_str_len) as usize)
@@ -769,20 +839,17 @@ async fn spawn_from_module(
         })
         .collect::<Result<Vec<_>>>()?;
     // Should processes be linked together?
-    let link = match link {
+    let link: Option<(Option<i64>, Arc<dyn Process>)> = match link {
         0 => None,
         tag => {
             let id = caller.data().id;
             let signal_mailbox = caller.data().signal_mailbox.clone();
             let process = WasmProcess::new(id, signal_mailbox);
-            Some((Some(tag), process))
+            Some((Some(tag), Arc::new(process)))
         }
     };
     let (proc_or_error_id, result) = match module.spawn(function, params, link).await {
-        Ok((_, process)) => (
-            caller.data_mut().resources.processes.add(Arc::new(process)),
-            0,
-        ),
+        Ok((_, process)) => (caller.data_mut().resources.processes.add(process), 0),
         Err(error) => (caller.data_mut().errors.add(error), 1),
     };
     memory
@@ -893,7 +960,7 @@ fn id(mut caller: Caller<ProcessState>, process_id: u64, u128_ptr: u32) -> Resul
 //%
 //% Returns ID of the environment that this process was spawned from.
 fn this_env(mut caller: Caller<ProcessState>) -> u64 {
-    let env = caller.data().module.environment().clone();
+    let env = Environment::Local(Box::new(caller.data().module.environment().clone()));
     caller.data_mut().resources.environments.add(env)
 }
 
@@ -991,37 +1058,39 @@ fn register_proc(
     version_len: u32,
     env_id: u64,
     process_id: u64,
-) -> Result<u32, Trap> {
-    let memory = get_memory(&mut caller)?;
-    let buffer = memory
-        .data(&caller)
-        .get(name_ptr as usize..(name_ptr + name_len) as usize)
-        .or_trap("lunatic::process::register")?;
-    let name = std::str::from_utf8(buffer).or_trap("lunatic::process::register")?;
-    let name = String::from(name);
-    let buffer = memory
-        .data(&caller)
-        .get(version_ptr as usize..(version_ptr + version_len) as usize)
-        .or_trap("lunatic::process::register")?;
-    let version = std::str::from_utf8(buffer).or_trap("lunatic::process::register")?;
-    let process = caller
-        .data()
-        .resources
-        .processes
-        .get(process_id)
-        .or_trap("lunatic::process::register")?
-        .clone();
-    let environment = caller
-        .data()
-        .resources
-        .environments
-        .get(env_id)
-        .or_trap("lunatic::process::register")?;
-    let registry = environment.registry();
-    match registry.insert(name, version, process) {
-        Ok(()) => Ok(0),
-        Err(_) => Ok(1),
-    }
+) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_> {
+    Box::new(async move {
+        let memory = get_memory(&mut caller)?;
+        let buffer = memory
+            .data(&caller)
+            .get(name_ptr as usize..(name_ptr + name_len) as usize)
+            .or_trap("lunatic::process::register")?;
+        let name = std::str::from_utf8(buffer).or_trap("lunatic::process::register")?;
+        let name = String::from(name);
+        let buffer = memory
+            .data(&caller)
+            .get(version_ptr as usize..(version_ptr + version_len) as usize)
+            .or_trap("lunatic::process::register")?;
+        let version = std::str::from_utf8(buffer).or_trap("lunatic::process::register")?;
+        let process = caller
+            .data()
+            .resources
+            .processes
+            .get(process_id)
+            .or_trap("lunatic::process::register")?
+            .clone();
+        let environment = caller
+            .data()
+            .resources
+            .environments
+            .get(env_id)
+            .or_trap("lunatic::process::register")?;
+        let registry = environment.registry();
+        match registry.insert(name, version, process).await {
+            Ok(()) => Ok(0),
+            Err(_) => Ok(1),
+        }
+    })
 }
 
 //% lunatic::process::unregister(
@@ -1050,32 +1119,34 @@ fn unregister(
     version_ptr: u32,
     version_len: u32,
     env_id: u64,
-) -> Result<u32, Trap> {
-    let memory = get_memory(&mut caller)?;
-    let buffer = memory
-        .data(&caller)
-        .get(name_ptr as usize..(name_ptr + name_len) as usize)
-        .or_trap("lunatic::process::unregister")?;
-    let name = std::str::from_utf8(buffer).or_trap("lunatic::process::unregister")?;
-    let buffer = memory
-        .data(&caller)
-        .get(version_ptr as usize..(version_ptr + version_len) as usize)
-        .or_trap("lunatic::process::unregister")?;
-    let version = std::str::from_utf8(buffer).or_trap("lunatic::process::unregister")?;
-    let environment = caller
-        .data()
-        .resources
-        .environments
-        .get(env_id)
-        .or_trap("lunatic::process::unregister")?;
-    let registry = environment.registry();
-    match registry.remove(name, version) {
-        Ok(result) => match result {
-            Some(_) => Ok(0),
-            None => Ok(2),
-        },
-        Err(_) => Ok(1),
-    }
+) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_> {
+    Box::new(async move {
+        let memory = get_memory(&mut caller)?;
+        let buffer = memory
+            .data(&caller)
+            .get(name_ptr as usize..(name_ptr + name_len) as usize)
+            .or_trap("lunatic::process::unregister")?;
+        let name = std::str::from_utf8(buffer).or_trap("lunatic::process::unregister")?;
+        let buffer = memory
+            .data(&caller)
+            .get(version_ptr as usize..(version_ptr + version_len) as usize)
+            .or_trap("lunatic::process::unregister")?;
+        let version = std::str::from_utf8(buffer).or_trap("lunatic::process::unregister")?;
+        let environment = caller
+            .data()
+            .resources
+            .environments
+            .get(env_id)
+            .or_trap("lunatic::process::unregister")?;
+        let registry = environment.registry();
+        match registry.remove(name, version).await {
+            Ok(result) => match result {
+                Some(_) => Ok(0),
+                None => Ok(2),
+            },
+            Err(_) => Ok(1),
+        }
+    })
 }
 
 //% lunatic::process::lookup(

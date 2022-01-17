@@ -1,10 +1,11 @@
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use lazy_static::lazy_static;
 use wasmtime::{Config, Engine, InstanceAllocationStrategy, Linker, OptLevel, ProfilingStrategy};
 
 use super::config::EnvConfig;
 use crate::{
-    api, module::Module, plugin::patch_module, registry::LocalRegistry, state::ProcessState,
+    api, module::Module, node::Peer, plugin::patch_module, registry::EnvRegistry,
+    state::ProcessState,
 };
 
 // One unit of fuel represents around 100k instructions.
@@ -20,16 +21,86 @@ pub const UNIT_OF_COMPUTE_IN_INSTRUCTIONS: u64 = 100_000;
 /// They also define the set of plugins. Plugins can be used to modify loaded Wasm modules.
 /// Plugins are WIP and not well documented.
 #[derive(Clone)]
-pub struct Environment {
-    engine: Engine,
-    linker: Linker<ProcessState>,
-    config: EnvConfig,
-    registry: LocalRegistry,
+pub enum Environment {
+    Local(Box<EnvironmentLocal>),
+    Remote(EnvironmentRemote),
 }
 
 impl Environment {
+    pub fn local(config: EnvConfig) -> Result<Self> {
+        Ok(Self::Local(EnvironmentLocal::new(config)?))
+    }
+    pub async fn remote(node_name: &str, config: EnvConfig) -> Result<Self> {
+        Ok(Self::Remote(
+            EnvironmentRemote::new(node_name, config).await?,
+        ))
+    }
+    pub async fn create_module(&self, data: Vec<u8>) -> Result<Module> {
+        match self {
+            Environment::Local(local) => local.create_module(data).await,
+            Environment::Remote(remote) => remote.create_module(remote.id, data).await,
+        }
+    }
+    pub fn registry(&self) -> &EnvRegistry {
+        match self {
+            Environment::Local(local) => local.registry(),
+            Environment::Remote(remote) => remote.registry(),
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct EnvironmentRemote {
+    id: u64,
+    peer: Peer,
+    registry: EnvRegistry,
+}
+
+impl EnvironmentRemote {
+    pub async fn new(node_name: &str, config: EnvConfig) -> Result<Self> {
+        let node = crate::NODE.read().await;
+        if node.is_none() {
+            return Err(anyhow!(
+                "Can't create remote environment on a node not connected to others"
+            ));
+        }
+        let node = node.as_ref().unwrap();
+        let node = node.inner.read().await;
+        let peer = node.peers.get(node_name);
+        if peer.is_none() {
+            return Err(anyhow!(
+                "Can't create remote environment, node doesn't exist"
+            ));
+        }
+        let peer = peer.unwrap().clone();
+        let id = peer.create_environment(config).await?;
+        Ok(Self {
+            id,
+            peer: peer.clone(),
+            registry: EnvRegistry::remote(id, peer),
+        })
+    }
+
+    pub async fn create_module(&self, env_id: u64, data: Vec<u8>) -> Result<Module> {
+        Ok(Module::remote(env_id, self.peer.clone(), data).await?)
+    }
+
+    pub fn registry(&self) -> &EnvRegistry {
+        &self.registry
+    }
+}
+
+#[derive(Clone)]
+pub struct EnvironmentLocal {
+    engine: Engine,
+    linker: Linker<ProcessState>,
+    config: EnvConfig,
+    registry: EnvRegistry,
+}
+
+impl EnvironmentLocal {
     /// Create a new environment from a configuration.
-    pub fn new(config: EnvConfig) -> Result<Self> {
+    pub fn new(config: EnvConfig) -> Result<Box<Self>> {
         let mut wasmtime_config = Config::new();
         wasmtime_config
             .async_support(true)
@@ -46,11 +117,12 @@ impl Environment {
             .cranelift_opt_level(OptLevel::SpeedAndSize)
             // Allocate resources on demand because we can't predict how many process will exist
             .allocation_strategy(InstanceAllocationStrategy::OnDemand)
-            // Memories are always static (can't be bigger than max_memory)
+            // Always use static memories
+            .static_memory_forced(true)
+            // Limit static memories to the maximum possible size in the environment
             .static_memory_maximum_size(config.max_memory() as u64)
             // Set memory guards to 4 Mb
-            .static_memory_guard_size(0x400000)
-            .dynamic_memory_guard_size(0x400000);
+            .static_memory_guard_size(0x400000);
         let engine = Engine::new(&wasmtime_config)?;
         let mut linker = Linker::new(&engine);
         // Allow plugins to shadow host functions
@@ -59,12 +131,12 @@ impl Environment {
         // Register host functions for linker
         api::register(&mut linker, config.allowed_namespace())?;
 
-        Ok(Self {
+        Ok(Box::new(Self {
             engine,
             linker,
             config,
-            registry: LocalRegistry::new(),
-        })
+            registry: EnvRegistry::local(),
+        }))
     }
 
     /// Create a module from the environment.
@@ -78,7 +150,7 @@ impl Environment {
         // The compilation of a module is a CPU intensive tasks and can take some time.
         let module = async_std::task::spawn_blocking(move || {
             match wasmtime::Module::new(env.engine(), new_module.as_slice()) {
-                Ok(wasmtime_module) => Ok(Module::new(data, env, wasmtime_module)),
+                Ok(wasmtime_module) => Ok(Module::local(data, env, wasmtime_module)),
                 Err(err) => Err(err),
             }
         })
@@ -98,7 +170,7 @@ impl Environment {
         &self.linker
     }
 
-    pub fn registry(&self) -> &LocalRegistry {
+    pub fn registry(&self) -> &EnvRegistry {
         &self.registry
     }
 }

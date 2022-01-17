@@ -26,6 +26,7 @@
     (import "lunatic::networking" "resolve_next" (func (param i64 i32 i32 i32 i32 i32) (result i32)))
     (import "lunatic::networking" "tcp_bind" (func (param i32 i32 i32 i32 i32 i32) (result i32)))
     (import "lunatic::networking" "drop_tcp_listener" (func (param i64)))
+    (import "lunatic::networking" "local_addr" (func (param i64 i32) (result i32)))
     (import "lunatic::networking" "tcp_accept" (func (param i64 i32 i32) (result i32)))
     (import "lunatic::networking" "tcp_connect" (func (param i32 i32 i32 i32 i32 i32 i32) (result i32)))
     (import "lunatic::networking" "drop_tcp_stream" (func (param i64)))
@@ -40,6 +41,7 @@
     (import "lunatic::process" "preopen_dir" (func (param i64 i32 i32 i32) (result i32)))
     (import "lunatic::process" "add_plugin" (func (param i64 i32 i32 i32) (result i32)))
     (import "lunatic::process" "create_environment" (func (param i64 i32) (result i32)))
+    (import "lunatic::process" "create_remote_environment" (func (param i64 i32 i32 i32) (result i32)))
     (import "lunatic::process" "drop_environment" (func (param i64)))
     (import "lunatic::process" "add_module" (func (param i64 i32 i32 i32) (result i32)))
     (import "lunatic::process" "add_this_module" (func (param i64 i32) (result i32)))
@@ -58,6 +60,10 @@
     (import "lunatic::process" "register" (func (param i32 i32 i32 i32 i64 i64) (result i32)))
     (import "lunatic::process" "unregister" (func (param i32 i32 i32 i32 i64) (result i32)))
     (import "lunatic::process" "lookup" (func (param i32 i32 i32 i32 i32) (result i32)))
+
+    (import "lunatic::version" "major" (func (result i32)))
+    (import "lunatic::version" "minor" (func (result i32)))
+    (import "lunatic::version" "patch" (func (result i32)))
 
     ;; TODO: Add all WASI imports
 

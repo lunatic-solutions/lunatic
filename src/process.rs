@@ -2,23 +2,28 @@ use std::num::NonZeroU64;
 use std::{collections::HashMap, fmt::Debug, future::Future, hash::Hash, sync::Arc};
 
 use anyhow::Result;
-use log::{debug, trace};
+use log::{debug, log_enabled, trace, warn, Level};
 
 use async_std::channel::{unbounded, Receiver, Sender};
 use async_std::task::JoinHandle;
 
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{mailbox::MessageMailbox, message::Message};
 
 // TODO: Consider switching to different type id, maybe a custom or uuid v1?
-#[derive(Debug, PartialEq, Hash, Clone, Copy)]
+#[derive(Debug, PartialEq, Hash, Clone, Copy, Serialize, Deserialize)]
 pub struct ProcessId(Uuid);
 
 impl ProcessId {
     #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         ProcessId(Uuid::new_v4())
+    }
+
+    pub fn nil() -> Self {
+        ProcessId(Uuid::nil())
     }
 
     pub fn as_u128(&self) -> u128 {
@@ -138,13 +143,13 @@ impl Process for WasmProcess {
 }
 
 // Turns a Future into a process, enabling signals (e.g. kill).
-pub(crate) async fn new<F, T>(
+pub(crate) async fn new<F>(
     fut: F,
     id: ProcessId,
     signal_mailbox: Receiver<Signal>,
     message_mailbox: MessageMailbox,
 ) where
-    F: Future<Output = Result<T>> + Send + 'static,
+    F: Future<Output = Result<()>> + Send + 'static,
 {
     trace!("Process {} spawned", id);
     tokio::pin!(fut);
@@ -178,6 +183,8 @@ pub(crate) async fn new<F, T>(
                         if die_when_link_dies {
                             // Even this was not a **kill** signal it has the same effect on
                             // this process and should be propagated as such.
+                            // TODO: Remove sender from our notify list, so we don't send back the
+                            //       same notification to an already dead process.
                             break Finished::Signal(Signal::Kill)
                         } else {
                             // TODO message id?
@@ -188,7 +195,7 @@ pub(crate) async fn new<F, T>(
                             message_mailbox.push(message);
                         }
                     },
-                    Err(_) => unreachable!("The process holds the sending side and is never closed")
+                    Err(_) => unreachable!("The process holds the sending side and is not closed")
                 }
             }
             // Run process
@@ -205,14 +212,29 @@ pub(crate) async fn new<F, T>(
                     }
                 }
             };
-            debug!("Process {} failed: {}", id, err);
+            warn!(
+                "Process {} trapped, notifying: {} links {}",
+                id,
+                links.len(),
+                // If the log level is WARN instruct user how to display the stacktrace
+                if !log_enabled!(Level::Debug) {
+                    "\n\t\t\t    (Set ENV variable `RUST_LOG=lunatic=debug` to show stacktrace)"
+                } else {
+                    ""
+                }
+            );
+            debug!("{}", err);
             // Notify all links that we finished with an error
             links.iter().for_each(|(proc, tag)| {
                 let _ = proc.send(Signal::LinkDied(*tag));
             });
         }
         Finished::Signal(Signal::Kill) => {
-            debug!("Process {} was killed", id);
+            warn!(
+                "Process {} was killed, notifying: {} links",
+                id,
+                links.len()
+            );
             // Notify all links that we finished because of a kill signal
             links.iter().for_each(|(proc, tag)| {
                 let _ = proc.send(Signal::LinkDied(*tag));
@@ -234,17 +256,16 @@ pub struct NativeProcess {
 /// ## Example:
 ///
 /// ```no_run
-/// let _proc = lunatic_runtime::spawn(|mailbox| async move {
+/// let _proc = lunatic_runtime::spawn(|_, mailbox| async move {
 ///     // Wait on a message
 ///     mailbox.pop().await;
 ///     Ok(())
 /// });
 /// ```
-pub fn spawn<F, K, T>(func: F) -> (JoinHandle<()>, NativeProcess)
+pub fn spawn<F, K>(func: F) -> (JoinHandle<()>, NativeProcess)
 where
-    T: 'static,
-    K: Future<Output = Result<T>> + Send + 'static,
-    F: Fn(MessageMailbox) -> K,
+    K: Future<Output = Result<()>> + Send + 'static,
+    F: FnOnce(NativeProcess, MessageMailbox) -> K,
 {
     let id = ProcessId::new();
     let (signal_sender, signal_mailbox) = unbounded::<Signal>();
@@ -253,7 +274,7 @@ where
         id,
         signal_mailbox: signal_sender,
     };
-    let fut = func(message_mailbox.clone());
+    let fut = func(process.clone(), message_mailbox.clone());
     let join = async_std::task::spawn(new(fut, id, signal_mailbox, message_mailbox));
     (join, process)
 }

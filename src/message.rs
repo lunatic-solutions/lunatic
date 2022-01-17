@@ -16,12 +16,12 @@ use crate::{process::ProcessId, Process};
 /// It implements the [`Read`](std::io::Read) and [`Write`](std::io::Write) traits.
 #[derive(Debug)]
 pub struct Message {
-    id: NonZeroU64,
-    process_id: ProcessId,
-    is_signal: bool,
-    reply_id: Option<NonZeroU64>,
-    pub data: Vec<u8>,
-    resources: Vec<Resource>,
+    pub(crate) id: NonZeroU64,
+    pub(crate) process_id: ProcessId,
+    pub(crate) is_signal: bool,
+    pub(crate) reply_id: Option<NonZeroU64>,
+    pub(crate) data: Vec<u8>,
+    pub(crate) resources: Vec<Resource>,
 }
 
 impl Message {
