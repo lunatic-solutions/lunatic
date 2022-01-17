@@ -198,6 +198,14 @@ pub(crate) fn register(
         udp_bind,
         namespace_filter,
     )?;
+    link_if_match(
+        linker,
+        "lunatic::networking",
+        "drop_udp_listener",
+        FuncType::new([ValType::I64], []),
+        drop_udp_listener,
+        namespace_filter,
+    )?;
     Ok(())
 }
 
@@ -949,4 +957,20 @@ fn udp_bind(
 
         Ok(result)
     })
+}
+
+//% lunatic::networking::drop_udpp_listener(tcp_listener_id: i64)
+//%
+//% Drops the UCP listener resource.
+//%
+//% Traps:
+//% * If the UDP listener ID doesn't exist.
+fn drop_udp_listener(mut caller: Caller<ProcessState>, tcp_listener_id: u64) -> Result<(), Trap> {
+    caller
+        .data_mut()
+        .resources
+        .udp_listeners
+        .remove(tcp_listener_id)
+        .or_trap("lunatic::networking::drop_udp_listener")?;
+    Ok(())
 }
