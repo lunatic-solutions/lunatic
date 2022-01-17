@@ -6,8 +6,7 @@ use std::time::Duration;
 
 use anyhow::Result;
 use async_std::io::{ReadExt, WriteExt};
-use async_std::net::{TcpListener, TcpStream};
-use async_std::net::{UdpSocket};
+use async_std::net::{TcpListener, TcpStream, UdpSocket};
 use wasmtime::{Caller, FuncType, Linker, ValType};
 use wasmtime::{Memory, Trap};
 
