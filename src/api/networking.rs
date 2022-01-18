@@ -959,18 +959,100 @@ fn udp_bind(
     })
 }
 
-//% lunatic::networking::drop_udpp_listener(tcp_listener_id: i64)
+//% lunatic::networking::drop_udp_listener(tcp_listener_id: i64)
 //%
 //% Drops the UCP listener resource.
 //%
 //% Traps:
 //% * If the UDP listener ID doesn't exist.
-fn drop_udp_listener(mut caller: Caller<ProcessState>, tcp_listener_id: u64) -> Result<(), Trap> {
+fn drop_udp_listener(mut caller: Caller<ProcessState>, udpp_listener_id: u64) -> Result<(), Trap> {
     caller
         .data_mut()
         .resources
         .udp_listeners
-        .remove(tcp_listener_id)
+        .remove(udpp_listener_id)
         .or_trap("lunatic::networking::drop_udp_listener")?;
     Ok(())
+}
+
+
+//% lunatic::networking::tcp_read(
+//%     stream_id: u64,
+//%     buffer_ptr: u32,
+//%     buffer_len: u32,
+//%     timeout: u32,
+//%     i64_opaque_ptr: u32,
+//% ) -> i32
+//%
+//% Returns:
+//% * 0 on success - The number of bytes read is written to **opaque_ptr**
+//% * 1 on error   - The error ID is written to **opaque_ptr**
+//%
+//% Reads data from TCP stream and writes it to the buffer.
+//%
+//% Traps:
+//% * If the stream ID doesn't exist.
+//% * If **buffer_ptr + buffer_len** is outside the memory.
+//% * If **i64_opaque_ptr** is outside the memory.
+fn udp_read(
+    mut caller: Caller<ProcessState>,
+    stream_id: u64,
+    buffer_ptr: u32,
+    buffer_len: u32,
+    timeout: u32,
+    opaque_ptr: u32,
+    dns_iter_ptr: u32,
+) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_> {
+    Box::new(async move {
+        let mut stream = caller
+            .data()
+            .resources
+            .udp_listeners
+            .get(stream_id)
+            .or_trap("lunatic::network::udp_read")?
+            .clone();
+
+        let memory = get_memory(&mut caller)?;
+        let buffer = memory
+            .data_mut(&mut caller)
+            .get_mut(buffer_ptr as usize..(buffer_ptr + buffer_len) as usize)
+            .or_trap("lunatic::networking::udp_read")?;
+
+            
+        // Check for timeout first
+        if let Some(result) = tokio::select! {
+            _ = async_std::task::sleep(Duration::from_millis(timeout as u64)), if timeout != 0 => None,
+            result = stream.recv_from(buffer) => Some(result)
+        } {
+            let (opaque, socket_result, return_) = match result {
+                Ok((bytes, socket)) => (bytes as u64, Some(socket), 0),
+                Err(error) => (caller.data_mut().errors.add(error.into()), None, 1),
+            };
+
+            let memory = get_memory(&mut caller)?;
+            memory
+                .write(&mut caller, opaque_ptr as usize, &opaque.to_le_bytes())
+                .or_trap("lunatic::networking::udp_read")?;
+
+            if let Some(socket_addr) = socket_result {
+                let dns_iter_id = caller
+                    .data_mut()
+                    .resources
+                    .dns_iterators
+                    .add(DnsIterator::new(vec![socket_addr].into_iter()));
+                memory
+                    .write(&mut caller, dns_iter_ptr as usize, &dns_iter_id.to_le_bytes())
+                    .or_trap("lunatic::networking::udp_read")?;
+            }
+            Ok(return_)
+        } else {
+            // Call timed out
+            let error = std::io::Error::new(std::io::ErrorKind::TimedOut, "Read call timed out");
+            let error_id = caller.data_mut().errors.add(error.into());
+            memory
+                .write(&mut caller, opaque_ptr as usize, &error_id.to_le_bytes())
+                .or_trap("lunatic::networking::udp_read")?;
+            Ok(1)
+        }
+    })
 }
