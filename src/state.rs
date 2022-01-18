@@ -145,7 +145,7 @@ pub(crate) struct Resources {
     pub(crate) dns_iterators: HashMapId<DnsIterator>,
     pub(crate) tcp_listeners: HashMapId<TcpListener>,
     pub(crate) tcp_streams: HashMapId<TcpStream>,
-    pub(crate) udp_listeners: HashMapId<UdpSocket>,
+    pub(crate) udp_sockets: HashMapId<UdpSocket>,
 }
 
 /// HashMap wrapper with incremental ID (u64) assignment.

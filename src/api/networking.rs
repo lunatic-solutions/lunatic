@@ -201,9 +201,9 @@ pub(crate) fn register(
     link_if_match(
         linker,
         "lunatic::networking",
-        "drop_udp_listener",
+        "drop_udp_socket",
         FuncType::new([ValType::I64], []),
-        drop_udp_listener,
+        drop_udp_socket,
         namespace_filter,
     )?;
     link_async6_if_match(
@@ -981,7 +981,7 @@ fn udp_bind(
             scope_id,
         )?;
         let (udp_listener_or_error_id, result) = match UdpSocket::bind(socket_addr).await {
-            Ok(listener) => (caller.data_mut().resources.udp_listeners.add(listener), 0),
+            Ok(listener) => (caller.data_mut().resources.udp_sockets.add(listener), 0),
             Err(error) => (caller.data_mut().errors.add(error.into()), 1),
         };
         memory
@@ -1002,11 +1002,11 @@ fn udp_bind(
 //%
 //% Traps:
 //% * If the UDP listener ID doesn't exist.
-fn drop_udp_listener(mut caller: Caller<ProcessState>, udpp_listener_id: u64) -> Result<(), Trap> {
+fn drop_udp_socket(mut caller: Caller<ProcessState>, udpp_listener_id: u64) -> Result<(), Trap> {
     caller
         .data_mut()
         .resources
-        .udp_listeners
+        .udp_sockets
         .remove(udpp_listener_id)
         .or_trap("lunatic::networking::drop_udp_listener")?;
     Ok(())
@@ -1053,7 +1053,7 @@ fn udp_read(
 
         let socket = state
             .resources
-            .udp_listeners
+            .udp_sockets
             .get(stream_id)
             .or_trap("lunatic::network::udp_read")?;
 
@@ -1144,7 +1144,7 @@ fn udp_connect(
             let (stream_or_error_id, result) = match result {
                 Ok(socket_result) => {
                     match UdpSocket::connect(&socket_result, socket_addr).await {
-                        Ok(()) => (caller.data_mut().resources.udp_listeners.add(socket_result), 0),
+                        Ok(()) => (caller.data_mut().resources.udp_sockets.add(socket_result), 0),
                         Err(connect_error) => (caller.data_mut().errors.add(connect_error.into()), 1),
                     }
                 },
@@ -1169,4 +1169,23 @@ fn udp_connect(
             Ok(1)
         }
     })
+}
+
+
+//% lunatic::networking::clone_tcp_stream(udp_socket_id: u64) -> u64
+//%
+//% Clones a UDP socket returning the ID of the clone.
+//%
+//% Traps:
+//% * If the stream ID doesn't exist.
+fn clone_udp_socket(mut caller: Caller<ProcessState>, udp_socket_id: u64) -> Result<u64, Trap> {
+    let stream = caller
+        .data()
+        .resources
+        .tcp_streams
+        .get(udp_socket_id)
+        .or_trap("lunatic::networking::clone_udp_socket")?
+        .clone();
+    let id = caller.data_mut().resources.udp_sockets.add(stream);
+    Ok(id)
 }
