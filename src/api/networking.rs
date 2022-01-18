@@ -17,7 +17,7 @@ use crate::{api::get_memory, state::ProcessState};
 
 use super::{
     link_async2_if_match, link_async3_if_match, link_async4_if_match, link_async5_if_match,
-    link_async6_if_match, link_async7_if_match, link_if_match,
+    link_async6_if_match, link_async7_if_match, link_async10_if_match, link_if_match,
 };
 
 // Register the error APIs to the linker
@@ -282,6 +282,29 @@ pub(crate) fn register(
         "get_udp_socket_ttl",
         FuncType::new([ValType::I64], [ValType::I32]),
         get_udp_socket_ttl,
+        namespace_filter,
+    )?;
+    link_async10_if_match(
+        linker,
+        "lunatic::networking",
+        "udp_send_to",
+        FuncType::new(
+            [
+                ValType::I64,
+                ValType::I32,
+                ValType::I32,
+                ValType::I32,
+                ValType::I32,
+                ValType::I32,
+                ValType::I32,
+                ValType::I32,
+                ValType::I32,
+                ValType::I32,
+                ValType::I32,
+            ],
+            [ValType::I32],
+        ),
+        udp_send_to,
         namespace_filter,
     )?;
     Ok(())
@@ -977,7 +1000,6 @@ fn socket_address(
     })
 }
 
-
 //% lunatic::networking::udp_bind(
 //%     addr_type: u32,
 //%     addr_u8_ptr: u32,
@@ -1049,7 +1071,7 @@ fn drop_udp_socket(mut caller: Caller<ProcessState>, udpp_listener_id: u64) -> R
         .resources
         .udp_sockets
         .remove(udpp_listener_id)
-        .or_trap("lunatic::networking::drop_udp_listener")?;
+        .or_trap("lunatic::networking::drop_udp_socket")?;
     Ok(())
 }
 
@@ -1304,11 +1326,99 @@ fn get_udp_socket_ttl(caller: Caller<ProcessState>, udp_socket_id: u64) -> Resul
         .resources
         .udp_sockets
         .get(udp_socket_id)
-        .or_trap("lunatic::networking::get_udp_socket_broadcast")?;
+        .or_trap("lunatic::networking::get_udp_socket_ttl")?;
 
     let result = socket
         .ttl()
-        .or_trap("lunatic::networking::get_udp_socket_broadcast")?;
+        .or_trap("lunatic::networking::get_udp_socket_ttl")?;
 
     Ok(result)
+}
+
+//% lunatic::networking::udp_send_to(
+//%     socket_id: u64,
+//%     buffer_ptr: u32,
+//%     buffer_len: u32,
+//%     addr_type: u32,
+//%     addr_u8_ptr: u32,
+//%     port: u32,
+//%     flow_info: u32,
+//%     scope_id: u32,
+//%     timeout: u32,
+//%     opaque_ptr: u32,
+//% ) -> u32
+//%
+//% Returns:
+//% * 0 on success - The number of bytes written is written to **opaque_ptr**
+//% * 1 on error   - The error ID is written to **opaque_ptr**
+//%
+//% Gathers the buffer and writes it to the socket, and returns the number of bytes written.
+//%
+//% Traps:
+//% * If the stream ID doesn't exist.
+//% * If **buffer_ptr + (buffer_len)** is outside the memory
+//%   ciovecs point outside of the memory.
+//% * If **i64_opaque_ptr** is outside the memory.
+fn udp_send_to(
+    mut caller: Caller<ProcessState>,
+    socket_id: u64,
+    buffer_ptr: u32,
+    buffer_len: u32,
+    addr_type: u32,
+    addr_u8_ptr: u32,
+    port: u32,
+    flow_info: u32,
+    scope_id: u32,
+    timeout: u32,
+    opaque_ptr: u32,
+) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_> {
+    Box::new(async move {
+        let memory = get_memory(&mut caller)?;
+        let socket_addr = socket_address(
+            &caller,
+            &memory,
+            addr_type,
+            addr_u8_ptr,
+            port,
+            flow_info,
+            scope_id,
+        )?;
+        let buffer = memory
+            .data(&caller)
+            .get(buffer_ptr as usize..(buffer_ptr + buffer_len) as usize)
+            .or_trap("lunatic::networking::udp_send_to")?;
+
+        let stream = caller
+            .data()
+            .resources
+            .udp_sockets
+            .get(socket_id)
+            .or_trap("lunatic::network::udp_send_to")?
+            .clone();
+
+        // Check for timeout
+        if let Some(result) = tokio::select! {
+            _ = async_std::task::sleep(Duration::from_millis(timeout as u64)), if timeout != 0 => None,
+            result = stream.send_to(buffer, socket_addr) => Some(result)
+        } {
+            let (opaque, return_) = match result {
+                Ok(bytes) => (bytes as u64, 0),
+                Err(error) => (caller.data_mut().errors.add(error.into()), 1),
+            };
+
+            let memory = get_memory(&mut caller)?;
+            memory
+                .write(&mut caller, opaque_ptr as usize, &opaque.to_le_bytes())
+                .or_trap("lunatic::networking::udp_send_to")?;
+            Ok(return_)
+        } else {
+            // Call timed out
+            let error = std::io::Error::new(std::io::ErrorKind::TimedOut, "Write call timed out");
+            let error_id = caller.data_mut().errors.add(error.into());
+            memory
+                .write(&mut caller, opaque_ptr as usize, &error_id.to_le_bytes())
+                .or_trap("lunatic::networking::udp_send_to")?;
+            Ok(1)
+        }
+    })
 }
