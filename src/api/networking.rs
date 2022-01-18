@@ -3,6 +3,7 @@ use std::future::Future;
 use std::io::IoSlice;
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
 use std::time::Duration;
+use std::sync::Arc;
 
 use anyhow::Result;
 use async_std::io::{ReadExt, WriteExt};
@@ -241,6 +242,14 @@ pub(crate) fn register(
             [ValType::I32],
         ),
         udp_connect,
+        namespace_filter,
+    )?;
+    link_if_match(
+        linker,
+        "lunatic::networking",
+        "clone_udp_socket",
+        FuncType::new([ValType::I64], [ValType::I64]),
+        clone_udp_socket,
         namespace_filter,
     )?;
     Ok(())
@@ -981,7 +990,7 @@ fn udp_bind(
             scope_id,
         )?;
         let (udp_listener_or_error_id, result) = match UdpSocket::bind(socket_addr).await {
-            Ok(listener) => (caller.data_mut().resources.udp_sockets.add(listener), 0),
+            Ok(listener) => (caller.data_mut().resources.udp_sockets.add(Arc::new(listener)), 0),
             Err(error) => (caller.data_mut().errors.add(error.into()), 1),
         };
         memory
@@ -1144,7 +1153,7 @@ fn udp_connect(
             let (stream_or_error_id, result) = match result {
                 Ok(socket_result) => {
                     match UdpSocket::connect(&socket_result, socket_addr).await {
-                        Ok(()) => (caller.data_mut().resources.udp_sockets.add(socket_result), 0),
+                        Ok(()) => (caller.data_mut().resources.udp_sockets.add(Arc::new(socket_result)), 0),
                         Err(connect_error) => (caller.data_mut().errors.add(connect_error.into()), 1),
                     }
                 },
