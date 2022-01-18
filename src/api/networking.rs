@@ -1359,6 +1359,7 @@ fn get_udp_socket_ttl(caller: Caller<ProcessState>, udp_socket_id: u64) -> Resul
 //% * If **buffer_ptr + (buffer_len)** is outside the memory
 //%   ciovecs point outside of the memory.
 //% * If **i64_opaque_ptr** is outside the memory.
+#[allow(clippy::too_many_arguments)]
 fn udp_send_to(
     mut caller: Caller<ProcessState>,
     socket_id: u64,
