@@ -609,7 +609,6 @@ fn receive(
     })
 }
 
-
 //% lunatic::message::push_tcp_stream(stream_id: u64) -> u64
 //%
 //% Adds a tcp stream resource to the message that is currently in the scratch area and returns

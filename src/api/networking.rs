@@ -2,8 +2,8 @@ use std::convert::TryInto;
 use std::future::Future;
 use std::io::IoSlice;
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
-use std::time::Duration;
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::Result;
 use async_std::io::{ReadExt, WriteExt};
@@ -16,8 +16,8 @@ use crate::state::DnsIterator;
 use crate::{api::get_memory, state::ProcessState};
 
 use super::{
-    link_async2_if_match, link_async3_if_match, link_async4_if_match, link_async5_if_match,
-    link_async6_if_match, link_async7_if_match, link_async10_if_match, link_if_match,
+    link_async10_if_match, link_async2_if_match, link_async3_if_match, link_async4_if_match,
+    link_async5_if_match, link_async6_if_match, link_async7_if_match, link_if_match,
 };
 
 // Register the error APIs to the linker
@@ -1044,7 +1044,14 @@ fn udp_bind(
             scope_id,
         )?;
         let (udp_listener_or_error_id, result) = match UdpSocket::bind(socket_addr).await {
-            Ok(listener) => (caller.data_mut().resources.udp_sockets.add(Arc::new(listener)), 0),
+            Ok(listener) => (
+                caller
+                    .data_mut()
+                    .resources
+                    .udp_sockets
+                    .add(Arc::new(listener)),
+                0,
+            ),
             Err(error) => (caller.data_mut().errors.add(error.into()), 1),
         };
         memory
@@ -1074,7 +1081,6 @@ fn drop_udp_socket(mut caller: Caller<ProcessState>, udpp_listener_id: u64) -> R
         .or_trap("lunatic::networking::drop_udp_socket")?;
     Ok(())
 }
-
 
 //% lunatic::networking::tcp_read(
 //%     stream_id: u64,
@@ -1106,7 +1112,6 @@ fn udp_read(
     dns_iter_ptr: u32,
 ) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_> {
     Box::new(async move {
-
         let memory = get_memory(&mut caller)?;
         let (memory_slice, state) = memory.data_and_store_mut(&mut caller);
 
@@ -1142,7 +1147,11 @@ fn udp_read(
                     .dns_iterators
                     .add(DnsIterator::new(vec![socket_addr].into_iter()));
                 memory
-                    .write(&mut caller, dns_iter_ptr as usize, &dns_iter_id.to_le_bytes())
+                    .write(
+                        &mut caller,
+                        dns_iter_ptr as usize,
+                        &dns_iter_id.to_le_bytes(),
+                    )
                     .or_trap("lunatic::networking::udp_read")?;
             }
             Ok(return_)
@@ -1157,7 +1166,6 @@ fn udp_read(
         }
     })
 }
-
 
 //% lunatic::networking::udp_connect(
 //%     addr_type: u32,
@@ -1205,11 +1213,16 @@ fn udp_connect(
             result = UdpSocket::bind("127.0.0.1:0") => Some(result)
         } {
             let (stream_or_error_id, result) = match result {
-                Ok(socket_result) => {
-                    match UdpSocket::connect(&socket_result, socket_addr).await {
-                        Ok(()) => (caller.data_mut().resources.udp_sockets.add(Arc::new(socket_result)), 0),
-                        Err(connect_error) => (caller.data_mut().errors.add(connect_error.into()), 1),
-                    }
+                Ok(socket_result) => match UdpSocket::connect(&socket_result, socket_addr).await {
+                    Ok(()) => (
+                        caller
+                            .data_mut()
+                            .resources
+                            .udp_sockets
+                            .add(Arc::new(socket_result)),
+                        0,
+                    ),
+                    Err(connect_error) => (caller.data_mut().errors.add(connect_error.into()), 1),
                 },
                 Err(error) => (caller.data_mut().errors.add(error.into()), 1),
             };
@@ -1259,7 +1272,11 @@ fn clone_udp_socket(mut caller: Caller<ProcessState>, udp_socket_id: u64) -> Res
 //% Traps:
 //% * If the socket ID doesn't exist.
 //% * If set_broadcast traps.
-fn set_udp_socket_broadcast(caller: Caller<ProcessState>, udp_socket_id: u64, broadcast: u32) -> Result<(), Trap> {
+fn set_udp_socket_broadcast(
+    caller: Caller<ProcessState>,
+    udp_socket_id: u64,
+    broadcast: u32,
+) -> Result<(), Trap> {
     caller
         .data()
         .resources
@@ -1301,7 +1318,11 @@ fn get_udp_socket_broadcast(caller: Caller<ProcessState>, udp_socket_id: u64) ->
 //% Traps:
 //% * If the socket ID doesn't exist.
 //% * If set_ttl traps.
-fn set_udp_socket_ttl(caller: Caller<ProcessState>, udp_socket_id: u64, ttl: u32) -> Result<(), Trap> {
+fn set_udp_socket_ttl(
+    caller: Caller<ProcessState>,
+    udp_socket_id: u64,
+    ttl: u32,
+) -> Result<(), Trap> {
     caller
         .data()
         .resources
