@@ -1082,8 +1082,8 @@ fn drop_udp_socket(mut caller: Caller<ProcessState>, udpp_listener_id: u64) -> R
     Ok(())
 }
 
-//% lunatic::networking::tcp_read(
-//%     stream_id: u64,
+//% lunatic::networking::udp_read(
+//%     socket_id: u64,
 //%     buffer_ptr: u32,
 //%     buffer_len: u32,
 //%     timeout: u32,
@@ -1104,7 +1104,7 @@ fn drop_udp_socket(mut caller: Caller<ProcessState>, udpp_listener_id: u64) -> R
 //% * If **i64_dns_iter_ptr** is outside the memory.
 fn udp_read(
     mut caller: Caller<ProcessState>,
-    stream_id: u64,
+    socket_id: u64,
     buffer_ptr: u32,
     buffer_len: u32,
     timeout: u32,
@@ -1122,7 +1122,7 @@ fn udp_read(
         let socket = state
             .resources
             .udp_sockets
-            .get(stream_id)
+            .get(socket_id)
             .or_trap("lunatic::network::udp_read")?;
 
         // Check for timeout first
