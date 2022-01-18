@@ -252,6 +252,22 @@ pub(crate) fn register(
         clone_udp_socket,
         namespace_filter,
     )?;
+    link_if_match(
+        linker,
+        "lunatic::networking",
+        "set_udp_socket_broadcast",
+        FuncType::new([ValType::I64, ValType::I32], []),
+        set_udp_socket_broadcast,
+        namespace_filter,
+    )?;
+    link_if_match(
+        linker,
+        "lunatic::networking",
+        "get_udp_socket_broadcast",
+        FuncType::new([ValType::I64], [ValType::I32]),
+        get_udp_socket_broadcast,
+        namespace_filter,
+    )?;
     Ok(())
 }
 
@@ -1180,7 +1196,6 @@ fn udp_connect(
     })
 }
 
-
 //% lunatic::networking::clone_tcp_stream(udp_socket_id: u64) -> u64
 //%
 //% Clones a UDP socket returning the ID of the clone.
@@ -1197,4 +1212,45 @@ fn clone_udp_socket(mut caller: Caller<ProcessState>, udp_socket_id: u64) -> Res
         .clone();
     let id = caller.data_mut().resources.udp_sockets.add(stream);
     Ok(id)
+}
+
+//% lunatic::networking::set_udp_socket_broadcast(udp_socket_id: u64, broadcast: u32) -> u64
+//%
+//% Sets the broadcast state of the UDP socket.
+//%
+//% Traps:
+//% * If the socket ID doesn't exist.
+//% * If set_broadcast traps.
+fn set_udp_socket_broadcast(caller: Caller<ProcessState>, udp_socket_id: u64, broadcast: u32) -> Result<(), Trap> {
+    caller
+        .data()
+        .resources
+        .udp_sockets
+        .get(udp_socket_id)
+        .or_trap("lunatic::networking::set_udp_socket_broadcast")?
+        .set_broadcast(broadcast > 0)
+        .or_trap("lunatic::networking::set_udp_socket_broadcast")?;
+    Ok(())
+}
+
+//% lunatic::networking::get_udp_socket_broadcast(udp_socket_id: u64) -> u64
+//%
+//% Gets the current broadcast state of the UdpSocket.
+//%
+//% Traps:
+//% * If the socket ID doesn't exist.
+//% * If broadcast traps.
+fn get_udp_socket_broadcast(caller: Caller<ProcessState>, udp_socket_id: u64) -> Result<i32, Trap> {
+    let socket = caller
+        .data()
+        .resources
+        .udp_sockets
+        .get(udp_socket_id)
+        .or_trap("lunatic::networking::get_udp_socket_broadcast")?;
+
+    let result = socket
+        .broadcast()
+        .or_trap("lunatic::networking::get_udp_socket_broadcast")?;
+
+    Ok(result as i32)
 }
