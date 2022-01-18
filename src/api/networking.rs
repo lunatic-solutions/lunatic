@@ -1182,7 +1182,7 @@ fn clone_udp_socket(mut caller: Caller<ProcessState>, udp_socket_id: u64) -> Res
     let stream = caller
         .data()
         .resources
-        .tcp_streams
+        .udp_sockets
         .get(udp_socket_id)
         .or_trap("lunatic::networking::clone_udp_socket")?
         .clone();
