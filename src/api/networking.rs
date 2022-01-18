@@ -206,6 +206,24 @@ pub(crate) fn register(
         drop_udp_listener,
         namespace_filter,
     )?;
+    link_async6_if_match(
+        linker,
+        "lunatic::networking",
+        "udp_read",
+        FuncType::new(
+            [
+                ValType::I64,
+                ValType::I32,
+                ValType::I32,
+                ValType::I32,
+                ValType::I32,
+                ValType::I32,
+            ],
+            [ValType::I32],
+        ),
+        udp_read,
+        namespace_filter,
+    )?;
     Ok(())
 }
 
