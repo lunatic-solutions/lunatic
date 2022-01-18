@@ -982,6 +982,7 @@ fn drop_udp_listener(mut caller: Caller<ProcessState>, udpp_listener_id: u64) ->
 //%     buffer_len: u32,
 //%     timeout: u32,
 //%     i64_opaque_ptr: u32,
+//%     i64_dns_iter_ptr: u32,
 //% ) -> i32
 //%
 //% Returns:
@@ -994,6 +995,7 @@ fn drop_udp_listener(mut caller: Caller<ProcessState>, udpp_listener_id: u64) ->
 //% * If the stream ID doesn't exist.
 //% * If **buffer_ptr + buffer_len** is outside the memory.
 //% * If **i64_opaque_ptr** is outside the memory.
+//% * If **i64_dns_iter_ptr** is outside the memory.
 fn udp_read(
     mut caller: Caller<ProcessState>,
     stream_id: u64,
@@ -1018,7 +1020,6 @@ fn udp_read(
             .get_mut(buffer_ptr as usize..(buffer_ptr + buffer_len) as usize)
             .or_trap("lunatic::networking::udp_read")?;
 
-            
         // Check for timeout first
         if let Some(result) = tokio::select! {
             _ = async_std::task::sleep(Duration::from_millis(timeout as u64)), if timeout != 0 => None,
