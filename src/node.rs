@@ -543,6 +543,11 @@ impl SignalOverNetwork {
                                     "Resource TcpStream can't be sent to another node"
                                 ))
                             }
+                            crate::message::Resource::UdpSocket(_) => {
+                                return Err(anyhow!(
+                                    "Resource UdpSocket can't be sent to another node"
+                                ))
+                            }
                         }
                     }
 
