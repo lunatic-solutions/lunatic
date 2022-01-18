@@ -1024,24 +1024,25 @@ fn udp_read(
     dns_iter_ptr: u32,
 ) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_> {
     Box::new(async move {
-        let mut stream = caller
-            .data()
+
+        let memory = get_memory(&mut caller)?;
+        let (memory_slice, state) = memory.data_and_store_mut(&mut caller);
+
+        let buffer = memory_slice
+            .get_mut(buffer_ptr as usize..(buffer_ptr + buffer_len) as usize)
+            .or_trap("lunatic::networking::udp_read")?;
+
+        let socket = state
             .resources
             .udp_listeners
             .get(stream_id)
             .or_trap("lunatic::network::udp_read")?
             .clone();
 
-        let memory = get_memory(&mut caller)?;
-        let buffer = memory
-            .data_mut(&mut caller)
-            .get_mut(buffer_ptr as usize..(buffer_ptr + buffer_len) as usize)
-            .or_trap("lunatic::networking::udp_read")?;
-
         // Check for timeout first
         if let Some(result) = tokio::select! {
             _ = async_std::task::sleep(Duration::from_millis(timeout as u64)), if timeout != 0 => None,
-            result = stream.recv_from(buffer) => Some(result)
+            result = socket.recv_from(buffer) => Some(result)
         } {
             let (opaque, socket_result, return_) = match result {
                 Ok((bytes, socket)) => (bytes as u64, Some(socket), 0),
