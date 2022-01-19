@@ -844,14 +844,6 @@ fn tcp_write_vectored(
             Ok(return_)
         } else {
             // Call timed out
-<<<<<<< HEAD
-            let error = std::io::Error::new(std::io::ErrorKind::TimedOut, "Write call timed out");
-            let error_id = caller.data_mut().errors.add(error.into());
-            memory
-                .write(&mut caller, opaque_ptr as usize, &error_id.to_le_bytes())
-                .or_trap("lunatic::networking::tcp_write_vectored")?;
-=======
->>>>>>> c687b89d6dfee5f5f0e9615a81c3561ff223de59
             Ok(9027)
         }
     })
@@ -916,14 +908,6 @@ fn tcp_read(
             Ok(return_)
         } else {
             // Call timed out
-<<<<<<< HEAD
-            let error = std::io::Error::new(std::io::ErrorKind::TimedOut, "Read call timed out");
-            let error_id = caller.data_mut().errors.add(error.into());
-            memory
-                .write(&mut caller, opaque_ptr as usize, &error_id.to_le_bytes())
-                .or_trap("lunatic::networking::tcp_read")?;
-=======
->>>>>>> c687b89d6dfee5f5f0e9615a81c3561ff223de59
             Ok(9027)
         }
     })
