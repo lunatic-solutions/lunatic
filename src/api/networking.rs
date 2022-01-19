@@ -1162,7 +1162,7 @@ fn udp_read(
             memory
                 .write(&mut caller, opaque_ptr as usize, &error_id.to_le_bytes())
                 .or_trap("lunatic::networking::udp_read")?;
-            Ok(1)
+            Ok(9027)
         }
     })
 }
