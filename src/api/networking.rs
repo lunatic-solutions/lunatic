@@ -1139,11 +1139,6 @@ fn udp_read(
             Ok(return_)
         } else {
             // Call timed out
-            let error = std::io::Error::new(std::io::ErrorKind::TimedOut, "Read call timed out");
-            let error_id = caller.data_mut().errors.add(error.into());
-            memory
-                .write(&mut caller, opaque_ptr as usize, &error_id.to_le_bytes())
-                .or_trap("lunatic::networking::udp_read")?;
             Ok(9027)
         }
     })
@@ -1219,12 +1214,7 @@ fn udp_connect(
             Ok(result)
         } else {
             // Call timed out
-            let error = std::io::Error::new(std::io::ErrorKind::TimedOut, "Connect timed out");
-            let error_id = caller.data_mut().errors.add(error.into());
-            memory
-                .write(&mut caller, id_u64_ptr as usize, &error_id.to_le_bytes())
-                .or_trap("lunatic::networking::udp_connect")?;
-            Ok(1)
+            Ok(9027)
         }
     })
 }
@@ -1416,12 +1406,6 @@ fn udp_send_to(
             Ok(return_)
         } else {
             // Call timed out
-            let error = std::io::Error::new(std::io::ErrorKind::TimedOut, "Write call timed out");
-            let error_id = caller.data_mut().errors.add(error.into());
-            memory
-                .write(&mut caller, opaque_ptr as usize, &error_id.to_le_bytes())
-                .or_trap("lunatic::networking::udp_send_to")?;
-            // Call return should be 9027 on timeout
             Ok(9027)
         }
     })
