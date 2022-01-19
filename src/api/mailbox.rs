@@ -609,13 +609,13 @@ fn receive(
     })
 }
 
-//% lunatic::message::push_tcp_stream(stream_id: u64) -> u64
+//% lunatic::message::push_udp_socket(stream_id: u64) -> u64
 //%
-//% Adds a tcp stream resource to the message that is currently in the scratch area and returns
+//% Adds a udp socket resource to the message that is currently in the scratch area and returns
 //% the new location of it. This will remove the tcp stream from  the current process' resources.
 //%
 //% Traps:
-//% * If TCP stream ID doesn't exist
+//% * If UDP socket ID doesn't exist
 //% * If no data message is in the scratch area.
 fn push_udp_socket(mut caller: Caller<ProcessState>, socket_id: u64) -> Result<u64, Trap> {
     let data = caller.data_mut();
