@@ -193,6 +193,7 @@ pub(crate) fn register(
 //% Returns:
 //% * 0 on success - The ID of the newly created DNS iterator is written to **id_u64_ptr**
 //% * 1 on error   - The error ID is written to **id_u64_ptr**
+//% * 9027 if the operation timed out
 //%
 //% Performs a DNS resolution. The returned iterator may not actually yield any values
 //% depending on the outcome of any resolution performed.
@@ -246,12 +247,7 @@ fn resolve(
             Ok(result)
         } else {
             // Call timed out
-            let error = std::io::Error::new(std::io::ErrorKind::TimedOut, "Resolve call timed out");
-            let error_id = caller.data_mut().errors.add(error.into());
-            memory
-                .write(&mut caller, id_u64_ptr as usize, &error_id.to_le_bytes())
-                .or_trap("lunatic::networking::resolve")?;
-            Ok(1)
+            Ok(9027)
         };
         return_
     })
@@ -605,12 +601,7 @@ fn tcp_connect(
             Ok(result)
         } else {
             // Call timed out
-            let error = std::io::Error::new(std::io::ErrorKind::TimedOut, "Connect timed out");
-            let error_id = caller.data_mut().errors.add(error.into());
-            memory
-                .write(&mut caller, id_u64_ptr as usize, &error_id.to_le_bytes())
-                .or_trap("lunatic::networking::tcp_connect")?;
-            Ok(1)
+            Ok(9027)
         }
     })
 }
@@ -726,12 +717,7 @@ fn tcp_write_vectored(
             Ok(return_)
         } else {
             // Call timed out
-            let error = std::io::Error::new(std::io::ErrorKind::TimedOut, "Write call timed out");
-            let error_id = caller.data_mut().errors.add(error.into());
-            memory
-                .write(&mut caller, opaque_ptr as usize, &error_id.to_le_bytes())
-                .or_trap("lunatic::networking::tcp_write_vectored")?;
-            Ok(1)
+            Ok(9027)
         }
     })
 }
@@ -747,6 +733,7 @@ fn tcp_write_vectored(
 //% Returns:
 //% * 0 on success - The number of bytes read is written to **opaque_ptr**
 //% * 1 on error   - The error ID is written to **opaque_ptr**
+//% * 9027 if the operation timed out
 //%
 //% Reads data from TCP stream and writes it to the buffer.
 //%
@@ -794,12 +781,7 @@ fn tcp_read(
             Ok(return_)
         } else {
             // Call timed out
-            let error = std::io::Error::new(std::io::ErrorKind::TimedOut, "Read call timed out");
-            let error_id = caller.data_mut().errors.add(error.into());
-            memory
-                .write(&mut caller, opaque_ptr as usize, &error_id.to_le_bytes())
-                .or_trap("lunatic::networking::tcp_read")?;
-            Ok(1)
+            Ok(9027)
         }
     })
 }
