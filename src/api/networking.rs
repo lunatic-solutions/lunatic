@@ -210,7 +210,7 @@ pub(crate) fn register(
     link_async6_if_match(
         linker,
         "lunatic::networking",
-        "udp_read",
+        "udp_receive",
         FuncType::new(
             [
                 ValType::I64,
@@ -222,7 +222,7 @@ pub(crate) fn register(
             ],
             [ValType::I32],
         ),
-        udp_read,
+        udp_receive,
         namespace_filter,
     )?;
     link_async7_if_match(
@@ -1064,7 +1064,7 @@ fn drop_udp_socket(mut caller: Caller<ProcessState>, udpp_listener_id: u64) -> R
     Ok(())
 }
 
-//% lunatic::networking::udp_read(
+//% lunatic::networking::udp_receive(
 //%     socket_id: u64,
 //%     buffer_ptr: u32,
 //%     buffer_len: u32,
@@ -1084,7 +1084,7 @@ fn drop_udp_socket(mut caller: Caller<ProcessState>, udpp_listener_id: u64) -> R
 //% * If **buffer_ptr + buffer_len** is outside the memory.
 //% * If **i64_opaque_ptr** is outside the memory.
 //% * If **i64_dns_iter_ptr** is outside the memory.
-fn udp_read(
+fn udp_receive(
     mut caller: Caller<ProcessState>,
     socket_id: u64,
     buffer_ptr: u32,
@@ -1099,13 +1099,13 @@ fn udp_read(
 
         let buffer = memory_slice
             .get_mut(buffer_ptr as usize..(buffer_ptr + buffer_len) as usize)
-            .or_trap("lunatic::networking::udp_read")?;
+            .or_trap("lunatic::networking::udp_receive")?;
 
         let socket = state
             .resources
             .udp_sockets
             .get(socket_id)
-            .or_trap("lunatic::network::udp_read")?;
+            .or_trap("lunatic::network::udp_receive")?;
 
         // Check for timeout first
         if let Some(result) = tokio::select! {
@@ -1120,7 +1120,7 @@ fn udp_read(
             let memory = get_memory(&mut caller)?;
             memory
                 .write(&mut caller, opaque_ptr as usize, &opaque.to_le_bytes())
-                .or_trap("lunatic::networking::udp_read")?;
+                .or_trap("lunatic::networking::udp_receive")?;
 
             if let Some(socket_addr) = socket_result {
                 let dns_iter_id = caller
@@ -1134,7 +1134,7 @@ fn udp_read(
                         dns_iter_ptr as usize,
                         &dns_iter_id.to_le_bytes(),
                     )
-                    .or_trap("lunatic::networking::udp_read")?;
+                    .or_trap("lunatic::networking::udp_receive")?;
             }
             Ok(return_)
         } else {
