@@ -858,7 +858,7 @@ fn tcp_write_vectored(
             memory
                 .write(&mut caller, opaque_ptr as usize, &error_id.to_le_bytes())
                 .or_trap("lunatic::networking::tcp_write_vectored")?;
-            Ok(1)
+            Ok(9027)
         }
     })
 }
@@ -926,7 +926,7 @@ fn tcp_read(
             memory
                 .write(&mut caller, opaque_ptr as usize, &error_id.to_le_bytes())
                 .or_trap("lunatic::networking::tcp_read")?;
-            Ok(1)
+            Ok(9027)
         }
     })
 }
@@ -1439,7 +1439,8 @@ fn udp_send_to(
             memory
                 .write(&mut caller, opaque_ptr as usize, &error_id.to_le_bytes())
                 .or_trap("lunatic::networking::udp_send_to")?;
-            Ok(1)
+            // Call return should be 9027 on timeout
+            Ok(9027)
         }
     })
 }
