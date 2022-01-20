@@ -1,6 +1,14 @@
-# Lunatic Releases
+# Lunatic Changelog
 
----
+## v0.7.5
+
+Released 2021-01-20.
+
+### Changes
+
+- The CI now builds universal macOS binaries (M1 & Intel support).
+- Host functions for TCP read/writes indicate a timeout with a return value now, instead of a
+  generic error. (contributed by [@teymour-aldridge](https://github.com/teymour-aldridge))
 
 ## v0.7.4
 
@@ -8,11 +16,11 @@ Released 2021-01-15.
 
 ### Changes
 
-Adds `local_addr` host function for TCP listeners.
-Adds `version` host function.
-Adds check if processes are spawned before the Wasm module was initialized.
-
-Process traps are now logged by default to stdout.
+- Adds `local_addr` host function for TCP listeners.
+- Adds `version` host function. (contributed by [@teymour-aldridge](https://github.com/teymour-aldridge))
+- Adds check if processes are spawned before the Wasm module was initialized. (contributed by
+  [@jtenner](https://github.com/jtenner))
+- Process traps are now logged by default to stdout.
 
 ## v0.7.0
 
