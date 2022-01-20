@@ -1,9 +1,12 @@
 [package]
 name = "lunatic-runtime"
-version = "0.7.4"
+version = "0.7.5"
 authors = ["Bernard Kolobara <bernard@lunatic.solutions>"]
 edition = "2018"
 description = "An actor platform built on WebAssembly"
+homepage = "https://lunatic.solutions"
+repository = "https://github.com/lunatic-solutions/lunatic"
+categories = ["wasm"]
 license = "Apache-2.0/MIT"
 readme = "README.md"
 

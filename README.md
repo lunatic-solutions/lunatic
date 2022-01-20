@@ -1,6 +1,9 @@
 <div align="center">
     <a href="https://lunatic.solutions/" target="_blank">
-        <img width="60" src="https://raw.githubusercontent.com/lunatic-solutions/lunatic/main/assets/logo.svg" alt="Lunatic logo">
+        <img width="60" 
+             src="https://raw.githubusercontent.com/lunatic-solutions/lunatic/main/assets/logo.svg"
+             alt="lunatic logo"
+        >
     </a>
     <p>&nbsp;</p>
 </div>
@@ -30,11 +33,15 @@ If you would like to see other languages supported or just follow the discussion
 
 ## Installation
 
-We provide pre-built binaries for **Windows**, **Linux** and **macOS** on the [releases page][5].
+If you have rust (cargo) installed, you can build and install the lunatic runtime with:
+
+```bash
+cargo install lunatic-runtime
+```
 
 ---
 
-On **macOS** you can also use [Hombrew][6]:
+On **macOS** you can use [Hombrew][6] too:
 
 ```bash
 brew tap lunatic-solutions/lunatic
@@ -43,16 +50,20 @@ brew install lunatic
 
 ---
 
-To build the project from source you will need to have [rustup][7] installed:
+We also provide pre-built binaries for **Windows**, **Linux** and **macOS** on the
+[releases page][5], that you can include in your `PATH`.
+
+---
+
+And as always, you can also clone this repository and build it locally. The only dependency is
+[a rust compiler][7]:
 
 ```bash
-# Add wasm32 compilation target
-rustup target add wasm32-unknown-unknown
 # Clone the repository
 git clone https://github.com/lunatic-solutions/lunatic.git
 # Jump into the cloned folder
 cd lunatic
-# Build and install Lunatic
+# Build and install lunatic
 cargo install --path .
 ```
 
