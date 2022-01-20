@@ -1607,7 +1607,7 @@ fn udp_local_addr(
         .data()
         .resources
         .udp_sockets
-        .get(tcp_listener_id)
+        .get(udp_socket_id)
         .or_trap("lunatic::network::udp_local_addr: listener ID doesn't exist")?;
     let (dns_iter_or_error_id, result) = match udp_socket.local_addr() {
         Ok(socket_addr) => {

@@ -116,7 +116,7 @@ impl DataMessage {
         None
     }
 
-    /// Takes a TCP stream from the message, but preserves the indexes of all others.
+    /// Takes a UDP Socket from the message, but preserves the indexes of all others.
     ///
     /// If the index is out of bound or the resource is not a tcp stream the function will return
     /// None.
