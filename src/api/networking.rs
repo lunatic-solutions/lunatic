@@ -1032,7 +1032,7 @@ fn socket_address(
 //% Creates a new UDP socket, which will be bound to the specified address. The returned socket
 //% is ready for receiving messages.
 //%
-//% Binding with a port number of 0 will request that the OS assigns a port to this listener. The
+//% Binding with a port number of 0 will request that the OS assigns a port to this socket. The
 //% port allocated can be queried via the `local_addr` (TODO) method.
 //%
 //% Traps:
@@ -1107,8 +1107,9 @@ fn drop_udp_socket(mut caller: Caller<ProcessState>, udpp_listener_id: u64) -> R
 //% ) -> i32
 //%
 //% Returns:
-//% * 0 on success - The number of bytes read is written to **opaque_ptr**
-//% * 1 on error   - The error ID is written to **opaque_ptr**
+//% * 0 on success    - The number of bytes read is written to **opaque_ptr**
+//% * 1 on error      - The error ID is written to **opaque_ptr**
+//% * 9027 on timeout - The socket receive timed out.
 //%
 //% Reads data from the connected udp socket and writes it to the given buffer.
 //%
