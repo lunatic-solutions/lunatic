@@ -1026,11 +1026,11 @@ fn socket_address(
 //% ) -> u32
 //%
 //% Returns:
-//% * 0 on success - The ID of the newly created UDP listener is written to **id_u64_ptr**
+//% * 0 on success - The ID of the newly created UDP socket is written to **id_u64_ptr**
 //% * 1 on error   - The error ID is written to **id_u64_ptr**
 //%
-//% Creates a new UDP listener, which will be bound to the specified address. The returned listener
-//% is ready for accepting connections.
+//% Creates a new UDP socket, which will be bound to the specified address. The returned socket
+//% is ready for receiving messages.
 //%
 //% Binding with a port number of 0 will request that the OS assigns a port to this listener. The
 //% port allocated can be queried via the `local_addr` (TODO) method.
