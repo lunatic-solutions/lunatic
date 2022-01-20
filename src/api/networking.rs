@@ -1110,12 +1110,13 @@ fn drop_udp_socket(mut caller: Caller<ProcessState>, udpp_listener_id: u64) -> R
 //% * 0 on success - The number of bytes read is written to **opaque_ptr**
 //% * 1 on error   - The error ID is written to **opaque_ptr**
 //%
-//% Reads data from TCP stream, once connected, and writes it to the buffer.
+//% Reads data from the connected udp socket and writes it to the given buffer.
 //%
 //% Traps:
 //% * If the stream ID doesn't exist.
 //% * If **buffer_ptr + buffer_len** is outside the memory.
 //% * If **i64_opaque_ptr** is outside the memory.
+//% * If the socket hasn't been connected yet. (use socket.connect() to connect to an address)
 fn udp_receive(
     mut caller: Caller<ProcessState>,
     socket_id: u64,
@@ -1165,11 +1166,6 @@ fn udp_receive(
 //%     socket_id: u64,
 //%     buffer_ptr: u32,
 //%     buffer_len: u32,
-//%     addr_type: u32,
-//%     addr_u8_ptr: u32,
-//%     port: u32,
-//%     flow_info: u32,
-//%     scope_id: u32,
 //%     timeout: u32,
 //%     i64_opaque_ptr: u32,
 //%     i64_dns_iter_ptr: u32,
@@ -1525,12 +1521,13 @@ fn udp_send_to(
 //% * 0 on success - The number of bytes written is written to **opaque_ptr**
 //% * 1 on error   - The error ID is written to **opaque_ptr**
 //%
-//% Gathers the buffer and writes it to the socket once connected, and returns the number of bytes written.
+//% Gathers the buffer and writes it to the connected socket once connected, and returns the number of bytes written.
 //%
 //% Traps:
 //% * If the stream ID doesn't exist.
 //% * If **buffer_ptr + (buffer_len)** is outside the memory
 //% * If **i64_opaque_ptr** is outside the memory.
+//% * If the socket hasn't been connected yet. (use socket.connect() to connect to an address)
 fn udp_send(
     mut caller: Caller<ProcessState>,
     socket_id: u64,
