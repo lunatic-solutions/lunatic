@@ -91,9 +91,17 @@ pub(crate) fn register(
     link_if_match(
         linker,
         "lunatic::networking",
-        "local_addr",
+        "tcp_local_addr",
         FuncType::new([ValType::I64, ValType::I32], [ValType::I32]),
-        local_addr,
+        tcp_local_addr,
+        namespace_filter,
+    )?;
+    link_if_match(
+        linker,
+        "lunatic::networking",
+        "udp_local_addr",
+        FuncType::new([ValType::I64, ValType::I32], [ValType::I32]),
+        udp_local_addr,
         namespace_filter,
     )?;
     link_async3_if_match(
@@ -535,7 +543,7 @@ fn resolve_next(
 //% is ready for accepting connections.
 //%
 //% Binding with a port number of 0 will request that the OS assigns a port to this listener. The
-//% port allocated can be queried via the `local_addr` (TODO) method.
+//% port allocated can be queried via the `tcp_local_addr` (TODO) method.
 //%
 //% Traps:
 //% * If **addr_type** is neither 4 or 6.
@@ -593,7 +601,7 @@ fn drop_tcp_listener(mut caller: Caller<ProcessState>, tcp_listener_id: u64) -> 
     Ok(())
 }
 
-//% lunatic::networking::local_addr(tcp_listener_id: i64, id_u64_ptr: u32) -> i64
+//% lunatic::networking::tcp_local_addr(tcp_listener_id: i64, id_u64_ptr: u32) -> i64
 //%
 //% Returns the local address that this listener is bound to as an DNS iterator with just one
 //% element.
@@ -605,7 +613,7 @@ fn drop_tcp_listener(mut caller: Caller<ProcessState>, tcp_listener_id: u64) -> 
 //% Traps:
 //% * If the tcp listener ID doesn't exist.
 //% * If **peer_socket_addr_id_ptr** is outside the memory.
-fn local_addr(
+fn tcp_local_addr(
     mut caller: Caller<ProcessState>,
     tcp_listener_id: u64,
     id_u64_ptr: u32,
@@ -615,7 +623,7 @@ fn local_addr(
         .resources
         .tcp_listeners
         .get(tcp_listener_id)
-        .or_trap("lunatic::network::local_addr: listener ID doesn't exist")?;
+        .or_trap("lunatic::network::tcp_local_addr: listener ID doesn't exist")?;
     let (dns_iter_or_error_id, result) = match tcp_listener.local_addr() {
         Ok(socket_addr) => {
             let dns_iter_id = caller
@@ -635,7 +643,7 @@ fn local_addr(
             id_u64_ptr as usize,
             &dns_iter_or_error_id.to_le_bytes(),
         )
-        .or_trap("lunatic::network::local_addr")?;
+        .or_trap("lunatic::network::tcp_local_addr")?;
 
     Ok(result)
 }
@@ -1033,7 +1041,7 @@ fn socket_address(
 //% is ready for receiving messages.
 //%
 //% Binding with a port number of 0 will request that the OS assigns a port to this socket. The
-//% port allocated can be queried via the `local_addr` (TODO) method.
+//% port allocated can be queried via the `udp_local_addr` method.
 //%
 //% Traps:
 //% * If **addr_type** is neither 4 or 6.
@@ -1580,4 +1588,52 @@ fn udp_send(
             Ok(9027)
         }
     })
+}
+
+
+//% lunatic::networking::udp_local_addr(udp_socket_id: i64, id_u64_ptr: u32) -> i64
+//%
+//% Returns the local address of this socket, bound to a DNS iterator with just one
+//% element.
+//%
+//% * 0 on success - The local address that this socket is bound to, returned as a DNS
+//%                  iterator with just one element and written to **id_ptr**.
+//% * 1 on error   - The error ID is written to **id_u64_ptr**.
+//%
+//% Traps:
+//% * If the udp socket ID doesn't exist.
+//% * If **id_u64_ptr** is outside the memory.
+fn udp_local_addr(
+    mut caller: Caller<ProcessState>,
+    udp_socket_id: u64,
+    id_u64_ptr: u32,
+) -> Result<u32, Trap> {
+    let udp_socket = caller
+        .data()
+        .resources
+        .udp_sockets
+        .get(tcp_listener_id)
+        .or_trap("lunatic::network::udp_local_addr: listener ID doesn't exist")?;
+    let (dns_iter_or_error_id, result) = match udp_socket.local_addr() {
+        Ok(socket_addr) => {
+            let dns_iter_id = caller
+                .data_mut()
+                .resources
+                .dns_iterators
+                .add(DnsIterator::new(vec![socket_addr].into_iter()));
+            (dns_iter_id, 0)
+        }
+        Err(error) => (caller.data_mut().errors.add(error.into()), 1),
+    };
+
+    let memory = get_memory(&mut caller)?;
+    memory
+        .write(
+            &mut caller,
+            id_u64_ptr as usize,
+            &dns_iter_or_error_id.to_le_bytes(),
+        )
+        .or_trap("lunatic::network::udp_local_addr")?;
+
+    Ok(result)
 }
