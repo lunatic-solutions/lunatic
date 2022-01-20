@@ -1110,7 +1110,7 @@ fn drop_udp_socket(mut caller: Caller<ProcessState>, udpp_listener_id: u64) -> R
 //% * 0 on success - The number of bytes read is written to **opaque_ptr**
 //% * 1 on error   - The error ID is written to **opaque_ptr**
 //%
-//% Reads data from TCP stream and writes it to the buffer.
+//% Reads data from TCP stream, once connected, and writes it to the buffer.
 //%
 //% Traps:
 //% * If the stream ID doesn't exist.
