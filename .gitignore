@@ -3,3 +3,6 @@
 
 .vscode
 .idea
+
+# For jtenner working with vscode
+debug.log
