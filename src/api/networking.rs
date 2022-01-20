@@ -1382,7 +1382,7 @@ fn get_udp_socket_broadcast(caller: Caller<ProcessState>, udp_socket_id: u64) ->
     Ok(result as i32)
 }
 
-//% lunatic::networking::set_udp_socket_broadcast(udp_socket_id: u64, broadcast: u32) -> u64
+//% lunatic::networking::set_udp_socket_ttl(udp_socket_id: u64, ttl: u32) -> u64
 //%
 //% Sets the ttl of the UDP socket. This value sets the time-to-live field that is used in
 //% every packet sent from this socket.
@@ -1406,13 +1406,13 @@ fn set_udp_socket_ttl(
     Ok(())
 }
 
-//% lunatic::networking::get_udp_socket_broadcast(udp_socket_id: u64) -> u64
+//% lunatic::networking::get_udp_socket_ttl(udp_socket_id: u64) -> u64
 //%
-//% Gets the current broadcast state of the UdpSocket.
+//% Gets the current ttl value set on the UdpSocket.
 //%
 //% Traps:
 //% * If the socket ID doesn't exist.
-//% * If broadcast traps.
+//% * If ttl() traps.
 fn get_udp_socket_ttl(caller: Caller<ProcessState>, udp_socket_id: u64) -> Result<u32, Trap> {
     let socket = caller
         .data()
@@ -1442,15 +1442,19 @@ fn get_udp_socket_ttl(caller: Caller<ProcessState>, udp_socket_id: u64) -> Resul
 //% ) -> u32
 //%
 //% Returns:
-//% * 0 on success - The number of bytes written is written to **opaque_ptr**
-//% * 1 on error   - The error ID is written to **opaque_ptr**
+//% * 0 on success    - The number of bytes written is written to **opaque_ptr**
+//% * 1 on error      - The error ID is written to **opaque_ptr**
+//% * 9027 on timeout - The socket send timed out.
 //%
-//% Gathers the buffer and writes it to the socket, and returns the number of bytes written.
+//% Gathers the buffer, writes it to the socket, and sends it to an addresss, finally
+//% returning the number of bytes written.
 //%
 //% Traps:
 //% * If the stream ID doesn't exist.
-//% * If **buffer_ptr + (buffer_len)** is outside the memory
+//% * If **buffer_ptr + (buffer_len)** is outside the memory.
 //% * If **i64_opaque_ptr** is outside the memory.
+//% * If any of the address pointers are outside the memory.
+//% * If send_to() traps
 #[allow(clippy::too_many_arguments)]
 fn udp_send_to(
     mut caller: Caller<ProcessState>,
@@ -1520,16 +1524,18 @@ fn udp_send_to(
 //% ) -> u32
 //%
 //% Returns:
-//% * 0 on success - The number of bytes written is written to **opaque_ptr**
-//% * 1 on error   - The error ID is written to **opaque_ptr**
+//% * 0 on success    - The number of bytes written is written to **opaque_ptr**
+//% * 1 on error      - The error ID is written to **opaque_ptr**
+//% * 9027 on timeout - The socket send timed out.
 //%
-//% Gathers the buffer and writes it to the connected socket once connected, and returns the number of bytes written.
+//% Gathers the buffer and writes it to the connected socket, and returns the number of bytes written.
 //%
 //% Traps:
 //% * If the stream ID doesn't exist.
-//% * If **buffer_ptr + (buffer_len)** is outside the memory
+//% * If **buffer_ptr + (buffer_len)** is outside the memory.
 //% * If **i64_opaque_ptr** is outside the memory.
 //% * If the socket hasn't been connected yet. (use socket.connect() to connect to an address)
+//% * If send() traps.
 fn udp_send(
     mut caller: Caller<ProcessState>,
     socket_id: u64,
