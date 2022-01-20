@@ -1092,7 +1092,7 @@ fn udp_bind(
 
 //% lunatic::networking::drop_udp_listener(tcp_listener_id: i64)
 //%
-//% Drops the UCP listener resource.
+//% Drops the UdpSocket resource.
 //%
 //% Traps:
 //% * If the UDP listener ID doesn't exist.
