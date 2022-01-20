@@ -1173,9 +1173,9 @@ fn udp_receive(
 //% ) -> i32
 //%
 //% Returns:
-//% * 0 on success - The number of bytes read is written to **opaque_ptr**
-//% * 1 on error   - The error ID is written to **opaque_ptr**
-//%
+//% * 0 on success    - The number of bytes read is written to **opaque_ptr**
+//% * 1 on error      - The error ID is written to **opaque_ptr**
+//% * 9027 on timeout - The socket receive timed out.
 //% Reads data from TCP stream and writes it to the buffer.
 //%
 //% Traps:
@@ -1254,8 +1254,9 @@ fn udp_receive_from(
 //% ) -> u32
 //%
 //% Returns:
-//% * 0 on success - The ID of the newly created UDP listener is written to **id_ptr**.
-//% * 1 on error   - The error ID is written to **id_ptr**
+//% * 0 on success    - The ID of the newly created UDP listener is written to **id_ptr**.
+//% * 1 on error      - The error ID is written to **id_ptr**
+//% * 9027 on timeout - The socket connect operation timed out.
 //%
 //% Traps:
 //% * If **addr_type** is neither 4 or 6.
