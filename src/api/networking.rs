@@ -1296,7 +1296,8 @@ fn udp_connect(
             flow_info,
             scope_id,
         )?;
-        let socket = caller.data_mut()
+        let socket = caller
+            .data_mut()
             .resources
             .udp_sockets
             .get(udp_socket_id)
@@ -1579,7 +1580,6 @@ fn udp_send(
         }
     })
 }
-
 
 //% lunatic::networking::udp_local_addr(udp_socket_id: i64, id_u64_ptr: u32) -> i64
 //%
