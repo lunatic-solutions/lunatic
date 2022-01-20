@@ -1327,7 +1327,7 @@ fn udp_connect(
     })
 }
 
-//% lunatic::networking::clone_tcp_stream(udp_socket_id: u64) -> u64
+//% lunatic::networking::clone_udp_socket(udp_socket_id: u64) -> u64
 //%
 //% Clones a UDP socket returning the ID of the clone.
 //%
@@ -1460,7 +1460,6 @@ fn get_udp_socket_ttl(caller: Caller<ProcessState>, udp_socket_id: u64) -> Resul
 //% * If **buffer_ptr + (buffer_len)** is outside the memory.
 //% * If **i64_opaque_ptr** is outside the memory.
 //% * If any of the address pointers are outside the memory.
-//% * If send_to() traps
 #[allow(clippy::too_many_arguments)]
 fn udp_send_to(
     mut caller: Caller<ProcessState>,
@@ -1540,8 +1539,6 @@ fn udp_send_to(
 //% * If the stream ID doesn't exist.
 //% * If **buffer_ptr + (buffer_len)** is outside the memory.
 //% * If **i64_opaque_ptr** is outside the memory.
-//% * If the socket hasn't been connected yet. (use socket.connect() to connect to an address)
-//% * If send() traps.
 fn udp_send(
     mut caller: Caller<ProcessState>,
     socket_id: u64,
