@@ -1422,14 +1422,12 @@ fn set_udp_socket_ttl(
 //% * If the socket ID doesn't exist.
 //% * If ttl() traps.
 fn get_udp_socket_ttl(caller: Caller<ProcessState>, udp_socket_id: u64) -> Result<u32, Trap> {
-    let socket = caller
+    let result = caller
         .data()
         .resources
         .udp_sockets
         .get(udp_socket_id)
-        .or_trap("lunatic::networking::get_udp_socket_ttl")?;
-
-    let result = socket
+        .or_trap("lunatic::networking::get_udp_socket_ttl")?
         .ttl()
         .or_trap("lunatic::networking::get_udp_socket_ttl")?;
 
