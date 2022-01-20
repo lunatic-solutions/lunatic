@@ -327,7 +327,6 @@ pub(crate) fn register(
                 ValType::I32,
                 ValType::I32,
                 ValType::I32,
-                ValType::I32,
             ],
             [ValType::I32],
         ),
