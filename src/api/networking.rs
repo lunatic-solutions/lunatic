@@ -17,7 +17,8 @@ use crate::{api::get_memory, state::ProcessState};
 
 use super::{
     link_async10_if_match, link_async2_if_match, link_async3_if_match, link_async4_if_match,
-    link_async5_if_match, link_async6_if_match, link_async7_if_match, link_if_match,
+    link_async5_if_match, link_async6_if_match, link_async7_if_match, link_async8_if_match,
+    link_if_match,
 };
 
 // Register the error APIs to the linker
@@ -250,12 +251,13 @@ pub(crate) fn register(
         udp_receive_from,
         namespace_filter,
     )?;
-    link_async7_if_match(
+    link_async8_if_match(
         linker,
         "lunatic::networking",
         "udp_connect",
         FuncType::new(
             [
+                ValType::I64,
                 ValType::I32,
                 ValType::I32,
                 ValType::I32,
@@ -1125,7 +1127,6 @@ fn drop_udp_socket(mut caller: Caller<ProcessState>, udpp_listener_id: u64) -> R
 //% * If the stream ID doesn't exist.
 //% * If **buffer_ptr + buffer_len** is outside the memory.
 //% * If **i64_opaque_ptr** is outside the memory.
-//% * If the socket hasn't been connected yet. (use socket.connect() to connect to an address)
 fn udp_receive(
     mut caller: Caller<ProcessState>,
     socket_id: u64,
@@ -1252,6 +1253,7 @@ fn udp_receive_from(
 }
 
 //% lunatic::networking::udp_connect(
+//%     udp_socket_id: u64,
 //%     addr_type: u32,
 //%     addr_u8_ptr: u32,
 //%     port: u32,
@@ -1273,6 +1275,7 @@ fn udp_receive_from(
 #[allow(clippy::too_many_arguments)]
 fn udp_connect(
     mut caller: Caller<ProcessState>,
+    udp_socket_id: u64,
     addr_type: u32,
     addr_u8_ptr: u32,
     port: u32,
@@ -1282,6 +1285,7 @@ fn udp_connect(
     id_u64_ptr: u32,
 ) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_> {
     Box::new(async move {
+        // Get the memory and the socket being connected to
         let memory = get_memory(&mut caller)?;
         let socket_addr = socket_address(
             &caller,
@@ -1292,34 +1296,25 @@ fn udp_connect(
             flow_info,
             scope_id,
         )?;
+        let socket = caller.data_mut()
+            .resources
+            .udp_sockets
+            .get(udp_socket_id)
+            .or_trap("lunatic::networking::udp_connect")?;
 
         if let Some(result) = tokio::select! {
             _ = async_std::task::sleep(Duration::from_millis(timeout as u64)), if timeout != 0 => None,
-            result = UdpSocket::bind("127.0.0.1:0") => Some(result)
+            result = socket.connect(socket_addr) => Some(result)
         } {
-            let (stream_or_error_id, result) = match result {
-                Ok(socket_result) => match UdpSocket::connect(&socket_result, socket_addr).await {
-                    Ok(()) => (
-                        caller
-                            .data_mut()
-                            .resources
-                            .udp_sockets
-                            .add(Arc::new(socket_result)),
-                        0,
-                    ),
-                    Err(connect_error) => (caller.data_mut().errors.add(connect_error.into()), 1),
-                },
+            let (opaque, return_) = match result {
+                Ok(()) => (0, 0),
                 Err(error) => (caller.data_mut().errors.add(error.into()), 1),
             };
 
             memory
-                .write(
-                    &mut caller,
-                    id_u64_ptr as usize,
-                    &stream_or_error_id.to_le_bytes(),
-                )
+                .write(&mut caller, id_u64_ptr as usize, &opaque.to_le_bytes())
                 .or_trap("lunatic::networking::udp_connect")?;
-            Ok(result)
+            Ok(return_)
         } else {
             // Call timed out
             Ok(9027)
