@@ -609,7 +609,7 @@ fn receive(
     })
 }
 
-//% lunatic::message::push_udp_socket(stream_id: u64) -> u64
+//% lunatic::message::push_udp_socket(socket_id: u64) -> u64
 //%
 //% Adds a udp socket resource to the message that is currently in the scratch area and returns
 //% the new location of it. This will remove the socket from the current process' resources.

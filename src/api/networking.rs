@@ -995,36 +995,6 @@ fn tcp_flush(
     })
 }
 
-fn socket_address(
-    caller: &Caller<ProcessState>,
-    memory: &Memory,
-    addr_type: u32,
-    addr_u8_ptr: u32,
-    port: u32,
-    flow_info: u32,
-    scope_id: u32,
-) -> Result<SocketAddr, Trap> {
-    Ok(match addr_type {
-        4 => {
-            let ip = memory
-                .data(&caller)
-                .get(addr_u8_ptr as usize..(addr_u8_ptr + 4) as usize)
-                .or_trap("lunatic::network::socket_address*")?;
-            let addr = <Ipv4Addr as From<[u8; 4]>>::from(ip.try_into().expect("exactly 4 bytes"));
-            SocketAddrV4::new(addr, port as u16).into()
-        }
-        6 => {
-            let ip = memory
-                .data(&caller)
-                .get(addr_u8_ptr as usize..(addr_u8_ptr + 16) as usize)
-                .or_trap("lunatic::network::socket_address*")?;
-            let addr = <Ipv6Addr as From<[u8; 16]>>::from(ip.try_into().expect("exactly 16 bytes"));
-            SocketAddrV6::new(addr, port as u16, flow_info, scope_id).into()
-        }
-        _ => return Err(Trap::new("Unsupported address type in socket_address*")),
-    })
-}
-
 //% lunatic::networking::udp_bind(
 //%     addr_type: u32,
 //%     addr_u8_ptr: u32,
@@ -1091,18 +1061,18 @@ fn udp_bind(
     })
 }
 
-//% lunatic::networking::drop_udp_listener(tcp_listener_id: i64)
+//% lunatic::networking::drop_udp_listener(udp_listener_id: i64)
 //%
 //% Drops the UdpSocket resource.
 //%
 //% Traps:
 //% * If the UDP listener ID doesn't exist.
-fn drop_udp_socket(mut caller: Caller<ProcessState>, udpp_listener_id: u64) -> Result<(), Trap> {
+fn drop_udp_socket(mut caller: Caller<ProcessState>, udp_listener_id: u64) -> Result<(), Trap> {
     caller
         .data_mut()
         .resources
         .udp_sockets
-        .remove(udpp_listener_id)
+        .remove(udp_listener_id)
         .or_trap("lunatic::networking::drop_udp_socket")?;
     Ok(())
 }
@@ -1120,10 +1090,11 @@ fn drop_udp_socket(mut caller: Caller<ProcessState>, udpp_listener_id: u64) -> R
 //% * 1 on error      - The error ID is written to **opaque_ptr**
 //% * 9027 on timeout - The socket receive timed out.
 //%
-//% Reads data from the connected udp socket and writes it to the given buffer.
+//% Reads data from the connected udp socket and writes it to the given buffer. This method will
+//% fail if the socket is not connected.
 //%
 //% Traps:
-//% * If the stream ID doesn't exist.
+//% * If the socket ID doesn't exist.
 //% * If **buffer_ptr + buffer_len** is outside the memory.
 //% * If **i64_opaque_ptr** is outside the memory.
 fn udp_receive(
@@ -1181,10 +1152,12 @@ fn udp_receive(
 //% ) -> i32
 //%
 //% Returns:
-//% * 0 on success    - The number of bytes read is written to **opaque_ptr**
+//% * 0 on success    - The number of bytes read is written to **opaque_ptr** and the sender's
+//%                     address is returned as a DNS iterator through i64_dns_iter_ptr.
 //% * 1 on error      - The error ID is written to **opaque_ptr**
 //% * 9027 on timeout - The socket receive timed out.
-//% Reads data from TCP stream and writes it to the buffer.
+//%
+//% Receives data from the socket.
 //%
 //% Traps:
 //% * If the stream ID doesn't exist.
@@ -1263,9 +1236,15 @@ fn udp_receive_from(
 //% ) -> u32
 //%
 //% Returns:
-//% * 0 on success    - The ID of the newly created UDP listener is written to **id_ptr**.
-//% * 1 on error      - The error ID is written to **id_ptr**
+//% * 0 on success
+//% * 1 on error      - The error ID is written to **id_ptr**.
 //% * 9027 on timeout - The socket connect operation timed out.
+//%
+//% Connects the UDP socket to a remote address.
+//%
+//% When connected, methods `networking::send` and `networking::receive` will use the specified
+//% address for sending and receiving messages. Additionally, a filter will be applied to
+//% `networking::receive_from` so that it only receives messages from that same address.
 //%
 //% Traps:
 //% * If **addr_type** is neither 4 or 6.
@@ -1447,14 +1426,13 @@ fn get_udp_socket_ttl(caller: Caller<ProcessState>, udp_socket_id: u64) -> Resul
 //% * 1 on error      - The error ID is written to **opaque_ptr**
 //% * 9027 on timeout - The socket send timed out.
 //%
-//% Gathers the buffer, writes it to the socket, and sends it to an addresss, finally
-//% returning the number of bytes written.
+//% Sends data on the socket to the given address.
 //%
 //% Traps:
 //% * If the stream ID doesn't exist.
-//% * If **buffer_ptr + (buffer_len)** is outside the memory.
+//% * If **buffer_ptr + buffer_len** is outside the memory.
 //% * If **i64_opaque_ptr** is outside the memory.
-//% * If any of the address pointers are outside the memory.
+//% * If **addr_u8_ptr** is outside the memory.
 #[allow(clippy::too_many_arguments)]
 fn udp_send_to(
     mut caller: Caller<ProcessState>,
@@ -1528,12 +1506,15 @@ fn udp_send_to(
 //% * 1 on error      - The error ID is written to **opaque_ptr**
 //% * 9027 on timeout - The socket send timed out.
 //%
-//% Gathers the buffer and writes it to the connected socket, and returns the number of bytes written.
+//% Sends data on the socket to the remote address to which it is connected.
+//%
+//% The `networking::udp_connect` method will connect this socket to a remote address. This method
+//% will fail if the socket is not connected.
 //%
 //% Traps:
 //% * If the stream ID doesn't exist.
-//% * If **buffer_ptr + (buffer_len)** is outside the memory.
-//% * If **i64_opaque_ptr** is outside the memory.
+//% * If **buffer_ptr + buffer_len** is outside the memory.
+//% * If **opaque_ptr** is outside the memory.
 fn udp_send(
     mut caller: Caller<ProcessState>,
     socket_id: u64,
@@ -1625,4 +1606,34 @@ fn udp_local_addr(
         .or_trap("lunatic::network::udp_local_addr")?;
 
     Ok(result)
+}
+
+fn socket_address(
+    caller: &Caller<ProcessState>,
+    memory: &Memory,
+    addr_type: u32,
+    addr_u8_ptr: u32,
+    port: u32,
+    flow_info: u32,
+    scope_id: u32,
+) -> Result<SocketAddr, Trap> {
+    Ok(match addr_type {
+        4 => {
+            let ip = memory
+                .data(&caller)
+                .get(addr_u8_ptr as usize..(addr_u8_ptr + 4) as usize)
+                .or_trap("lunatic::network::socket_address*")?;
+            let addr = <Ipv4Addr as From<[u8; 4]>>::from(ip.try_into().expect("exactly 4 bytes"));
+            SocketAddrV4::new(addr, port as u16).into()
+        }
+        6 => {
+            let ip = memory
+                .data(&caller)
+                .get(addr_u8_ptr as usize..(addr_u8_ptr + 16) as usize)
+                .or_trap("lunatic::network::socket_address*")?;
+            let addr = <Ipv6Addr as From<[u8; 16]>>::from(ip.try_into().expect("exactly 16 bytes"));
+            SocketAddrV6::new(addr, port as u16, flow_info, scope_id).into()
+        }
+        _ => return Err(Trap::new("Unsupported address type in socket_address*")),
+    })
 }
