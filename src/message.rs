@@ -10,7 +10,7 @@ use std::{
     sync::Arc,
 };
 
-use async_std::net::TcpStream;
+use async_std::net::{TcpStream, UdpSocket};
 
 use crate::Process;
 
@@ -70,6 +70,12 @@ impl DataMessage {
         self.resources.len() - 1
     }
 
+    /// Adds a UDP socket to the message and returns the index of it inside of the message
+    pub fn add_udp_socket(&mut self, udp_socket: Arc<UdpSocket>) -> usize {
+        self.resources.push(Resource::UdpSocket(udp_socket));
+        self.resources.len() - 1
+    }
+
     /// Takes a process from the message, but preserves the indexes of all others.
     ///
     /// If the index is out of bound or the resource is not a process the function will return
@@ -100,6 +106,26 @@ impl DataMessage {
             match resource {
                 Resource::TcpStream(stream) => {
                     return Some(stream);
+                }
+                other => {
+                    // Put the resource back if it's not a tcp stream and drop empty.
+                    let _ = std::mem::replace(resource_ref, other);
+                }
+            }
+        }
+        None
+    }
+
+    /// Takes a UDP Socket from the message, but preserves the indexes of all others.
+    ///
+    /// If the index is out of bound or the resource is not a tcp stream the function will return
+    /// None.
+    pub fn take_udp_socket(&mut self, index: usize) -> Option<Arc<UdpSocket>> {
+        if let Some(resource_ref) = self.resources.get_mut(index) {
+            let resource = std::mem::replace(resource_ref, Resource::None);
+            match resource {
+                Resource::UdpSocket(socket) => {
+                    return Some(socket);
                 }
                 other => {
                     // Put the resource back if it's not a tcp stream and drop empty.
@@ -153,6 +179,7 @@ pub enum Resource {
     None,
     Process(Arc<dyn Process>),
     TcpStream(TcpStream),
+    UdpSocket(Arc<UdpSocket>),
 }
 
 impl Debug for Resource {
@@ -161,6 +188,7 @@ impl Debug for Resource {
             Self::None => write!(f, "None"),
             Self::Process(_) => write!(f, "Process"),
             Self::TcpStream(_) => write!(f, "TcpStream"),
+            Self::UdpSocket(_) => write!(f, "UdpSocket"),
         }
     }
 }

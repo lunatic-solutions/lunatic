@@ -1,5 +1,5 @@
 /target
 .DS_Store
-
 .vscode
 .idea
+debug.log

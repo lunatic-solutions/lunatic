@@ -126,6 +126,22 @@ pub(crate) fn register(
         receive,
         namespace_filter,
     )?;
+    link_if_match(
+        linker,
+        "lunatic::message",
+        "push_udp_socket",
+        FuncType::new([ValType::I64], [ValType::I64]),
+        push_udp_socket,
+        namespace_filter,
+    )?;
+    link_if_match(
+        linker,
+        "lunatic::message",
+        "take_udp_socket",
+        FuncType::new([ValType::I64], [ValType::I64]),
+        take_udp_socket,
+        namespace_filter,
+    )?;
     Ok(())
 }
 
@@ -591,4 +607,57 @@ fn receive(
             Ok(9027)
         }
     })
+}
+
+//% lunatic::message::push_udp_socket(socket_id: u64) -> u64
+//%
+//% Adds a udp socket resource to the message that is currently in the scratch area and returns
+//% the new location of it. This will remove the socket from the current process' resources.
+//%
+//% Traps:
+//% * If UDP socket ID doesn't exist
+//% * If no data message is in the scratch area.
+fn push_udp_socket(mut caller: Caller<ProcessState>, socket_id: u64) -> Result<u64, Trap> {
+    let data = caller.data_mut();
+    let socket = data
+        .resources
+        .udp_sockets
+        .remove(socket_id)
+        .or_trap("lunatic::message::push_udp_socket")?;
+    let message = data
+        .message
+        .as_mut()
+        .or_trap("lunatic::message::push_udp_socket")?;
+    let index = match message {
+        Message::Data(data) => data.add_udp_socket(socket) as u64,
+        Message::Signal(_) => {
+            return Err(Trap::new("Unexpected `Message::Signal` in scratch area"))
+        }
+    };
+    Ok(index)
+}
+
+//% lunatic::message::take_udp_socket(index: u64) -> u64
+//%
+//% Takes the udp socket from the message that is currently in the scratch area by index, puts
+//% it into the process' resources and returns the resource ID.
+//%
+//% Traps:
+//% * If index ID doesn't exist or matches the wrong resource (not a udp socket).
+//% * If no data message is in the scratch area.
+fn take_udp_socket(mut caller: Caller<ProcessState>, index: u64) -> Result<u64, Trap> {
+    let message = caller
+        .data_mut()
+        .message
+        .as_mut()
+        .or_trap("lunatic::message::take_udp_socket")?;
+    let udp_socket = match message {
+        Message::Data(data) => data
+            .take_udp_socket(index as usize)
+            .or_trap("lunatic::message::take_udp_socket")?,
+        Message::Signal(_) => {
+            return Err(Trap::new("Unexpected `Message::Signal` in scratch area"))
+        }
+    };
+    Ok(caller.data_mut().resources.udp_sockets.add(udp_socket))
 }
