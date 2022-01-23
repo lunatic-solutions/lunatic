@@ -29,11 +29,16 @@ Code changes to Lunatic are welcomed via the process below.
    introduces new functionality or behaviour this would be a good time to
    discuss the details of the change to ensure we are in agreement as to how
    the new functionality should work.
-2. Open a GitHub pull request with your changes and ensure the tests and build
+2. Please use `cargo fmt` and `cargo clippy` to check that code is properly
+   formatted, and linted for potential problems.
+3. Changes, adding and removing host functions require changes to the
+   `wat/all_imports.wat` file. Every host function lunatic exposes requires an
+   import directive to assert that end developers can import the function.
+4. Open a GitHub pull request with your changes and ensure the tests and build
    pass on CI.
-3. A Lunatic team member will review the changes and may provide feedback to
+5. A Lunatic team member will review the changes and may provide feedback to
    work on. Depending on the change there may be multiple rounds of feedback.
-4. Once the changes have been approved the code will be rebased into the
+6. Once the changes have been approved the code will be rebased into the
    `main` branch.
 
 ## Local development
