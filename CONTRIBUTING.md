@@ -5,7 +5,7 @@ Thanks for contributing to Lunatic!
 Before continuing please read our [code of conduct][code-of-conduct] which all
 contributors are expected to adhere to.
 
-[code-of-conduct]: https://github.com/lunatic-lang/lunatic/blob/wasmtime/CODE_OF_CONDUCT.md
+[code-of-conduct]: https://github.com/lunatic-solutions/lunatic/blob/main/CODE_OF_CONDUCT.md
 
 ## Contributing bug reports
 
@@ -43,13 +43,7 @@ Code changes to Lunatic are welcomed via the process below.
 
 ## Local development
 
-To build the project you will need to have Rust target wasm32 installed:
-
-```shell
-rustup target add wasm32-unknown-unknown
-```
-
-then run:
+To build the project run:
 
 ```shell
 cargo build
