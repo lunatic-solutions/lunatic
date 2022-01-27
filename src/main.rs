@@ -5,6 +5,7 @@ use clap::{crate_version, App, Arg, ArgSettings};
 
 use anyhow::{Context, Result};
 use lunatic_runtime::{node::Node, EnvConfig, Environment, NODE};
+use wasmtime::ExternType;
 
 #[async_std::main]
 async fn main() -> Result<()> {
@@ -78,6 +79,13 @@ async fn main() -> Result<()> {
                 .multiple_values(true)
                 .index(2),
         )
+        .arg(
+            Arg::new("test")
+                .value_name("TEST")
+                .help("Run all the identified test functions")
+                .required(false)
+                .conflicts_with("no_entry"),
+        )
         .get_matches();
 
     let mut config = EnvConfig::default();
@@ -117,7 +125,47 @@ async fn main() -> Result<()> {
         *NODE.write().await = Some(node);
     }
 
-    if args.is_present("no_entry") {
+    if args.is_present("test") {
+        // Spawn main process
+        let path = args.value_of("wasm").unwrap();
+        let path = Path::new(path);
+        let module = fs::read(path)?;
+        let module = env.create_module(module).await?;
+        let (task, _) = module
+            .spawn("_lunatic_test_start", Vec::new(), None)
+            .await
+            .context(format!(
+                "Failed to spawn test process from {}::_lunatic_test_start()",
+                path.to_string_lossy()
+            ))?;
+        // Wait on the main process to finish
+        task.await;
+        let mut tasks = Vec::new();
+        for export in module.exports().expect("Cannot get exports.") {
+            if let ExternType::Func(func_type) = export.ty() {
+                if export.name().starts_with("_lunatic_test")
+                    && export.name() != "_lunatic_test_start"
+                    && func_type.params().len() == 0
+                    && func_type.results().len() == 0
+                {
+                    let (task, _) = module
+                        .spawn(export.name(), Vec::new(), None)
+                        .await
+                        .context(format!(
+                            "Failed to spawn test process from {}::{}()",
+                            path.to_string_lossy(),
+                            export.name(),
+                        ))?;
+                    // Wait on the main process to finish
+                    tasks.push(task);
+                }
+            }
+        }
+
+        for handle in tasks.into_iter() {
+            handle.await;
+        }
+    } else if args.is_present("no_entry") {
         // Block forever
         let (_sender, receiver) = channel::bounded(1);
         let _: () = receiver.recv().await.unwrap();
