@@ -1154,6 +1154,7 @@ dependencies = [
  "pretty_assertions",
  "semver",
  "serde",
+ "testanything",
  "tokio",
  "uuid",
  "wabt",
@@ -1757,6 +1758,12 @@ checksum = "2dfed899f0eb03f32ee8c6a0aabdb8a7949659e3466561fc0adf54e26d88c5f4"
 dependencies = [
  "winapi-util",
 ]
+
+[[package]]
+name = "testanything"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ee585f51c40e140775601bdacd703647940a3690ca4b9b25411af5b03a100255"
 
 [[package]]
 name = "textwrap"

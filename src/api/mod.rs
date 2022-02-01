@@ -5,6 +5,7 @@ mod mailbox;
 mod networking;
 pub(crate) mod plugin;
 mod process;
+mod test;
 mod version;
 mod wasi;
 
@@ -27,6 +28,7 @@ pub(crate) fn register(
     networking::register(linker, namespace_filter)?;
     wasi::register(linker, namespace_filter)?;
     version::register(linker, namespace_filter)?;
+    test::register(linker, namespace_filter)?;
     Ok(())
 }
 

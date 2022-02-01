@@ -5,7 +5,7 @@ use async_std::channel::unbounded;
 use async_std::task::JoinHandle;
 use log::trace;
 use uuid::Uuid;
-use wasmtime::{Store, Val};
+use wasmtime::{ExportType, Store, Val};
 
 use std::sync::Arc;
 
@@ -52,6 +52,13 @@ impl Module {
         match self {
             Module::Local(local) => local.spawn(function, params, link).await,
             Module::Remote(remote) => remote.spawn(function, params, link).await,
+        }
+    }
+
+    pub fn exports<'a>(&'a self) -> Result<Box<dyn ExactSizeIterator<Item = ExportType<'a>> + 'a>> {
+        match self {
+            Module::Local(local) => Ok(Box::new(local.inner.wasmtime_module.exports())),
+            Module::Remote(_) => Err(anyhow!("Cannot get exports of remote module.")),
         }
     }
 }

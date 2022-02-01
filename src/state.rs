@@ -18,6 +18,7 @@ use crate::plugin::ModuleContext;
 use crate::{message::Message, EnvConfig, Environment};
 use crate::{Process, Signal};
 
+
 // The internal state of Plugins.
 pub(crate) struct PluginState<'a, 'b> {
     // Errors belonging to the plugin
@@ -149,7 +150,7 @@ pub(crate) struct Resources {
 }
 
 /// HashMap wrapper with incremental ID (u64) assignment.
-pub(crate) struct HashMapId<T> {
+pub struct HashMapId<T> {
     id_seed: u64,
     store: HashMap<u64, T>,
 }

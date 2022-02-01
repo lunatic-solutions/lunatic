@@ -45,6 +45,7 @@ pub mod plugin;
 pub(crate) mod process;
 pub mod registry;
 pub(crate) mod state;
+pub mod test_node;
 
 use async_std::sync::RwLock;
 use lazy_static::lazy_static;
