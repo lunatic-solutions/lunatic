@@ -20,9 +20,14 @@ impl TestNode {
         let comments: Vec<&str> = self.comments.split("\r\n")
             .into_iter()
             .collect();
-        
+        let tap = suite
+            .diagnostics(comments.as_slice())
+            .finalize();
 
-            
+        builder.tests(vec![tap]);
+        for child in self.children {
+            // for each child, obtain the child, and call generate_tap on it
+        }
     }
 
     pub fn new(name: &[u8]) -> TestNode {

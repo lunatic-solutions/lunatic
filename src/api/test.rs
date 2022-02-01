@@ -102,14 +102,12 @@ fn add_test_comment(mut caller: Caller<ProcessState>,
         .get(comment as usize..(comment + comment_len) as usize)
         .or_trap("lunatic::test::add_test_comment")?;
 
-    let node = TestNode::new(buffer);
     let mut lock = TESTS.lock()
         .or_trap("lunatic::test::add_test_comment")?;
 
-    let child = lock.add(node);
     let parent = lock.get_mut(node_id)
         .or_trap("lunatic::test::add_test_comment")?;
-    parent.push_child(child);
+    // parent.comments.push
     Ok(child)
 }
 
@@ -125,7 +123,7 @@ fn test_ok(mut _caller: Caller<ProcessState>,
     test_id: u64,
 ) -> Result<(), Trap> {
 
-    // get the 
+    // get the test, call ok()
 
     TESTS.lock()
         .or_trap("lunatic::test::test_ok")?
