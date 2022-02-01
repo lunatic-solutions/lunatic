@@ -174,6 +174,10 @@ async fn main() -> Result<()> {
         }
 
         // TODO: Produce TAP output
+        // 1. Obtain lock from TESTS
+        // 2. Get record 0
+        // 3. call generate_tap
+
     } else {
         // Spawn main process
         let path = args.value_of("wasm").unwrap();
