@@ -1,4 +1,4 @@
-use std::{env, fs, path::Path, borrow::BorrowMut};
+use std::{env, fs, path::Path};
 
 use async_std::channel;
 use clap::{crate_version, App, Arg, ArgSettings};
@@ -7,6 +7,7 @@ use anyhow::{Context, Result};
 use lunatic_runtime::{node::Node, EnvConfig, Environment, NODE};
 use wasmtime::{ExternType};
 use lunatic_runtime::test_node::TESTS;
+use::testanything::tap_suite_builder::TapSuiteBuilder;
 
 #[async_std::main]
 async fn main() -> Result<()> {
@@ -141,7 +142,7 @@ async fn main() -> Result<()> {
             .spawn("__lunatic_start_test", Vec::new(), None)
             .await
             .context(format!(
-                "Failed to spawn process from {}::__lunatic_start_test()",
+                "Failed to spawn main test process from {}::__lunatic_start_test()",
                 path.to_string_lossy()
             ))?;
 
@@ -178,17 +179,22 @@ async fn main() -> Result<()> {
         // 1. Obtain lock from TESTS
         // 2. Get record 0
         // 3. call generate_tap
-        let lock = TESTS.lock()
-            .expect("Lock expected.")
-            .borrow_mut();
-
-        let parent = lock.get(0)
-            .unwrap();
-
-        let builder = testanything::tap_suite_builder::TapSuiteBuilder::new();
-        parent.generate_tap(lock, &builder);
+        let lock = TESTS.lock();
+        let map = lock.expect("Cannot lock mutex.");
         
 
+        let parent = map.get(0)
+            .unwrap();
+
+        // create a suite builder, a vec, and generate the tap tests from the collected test tree
+        let mut builder = TapSuiteBuilder::new();
+        let mut test_vec = Vec::new();
+        parent.generate_tap(&map, &mut test_vec);
+        let suite = builder.name("Lunatic Test Suite")
+            .tests(test_vec)
+            .finalize();
+        
+        
     } else {
         // Spawn main process
         let path = args.value_of("wasm").unwrap();

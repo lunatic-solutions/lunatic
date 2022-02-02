@@ -1,6 +1,6 @@
 use std::{ vec::Vec, sync::Mutex, str };
 use lazy_static::lazy_static;
-use testanything::{ tap_suite_builder::TapSuiteBuilder, tap_test_builder::TapTestBuilder };
+use testanything::{ tap_test_builder::TapTestBuilder, tap_test::TapTest };
 use crate::state::HashMapId;
 
 #[derive(Clone, Debug)]
@@ -13,20 +13,26 @@ pub struct TestNode {
 
 impl TestNode {
 
-    pub fn generate_tap(&self, map: &HashMapId<TestNode>, builder: &mut TapSuiteBuilder) -> () {
+    pub fn generate_tap(&self, map: &HashMapId<TestNode>, builder: &mut Vec<TapTest>) -> () {
         let suite = TapTestBuilder::new()
             .name(self.name.as_str())
-            .passed(self.ok);
-        let comments: Vec<&str> = self.comments.split("\r\n")
-            .into_iter()
-            .collect();
-        let tap = suite
-            .diagnostics(comments.as_slice())
+            .passed(self.ok)
+            .diagnostics(
+                self.comments.split("\r\n")
+                .into_iter()
+                .collect::<Vec<&str>>()
+                .as_slice()
+            )
             .finalize();
 
-        builder.tests(vec![tap]);
+        builder.push(suite);
+
         for child in &self.children {
             // for each child, obtain the child, and call generate_tap on it
+            let child = map.get(*child)
+                .expect("Cannot find test child.");
+            
+            child.generate_tap(map, builder);
         }
     }
 
