@@ -295,7 +295,6 @@ pub(crate) fn register(
 //% Create a new configuration for an environment.
 fn create_config(mut caller: Caller<ProcessState>, max_memory: u64, max_fuel: u64) -> u64 {
     let max_fuel = if max_fuel != 0 { Some(max_fuel) } else { None };
-    caller.data_mut();
     let config = EnvConfig::new(max_memory as usize, max_fuel);
     caller.data_mut().resources.configs.add(config)
 }
