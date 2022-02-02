@@ -25,7 +25,7 @@ pub(crate) fn register(
         linker,
         "lunatic::test",
         "add_test",
-        FuncType::new([ValType::I64, ValType::I32, ValType::I32], [ValType::I64]),
+        FuncType::new([ValType::I64, ValType::I32, ValType::I32, ValType::I32], [ValType::I64]),
         add_test,
         namespace_filter,
     )?;
@@ -49,7 +49,7 @@ pub(crate) fn register(
 }
 
 
-//% lunatic::test::add_test(parent_id: u64, name: u32, name_len: u32)
+//% lunatic::test::add_test(parent_id: u64, name: u32, name_len: u32, negated: u32)
 //%
 //% Creates a global test node resource.
 //%
@@ -61,6 +61,7 @@ fn add_test(mut caller: Caller<ProcessState>,
     parent_id: u64,
     name: u32,
     name_len: u32,
+    negated: u32,
 ) -> Result<u64, Trap> {
     let memory = get_memory(&mut caller)?;
 
@@ -70,7 +71,7 @@ fn add_test(mut caller: Caller<ProcessState>,
         .get(name as usize..(name + name_len) as usize)
         .or_trap("lunatic::test::add_test")?;
 
-    let node = TestNode::new(buffer);
+    let node = TestNode::new(buffer, negated != 0);
     let mut lock = TESTS.lock()
         .or_trap("lunatic::test::add_test")?;
 

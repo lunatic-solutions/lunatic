@@ -8,6 +8,7 @@ pub struct TestNode {
     name: String,
     children: Vec<u64>,
     ok: bool,
+    negated: bool,
     comments: String,
 }
 
@@ -16,7 +17,8 @@ impl TestNode {
     pub fn generate_tap(&self, map: &HashMapId<TestNode>, builder: &mut Vec<TapTest>) -> () {
         let suite = TapTestBuilder::new()
             .name(self.name.as_str())
-            .passed(self.ok)
+            // the test passes if it's okay xor if it's negated
+            .passed(self.ok ^ self.negated)
             .diagnostics(
                 self.comments.split("\r\n")
                 .into_iter()
@@ -40,11 +42,13 @@ impl TestNode {
         self.comments.push_str(String::from_utf8_lossy(comment).into_owned().as_str());
     }
 
-    pub fn new(name: &[u8]) -> TestNode {
+    pub fn new(name: &[u8], negated: bool) -> TestNode {
         TestNode {
             name: String::from_utf8_lossy(name).into_owned(),
             children: Vec::new(),
-            ok: false,
+            // if the test is negated, we assume it's okay
+            ok: negated,
+            negated: negated,
             comments: String::new(),
         }
     }
@@ -55,14 +59,15 @@ impl TestNode {
     }
 
     pub fn ok(&mut self) -> () {
-        self.ok = true;
+        // if the test is negated, it's not okay
+        self.ok = !self.negated;
     }
 }
 
 lazy_static!{
     pub static ref TESTS: Mutex<HashMapId<TestNode>> = {
         let mut hashmap = HashMapId::new();
-        hashmap.add(TestNode::new(b""));
+        hashmap.add(TestNode::new(b"", false));
         Mutex::new(hashmap)
     };
 }
