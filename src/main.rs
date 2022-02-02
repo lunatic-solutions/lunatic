@@ -1,4 +1,4 @@
-use std::{env, fs, path::Path};
+use std::{env, fs, path::Path, borrow::BorrowMut};
 
 use async_std::channel;
 use clap::{crate_version, App, Arg, ArgSettings};
@@ -6,6 +6,7 @@ use clap::{crate_version, App, Arg, ArgSettings};
 use anyhow::{Context, Result};
 use lunatic_runtime::{node::Node, EnvConfig, Environment, NODE};
 use wasmtime::{ExternType};
+use lunatic_runtime::test_node::TESTS;
 
 #[async_std::main]
 async fn main() -> Result<()> {
@@ -177,6 +178,16 @@ async fn main() -> Result<()> {
         // 1. Obtain lock from TESTS
         // 2. Get record 0
         // 3. call generate_tap
+        let lock = TESTS.lock()
+            .expect("Lock expected.")
+            .borrow_mut();
+
+        let parent = lock.get(0)
+            .unwrap();
+
+        let builder = testanything::tap_suite_builder::TapSuiteBuilder::new();
+        parent.generate_tap(lock, &builder);
+        
 
     } else {
         // Spawn main process

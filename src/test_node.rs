@@ -1,4 +1,4 @@
-use std::{ vec::Vec, sync::Mutex };
+use std::{ vec::Vec, sync::Mutex, str };
 use lazy_static::lazy_static;
 use testanything::{ tap_suite_builder::TapSuiteBuilder, tap_test_builder::TapTestBuilder };
 use crate::state::HashMapId;
@@ -13,7 +13,7 @@ pub struct TestNode {
 
 impl TestNode {
 
-    pub fn generate_tap(&self, map: &HashMapId<TestNode>, builder: &TapSuiteBuilder) -> () {
+    pub fn generate_tap(&self, map: &HashMapId<TestNode>, builder: &mut TapSuiteBuilder) -> () {
         let suite = TapTestBuilder::new()
             .name(self.name.as_str())
             .passed(self.ok);
@@ -25,9 +25,13 @@ impl TestNode {
             .finalize();
 
         builder.tests(vec![tap]);
-        for child in self.children {
+        for child in &self.children {
             // for each child, obtain the child, and call generate_tap on it
         }
+    }
+
+    pub fn add_comment(&mut self, comment: &[u8]) -> () {
+        self.comments.push_str(String::from_utf8_lossy(comment).into_owned().as_str());
     }
 
     pub fn new(name: &[u8]) -> TestNode {

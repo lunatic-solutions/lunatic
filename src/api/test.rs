@@ -93,7 +93,7 @@ fn add_test_comment(mut caller: Caller<ProcessState>,
     node_id: u64,
     comment: u32,
     comment_len: u32,
-) -> Result<u64, Trap> {
+) -> Result<(), Trap> {
     let memory = get_memory(&mut caller)?;
 
     // get the buffer slice
@@ -108,7 +108,8 @@ fn add_test_comment(mut caller: Caller<ProcessState>,
     let parent = lock.get_mut(node_id)
         .or_trap("lunatic::test::add_test_comment")?;
     // parent.comments.push
-    Ok(child)
+    parent.add_comment(buffer);
+    Ok(())
 }
 
 
