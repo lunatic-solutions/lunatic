@@ -965,6 +965,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "eabb4a44450da02c90444cf74558da904edde8fb4e9035a9a6a4e15445af0bd7"
 
 [[package]]
+name = "hash-map-id"
+version = "0.1.0"
+
+[[package]]
 name = "hashbrown"
 version = "0.11.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1137,20 +1141,82 @@ dependencies = [
 ]
 
 [[package]]
+name = "lunatic-common-api"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "paste",
+ "wasmtime",
+]
+
+[[package]]
+name = "lunatic-error-api"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "hash-map-id",
+ "lunatic-common-api",
+ "wasmtime",
+]
+
+[[package]]
+name = "lunatic-messaging-api"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-std",
+ "hash-map-id",
+ "lunatic-common-api",
+ "lunatic-process",
+ "tokio",
+ "wasmtime",
+]
+
+[[package]]
+name = "lunatic-networking-api"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-net",
+ "async-std",
+ "hash-map-id",
+ "lunatic-common-api",
+ "lunatic-error-api",
+ "tokio",
+ "wasmtime",
+]
+
+[[package]]
+name = "lunatic-process"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-std",
+ "log",
+ "tokio",
+ "uuid",
+ "wasmtime",
+]
+
+[[package]]
 name = "lunatic-runtime"
 version = "0.7.5"
 dependencies = [
  "anyhow",
- "async-net",
  "async-std",
  "bincode",
  "clap 3.0.10",
  "criterion",
  "dashmap",
  "env_logger 0.9.0",
+ "hash-map-id",
  "lazy_static",
  "log",
- "paste",
+ "lunatic-common-api",
+ "lunatic-error-api",
+ "lunatic-messaging-api",
+ "lunatic-networking-api",
+ "lunatic-process",
  "pretty_assertions",
  "semver",
  "serde",

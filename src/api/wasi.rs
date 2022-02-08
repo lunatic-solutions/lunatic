@@ -1,7 +1,7 @@
 use anyhow::Result;
+use lunatic_common_api::namespace_matches_filter;
 use wasmtime::{Linker, Trap};
 
-use super::namespace_matches_filter;
 use crate::state::ProcessState;
 
 // Register WASI APIs to the linker

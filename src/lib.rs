@@ -37,12 +37,9 @@ pub(crate) mod api;
 pub mod async_map;
 mod config;
 mod environment;
-pub(crate) mod mailbox;
 pub mod message;
 pub(crate) mod module;
 pub mod node;
-pub mod plugin;
-pub(crate) mod process;
 pub mod registry;
 pub(crate) mod state;
 
@@ -51,8 +48,8 @@ use lazy_static::lazy_static;
 
 pub use config::EnvConfig;
 pub use environment::Environment;
+pub use lunatic_process::{spawn, Finished, Process, Signal, WasmProcess};
 use node::Node;
-pub use process::{spawn, Finished, Process, Signal, WasmProcess};
 
 // Global node singleton.
 lazy_static! {

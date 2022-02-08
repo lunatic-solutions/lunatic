@@ -1,9 +1,6 @@
 use std::fmt::Debug;
 
-use anyhow::Result;
 use serde::{Deserialize, Serialize};
-
-use crate::plugin::Plugin;
 
 /// Configuration structure for environments.
 #[derive(Clone, Serialize, Deserialize)]
@@ -14,9 +11,6 @@ pub struct EnvConfig {
     max_fuel: Option<u64>,
     allowed_namespaces: Vec<String>,
     preopened_dirs: Vec<String>,
-    // TODO: Plugins are compiled units and can't be sent between nodes at the moment
-    #[serde(skip)]
-    plugins: Vec<Plugin>,
     wasi_args: Option<Vec<String>>,
     wasi_envs: Option<Vec<(String, String)>>,
 }
@@ -42,7 +36,6 @@ impl EnvConfig {
             max_fuel,
             allowed_namespaces: Vec::new(),
             preopened_dirs: Vec::new(),
-            plugins: Vec::new(),
             wasi_args: None,
             wasi_envs: None,
         }
@@ -74,21 +67,6 @@ impl EnvConfig {
         self.preopened_dirs.push(dir.into())
     }
 
-    pub fn plugins(&self) -> &Vec<Plugin> {
-        &self.plugins
-    }
-
-    /// Add module as a plugin that will be used on all processes in the environment.
-    ///
-    /// Plugins are just regular WebAssembly modules that can define specific hooks inside the
-    /// runtime to modify other modules that are dynamically loaded inside the environment or
-    /// spawn environment bound processes.
-    pub fn add_plugin(&mut self, module: Vec<u8>) -> Result<()> {
-        let plugin = Plugin::new(module)?;
-        self.plugins.push(plugin);
-        Ok(())
-    }
-
     pub fn set_wasi_args(&mut self, args: Vec<String>) {
         self.wasi_args = Some(args);
     }
@@ -116,7 +94,6 @@ impl Default for EnvConfig {
                 String::from("wasi_snapshot_preview1::"),
             ],
             preopened_dirs: vec![],
-            plugins: vec![],
             wasi_args: None,
             wasi_envs: None,
         }

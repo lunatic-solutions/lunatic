@@ -15,15 +15,6 @@ async fn main() -> Result<()> {
     let args = App::new("lunatic")
         .version(crate_version!())
         .arg(
-            Arg::new("plugin")
-                .short('P')
-                .long("plugin")
-                .value_name("PLUGIN")
-                .help("Adds plugin")
-                .setting(ArgSettings::MultipleOccurrences)
-                .setting(ArgSettings::TakesValue),
-        )
-        .arg(
             Arg::new("dir")
                 .long("dir")
                 .value_name("DIRECTORY")
@@ -93,14 +84,6 @@ async fn main() -> Result<()> {
     // Inherit environment variables
     config.set_wasi_envs(env::vars().collect());
 
-    // Add plugins passed through the --plugin or -P flags to the environment
-    if let Some(plugins) = args.values_of("plugin") {
-        for plugin in plugins {
-            let path = Path::new(plugin);
-            let module = fs::read(path)?;
-            config.add_plugin(module)?;
-        }
-    }
     if let Some(dirs) = args.values_of("dir") {
         for dir in dirs {
             config.preopen_dir(dir);

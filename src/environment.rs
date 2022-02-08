@@ -1,12 +1,8 @@
 use anyhow::{anyhow, Result};
-use lazy_static::lazy_static;
 use wasmtime::{Config, Engine, InstanceAllocationStrategy, Linker, OptLevel, ProfilingStrategy};
 
 use super::config::EnvConfig;
-use crate::{
-    api, module::Module, node::Peer, plugin::patch_module, registry::EnvRegistry,
-    state::ProcessState,
-};
+use crate::{api, module::Module, node::Peer, registry::EnvRegistry, state::ProcessState};
 
 // One unit of fuel represents around 100k instructions.
 pub const UNIT_OF_COMPUTE_IN_INSTRUCTIONS: u64 = 100_000;
@@ -146,10 +142,9 @@ impl EnvironmentLocal {
     /// compiled by `Wasmtime`.
     pub async fn create_module(&self, data: Vec<u8>) -> Result<Module> {
         let env = self.clone();
-        let new_module = patch_module(&data, self.config.plugins())?;
         // The compilation of a module is a CPU intensive tasks and can take some time.
         let module = async_std::task::spawn_blocking(move || {
-            match wasmtime::Module::new(env.engine(), new_module.as_slice()) {
+            match wasmtime::Module::new(env.engine(), data.as_slice()) {
                 Ok(wasmtime_module) => Ok(Module::local(data, env, wasmtime_module)),
                 Err(err) => Err(err),
             }
@@ -173,16 +168,4 @@ impl EnvironmentLocal {
     pub fn registry(&self) -> &EnvRegistry {
         &self.registry
     }
-}
-
-// All plugins share one environment
-pub(crate) struct PluginEnv {
-    pub(crate) engine: Engine,
-}
-
-lazy_static! {
-    pub(crate) static ref PLUGIN_ENV: PluginEnv = {
-        let engine = Engine::default();
-        PluginEnv { engine }
-    };
 }

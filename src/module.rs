@@ -4,6 +4,8 @@ use anyhow::{anyhow, Result};
 use async_std::channel::unbounded;
 use async_std::task::JoinHandle;
 use log::trace;
+use lunatic_process::mailbox::MessageMailbox;
+use lunatic_process::{self, Process, Signal, WasmProcess};
 use uuid::Uuid;
 use wasmtime::{Store, Val};
 
@@ -12,9 +14,7 @@ use std::sync::Arc;
 use crate::node::{Link, ProxyProcess};
 use crate::{
     environment::{EnvironmentLocal, UNIT_OF_COMPUTE_IN_INSTRUCTIONS},
-    mailbox::MessageMailbox,
     node::Peer,
-    process::{self, Process, Signal, WasmProcess},
     state::ProcessState,
 };
 
@@ -201,7 +201,7 @@ impl ModuleLocal {
             })?;
 
         let fut = async move { entry.call_async(&mut store, &params, &mut []).await };
-        let child_process = process::new(fut, id, signal_mailbox.1, message_mailbox);
+        let child_process = lunatic_process::new(fut, id, signal_mailbox.1, message_mailbox);
         let child_process_handle = WasmProcess::new(id, signal_mailbox.0.clone());
 
         // **Child link guarantees**:
