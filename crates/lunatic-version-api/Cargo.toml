@@ -1,0 +1,11 @@
+[package]
+name = "lunatic-version-api"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow = "^1.0"
+wasmtime = "^0.33"
+lunatic-common-api = { version = "0.1", path = "../lunatic-common-api" }

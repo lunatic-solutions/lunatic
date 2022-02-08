@@ -1,13 +1,8 @@
 use lunatic_common_api::link_if_match;
 use wasmtime::{FuncType, Linker, Trap, ValType};
 
-use crate::state::ProcessState;
-
 /// Links the `version` APIs.
-pub(crate) fn register(
-    linker: &mut Linker<ProcessState>,
-    namespace_filter: &[String],
-) -> anyhow::Result<()> {
+pub fn register<T>(linker: &mut Linker<T>, namespace_filter: &[String]) -> anyhow::Result<()> {
     link_if_match(
         linker,
         "lunatic::version",

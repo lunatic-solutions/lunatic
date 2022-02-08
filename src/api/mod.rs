@@ -1,5 +1,4 @@
 mod process;
-mod version;
 mod wasi;
 
 use anyhow::Result;
@@ -16,8 +15,8 @@ pub(crate) fn register(
     process::register(linker, namespace_filter)?;
     lunatic_messaging_api::register(linker, namespace_filter)?;
     lunatic_networking_api::register(linker, namespace_filter)?;
+    lunatic_version_api::register(linker, namespace_filter)?;
     wasi::register(linker, namespace_filter)?;
-    version::register(linker, namespace_filter)?;
     Ok(())
 }
 
