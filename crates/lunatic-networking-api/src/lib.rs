@@ -1,3 +1,5 @@
+pub mod dns;
+
 use std::convert::TryInto;
 use std::future::Future;
 use std::io::IoSlice;
@@ -8,22 +10,37 @@ use std::time::Duration;
 use anyhow::Result;
 use async_std::io::{ReadExt, WriteExt};
 use async_std::net::{TcpListener, TcpStream, UdpSocket};
+use dns::DnsIterator;
+use hash_map_id::HashMapId;
+use lunatic_error_api::ErrorCtx;
 use wasmtime::{Caller, FuncType, Linker, ValType};
 use wasmtime::{Memory, Trap};
 
-use crate::api::error::IntoTrap;
-use crate::state::DnsIterator;
-use crate::{api::get_memory, state::ProcessState};
-
-use super::{
-    link_async10_if_match, link_async2_if_match, link_async3_if_match, link_async4_if_match,
-    link_async5_if_match, link_async6_if_match, link_async7_if_match, link_async8_if_match,
-    link_if_match,
+use lunatic_common_api::{
+    get_memory, link_async10_if_match, link_async2_if_match, link_async3_if_match,
+    link_async4_if_match, link_async5_if_match, link_async6_if_match, link_async7_if_match,
+    link_async8_if_match, link_if_match, IntoTrap,
 };
 
+pub type TcpListenerResources = HashMapId<TcpListener>;
+pub type TcpStreamResources = HashMapId<TcpStream>;
+pub type UdpResources = HashMapId<Arc<UdpSocket>>;
+pub type DnsResources = HashMapId<DnsIterator>;
+
+pub trait NetworkingCtx {
+    fn tcp_listener_resources(&self) -> &TcpListenerResources;
+    fn tcp_listener_resources_mut(&mut self) -> &mut TcpListenerResources;
+    fn tcp_stream_resources(&self) -> &TcpStreamResources;
+    fn tcp_stream_resources_mut(&mut self) -> &mut TcpStreamResources;
+    fn udp_resources(&self) -> &UdpResources;
+    fn udp_resources_mut(&mut self) -> &mut UdpResources;
+    fn dns_resources(&self) -> &DnsResources;
+    fn dns_resources_mut(&mut self) -> &mut DnsResources;
+}
+
 // Register the error APIs to the linker
-pub(crate) fn register(
-    linker: &mut Linker<ProcessState>,
+pub fn register<T: NetworkingCtx + ErrorCtx + Send + 'static>(
+    linker: &mut Linker<T>,
     namespace_filter: &[String],
 ) -> Result<()> {
     link_async4_if_match(
@@ -34,7 +51,7 @@ pub(crate) fn register(
             [ValType::I32, ValType::I32, ValType::I32, ValType::I32],
             [ValType::I32],
         ),
-        resolve,
+        resolve::<T>,
         namespace_filter,
     )?;
     link_if_match(
@@ -42,7 +59,7 @@ pub(crate) fn register(
         "lunatic::networking",
         "drop_dns_iterator",
         FuncType::new([ValType::I64], []),
-        drop_dns_iterator,
+        drop_dns_iterator::<T>,
         namespace_filter,
     )?;
     link_if_match(
@@ -60,7 +77,7 @@ pub(crate) fn register(
             ],
             [ValType::I32],
         ),
-        resolve_next,
+        resolve_next::<T>,
         namespace_filter,
     )?;
     link_async6_if_match(
@@ -78,7 +95,7 @@ pub(crate) fn register(
             ],
             [ValType::I32],
         ),
-        tcp_bind,
+        tcp_bind::<T>,
         namespace_filter,
     )?;
     link_if_match(
@@ -86,7 +103,7 @@ pub(crate) fn register(
         "lunatic::networking",
         "drop_tcp_listener",
         FuncType::new([ValType::I64], []),
-        drop_tcp_listener,
+        drop_tcp_listener::<T>,
         namespace_filter,
     )?;
     link_if_match(
@@ -94,7 +111,7 @@ pub(crate) fn register(
         "lunatic::networking",
         "tcp_local_addr",
         FuncType::new([ValType::I64, ValType::I32], [ValType::I32]),
-        tcp_local_addr,
+        tcp_local_addr::<T>,
         namespace_filter,
     )?;
     link_if_match(
@@ -102,7 +119,7 @@ pub(crate) fn register(
         "lunatic::networking",
         "udp_local_addr",
         FuncType::new([ValType::I64, ValType::I32], [ValType::I32]),
-        udp_local_addr,
+        udp_local_addr::<T>,
         namespace_filter,
     )?;
     link_async3_if_match(
@@ -110,7 +127,7 @@ pub(crate) fn register(
         "lunatic::networking",
         "tcp_accept",
         FuncType::new([ValType::I64, ValType::I32, ValType::I32], [ValType::I32]),
-        tcp_accept,
+        tcp_accept::<T>,
         namespace_filter,
     )?;
     link_async7_if_match(
@@ -129,7 +146,7 @@ pub(crate) fn register(
             ],
             [ValType::I32],
         ),
-        tcp_connect,
+        tcp_connect::<T>,
         namespace_filter,
     )?;
     link_if_match(
@@ -137,7 +154,7 @@ pub(crate) fn register(
         "lunatic::networking",
         "drop_tcp_stream",
         FuncType::new([ValType::I64], []),
-        drop_tcp_stream,
+        drop_tcp_stream::<T>,
         namespace_filter,
     )?;
     link_if_match(
@@ -145,7 +162,7 @@ pub(crate) fn register(
         "lunatic::networking",
         "clone_tcp_stream",
         FuncType::new([ValType::I64], [ValType::I64]),
-        clone_tcp_stream,
+        clone_tcp_stream::<T>,
         namespace_filter,
     )?;
     link_async5_if_match(
@@ -162,7 +179,7 @@ pub(crate) fn register(
             ],
             [ValType::I32],
         ),
-        tcp_write_vectored,
+        tcp_write_vectored::<T>,
         namespace_filter,
     )?;
     link_async5_if_match(
@@ -179,7 +196,7 @@ pub(crate) fn register(
             ],
             [ValType::I32],
         ),
-        tcp_read,
+        tcp_read::<T>,
         namespace_filter,
     )?;
     link_async2_if_match(
@@ -187,7 +204,7 @@ pub(crate) fn register(
         "lunatic::networking",
         "tcp_flush",
         FuncType::new([ValType::I64, ValType::I32], [ValType::I32]),
-        tcp_flush,
+        tcp_flush::<T>,
         namespace_filter,
     )?;
     link_async6_if_match(
@@ -205,7 +222,7 @@ pub(crate) fn register(
             ],
             [ValType::I32],
         ),
-        udp_bind,
+        udp_bind::<T>,
         namespace_filter,
     )?;
     link_if_match(
@@ -213,7 +230,7 @@ pub(crate) fn register(
         "lunatic::networking",
         "drop_udp_socket",
         FuncType::new([ValType::I64], []),
-        drop_udp_socket,
+        drop_udp_socket::<T>,
         namespace_filter,
     )?;
     link_async5_if_match(
@@ -230,7 +247,7 @@ pub(crate) fn register(
             ],
             [ValType::I32],
         ),
-        udp_receive,
+        udp_receive::<T>,
         namespace_filter,
     )?;
     link_async6_if_match(
@@ -248,7 +265,7 @@ pub(crate) fn register(
             ],
             [ValType::I32],
         ),
-        udp_receive_from,
+        udp_receive_from::<T>,
         namespace_filter,
     )?;
     link_async8_if_match(
@@ -268,7 +285,7 @@ pub(crate) fn register(
             ],
             [ValType::I32],
         ),
-        udp_connect,
+        udp_connect::<T>,
         namespace_filter,
     )?;
     link_if_match(
@@ -276,7 +293,7 @@ pub(crate) fn register(
         "lunatic::networking",
         "clone_udp_socket",
         FuncType::new([ValType::I64], [ValType::I64]),
-        clone_udp_socket,
+        clone_udp_socket::<T>,
         namespace_filter,
     )?;
     link_if_match(
@@ -292,7 +309,7 @@ pub(crate) fn register(
         "lunatic::networking",
         "get_udp_socket_broadcast",
         FuncType::new([ValType::I64], [ValType::I32]),
-        get_udp_socket_broadcast,
+        get_udp_socket_broadcast::<T>,
         namespace_filter,
     )?;
     link_if_match(
@@ -300,7 +317,7 @@ pub(crate) fn register(
         "lunatic::networking",
         "set_udp_socket_ttl",
         FuncType::new([ValType::I64, ValType::I32], []),
-        set_udp_socket_ttl,
+        set_udp_socket_ttl::<T>,
         namespace_filter,
     )?;
     link_if_match(
@@ -308,7 +325,7 @@ pub(crate) fn register(
         "lunatic::networking",
         "get_udp_socket_ttl",
         FuncType::new([ValType::I64], [ValType::I32]),
-        get_udp_socket_ttl,
+        get_udp_socket_ttl::<T>,
         namespace_filter,
     )?;
     link_async10_if_match(
@@ -330,7 +347,7 @@ pub(crate) fn register(
             ],
             [ValType::I32],
         ),
-        udp_send_to,
+        udp_send_to::<T>,
         namespace_filter,
     )?;
     link_async5_if_match(
@@ -347,7 +364,7 @@ pub(crate) fn register(
             ],
             [ValType::I32],
         ),
-        udp_send,
+        udp_send::<T>,
         namespace_filter,
     )?;
     Ok(())
@@ -372,8 +389,8 @@ pub(crate) fn register(
 //% * If the name is not a valid utf8 string.
 //% * If **name_str_ptr + name_str_len** is outside the memory.
 //% * If **id_ptr** is outside the memory.
-fn resolve(
-    mut caller: Caller<ProcessState>,
+fn resolve<T: NetworkingCtx + ErrorCtx + Send>(
+    mut caller: Caller<T>,
     name_str_ptr: u32,
     name_str_len: u32,
     timeout: u32,
@@ -397,13 +414,12 @@ fn resolve(
                     #[allow(clippy::needless_collect)]
                     let id = caller
                         .data_mut()
-                        .resources
-                        .dns_iterators
+                        .dns_resources_mut()
                         .add(DnsIterator::new(sockets.into_iter()));
                     (id, 0)
                 }
                 Err(error) => {
-                    let error_id = caller.data_mut().errors.add(error.into());
+                    let error_id = caller.data_mut().error_resources_mut().add(error.into());
                     (error_id, 1)
                 }
             };
@@ -429,11 +445,13 @@ fn resolve(
 //%
 //% Traps:
 //% * If the DNS iterator ID doesn't exist.
-fn drop_dns_iterator(mut caller: Caller<ProcessState>, dns_iter_id: u64) -> Result<(), Trap> {
+fn drop_dns_iterator<T: NetworkingCtx>(
+    mut caller: Caller<T>,
+    dns_iter_id: u64,
+) -> Result<(), Trap> {
     caller
         .data_mut()
-        .resources
-        .dns_iterators
+        .dns_resources_mut()
         .remove(dns_iter_id)
         .or_trap("lunatic::networking::drop_dns_iterator")?;
     Ok(())
@@ -464,8 +482,8 @@ fn drop_dns_iterator(mut caller: Caller<ProcessState>, dns_iter_id: u64) -> Resu
 //% * If **port_u16_ptr** is outside the memory
 //% * If **flow_info_u32_ptr** is outside the memory
 //% * If **scope_id_u32_ptr** is outside the memory
-fn resolve_next(
-    mut caller: Caller<ProcessState>,
+fn resolve_next<T: NetworkingCtx>(
+    mut caller: Caller<T>,
     dns_iter_id: u64,
     addr_type_u32_ptr: u32,
     addr_u8_ptr: u32,
@@ -476,8 +494,7 @@ fn resolve_next(
     let memory = get_memory(&mut caller)?;
     let dns_iter = caller
         .data_mut()
-        .resources
-        .dns_iterators
+        .dns_resources_mut()
         .get_mut(dns_iter_id)
         .or_trap("lunatic::networking::resolve_next")?;
 
@@ -550,8 +567,8 @@ fn resolve_next(
 //% * If **addr_type** is neither 4 or 6.
 //% * If **addr_u8_ptr** is outside the memory
 //% * If **id_u64_ptr** is outside the memory.
-fn tcp_bind(
-    mut caller: Caller<ProcessState>,
+fn tcp_bind<T: NetworkingCtx + ErrorCtx + Send>(
+    mut caller: Caller<T>,
     addr_type: u32,
     addr_u8_ptr: u32,
     port: u32,
@@ -571,8 +588,11 @@ fn tcp_bind(
             scope_id,
         )?;
         let (tcp_listener_or_error_id, result) = match TcpListener::bind(socket_addr).await {
-            Ok(listener) => (caller.data_mut().resources.tcp_listeners.add(listener), 0),
-            Err(error) => (caller.data_mut().errors.add(error.into()), 1),
+            Ok(listener) => (
+                caller.data_mut().tcp_listener_resources_mut().add(listener),
+                0,
+            ),
+            Err(error) => (caller.data_mut().error_resources_mut().add(error.into()), 1),
         };
         memory
             .write(
@@ -592,11 +612,13 @@ fn tcp_bind(
 //%
 //% Traps:
 //% * If the TCP listener ID doesn't exist.
-fn drop_tcp_listener(mut caller: Caller<ProcessState>, tcp_listener_id: u64) -> Result<(), Trap> {
+fn drop_tcp_listener<T: NetworkingCtx>(
+    mut caller: Caller<T>,
+    tcp_listener_id: u64,
+) -> Result<(), Trap> {
     caller
         .data_mut()
-        .resources
-        .tcp_listeners
+        .tcp_listener_resources_mut()
         .remove(tcp_listener_id)
         .or_trap("lunatic::networking::drop_tcp_listener")?;
     Ok(())
@@ -614,27 +636,25 @@ fn drop_tcp_listener(mut caller: Caller<ProcessState>, tcp_listener_id: u64) -> 
 //% Traps:
 //% * If the tcp listener ID doesn't exist.
 //% * If **peer_socket_addr_id_ptr** is outside the memory.
-fn tcp_local_addr(
-    mut caller: Caller<ProcessState>,
+fn tcp_local_addr<T: NetworkingCtx + ErrorCtx>(
+    mut caller: Caller<T>,
     tcp_listener_id: u64,
     id_u64_ptr: u32,
 ) -> Result<u32, Trap> {
     let tcp_listener = caller
         .data()
-        .resources
-        .tcp_listeners
+        .tcp_listener_resources()
         .get(tcp_listener_id)
         .or_trap("lunatic::network::tcp_local_addr: listener ID doesn't exist")?;
     let (dns_iter_or_error_id, result) = match tcp_listener.local_addr() {
         Ok(socket_addr) => {
             let dns_iter_id = caller
                 .data_mut()
-                .resources
-                .dns_iterators
+                .dns_resources_mut()
                 .add(DnsIterator::new(vec![socket_addr].into_iter()));
             (dns_iter_id, 0)
         }
-        Err(error) => (caller.data_mut().errors.add(error.into()), 1),
+        Err(error) => (caller.data_mut().error_resources_mut().add(error.into()), 1),
     };
 
     let memory = get_memory(&mut caller)?;
@@ -665,8 +685,8 @@ fn tcp_local_addr(
 //% * If the tcp listener ID doesn't exist.
 //% * If **id_u64_ptr** is outside the memory.
 //% * If **peer_socket_addr_id_ptr** is outside the memory.
-fn tcp_accept(
-    mut caller: Caller<ProcessState>,
+fn tcp_accept<T: NetworkingCtx + ErrorCtx + Send>(
+    mut caller: Caller<T>,
     listener_id: u64,
     id_u64_ptr: u32,
     socket_addr_id_ptr: u32,
@@ -674,22 +694,24 @@ fn tcp_accept(
     Box::new(async move {
         let tcp_listener = caller
             .data()
-            .resources
-            .tcp_listeners
+            .tcp_listener_resources()
             .get(listener_id)
             .or_trap("lunatic::network::tcp_accept")?;
 
         let (tcp_stream_or_error_id, peer_addr_iter, result) = match tcp_listener.accept().await {
             Ok((stream, socket_addr)) => {
-                let stream_id = caller.data_mut().resources.tcp_streams.add(stream);
+                let stream_id = caller.data_mut().tcp_stream_resources_mut().add(stream);
                 let dns_iter_id = caller
                     .data_mut()
-                    .resources
-                    .dns_iterators
+                    .dns_resources_mut()
                     .add(DnsIterator::new(vec![socket_addr].into_iter()));
                 (stream_id, dns_iter_id, 0)
             }
-            Err(error) => (caller.data_mut().errors.add(error.into()), 0, 1),
+            Err(error) => (
+                caller.data_mut().error_resources_mut().add(error.into()),
+                0,
+                1,
+            ),
         };
 
         let memory = get_memory(&mut caller)?;
@@ -730,8 +752,8 @@ fn tcp_accept(
 //% * If **addr_u8_ptr** is outside the memory
 //% * If **id_u64_ptr** is outside the memory.
 #[allow(clippy::too_many_arguments)]
-fn tcp_connect(
-    mut caller: Caller<ProcessState>,
+fn tcp_connect<T: NetworkingCtx + ErrorCtx + Send>(
+    mut caller: Caller<T>,
     addr_type: u32,
     addr_u8_ptr: u32,
     port: u32,
@@ -757,8 +779,8 @@ fn tcp_connect(
             result = TcpStream::connect(socket_addr) => Some(result)
         } {
             let (stream_or_error_id, result) = match result {
-                Ok(stream) => (caller.data_mut().resources.tcp_streams.add(stream), 0),
-                Err(error) => (caller.data_mut().errors.add(error.into()), 1),
+                Ok(stream) => (caller.data_mut().tcp_stream_resources_mut().add(stream), 0),
+                Err(error) => (caller.data_mut().error_resources_mut().add(error.into()), 1),
             };
 
             memory
@@ -782,11 +804,13 @@ fn tcp_connect(
 //%
 //% Traps:
 //% * If the DNS iterator ID doesn't exist.
-fn drop_tcp_stream(mut caller: Caller<ProcessState>, tcp_stream_id: u64) -> Result<(), Trap> {
+fn drop_tcp_stream<T: NetworkingCtx>(
+    mut caller: Caller<T>,
+    tcp_stream_id: u64,
+) -> Result<(), Trap> {
     caller
         .data_mut()
-        .resources
-        .tcp_streams
+        .tcp_stream_resources_mut()
         .remove(tcp_stream_id)
         .or_trap("lunatic::networking::drop_tcp_stream")?;
     Ok(())
@@ -798,15 +822,17 @@ fn drop_tcp_stream(mut caller: Caller<ProcessState>, tcp_stream_id: u64) -> Resu
 //%
 //% Traps:
 //% * If the stream ID doesn't exist.
-fn clone_tcp_stream(mut caller: Caller<ProcessState>, tcp_stream_id: u64) -> Result<u64, Trap> {
+fn clone_tcp_stream<T: NetworkingCtx>(
+    mut caller: Caller<T>,
+    tcp_stream_id: u64,
+) -> Result<u64, Trap> {
     let stream = caller
         .data()
-        .resources
-        .tcp_streams
+        .tcp_stream_resources()
         .get(tcp_stream_id)
         .or_trap("lunatic::networking::clone_process")?
         .clone();
-    let id = caller.data_mut().resources.tcp_streams.add(stream);
+    let id = caller.data_mut().tcp_stream_resources_mut().add(stream);
     Ok(id)
 }
 
@@ -830,8 +856,8 @@ fn clone_tcp_stream(mut caller: Caller<ProcessState>, tcp_stream_id: u64) -> Res
 //% * If **ciovec_array_ptr + (ciovec_array_len * 8)** is outside the memory, or any of the sub
 //%   ciovecs point outside of the memory.
 //% * If **i64_opaque_ptr** is outside the memory.
-fn tcp_write_vectored(
-    mut caller: Caller<ProcessState>,
+fn tcp_write_vectored<T: NetworkingCtx + ErrorCtx + Send>(
+    mut caller: Caller<T>,
     stream_id: u64,
     ciovec_array_ptr: u32,
     ciovec_array_len: u32,
@@ -864,8 +890,7 @@ fn tcp_write_vectored(
 
         let mut stream = caller
             .data()
-            .resources
-            .tcp_streams
+            .tcp_stream_resources()
             .get(stream_id)
             .or_trap("lunatic::network::tcp_write_vectored")?
             .clone();
@@ -877,7 +902,7 @@ fn tcp_write_vectored(
         } {
             let (opaque, return_) = match result {
                 Ok(bytes) => (bytes as u64, 0),
-                Err(error) => (caller.data_mut().errors.add(error.into()), 1),
+                Err(error) => (caller.data_mut().error_resources_mut().add(error.into()), 1),
             };
 
             let memory = get_memory(&mut caller)?;
@@ -911,8 +936,8 @@ fn tcp_write_vectored(
 //% * If the stream ID doesn't exist.
 //% * If **buffer_ptr + buffer_len** is outside the memory.
 //% * If **i64_opaque_ptr** is outside the memory.
-fn tcp_read(
-    mut caller: Caller<ProcessState>,
+fn tcp_read<T: NetworkingCtx + ErrorCtx + Send>(
+    mut caller: Caller<T>,
     stream_id: u64,
     buffer_ptr: u32,
     buffer_len: u32,
@@ -922,8 +947,7 @@ fn tcp_read(
     Box::new(async move {
         let mut stream = caller
             .data()
-            .resources
-            .tcp_streams
+            .tcp_stream_resources()
             .get(stream_id)
             .or_trap("lunatic::network::tcp_read")?
             .clone();
@@ -941,7 +965,7 @@ fn tcp_read(
         } {
             let (opaque, return_) = match result {
                 Ok(bytes) => (bytes as u64, 0),
-                Err(error) => (caller.data_mut().errors.add(error.into()), 1),
+                Err(error) => (caller.data_mut().error_resources_mut().add(error.into()), 1),
             };
 
             let memory = get_memory(&mut caller)?;
@@ -968,23 +992,22 @@ fn tcp_read(
 //% Traps:
 //% * If the stream ID doesn't exist.
 //% * If **error_id_ptr** is outside the memory.
-fn tcp_flush(
-    mut caller: Caller<ProcessState>,
+fn tcp_flush<T: NetworkingCtx + ErrorCtx + Send>(
+    mut caller: Caller<T>,
     stream_id: u64,
     error_id_ptr: u32,
 ) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_> {
     Box::new(async move {
         let mut stream = caller
             .data()
-            .resources
-            .tcp_streams
+            .tcp_stream_resources()
             .get(stream_id)
             .or_trap("lunatic::network::tcp_flush")?
             .clone();
 
         let (error_id, result) = match stream.flush().await {
             Ok(()) => (0, 0),
-            Err(error) => (caller.data_mut().errors.add(error.into()), 1),
+            Err(error) => (caller.data_mut().error_resources_mut().add(error.into()), 1),
         };
 
         let memory = get_memory(&mut caller)?;
@@ -1018,8 +1041,8 @@ fn tcp_flush(
 //% * If **addr_type** is neither 4 or 6.
 //% * If **addr_u8_ptr** is outside the memory
 //% * If **id_u64_ptr** is outside the memory.
-fn udp_bind(
-    mut caller: Caller<ProcessState>,
+fn udp_bind<T: NetworkingCtx + ErrorCtx + Send>(
+    mut caller: Caller<T>,
     addr_type: u32,
     addr_u8_ptr: u32,
     port: u32,
@@ -1042,12 +1065,11 @@ fn udp_bind(
             Ok(listener) => (
                 caller
                     .data_mut()
-                    .resources
-                    .udp_sockets
+                    .udp_resources_mut()
                     .add(Arc::new(listener)),
                 0,
             ),
-            Err(error) => (caller.data_mut().errors.add(error.into()), 1),
+            Err(error) => (caller.data_mut().error_resources_mut().add(error.into()), 1),
         };
         memory
             .write(
@@ -1067,11 +1089,13 @@ fn udp_bind(
 //%
 //% Traps:
 //% * If the UDP listener ID doesn't exist.
-fn drop_udp_socket(mut caller: Caller<ProcessState>, udp_listener_id: u64) -> Result<(), Trap> {
+fn drop_udp_socket<T: NetworkingCtx>(
+    mut caller: Caller<T>,
+    udp_listener_id: u64,
+) -> Result<(), Trap> {
     caller
         .data_mut()
-        .resources
-        .udp_sockets
+        .udp_resources_mut()
         .remove(udp_listener_id)
         .or_trap("lunatic::networking::drop_udp_socket")?;
     Ok(())
@@ -1097,8 +1121,8 @@ fn drop_udp_socket(mut caller: Caller<ProcessState>, udp_listener_id: u64) -> Re
 //% * If the socket ID doesn't exist.
 //% * If **buffer_ptr + buffer_len** is outside the memory.
 //% * If **i64_opaque_ptr** is outside the memory.
-fn udp_receive(
-    mut caller: Caller<ProcessState>,
+fn udp_receive<T: NetworkingCtx + ErrorCtx + Send>(
+    mut caller: Caller<T>,
     socket_id: u64,
     buffer_ptr: u32,
     buffer_len: u32,
@@ -1114,8 +1138,7 @@ fn udp_receive(
             .or_trap("lunatic::networking::udp_receive")?;
 
         let socket = state
-            .resources
-            .udp_sockets
+            .udp_resources_mut()
             .get(socket_id)
             .or_trap("lunatic::network::udp_receive")?;
 
@@ -1126,7 +1149,7 @@ fn udp_receive(
         } {
             let (opaque, return_) = match result {
                 Ok(bytes) => (bytes as u64, 0),
-                Err(error) => (caller.data_mut().errors.add(error.into()), 1),
+                Err(error) => (caller.data_mut().error_resources_mut().add(error.into()), 1),
             };
 
             let memory = get_memory(&mut caller)?;
@@ -1164,8 +1187,8 @@ fn udp_receive(
 //% * If **buffer_ptr + buffer_len** is outside the memory.
 //% * If **i64_opaque_ptr** is outside the memory.
 //% * If **i64_dns_iter_ptr** is outside the memory.
-fn udp_receive_from(
-    mut caller: Caller<ProcessState>,
+fn udp_receive_from<T: NetworkingCtx + ErrorCtx + Send>(
+    mut caller: Caller<T>,
     socket_id: u64,
     buffer_ptr: u32,
     buffer_len: u32,
@@ -1182,8 +1205,7 @@ fn udp_receive_from(
             .or_trap("lunatic::networking::udp_receive_from")?;
 
         let socket = state
-            .resources
-            .udp_sockets
+            .udp_resources_mut()
             .get(socket_id)
             .or_trap("lunatic::network::udp_receive_from")?;
 
@@ -1194,7 +1216,11 @@ fn udp_receive_from(
         } {
             let (opaque, socket_result, return_) = match result {
                 Ok((bytes, socket)) => (bytes as u64, Some(socket), 0),
-                Err(error) => (caller.data_mut().errors.add(error.into()), None, 1),
+                Err(error) => (
+                    caller.data_mut().error_resources_mut().add(error.into()),
+                    None,
+                    1,
+                ),
             };
 
             let memory = get_memory(&mut caller)?;
@@ -1205,8 +1231,7 @@ fn udp_receive_from(
             if let Some(socket_addr) = socket_result {
                 let dns_iter_id = caller
                     .data_mut()
-                    .resources
-                    .dns_iterators
+                    .dns_resources_mut()
                     .add(DnsIterator::new(vec![socket_addr].into_iter()));
                 memory
                     .write(
@@ -1251,8 +1276,8 @@ fn udp_receive_from(
 //% * If **addr_u8_ptr** is outside the memory
 //% * If **id_u64_ptr** is outside the memory.
 #[allow(clippy::too_many_arguments)]
-fn udp_connect(
-    mut caller: Caller<ProcessState>,
+fn udp_connect<T: NetworkingCtx + ErrorCtx + Send>(
+    mut caller: Caller<T>,
     udp_socket_id: u64,
     addr_type: u32,
     addr_u8_ptr: u32,
@@ -1276,8 +1301,7 @@ fn udp_connect(
         )?;
         let socket = caller
             .data_mut()
-            .resources
-            .udp_sockets
+            .udp_resources_mut()
             .get(udp_socket_id)
             .or_trap("lunatic::networking::udp_connect")?;
 
@@ -1287,7 +1311,7 @@ fn udp_connect(
         } {
             let (opaque, return_) = match result {
                 Ok(()) => (0, 0),
-                Err(error) => (caller.data_mut().errors.add(error.into()), 1),
+                Err(error) => (caller.data_mut().error_resources_mut().add(error.into()), 1),
             };
 
             memory
@@ -1307,15 +1331,17 @@ fn udp_connect(
 //%
 //% Traps:
 //% * If the stream ID doesn't exist.
-fn clone_udp_socket(mut caller: Caller<ProcessState>, udp_socket_id: u64) -> Result<u64, Trap> {
+fn clone_udp_socket<T: NetworkingCtx>(
+    mut caller: Caller<T>,
+    udp_socket_id: u64,
+) -> Result<u64, Trap> {
     let stream = caller
         .data()
-        .resources
-        .udp_sockets
+        .udp_resources()
         .get(udp_socket_id)
         .or_trap("lunatic::networking::clone_udp_socket")?
         .clone();
-    let id = caller.data_mut().resources.udp_sockets.add(stream);
+    let id = caller.data_mut().udp_resources_mut().add(stream);
     Ok(id)
 }
 
@@ -1326,15 +1352,14 @@ fn clone_udp_socket(mut caller: Caller<ProcessState>, udp_socket_id: u64) -> Res
 //% Traps:
 //% * If the socket ID doesn't exist.
 //% * If set_broadcast traps.
-fn set_udp_socket_broadcast(
-    caller: Caller<ProcessState>,
+fn set_udp_socket_broadcast<T: NetworkingCtx>(
+    caller: Caller<T>,
     udp_socket_id: u64,
     broadcast: u32,
 ) -> Result<(), Trap> {
     caller
         .data()
-        .resources
-        .udp_sockets
+        .udp_resources()
         .get(udp_socket_id)
         .or_trap("lunatic::networking::set_udp_socket_broadcast")?
         .set_broadcast(broadcast > 0)
@@ -1349,11 +1374,13 @@ fn set_udp_socket_broadcast(
 //% Traps:
 //% * If the socket ID doesn't exist.
 //% * If broadcast traps.
-fn get_udp_socket_broadcast(caller: Caller<ProcessState>, udp_socket_id: u64) -> Result<i32, Trap> {
+fn get_udp_socket_broadcast<T: NetworkingCtx>(
+    caller: Caller<T>,
+    udp_socket_id: u64,
+) -> Result<i32, Trap> {
     let socket = caller
         .data()
-        .resources
-        .udp_sockets
+        .udp_resources()
         .get(udp_socket_id)
         .or_trap("lunatic::networking::get_udp_socket_broadcast")?;
 
@@ -1372,15 +1399,14 @@ fn get_udp_socket_broadcast(caller: Caller<ProcessState>, udp_socket_id: u64) ->
 //% Traps:
 //% * If the socket ID doesn't exist.
 //% * If set_ttl traps.
-fn set_udp_socket_ttl(
-    caller: Caller<ProcessState>,
+fn set_udp_socket_ttl<T: NetworkingCtx>(
+    caller: Caller<T>,
     udp_socket_id: u64,
     ttl: u32,
 ) -> Result<(), Trap> {
     caller
         .data()
-        .resources
-        .udp_sockets
+        .udp_resources()
         .get(udp_socket_id)
         .or_trap("lunatic::networking::set_udp_socket_ttl")?
         .set_ttl(ttl)
@@ -1395,11 +1421,13 @@ fn set_udp_socket_ttl(
 //% Traps:
 //% * If the socket ID doesn't exist.
 //% * If ttl() traps.
-fn get_udp_socket_ttl(caller: Caller<ProcessState>, udp_socket_id: u64) -> Result<u32, Trap> {
+fn get_udp_socket_ttl<T: NetworkingCtx>(
+    caller: Caller<T>,
+    udp_socket_id: u64,
+) -> Result<u32, Trap> {
     let result = caller
         .data()
-        .resources
-        .udp_sockets
+        .udp_resources()
         .get(udp_socket_id)
         .or_trap("lunatic::networking::get_udp_socket_ttl")?
         .ttl()
@@ -1434,8 +1462,8 @@ fn get_udp_socket_ttl(caller: Caller<ProcessState>, udp_socket_id: u64) -> Resul
 //% * If **i64_opaque_ptr** is outside the memory.
 //% * If **addr_u8_ptr** is outside the memory.
 #[allow(clippy::too_many_arguments)]
-fn udp_send_to(
-    mut caller: Caller<ProcessState>,
+fn udp_send_to<T: NetworkingCtx + ErrorCtx + Send>(
+    mut caller: Caller<T>,
     socket_id: u64,
     buffer_ptr: u32,
     buffer_len: u32,
@@ -1465,8 +1493,7 @@ fn udp_send_to(
 
         let stream = caller
             .data()
-            .resources
-            .udp_sockets
+            .udp_resources()
             .get(socket_id)
             .or_trap("lunatic::network::udp_send_to")?
             .clone();
@@ -1478,7 +1505,7 @@ fn udp_send_to(
         } {
             let (opaque, return_) = match result {
                 Ok(bytes) => (bytes as u64, 0),
-                Err(error) => (caller.data_mut().errors.add(error.into()), 1),
+                Err(error) => (caller.data_mut().error_resources_mut().add(error.into()), 1),
             };
 
             let memory = get_memory(&mut caller)?;
@@ -1515,8 +1542,8 @@ fn udp_send_to(
 //% * If the stream ID doesn't exist.
 //% * If **buffer_ptr + buffer_len** is outside the memory.
 //% * If **opaque_ptr** is outside the memory.
-fn udp_send(
-    mut caller: Caller<ProcessState>,
+fn udp_send<T: NetworkingCtx + ErrorCtx + Send>(
+    mut caller: Caller<T>,
     socket_id: u64,
     buffer_ptr: u32,
     buffer_len: u32,
@@ -1533,8 +1560,7 @@ fn udp_send(
 
         let stream = caller
             .data()
-            .resources
-            .udp_sockets
+            .udp_resources()
             .get(socket_id)
             .or_trap("lunatic::network::udp_send")?
             .clone();
@@ -1546,7 +1572,7 @@ fn udp_send(
         } {
             let (opaque, return_) = match result {
                 Ok(bytes) => (bytes as u64, 0),
-                Err(error) => (caller.data_mut().errors.add(error.into()), 1),
+                Err(error) => (caller.data_mut().error_resources_mut().add(error.into()), 1),
             };
 
             let memory = get_memory(&mut caller)?;
@@ -1573,27 +1599,25 @@ fn udp_send(
 //% Traps:
 //% * If the udp socket ID doesn't exist.
 //% * If **id_u64_ptr** is outside the memory.
-fn udp_local_addr(
-    mut caller: Caller<ProcessState>,
+fn udp_local_addr<T: NetworkingCtx + ErrorCtx + Send>(
+    mut caller: Caller<T>,
     udp_socket_id: u64,
     id_u64_ptr: u32,
 ) -> Result<u32, Trap> {
     let udp_socket = caller
         .data()
-        .resources
-        .udp_sockets
+        .udp_resources()
         .get(udp_socket_id)
         .or_trap("lunatic::network::udp_local_addr: listener ID doesn't exist")?;
     let (dns_iter_or_error_id, result) = match udp_socket.local_addr() {
         Ok(socket_addr) => {
             let dns_iter_id = caller
                 .data_mut()
-                .resources
-                .dns_iterators
+                .dns_resources_mut()
                 .add(DnsIterator::new(vec![socket_addr].into_iter()));
             (dns_iter_id, 0)
         }
-        Err(error) => (caller.data_mut().errors.add(error.into()), 1),
+        Err(error) => (caller.data_mut().error_resources_mut().add(error.into()), 1),
     };
 
     let memory = get_memory(&mut caller)?;
@@ -1608,8 +1632,8 @@ fn udp_local_addr(
     Ok(result)
 }
 
-fn socket_address(
-    caller: &Caller<ProcessState>,
+fn socket_address<T: NetworkingCtx>(
+    caller: &Caller<T>,
     memory: &Memory,
     addr_type: u32,
     addr_u8_ptr: u32,

@@ -1,3 +1,6 @@
+pub mod mailbox;
+pub mod message;
+
 use std::{collections::HashMap, fmt::Debug, future::Future, hash::Hash, sync::Arc};
 
 use anyhow::Result;
@@ -116,7 +119,7 @@ impl Process for WasmProcess {
 }
 
 // Turns a Future into a process, enabling signals (e.g. kill).
-pub(crate) async fn new<F>(
+pub async fn new<F>(
     fut: F,
     id: Uuid,
     signal_mailbox: Receiver<Signal>,
@@ -174,6 +177,7 @@ pub(crate) async fn new<F>(
     match result {
         Finished::Normal(Result::Err(err)) => {
             // If the trap is a result of calling `proc_exit(0)` treat it as an no-error finish.
+            // TODO: Try to remove Wasmtime as dependency
             if let Some(trap) = err.downcast_ref::<wasmtime::Trap>() {
                 if let Some(exit_status) = trap.i32_exit_status() {
                     if exit_status == 0 {

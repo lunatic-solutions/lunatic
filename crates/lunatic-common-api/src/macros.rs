@@ -24,7 +24,7 @@ macro_rules! generate_wrap_async_func {
     ($num:tt $($args:ident)*) => (paste::paste!{
         // Adds async function to linker if the namespace matches the allowed list.
         #[allow(dead_code)]
-        pub(crate) fn [<link_async $num _if_match>]<T, $($args,)* R>(
+        pub fn [<link_async $num _if_match>]<T, $($args,)* R>(
             linker: &mut Linker<T>,
             namespace: &str,
             name: &str,

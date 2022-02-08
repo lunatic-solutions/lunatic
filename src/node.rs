@@ -16,11 +16,13 @@ use async_std::{
     task::JoinHandle,
 };
 use bincode::{deserialize, serialize};
+use hash_map_id::HashMapId;
 use log::trace;
+use lunatic_process::{Process, Signal};
 use serde::{Deserialize, Serialize};
 use wasmtime::Val;
 
-use crate::{async_map, module::Module, state::HashMapId, EnvConfig, Environment, Process, Signal};
+use crate::{async_map, module::Module, EnvConfig, Environment};
 
 /// A node holds information about other peers in a distributed system and local resources that can
 /// be accessed by remote peers.
@@ -526,24 +528,24 @@ impl SignalOverNetwork {
     async fn from(signal: Signal, node: Node) -> Result<Self> {
         match signal {
             Signal::Message(message) => match message {
-                crate::message::Message::Data(message) => {
+                lunatic_process::message::Message::Data(message) => {
                     let mut resources = Vec::with_capacity(message.resources.len());
                     for resource in message.resources.into_iter() {
                         match resource {
-                            crate::message::Resource::None => {
+                            lunatic_process::message::Resource::None => {
                                 return Err(anyhow!("Resource None can't be sent to another node"))
                             }
-                            crate::message::Resource::Process(process) => {
+                            lunatic_process::message::Resource::Process(process) => {
                                 let mut node = node.inner.write().await;
                                 let id = node.resources.add(Resource::Process(process));
                                 resources.push(id);
                             }
-                            crate::message::Resource::TcpStream(_) => {
+                            lunatic_process::message::Resource::TcpStream(_) => {
                                 return Err(anyhow!(
                                     "Resource TcpStream can't be sent to another node"
                                 ))
                             }
-                            crate::message::Resource::UdpSocket(_) => {
+                            lunatic_process::message::Resource::UdpSocket(_) => {
                                 return Err(anyhow!(
                                     "Resource UdpSocket can't be sent to another node"
                                 ))
@@ -559,7 +561,9 @@ impl SignalOverNetwork {
                     };
                     Ok(SignalOverNetwork::DataMessage(msg))
                 }
-                crate::message::Message::Signal(tag) => Ok(SignalOverNetwork::SignalMessage(tag)),
+                lunatic_process::message::Message::Signal(tag) => {
+                    Ok(SignalOverNetwork::SignalMessage(tag))
+                }
             },
             Signal::Kill => Ok(SignalOverNetwork::Kill),
             Signal::DieWhenLinkDies(flag) => Ok(SignalOverNetwork::DieWhenLinkDies(flag)),
@@ -581,19 +585,23 @@ impl SignalOverNetwork {
                 for proc_id in message.resources.into_iter() {
                     // Remote resources can only be processes for now. Spawn local proxy processes.
                     let (_, proxy_process) = ProxyProcess::new(proc_id, peer.clone(), node.clone());
-                    resources.push(crate::message::Resource::Process(Arc::new(proxy_process)));
+                    resources.push(lunatic_process::message::Resource::Process(Arc::new(
+                        proxy_process,
+                    )));
                 }
-                let msg = crate::message::DataMessage {
+                let msg = lunatic_process::message::DataMessage {
                     buffer: message.buffer,
                     read_ptr: message.read_ptr,
                     tag: message.tag,
                     resources,
                 };
-                Ok(Signal::Message(crate::message::Message::Data(msg)))
+                Ok(Signal::Message(lunatic_process::message::Message::Data(
+                    msg,
+                )))
             }
-            SignalOverNetwork::SignalMessage(tag) => {
-                Ok(Signal::Message(crate::message::Message::Signal(tag)))
-            }
+            SignalOverNetwork::SignalMessage(tag) => Ok(Signal::Message(
+                lunatic_process::message::Message::Signal(tag),
+            )),
             SignalOverNetwork::Kill => Ok(Signal::Kill),
             SignalOverNetwork::DieWhenLinkDies(flag) => Ok(Signal::DieWhenLinkDies(flag)),
             SignalOverNetwork::Link(tag, id) => {
@@ -696,7 +704,9 @@ pub(crate) enum Resource {
 mod tests {
     use std::sync::Arc;
 
-    use crate::{node::Resource, EnvConfig, Process, Signal};
+    use lunatic_process::{Process, Signal};
+
+    use crate::{node::Resource, EnvConfig};
 
     use super::{Link, Node};
 
@@ -838,10 +848,10 @@ mod tests {
             this.send(Signal::DieWhenLinkDies(false));
             // Wait on link death
             match mailbox.pop(None).await {
-                crate::message::Message::Data(_) => {
+                lunatic_process::message::Message::Data(_) => {
                     unreachable!("Only a signal can be received")
                 }
-                crate::message::Message::Signal(tag) => {
+                lunatic_process::message::Message::Signal(tag) => {
                     assert_eq!(tag, Some(1337));
                 }
             }

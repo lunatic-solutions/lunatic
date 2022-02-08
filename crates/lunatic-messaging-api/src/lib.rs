@@ -2,24 +2,39 @@ use std::{
     convert::TryInto,
     future::Future,
     io::{Read, Write},
+    sync::Arc,
     time::Duration,
 };
 
 use anyhow::Result;
+use async_std::net::{TcpStream, UdpSocket};
+use hash_map_id::HashMapId;
+use lunatic_common_api::{
+    get_memory, link_async2_if_match, link_async3_if_match, link_if_match, IntoTrap,
+};
 use wasmtime::{Caller, FuncType, Linker, Trap, ValType};
 
-use crate::{
-    api::{error::IntoTrap, get_memory},
+use lunatic_process::{
+    mailbox::MessageMailbox,
     message::{DataMessage, Message},
-    process::Signal,
-    state::ProcessState,
+    Process, Signal,
 };
 
-use super::{link_async2_if_match, link_async3_if_match, link_if_match};
+pub type ProcessResource = HashMapId<Arc<dyn Process>>;
+pub type TcpResource = HashMapId<TcpStream>;
+pub type UdpResource = HashMapId<Arc<UdpSocket>>;
+
+pub trait ProcessCtx {
+    fn mailbox(&mut self) -> &mut MessageMailbox;
+    fn message_scratch_area(&mut self) -> &mut Option<Message>;
+    fn process_resources_mut(&mut self) -> &mut ProcessResource;
+    fn tcp_resources_mut(&mut self) -> &mut TcpResource;
+    fn udp_resources_mut(&mut self) -> &mut UdpResource;
+}
 
 // Register the mailbox APIs to the linker
-pub(crate) fn register(
-    linker: &mut Linker<ProcessState>,
+pub fn register<T: ProcessCtx + Send + 'static>(
+    linker: &mut Linker<T>,
     namespace_filter: &[String],
 ) -> Result<()> {
     link_if_match(
@@ -27,7 +42,7 @@ pub(crate) fn register(
         "lunatic::message",
         "create_data",
         FuncType::new([ValType::I64, ValType::I64], []),
-        create_data,
+        create_data::<T>,
         namespace_filter,
     )?;
     link_if_match(
@@ -35,7 +50,7 @@ pub(crate) fn register(
         "lunatic::message",
         "write_data",
         FuncType::new([ValType::I32, ValType::I32], [ValType::I32]),
-        write_data,
+        write_data::<T>,
         namespace_filter,
     )?;
     link_if_match(
@@ -43,7 +58,7 @@ pub(crate) fn register(
         "lunatic::message",
         "read_data",
         FuncType::new([ValType::I32, ValType::I32], [ValType::I32]),
-        read_data,
+        read_data::<T>,
         namespace_filter,
     )?;
     link_if_match(
@@ -51,7 +66,7 @@ pub(crate) fn register(
         "lunatic::message",
         "seek_data",
         FuncType::new([ValType::I64], []),
-        seek_data,
+        seek_data::<T>,
         namespace_filter,
     )?;
     link_if_match(
@@ -59,7 +74,7 @@ pub(crate) fn register(
         "lunatic::message",
         "get_tag",
         FuncType::new([], [ValType::I64]),
-        get_tag,
+        get_tag::<T>,
         namespace_filter,
     )?;
     link_if_match(
@@ -67,7 +82,7 @@ pub(crate) fn register(
         "lunatic::message",
         "data_size",
         FuncType::new([], [ValType::I64]),
-        data_size,
+        data_size::<T>,
         namespace_filter,
     )?;
     link_if_match(
@@ -75,7 +90,7 @@ pub(crate) fn register(
         "lunatic::message",
         "push_process",
         FuncType::new([ValType::I64], [ValType::I64]),
-        push_process,
+        push_process::<T>,
         namespace_filter,
     )?;
     link_if_match(
@@ -83,7 +98,7 @@ pub(crate) fn register(
         "lunatic::message",
         "take_process",
         FuncType::new([ValType::I64], [ValType::I64]),
-        take_process,
+        take_process::<T>,
         namespace_filter,
     )?;
     link_if_match(
@@ -91,7 +106,7 @@ pub(crate) fn register(
         "lunatic::message",
         "push_tcp_stream",
         FuncType::new([ValType::I64], [ValType::I64]),
-        push_tcp_stream,
+        push_tcp_stream::<T>,
         namespace_filter,
     )?;
     link_if_match(
@@ -99,7 +114,7 @@ pub(crate) fn register(
         "lunatic::message",
         "take_tcp_stream",
         FuncType::new([ValType::I64], [ValType::I64]),
-        take_tcp_stream,
+        take_tcp_stream::<T>,
         namespace_filter,
     )?;
     link_if_match(
@@ -107,7 +122,7 @@ pub(crate) fn register(
         "lunatic::message",
         "send",
         FuncType::new([ValType::I64], []),
-        send,
+        send::<T>,
         namespace_filter,
     )?;
     link_async2_if_match(
@@ -115,7 +130,7 @@ pub(crate) fn register(
         "lunatic::message",
         "send_receive_skip_search",
         FuncType::new([ValType::I64, ValType::I32], [ValType::I32]),
-        send_receive_skip_search,
+        send_receive_skip_search::<T>,
         namespace_filter,
     )?;
     link_async3_if_match(
@@ -123,7 +138,7 @@ pub(crate) fn register(
         "lunatic::message",
         "receive",
         FuncType::new([ValType::I32, ValType::I32, ValType::I32], [ValType::I32]),
-        receive,
+        receive::<T>,
         namespace_filter,
     )?;
     link_if_match(
@@ -131,7 +146,7 @@ pub(crate) fn register(
         "lunatic::message",
         "push_udp_socket",
         FuncType::new([ValType::I64], [ValType::I64]),
-        push_udp_socket,
+        push_udp_socket::<T>,
         namespace_filter,
     )?;
     link_if_match(
@@ -139,7 +154,7 @@ pub(crate) fn register(
         "lunatic::message",
         "take_udp_socket",
         FuncType::new([ValType::I64], [ValType::I64]),
-        take_udp_socket,
+        take_udp_socket::<T>,
         namespace_filter,
     )?;
     Ok(())
@@ -221,13 +236,16 @@ pub(crate) fn register(
 //%
 //% Creates a new data message. This message is intended to be modified by other functions in this
 //% namespace. Once `lunatic::message::send` is called it will be sent to another process.
-fn create_data(mut caller: Caller<ProcessState>, tag: i64, buffer_capacity: u64) {
+fn create_data<T: ProcessCtx>(mut caller: Caller<T>, tag: i64, buffer_capacity: u64) {
     let tag = match tag {
         0 => None,
         tag => Some(tag),
     };
     let message = DataMessage::new(tag, buffer_capacity as usize);
-    caller.data_mut().message = Some(Message::Data(message));
+    caller
+        .data_mut()
+        .message_scratch_area()
+        .replace(Message::Data(message));
 }
 
 //% lunatic::message::write_data(data_ptr: u32, data_len: u32) -> u32
@@ -237,11 +255,15 @@ fn create_data(mut caller: Caller<ProcessState>, tag: i64, buffer_capacity: u64)
 //% Traps:
 //% * If **data_ptr + data_len** is outside the memory.
 //% * If it's called without a data message being inside of the scratch area.
-fn write_data(mut caller: Caller<ProcessState>, data_ptr: u32, data_len: u32) -> Result<u32, Trap> {
+fn write_data<T: ProcessCtx>(
+    mut caller: Caller<T>,
+    data_ptr: u32,
+    data_len: u32,
+) -> Result<u32, Trap> {
     let memory = get_memory(&mut caller)?;
     let mut message = caller
         .data_mut()
-        .message
+        .message_scratch_area()
         .take()
         .or_trap("lunatic::message::write_data")?;
     let buffer = memory
@@ -255,7 +277,7 @@ fn write_data(mut caller: Caller<ProcessState>, data_ptr: u32, data_len: u32) ->
         }
     };
     // Put message back after writing to it.
-    caller.data_mut().message = Some(message);
+    caller.data_mut().message_scratch_area().replace(message);
 
     Ok(bytes as u32)
 }
@@ -267,11 +289,15 @@ fn write_data(mut caller: Caller<ProcessState>, data_ptr: u32, data_len: u32) ->
 //% Traps:
 //% * If **data_ptr + data_len** is outside the memory.
 //% * If it's called without a data message being inside of the scratch area.
-fn read_data(mut caller: Caller<ProcessState>, data_ptr: u32, data_len: u32) -> Result<u32, Trap> {
+fn read_data<T: ProcessCtx>(
+    mut caller: Caller<T>,
+    data_ptr: u32,
+    data_len: u32,
+) -> Result<u32, Trap> {
     let memory = get_memory(&mut caller)?;
     let mut message = caller
         .data_mut()
-        .message
+        .message_scratch_area()
         .take()
         .or_trap("lunatic::message::read_data")?;
     let buffer = memory
@@ -285,7 +311,7 @@ fn read_data(mut caller: Caller<ProcessState>, data_ptr: u32, data_len: u32) -> 
         }
     };
     // Put message back after reading from it.
-    caller.data_mut().message = Some(message);
+    caller.data_mut().message_scratch_area().replace(message);
 
     Ok(bytes as u32)
 }
@@ -298,10 +324,10 @@ fn read_data(mut caller: Caller<ProcessState>, data_ptr: u32, data_len: u32) -> 
 //%
 //% Traps:
 //% * If it's called without a data message being inside of the scratch area.
-fn seek_data(mut caller: Caller<ProcessState>, index: u64) -> Result<(), Trap> {
+fn seek_data<T: ProcessCtx>(mut caller: Caller<T>, index: u64) -> Result<(), Trap> {
     let mut message = caller
         .data_mut()
-        .message
+        .message_scratch_area()
         .as_mut()
         .or_trap("lunatic::message::seek_data")?;
     match &mut message {
@@ -319,10 +345,10 @@ fn seek_data(mut caller: Caller<ProcessState>, index: u64) -> Result<(), Trap> {
 //%
 //% Traps:
 //% * If it's called without a message being inside of the scratch area.
-fn get_tag(caller: Caller<ProcessState>) -> Result<i64, Trap> {
+fn get_tag<T: ProcessCtx>(mut caller: Caller<T>) -> Result<i64, Trap> {
     let message = caller
-        .data()
-        .message
+        .data_mut()
+        .message_scratch_area()
         .as_ref()
         .or_trap("lunatic::message::get_tag")?;
     match message.tag() {
@@ -337,10 +363,10 @@ fn get_tag(caller: Caller<ProcessState>) -> Result<i64, Trap> {
 //%
 //% Traps:
 //% * If it's called without a data message being inside of the scratch area.
-fn data_size(mut caller: Caller<ProcessState>) -> Result<u64, Trap> {
+fn data_size<T: ProcessCtx>(mut caller: Caller<T>) -> Result<u64, Trap> {
     let message = caller
         .data_mut()
-        .message
+        .message_scratch_area()
         .as_ref()
         .or_trap("lunatic::message::data_size")?;
     let bytes = match message {
@@ -362,16 +388,15 @@ fn data_size(mut caller: Caller<ProcessState>) -> Result<u64, Trap> {
 //% Traps:
 //% * If process ID doesn't exist
 //% * If no data message is in the scratch area.
-fn push_process(mut caller: Caller<ProcessState>, process_id: u64) -> Result<u64, Trap> {
+fn push_process<T: ProcessCtx>(mut caller: Caller<T>, process_id: u64) -> Result<u64, Trap> {
     let process = caller
         .data_mut()
-        .resources
-        .processes
+        .process_resources_mut()
         .remove(process_id)
         .or_trap("lunatic::message::push_process")?;
     let message = caller
         .data_mut()
-        .message
+        .message_scratch_area()
         .as_mut()
         .or_trap("lunatic::message::push_process")?;
     let index = match message {
@@ -391,10 +416,10 @@ fn push_process(mut caller: Caller<ProcessState>, process_id: u64) -> Result<u64
 //% Traps:
 //% * If index ID doesn't exist or matches the wrong resource (not process).
 //% * If no data message is in the scratch area.
-fn take_process(mut caller: Caller<ProcessState>, index: u64) -> Result<u64, Trap> {
+fn take_process<T: ProcessCtx>(mut caller: Caller<T>, index: u64) -> Result<u64, Trap> {
     let message = caller
         .data_mut()
-        .message
+        .message_scratch_area()
         .as_mut()
         .or_trap("lunatic::message::take_process")?;
     let process = match message {
@@ -405,7 +430,7 @@ fn take_process(mut caller: Caller<ProcessState>, index: u64) -> Result<u64, Tra
             return Err(Trap::new("Unexpected `Message::Signal` in scratch area"))
         }
     };
-    Ok(caller.data_mut().resources.processes.add(process))
+    Ok(caller.data_mut().process_resources_mut().add(process))
 }
 
 //% lunatic::message::push_tcp_stream(stream_id: u64) -> u64
@@ -416,16 +441,15 @@ fn take_process(mut caller: Caller<ProcessState>, index: u64) -> Result<u64, Tra
 //% Traps:
 //% * If TCP stream ID doesn't exist
 //% * If no data message is in the scratch area.
-fn push_tcp_stream(mut caller: Caller<ProcessState>, stream_id: u64) -> Result<u64, Trap> {
+fn push_tcp_stream<T: ProcessCtx>(mut caller: Caller<T>, stream_id: u64) -> Result<u64, Trap> {
     let stream = caller
         .data_mut()
-        .resources
-        .tcp_streams
+        .tcp_resources_mut()
         .remove(stream_id)
         .or_trap("lunatic::message::push_tcp_stream")?;
     let message = caller
         .data_mut()
-        .message
+        .message_scratch_area()
         .as_mut()
         .or_trap("lunatic::message::push_tcp_stream")?;
     let index = match message {
@@ -445,10 +469,10 @@ fn push_tcp_stream(mut caller: Caller<ProcessState>, stream_id: u64) -> Result<u
 //% Traps:
 //% * If index ID doesn't exist or matches the wrong resource (not a tcp stream).
 //% * If no data message is in the scratch area.
-fn take_tcp_stream(mut caller: Caller<ProcessState>, index: u64) -> Result<u64, Trap> {
+fn take_tcp_stream<T: ProcessCtx>(mut caller: Caller<T>, index: u64) -> Result<u64, Trap> {
     let message = caller
         .data_mut()
-        .message
+        .message_scratch_area()
         .as_mut()
         .or_trap("lunatic::message::take_tcp_stream")?;
     let tcp_stream = match message {
@@ -459,7 +483,7 @@ fn take_tcp_stream(mut caller: Caller<ProcessState>, index: u64) -> Result<u64, 
             return Err(Trap::new("Unexpected `Message::Signal` in scratch area"))
         }
     };
-    Ok(caller.data_mut().resources.tcp_streams.add(tcp_stream))
+    Ok(caller.data_mut().tcp_resources_mut().add(tcp_stream))
 }
 
 //% lunatic::message::send(
@@ -472,16 +496,15 @@ fn take_tcp_stream(mut caller: Caller<ProcessState>, index: u64) -> Result<u64, 
 //% Traps:
 //% * If the process ID doesn't exist.
 //% * If it's called before creating the next message.
-fn send(mut caller: Caller<ProcessState>, process_id: u64) -> Result<(), Trap> {
+fn send<T: ProcessCtx>(mut caller: Caller<T>, process_id: u64) -> Result<(), Trap> {
     let message = caller
         .data_mut()
-        .message
+        .message_scratch_area()
         .take()
         .or_trap("lunatic::message::send")?;
     let process = caller
-        .data()
-        .resources
-        .processes
+        .data_mut()
+        .process_resources_mut()
         .get(process_id)
         .or_trap("lunatic::message::send")?;
     process.send(Signal::Message(message));
@@ -508,15 +531,15 @@ fn send(mut caller: Caller<ProcessState>, process_id: u64) -> Result<(), Trap> {
 //% Traps:
 //% * If the process ID doesn't exist.
 //% * If it's called with wrong data in the scratch area.
-fn send_receive_skip_search(
-    mut caller: Caller<ProcessState>,
+fn send_receive_skip_search<T: ProcessCtx + Send>(
+    mut caller: Caller<T>,
     process_id: u64,
     timeout: u32,
 ) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_> {
     Box::new(async move {
         let message = caller
             .data_mut()
-            .message
+            .message_scratch_area()
             .take()
             .or_trap("lunatic::message::send_receive_skip_search")?;
         let mut _tags = [0; 1];
@@ -527,18 +550,17 @@ fn send_receive_skip_search(
             None
         };
         let process = caller
-            .data()
-            .resources
-            .processes
+            .data_mut()
+            .process_resources_mut()
             .get(process_id)
             .or_trap("lunatic::message::send_receive_skip_search")?;
         process.send(Signal::Message(message));
         if let Some(message) = tokio::select! {
             _ = async_std::task::sleep(Duration::from_millis(timeout as u64)), if timeout != 0 => None,
-            message = caller.data_mut().message_mailbox.pop_skip_search(tags) => Some(message)
+            message = caller.data_mut().mailbox().pop_skip_search(tags) => Some(message)
         } {
             // Put the message into the scratch area
-            caller.data_mut().message = Some(message);
+            caller.data_mut().message_scratch_area().replace(message);
             Ok(0)
         } else {
             Ok(9027)
@@ -568,8 +590,8 @@ fn send_receive_skip_search(
 //%
 //% Traps:
 //% * If **tag_ptr + (ciovec_array_len * 8) is outside the memory
-fn receive(
-    mut caller: Caller<ProcessState>,
+fn receive<T: ProcessCtx + Send>(
+    mut caller: Caller<T>,
     tag_ptr: u32,
     tag_len: u32,
     timeout: u32,
@@ -594,14 +616,14 @@ fn receive(
 
         if let Some(message) = tokio::select! {
             _ = async_std::task::sleep(Duration::from_millis(timeout as u64)), if timeout != 0 => None,
-            message = caller.data_mut().message_mailbox.pop(tags.as_deref()) => Some(message)
+            message = caller.data_mut().mailbox().pop(tags.as_deref()) => Some(message)
         } {
             let result = match message {
                 Message::Data(_) => 0,
                 Message::Signal(_) => 1,
             };
             // Put the message into the scratch area
-            caller.data_mut().message = Some(message);
+            caller.data_mut().message_scratch_area().replace(message);
             Ok(result)
         } else {
             Ok(9027)
@@ -617,15 +639,14 @@ fn receive(
 //% Traps:
 //% * If UDP socket ID doesn't exist
 //% * If no data message is in the scratch area.
-fn push_udp_socket(mut caller: Caller<ProcessState>, socket_id: u64) -> Result<u64, Trap> {
+fn push_udp_socket<T: ProcessCtx>(mut caller: Caller<T>, socket_id: u64) -> Result<u64, Trap> {
     let data = caller.data_mut();
     let socket = data
-        .resources
-        .udp_sockets
+        .udp_resources_mut()
         .remove(socket_id)
         .or_trap("lunatic::message::push_udp_socket")?;
     let message = data
-        .message
+        .message_scratch_area()
         .as_mut()
         .or_trap("lunatic::message::push_udp_socket")?;
     let index = match message {
@@ -645,10 +666,10 @@ fn push_udp_socket(mut caller: Caller<ProcessState>, socket_id: u64) -> Result<u
 //% Traps:
 //% * If index ID doesn't exist or matches the wrong resource (not a udp socket).
 //% * If no data message is in the scratch area.
-fn take_udp_socket(mut caller: Caller<ProcessState>, index: u64) -> Result<u64, Trap> {
+fn take_udp_socket<T: ProcessCtx>(mut caller: Caller<T>, index: u64) -> Result<u64, Trap> {
     let message = caller
         .data_mut()
-        .message
+        .message_scratch_area()
         .as_mut()
         .or_trap("lunatic::message::take_udp_socket")?;
     let udp_socket = match message {
@@ -659,5 +680,5 @@ fn take_udp_socket(mut caller: Caller<ProcessState>, index: u64) -> Result<u64, 
             return Err(Trap::new("Unexpected `Message::Signal` in scratch area"))
         }
     };
-    Ok(caller.data_mut().resources.udp_sockets.add(udp_socket))
+    Ok(caller.data_mut().udp_resources_mut().add(udp_socket))
 }

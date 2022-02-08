@@ -1,0 +1,9 @@
+[package]
+name = "hash-map-id"
+version = "0.1.0"
+edition = "2021"
+description = "HashMap wrapper with incremental ID (u64) as key"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]

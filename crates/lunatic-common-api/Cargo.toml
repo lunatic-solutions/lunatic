@@ -1,0 +1,12 @@
+[package]
+name = "lunatic-common-api"
+version = "0.1.0"
+edition = "2021"
+description = "Common functionality for building lunatic host function APIs."
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow = "^1.0"
+wasmtime = "^0.33"
+paste = "^1.0"

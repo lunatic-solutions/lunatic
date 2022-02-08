@@ -1,8 +1,7 @@
+use lunatic_common_api::link_if_match;
 use wasmtime::{FuncType, Linker, Trap, ValType};
 
 use crate::state::ProcessState;
-
-use super::link_if_match;
 
 /// Links the `version` APIs.
 pub(crate) fn register(

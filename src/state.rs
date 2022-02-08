@@ -1,42 +1,21 @@
-use std::any::type_name;
-use std::collections::HashMap;
 use std::fmt::Debug;
-use std::net::SocketAddr;
 use std::sync::Arc;
-use std::vec::IntoIter;
 
 use anyhow::Result;
 use async_std::channel::Sender;
 use async_std::net::{TcpListener, TcpStream, UdpSocket};
+use hash_map_id::HashMapId;
+use lunatic_error_api::{ErrorCtx, ErrorResource};
+use lunatic_messaging_api::ProcessCtx;
+use lunatic_networking_api::dns::DnsIterator;
+use lunatic_networking_api::NetworkingCtx;
+use lunatic_process::{mailbox::MessageMailbox, message::Message, Process, Signal};
 use uuid::Uuid;
 use wasmtime::ResourceLimiter;
 use wasmtime_wasi::{ambient_authority, Dir, WasiCtx, WasiCtxBuilder};
 
-use crate::mailbox::MessageMailbox;
 use crate::module::Module;
-use crate::plugin::ModuleContext;
-use crate::{message::Message, EnvConfig, Environment};
-use crate::{Process, Signal};
-
-// The internal state of Plugins.
-pub(crate) struct PluginState<'a, 'b> {
-    // Errors belonging to the plugin
-    pub(crate) errors: HashMapId<anyhow::Error>,
-    module_context: &'a mut ModuleContext<'b>,
-}
-
-impl<'a, 'b> PluginState<'a, 'b> {
-    pub fn new(module_context: &'a mut ModuleContext<'b>) -> Self {
-        Self {
-            errors: HashMapId::new(),
-            module_context,
-        }
-    }
-
-    pub fn module_context(&mut self) -> &mut ModuleContext<'b> {
-        self.module_context
-    }
-}
+use crate::{EnvConfig, Environment};
 
 // The internal state of each Process.
 //
@@ -57,8 +36,6 @@ pub(crate) struct ProcessState {
     pub(crate) signal_mailbox: Sender<Signal>,
     // Messages sent to the process
     pub(crate) message_mailbox: MessageMailbox,
-    // Errors belonging to the process
-    pub(crate) errors: HashMapId<anyhow::Error>,
     // Resources
     pub(crate) resources: Resources,
     // WASI
@@ -92,7 +69,6 @@ impl ProcessState {
             message: None,
             signal_mailbox,
             message_mailbox,
-            errors: HashMapId::new(),
             resources: Resources::default(),
             wasi: wasi.build(),
             initialized: false,
@@ -136,6 +112,72 @@ impl ResourceLimiter for ProcessState {
     }
 }
 
+impl ErrorCtx for ProcessState {
+    fn error_resources(&self) -> &ErrorResource {
+        &self.resources.errors
+    }
+
+    fn error_resources_mut(&mut self) -> &mut ErrorResource {
+        &mut self.resources.errors
+    }
+}
+
+impl ProcessCtx for ProcessState {
+    fn mailbox(&mut self) -> &mut MessageMailbox {
+        &mut self.message_mailbox
+    }
+
+    fn message_scratch_area(&mut self) -> &mut Option<Message> {
+        &mut self.message
+    }
+
+    fn process_resources_mut(&mut self) -> &mut lunatic_messaging_api::ProcessResource {
+        &mut self.resources.processes
+    }
+
+    fn tcp_resources_mut(&mut self) -> &mut lunatic_messaging_api::TcpResource {
+        &mut self.resources.tcp_streams
+    }
+
+    fn udp_resources_mut(&mut self) -> &mut lunatic_messaging_api::UdpResource {
+        &mut self.resources.udp_sockets
+    }
+}
+
+impl NetworkingCtx for ProcessState {
+    fn tcp_listener_resources(&self) -> &lunatic_networking_api::TcpListenerResources {
+        &self.resources.tcp_listeners
+    }
+
+    fn tcp_listener_resources_mut(&mut self) -> &mut lunatic_networking_api::TcpListenerResources {
+        &mut self.resources.tcp_listeners
+    }
+
+    fn tcp_stream_resources(&self) -> &lunatic_networking_api::TcpStreamResources {
+        &self.resources.tcp_streams
+    }
+
+    fn tcp_stream_resources_mut(&mut self) -> &mut lunatic_networking_api::TcpStreamResources {
+        &mut self.resources.tcp_streams
+    }
+
+    fn udp_resources(&self) -> &lunatic_networking_api::UdpResources {
+        &self.resources.udp_sockets
+    }
+
+    fn udp_resources_mut(&mut self) -> &mut lunatic_networking_api::UdpResources {
+        &mut self.resources.udp_sockets
+    }
+
+    fn dns_resources(&self) -> &lunatic_networking_api::DnsResources {
+        &self.resources.dns_iterators
+    }
+
+    fn dns_resources_mut(&mut self) -> &mut lunatic_networking_api::DnsResources {
+        &mut self.resources.dns_iterators
+    }
+}
+
 #[derive(Default, Debug)]
 pub(crate) struct Resources {
     pub(crate) configs: HashMapId<EnvConfig>,
@@ -146,77 +188,5 @@ pub(crate) struct Resources {
     pub(crate) tcp_listeners: HashMapId<TcpListener>,
     pub(crate) tcp_streams: HashMapId<TcpStream>,
     pub(crate) udp_sockets: HashMapId<Arc<UdpSocket>>,
-}
-
-/// HashMap wrapper with incremental ID (u64) assignment.
-pub(crate) struct HashMapId<T> {
-    id_seed: u64,
-    store: HashMap<u64, T>,
-}
-
-impl<T> HashMapId<T>
-where
-    T: Send + Sync,
-{
-    pub fn new() -> Self {
-        Self {
-            id_seed: 0,
-            store: HashMap::new(),
-        }
-    }
-
-    pub fn add(&mut self, item: T) -> u64 {
-        let id = self.id_seed;
-        self.store.insert(id, item);
-        self.id_seed += 1;
-        id
-    }
-
-    pub fn remove(&mut self, id: u64) -> Option<T> {
-        self.store.remove(&id)
-    }
-
-    pub fn get_mut(&mut self, id: u64) -> Option<&mut T> {
-        self.store.get_mut(&id)
-    }
-
-    pub fn get(&self, id: u64) -> Option<&T> {
-        self.store.get(&id)
-    }
-}
-
-impl<T> Default for HashMapId<T>
-where
-    T: Send + Sync,
-{
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl<T> Debug for HashMapId<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("HashMapId")
-            .field("id_seed", &self.id_seed)
-            .field("type", &type_name::<T>())
-            .finish()
-    }
-}
-
-pub(crate) struct DnsIterator {
-    iter: IntoIter<SocketAddr>,
-}
-
-impl DnsIterator {
-    pub fn new(iter: IntoIter<SocketAddr>) -> Self {
-        Self { iter }
-    }
-}
-
-impl Iterator for DnsIterator {
-    type Item = SocketAddr;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.iter.next()
-    }
+    pub(crate) errors: HashMapId<anyhow::Error>,
 }

@@ -1,19 +1,14 @@
 use std::{convert::TryInto, future::Future, path::Path, sync::Arc, time::Duration};
 
 use anyhow::{anyhow, Result};
+use lunatic_common_api::{
+    get_memory, link_async1_if_match, link_async2_if_match, link_async4_if_match,
+    link_async5_if_match, link_async6_if_match, link_async7_if_match, link_if_match, IntoTrap,
+};
+use lunatic_process::{Signal, WasmProcess};
 use wasmtime::{Caller, FuncType, Linker, Trap, Val, ValType};
 
-use super::{
-    get_memory, link_async1_if_match, link_async2_if_match, link_async4_if_match,
-    link_async5_if_match, link_async6_if_match, link_async7_if_match, link_if_match,
-};
-use crate::{
-    api::error::IntoTrap,
-    module::Module,
-    process::{Signal, WasmProcess},
-    state::ProcessState,
-    EnvConfig, Environment, Process,
-};
+use crate::{module::Module, state::ProcessState, EnvConfig, Environment, Process};
 
 // Register the process APIs to the linker
 pub(crate) fn register(
@@ -80,17 +75,6 @@ pub(crate) fn register(
         "drop_environment",
         FuncType::new([ValType::I64], []),
         drop_environment,
-        namespace_filter,
-    )?;
-    link_if_match(
-        linker,
-        "lunatic::process",
-        "add_plugin",
-        FuncType::new(
-            [ValType::I64, ValType::I32, ValType::I32, ValType::I32],
-            [ValType::I32],
-        ),
-        add_plugin,
         namespace_filter,
     )?;
     link_async4_if_match(
@@ -399,7 +383,7 @@ fn preopen_dir(
         config.preopen_dir(dir);
         (0, 0)
     } else {
-        let error_id = caller.data_mut().errors.add(
+        let error_id = caller.data_mut().resources.errors.add(
             Trap::new(format!(
                 "Host does not have access to directory \"{}\"",
                 dir
@@ -413,56 +397,6 @@ fn preopen_dir(
     memory
         .write(&mut caller, id_ptr as usize, &error_id.to_le_bytes())
         .or_trap("lunatic::process::preopen_dir")?;
-
-    Ok(result)
-}
-
-//% lunatic::process::add_plugin(
-//%     config_id: u64,
-//%     plugin_data_ptr: u32,
-//%     plugin_data_len: u32,
-//%     id_ptr: u32
-//% ) -> u32
-//%
-//% Returns:
-//% * 0 on success
-//% * 1 on error   - The error ID is written to **id_ptr**
-//%
-//% Add plugin to environment configuration.
-//%
-//% Traps:
-//% * If the config ID doesn't exist.
-//% * If **id_ptr** is outside the memory.
-//% * If **plugin_data_ptr + plugin_data_len** is outside the memory.
-fn add_plugin(
-    mut caller: Caller<ProcessState>,
-    config_id: u64,
-    plugin_data_ptr: u32,
-    plugin_data_len: u32,
-    id_ptr: u32,
-) -> Result<u32, Trap> {
-    let mut plugin = vec![0; plugin_data_len as usize];
-    let memory = get_memory(&mut caller)?;
-    memory
-        .read(&caller, plugin_data_ptr as usize, plugin.as_mut_slice())
-        .or_trap("lunatic::process::add_plugin")?;
-
-    let config = caller
-        .data_mut()
-        .resources
-        .configs
-        .get_mut(config_id)
-        .or_trap("lunatic::process::add_plugin")?;
-
-    let (error_id, result) = match config.add_plugin(plugin) {
-        Ok(()) => (0, 0),
-        Err(error) => (caller.data_mut().errors.add(error), 1),
-    };
-
-    let memory = get_memory(&mut caller)?;
-    memory
-        .write(&mut caller, id_ptr as usize, &error_id.to_le_bytes())
-        .or_trap("lunatic::process::add_plugin")?;
 
     Ok(result)
 }
@@ -493,7 +427,7 @@ fn create_environment(
 
     let (env_or_error_id, result) = match Environment::local(config) {
         Ok(env) => (caller.data_mut().resources.environments.add(env), 0),
-        Err(error) => (caller.data_mut().errors.add(error), 1),
+        Err(error) => (caller.data_mut().resources.errors.add(error), 1),
     };
 
     let memory = get_memory(&mut caller)?;
@@ -547,7 +481,7 @@ fn create_remote_environment(
 
         let (env_or_error_id, result) = match Environment::remote(node_name, config).await {
             Ok(env) => (caller.data_mut().resources.environments.add(env), 0),
-            Err(error) => (caller.data_mut().errors.add(error), 1),
+            Err(error) => (caller.data_mut().resources.errors.add(error), 1),
         };
 
         memory
@@ -612,7 +546,7 @@ fn add_module(
             .or_trap("lunatic::process::add_module")?;
         let (mod_or_error_id, result) = match env.create_module(module).await {
             Ok(module) => (caller.data_mut().resources.modules.add(module), 0),
-            Err(error) => (caller.data_mut().errors.add(error), 1),
+            Err(error) => (caller.data_mut().resources.errors.add(error), 1),
         };
         memory
             .write(&mut caller, id_ptr as usize, &mod_or_error_id.to_le_bytes())
@@ -651,7 +585,7 @@ fn add_this_module(
             .or_trap("lunatic::process::add_this_module")?;
         let (mod_or_error_id, result) = match env.create_module(module.data()).await {
             Ok(module) => (caller.data_mut().resources.modules.add(module), 0),
-            Err(error) => (caller.data_mut().errors.add(error), 1),
+            Err(error) => (caller.data_mut().resources.errors.add(error), 1),
         };
         let memory = get_memory(&mut caller)?;
         memory
@@ -850,7 +784,7 @@ async fn spawn_from_module(
     };
     let (proc_or_error_id, result) = match module.spawn(function, params, link).await {
         Ok((_, process)) => (caller.data_mut().resources.processes.add(process), 0),
-        Err(error) => (caller.data_mut().errors.add(error), 1),
+        Err(error) => (caller.data_mut().resources.errors.add(error), 1),
     };
     memory
         .write(
