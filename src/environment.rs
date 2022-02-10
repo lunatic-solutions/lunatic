@@ -13,9 +13,6 @@ pub const UNIT_OF_COMPUTE_IN_INSTRUCTIONS: u64 = 100_000;
 /// * Memory limits
 /// * Compute limits
 /// * Access to host functions
-///
-/// They also define the set of plugins. Plugins can be used to modify loaded Wasm modules.
-/// Plugins are WIP and not well documented.
 #[derive(Clone)]
 pub enum Environment {
     Local(Box<EnvironmentLocal>),
