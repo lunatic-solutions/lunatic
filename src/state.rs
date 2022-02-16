@@ -10,9 +10,10 @@ use lunatic_messaging_api::ProcessCtx;
 use lunatic_networking_api::dns::DnsIterator;
 use lunatic_networking_api::NetworkingCtx;
 use lunatic_process::{mailbox::MessageMailbox, message::Message, Process, Signal};
+use lunatic_wasi_api::{build_wasi, LunaticWasiCtx};
 use uuid::Uuid;
 use wasmtime::ResourceLimiter;
-use wasmtime_wasi::{ambient_authority, Dir, WasiCtx, WasiCtxBuilder};
+use wasmtime_wasi::WasiCtx;
 
 use crate::module::Module;
 use crate::{EnvConfig, Environment};
@@ -52,17 +53,6 @@ impl ProcessState {
         message_mailbox: MessageMailbox,
         config: &EnvConfig,
     ) -> Result<Self> {
-        let mut wasi = WasiCtxBuilder::new().inherit_stdio();
-        if let Some(envs) = config.wasi_envs() {
-            wasi = wasi.envs(envs)?;
-        }
-        if let Some(args) = config.wasi_args() {
-            wasi = wasi.args(args)?;
-        }
-        for preopen_dir_path in config.preopened_dirs() {
-            let preopen_dir = Dir::open_ambient_dir(preopen_dir_path, ambient_authority())?;
-            wasi = wasi.preopened_dir(preopen_dir, preopen_dir_path)?;
-        }
         let state = Self {
             id,
             module,
@@ -70,7 +60,11 @@ impl ProcessState {
             signal_mailbox,
             message_mailbox,
             resources: Resources::default(),
-            wasi: wasi.build(),
+            wasi: build_wasi(
+                config.wasi_args().as_ref(),
+                config.wasi_envs().as_ref(),
+                config.preopened_dirs(),
+            )?,
             initialized: false,
         };
         Ok(state)
@@ -175,6 +169,12 @@ impl NetworkingCtx for ProcessState {
 
     fn dns_resources_mut(&mut self) -> &mut lunatic_networking_api::DnsResources {
         &mut self.resources.dns_iterators
+    }
+}
+
+impl LunaticWasiCtx for ProcessState {
+    fn wasi(&mut self) -> &mut WasiCtx {
+        &mut self.wasi
     }
 }
 

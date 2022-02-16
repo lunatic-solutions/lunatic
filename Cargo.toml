@@ -42,6 +42,7 @@ lunatic-error-api = { version = "^0.1", path = "crates/lunatic-error-api" }
 lunatic-messaging-api = { version = "^0.1", path = "crates/lunatic-messaging-api" }
 lunatic-networking-api = { version = "^0.1", path = "crates/lunatic-networking-api" }
 lunatic-version-api = { version = "^0.1", path = "crates/lunatic-version-api" }
+lunatic-wasi-api = { version = "^0.1", path = "crates/lunatic-wasi-api" }
 
 [dev-dependencies]
 wat = "^1.0"
@@ -61,5 +62,6 @@ members = [
     "crates/lunatic-common-api",
     "crates/lunatic-error-api",
     "crates/lunatic-messaging-api",
-    "crates/lunatic-version-api"
+    "crates/lunatic-version-api",
+    "crates/lunatic-wasi-api"
 ]

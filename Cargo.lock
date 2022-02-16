@@ -1218,6 +1218,7 @@ dependencies = [
  "lunatic-networking-api",
  "lunatic-process",
  "lunatic-version-api",
+ "lunatic-wasi-api",
  "pretty_assertions",
  "semver",
  "serde",
@@ -1238,6 +1239,19 @@ dependencies = [
  "anyhow",
  "lunatic-common-api",
  "wasmtime",
+]
+
+[[package]]
+name = "lunatic-wasi-api"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-std",
+ "hash-map-id",
+ "lunatic-common-api",
+ "tokio",
+ "wasmtime",
+ "wasmtime-wasi",
 ]
 
 [[package]]
