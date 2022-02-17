@@ -1,7 +1,7 @@
 use std::{env, fs, path::Path};
 
 use async_std::channel;
-use clap::{crate_version, App, Arg, ArgSettings};
+use clap::{crate_version, Arg, Command};
 
 use anyhow::{Context, Result};
 use lunatic_runtime::{node::Node, EnvConfig, Environment, NODE};
@@ -12,15 +12,15 @@ async fn main() -> Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).init();
 
     // Parse command line arguments
-    let args = App::new("lunatic")
+    let args = Command::new("lunatic")
         .version(crate_version!())
         .arg(
             Arg::new("dir")
                 .long("dir")
                 .value_name("DIRECTORY")
                 .help("Grant access to the given host directory")
-                .setting(ArgSettings::MultipleOccurrences)
-                .setting(ArgSettings::TakesValue),
+                .multiple_occurrences(true)
+                .takes_value(true),
         )
         .arg(
             Arg::new("node")
@@ -28,7 +28,7 @@ async fn main() -> Result<()> {
                 .value_name("NODE_ADDRESS")
                 .help("Turns local process into a node and binds it to the provided address.")
                 .requires("node_name")
-                .setting(ArgSettings::TakesValue),
+                .takes_value(true),
         )
         .arg(
             Arg::new("node_name")
@@ -36,14 +36,14 @@ async fn main() -> Result<()> {
                 .value_name("NODE_NAME")
                 .help("Name of the node.")
                 .requires("node")
-                .setting(ArgSettings::TakesValue),
+                .takes_value(true),
         )
         .arg(
             Arg::new("peer")
                 .long("peer")
                 .value_name("PEER_ADDRESS")
                 .help("Address of another node inside the cluster that will be used for bootstrapping.")
-                .setting(ArgSettings::TakesValue)
+                .takes_value(true)
                 .requires("node"),
         )
         .arg(

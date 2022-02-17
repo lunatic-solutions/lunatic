@@ -8,6 +8,6 @@ description = "Lunatic host functions that make dealing with Anyhow errors easy.
 
 [dependencies]
 anyhow = "^1.0"
-wasmtime = "^0.33"
+wasmtime = "^0.34"
 hash-map-id = { version = "^0.1", path = "../hash-map-id" }
 lunatic-common-api = { version = "0.1", path = "../lunatic-common-api" }
