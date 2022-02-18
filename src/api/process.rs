@@ -8,11 +8,11 @@ use lunatic_common_api::{
 use lunatic_process::{Signal, WasmProcess};
 use wasmtime::{Caller, FuncType, Linker, Trap, Val, ValType};
 
-use crate::{module::Module, state::ProcessState, EnvConfig, Environment, Process};
+use crate::{module::Module, state::DefaultProcessState, EnvConfig, Environment, Process};
 
 // Register the process APIs to the linker
 pub(crate) fn register(
-    linker: &mut Linker<ProcessState>,
+    linker: &mut Linker<DefaultProcessState>,
     namespace_filter: &[String],
 ) -> Result<()> {
     link_if_match(
@@ -277,7 +277,7 @@ pub(crate) fn register(
 //% * Returns ID of newly created configuration.
 //%
 //% Create a new configuration for an environment.
-fn create_config(mut caller: Caller<ProcessState>, max_memory: u64, max_fuel: u64) -> u64 {
+fn create_config(mut caller: Caller<DefaultProcessState>, max_memory: u64, max_fuel: u64) -> u64 {
     let max_fuel = if max_fuel != 0 { Some(max_fuel) } else { None };
     let config = EnvConfig::new(max_memory as usize, max_fuel);
     caller.data_mut().resources.configs.add(config)
@@ -289,7 +289,7 @@ fn create_config(mut caller: Caller<ProcessState>, max_memory: u64, max_fuel: u6
 //%
 //% Traps:
 //% * If the config ID doesn't exist.
-fn drop_config(mut caller: Caller<ProcessState>, config_id: u64) -> Result<(), Trap> {
+fn drop_config(mut caller: Caller<DefaultProcessState>, config_id: u64) -> Result<(), Trap> {
     caller
         .data_mut()
         .resources
@@ -308,7 +308,7 @@ fn drop_config(mut caller: Caller<ProcessState>, config_id: u64) -> Result<(), T
 //% * If the namespace string is not a valid utf8 string.
 //% * If **namespace_str_ptr + namespace_str_len** is outside the memory.
 fn allow_namespace(
-    mut caller: Caller<ProcessState>,
+    mut caller: Caller<DefaultProcessState>,
     config_id: u64,
     namespace_str_ptr: u32,
     namespace_str_len: u32,
@@ -350,7 +350,7 @@ fn allow_namespace(
 //% * If **dir_str_ptr + dir_str_len** is outside the memory.
 //% * If **id_ptr** is outside the memory.
 fn preopen_dir(
-    mut caller: Caller<ProcessState>,
+    mut caller: Caller<DefaultProcessState>,
     config_id: u64,
     dir_str_ptr: u32,
     dir_str_len: u32,
@@ -413,7 +413,7 @@ fn preopen_dir(
 //% * If the config ID doesn't exist.
 //% * If **id_ptr** is outside the memory.
 fn create_environment(
-    mut caller: Caller<ProcessState>,
+    mut caller: Caller<DefaultProcessState>,
     config_id: u64,
     id_ptr: u32,
 ) -> Result<u32, Trap> {
@@ -456,7 +456,7 @@ fn create_environment(
 //% * If **node_name_ptr + name_name_len** is outside the memory.
 //% * If **id_ptr** is outside the memory.
 fn create_remote_environment(
-    mut caller: Caller<ProcessState>,
+    mut caller: Caller<DefaultProcessState>,
     config_id: u64,
     node_name_ptr: u32,
     name_name_len: u32,
@@ -498,7 +498,7 @@ fn create_remote_environment(
 //%
 //% Traps:
 //% * If the environment ID doesn't exist.
-fn drop_environment(mut caller: Caller<ProcessState>, env_id: u64) -> Result<(), Trap> {
+fn drop_environment(mut caller: Caller<DefaultProcessState>, env_id: u64) -> Result<(), Trap> {
     caller
         .data_mut()
         .resources
@@ -526,7 +526,7 @@ fn drop_environment(mut caller: Caller<ProcessState>, env_id: u64) -> Result<(),
 //% * If **module_data_ptr + module_data_len** is outside the memory.
 //% * If **id_ptr** is outside the memory.
 fn add_module(
-    mut caller: Caller<ProcessState>,
+    mut caller: Caller<DefaultProcessState>,
     env_id: u64,
     module_data_ptr: u32,
     module_data_len: u32,
@@ -571,7 +571,7 @@ fn add_module(
 //% * If the env ID doesn't exist.
 //% * If **id_ptr** is outside the memory.
 fn add_this_module(
-    mut caller: Caller<ProcessState>,
+    mut caller: Caller<DefaultProcessState>,
     env_id: u64,
     id_ptr: u32,
 ) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_> {
@@ -601,7 +601,7 @@ fn add_this_module(
 //%
 //% Traps:
 //% * If the module ID doesn't exist.
-fn drop_module(mut caller: Caller<ProcessState>, mod_id: u64) -> Result<(), Trap> {
+fn drop_module(mut caller: Caller<DefaultProcessState>, mod_id: u64) -> Result<(), Trap> {
     caller
         .data_mut()
         .resources
@@ -647,7 +647,7 @@ fn drop_module(mut caller: Caller<ProcessState>, mod_id: u64) -> Result<(), Trap
 //% * If **id_ptr** is outside the memory.
 #[allow(clippy::too_many_arguments)]
 fn spawn(
-    mut caller: Caller<ProcessState>,
+    mut caller: Caller<DefaultProcessState>,
     link: i64,
     module_id: u64,
     func_str_ptr: u32,
@@ -710,7 +710,7 @@ fn spawn(
 //% * If **params_ptr + params_len** is outside the memory.
 //% * If **id_ptr** is outside the memory.
 fn inherit_spawn(
-    mut caller: Caller<ProcessState>,
+    mut caller: Caller<DefaultProcessState>,
     link: i64,
     func_str_ptr: u32,
     func_str_len: u32,
@@ -736,7 +736,7 @@ fn inherit_spawn(
 
 #[allow(clippy::too_many_arguments)]
 async fn spawn_from_module(
-    mut caller: &mut Caller<'_, ProcessState>,
+    mut caller: &mut Caller<'_, DefaultProcessState>,
     link: i64,
     module: Module,
     func_str_ptr: u32,
@@ -803,7 +803,7 @@ async fn spawn_from_module(
 //%
 //% Traps:
 //% * If the process ID doesn't exist.
-fn drop_process(mut caller: Caller<ProcessState>, process_id: u64) -> Result<(), Trap> {
+fn drop_process(mut caller: Caller<DefaultProcessState>, process_id: u64) -> Result<(), Trap> {
     caller
         .data_mut()
         .resources
@@ -819,7 +819,7 @@ fn drop_process(mut caller: Caller<ProcessState>, process_id: u64) -> Result<(),
 //%
 //% Traps:
 //% * If the process ID doesn't exist.
-fn clone_process(mut caller: Caller<ProcessState>, process_id: u64) -> Result<u64, Trap> {
+fn clone_process(mut caller: Caller<DefaultProcessState>, process_id: u64) -> Result<u64, Trap> {
     let process = caller
         .data()
         .resources
@@ -834,7 +834,10 @@ fn clone_process(mut caller: Caller<ProcessState>, process_id: u64) -> Result<u6
 //% lunatic::process::sleep_ms(millis: u64)
 //%
 //% Suspend process for `millis`.
-fn sleep_ms(_: Caller<ProcessState>, millis: u64) -> Box<dyn Future<Output = ()> + Send + '_> {
+fn sleep_ms(
+    _: Caller<DefaultProcessState>,
+    millis: u64,
+) -> Box<dyn Future<Output = ()> + Send + '_> {
     Box::new(async move {
         async_std::task::sleep(Duration::from_millis(millis)).await;
     })
@@ -849,7 +852,7 @@ fn sleep_ms(_: Caller<ProcessState>, millis: u64) -> Box<dyn Future<Output = ()>
 //% 2. `trap != 0` the process will die and notify all linked processes of its death.
 //%
 //% The default behaviour for a newly spawned process is 2.
-fn die_when_link_dies(mut caller: Caller<ProcessState>, trap: u32) {
+fn die_when_link_dies(mut caller: Caller<DefaultProcessState>, trap: u32) {
     caller
         .data_mut()
         .signal_mailbox
@@ -860,7 +863,7 @@ fn die_when_link_dies(mut caller: Caller<ProcessState>, trap: u32) {
 //% lunatic::process::this() -> u64
 //%
 //% Create a process handle to itself and return resource ID.
-fn this(mut caller: Caller<ProcessState>) -> u64 {
+fn this(mut caller: Caller<DefaultProcessState>) -> u64 {
     let id = caller.data().id;
     let signal_mailbox = caller.data().signal_mailbox.clone();
     let process = WasmProcess::new(id, signal_mailbox);
@@ -874,7 +877,7 @@ fn this(mut caller: Caller<ProcessState>) -> u64 {
 //% Traps:
 //% * If the process ID doesn't exist.
 //% * If **u128_ptr** is outside the memory space.
-fn id(mut caller: Caller<ProcessState>, process_id: u64, u128_ptr: u32) -> Result<(), Trap> {
+fn id(mut caller: Caller<DefaultProcessState>, process_id: u64, u128_ptr: u32) -> Result<(), Trap> {
     let id = caller
         .data()
         .resources
@@ -893,7 +896,7 @@ fn id(mut caller: Caller<ProcessState>, process_id: u64, u128_ptr: u32) -> Resul
 //% lunatic::process::this_env() -> u64
 //%
 //% Returns ID of the environment that this process was spawned from.
-fn this_env(mut caller: Caller<ProcessState>) -> u64 {
+fn this_env(mut caller: Caller<DefaultProcessState>) -> u64 {
     let env = Environment::Local(Box::new(caller.data().module.environment().clone()));
     caller.data_mut().resources.environments.add(env)
 }
@@ -905,7 +908,7 @@ fn this_env(mut caller: Caller<ProcessState>) -> u64 {
 //%
 //% Traps:
 //% * If the process ID doesn't exist.
-fn link(mut caller: Caller<ProcessState>, tag: i64, process_id: u64) -> Result<(), Trap> {
+fn link(mut caller: Caller<DefaultProcessState>, tag: i64, process_id: u64) -> Result<(), Trap> {
     let tag = match tag {
         0 => None,
         tag => Some(tag),
@@ -940,7 +943,7 @@ fn link(mut caller: Caller<ProcessState>, tag: i64, process_id: u64) -> Result<(
 //%
 //% Traps:
 //% * If the process ID doesn't exist.
-fn unlink(mut caller: Caller<ProcessState>, process_id: u64) -> Result<(), Trap> {
+fn unlink(mut caller: Caller<DefaultProcessState>, process_id: u64) -> Result<(), Trap> {
     // Create handle to itself
     let id = caller.data().id;
     let signal_mailbox = caller.data().signal_mailbox.clone();
@@ -985,7 +988,7 @@ fn unlink(mut caller: Caller<ProcessState>, process_id: u64) -> Result<(), Trap>
 //% * If **name_ptr + name_len** is outside the memory.
 //% * If **version_ptr + version_len** is outside the memory.
 fn register_proc(
-    mut caller: Caller<ProcessState>,
+    mut caller: Caller<DefaultProcessState>,
     name_ptr: u32,
     name_len: u32,
     version_ptr: u32,
@@ -1047,7 +1050,7 @@ fn register_proc(
 //% * If **name_ptr + name_len** is outside the memory.
 //% * If **version_ptr + version_len** is outside the memory.
 fn unregister(
-    mut caller: Caller<ProcessState>,
+    mut caller: Caller<DefaultProcessState>,
     name_ptr: u32,
     name_len: u32,
     version_ptr: u32,
@@ -1103,7 +1106,7 @@ fn unregister(
 //% * If **name_ptr + name_len** is outside the memory.
 //% * If **query_ptr + query_len** is outside the memory.
 fn lookup(
-    mut caller: Caller<ProcessState>,
+    mut caller: Caller<DefaultProcessState>,
     name_ptr: u32,
     name_len: u32,
     query_ptr: u32,

@@ -15,7 +15,7 @@ use crate::node::{Link, ProxyProcess};
 use crate::{
     environment::{EnvironmentLocal, UNIT_OF_COMPUTE_IN_INSTRUCTIONS},
     node::Peer,
-    state::ProcessState,
+    state::DefaultProcessState,
 };
 
 #[derive(Clone)]
@@ -163,7 +163,7 @@ impl ModuleLocal {
         trace!("Spawning process: {}", id);
         let signal_mailbox = unbounded::<Signal>();
         let message_mailbox = MessageMailbox::default();
-        let state = ProcessState::new(
+        let state = DefaultProcessState::new(
             id,
             Module::Local(self.clone()),
             signal_mailbox.0.clone(),

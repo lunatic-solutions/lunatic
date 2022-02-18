@@ -2,7 +2,12 @@ use anyhow::{anyhow, Result};
 use wasmtime::{Config, Engine, InstanceAllocationStrategy, Linker, OptLevel, ProfilingStrategy};
 
 use super::config::EnvConfig;
-use crate::{api, module::Module, node::Peer, registry::EnvRegistry, state::ProcessState};
+use crate::{
+    module::Module,
+    node::Peer,
+    registry::EnvRegistry,
+    state::{DefaultProcessState, ProcessState},
+};
 
 // One unit of fuel represents around 100k instructions.
 pub const UNIT_OF_COMPUTE_IN_INSTRUCTIONS: u64 = 100_000;
@@ -86,7 +91,7 @@ impl EnvironmentRemote {
 #[derive(Clone)]
 pub struct EnvironmentLocal {
     engine: Engine,
-    linker: Linker<ProcessState>,
+    linker: Linker<DefaultProcessState>,
     config: EnvConfig,
     registry: EnvRegistry,
 }
@@ -122,7 +127,7 @@ impl EnvironmentLocal {
         linker.allow_shadowing(true);
 
         // Register host functions for linker
-        api::register(&mut linker, config.allowed_namespace())?;
+        DefaultProcessState::register(&mut linker, config.allowed_namespace())?;
 
         Ok(Box::new(Self {
             engine,
@@ -158,7 +163,7 @@ impl EnvironmentLocal {
         &self.config
     }
 
-    pub(crate) fn linker(&self) -> &Linker<ProcessState> {
+    pub(crate) fn linker(&self) -> &Linker<DefaultProcessState> {
         &self.linker
     }
 

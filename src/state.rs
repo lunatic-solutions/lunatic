@@ -12,16 +12,25 @@ use lunatic_networking_api::NetworkingCtx;
 use lunatic_process::{mailbox::MessageMailbox, message::Message, Process, Signal};
 use lunatic_wasi_api::{build_wasi, LunaticWasiCtx};
 use uuid::Uuid;
-use wasmtime::ResourceLimiter;
+use wasmtime::{Linker, ResourceLimiter};
 use wasmtime_wasi::WasiCtx;
 
+use crate::api::process;
 use crate::module::Module;
 use crate::{EnvConfig, Environment};
 
-// The internal state of each Process.
-//
-// Host functions will share one state.
-pub(crate) struct ProcessState {
+/// The internal state of a process.
+///
+/// The `ProcessState` has two main roles:
+/// - It holds onto all vm resources (file descriptors, tcp streams, channels, ...)
+/// - Registers all host functions working on those resources to the `Linker`
+pub trait ProcessState: Sized {
+    /// Register all host functions to the linker.
+    fn register(linker: &mut Linker<Self>, namespace_filter: &[String]) -> Result<()>;
+}
+
+// The default process state
+pub(crate) struct DefaultProcessState {
     // Process id
     pub(crate) id: Uuid,
     // The module that this process was spawned from
@@ -45,7 +54,19 @@ pub(crate) struct ProcessState {
     pub(crate) initialized: bool,
 }
 
-impl ProcessState {
+impl ProcessState for DefaultProcessState {
+    fn register(linker: &mut Linker<Self>, namespace_filter: &[String]) -> Result<()> {
+        lunatic_error_api::register(linker, namespace_filter)?;
+        process::register(linker, namespace_filter)?;
+        lunatic_messaging_api::register(linker, namespace_filter)?;
+        lunatic_networking_api::register(linker, namespace_filter)?;
+        lunatic_version_api::register(linker, namespace_filter)?;
+        lunatic_wasi_api::register(linker, namespace_filter)?;
+        Ok(())
+    }
+}
+
+impl DefaultProcessState {
     pub fn new(
         id: Uuid,
         module: Module,
@@ -71,7 +92,7 @@ impl ProcessState {
     }
 }
 
-impl Debug for ProcessState {
+impl Debug for DefaultProcessState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("State")
             .field("process", &self.resources)
@@ -80,7 +101,7 @@ impl Debug for ProcessState {
 }
 
 // Limit the maximum memory of the process depending on the environment it was spawned in.
-impl ResourceLimiter for ProcessState {
+impl ResourceLimiter for DefaultProcessState {
     fn memory_growing(&mut self, _current: usize, desired: usize, _maximum: Option<usize>) -> bool {
         desired <= self.module.environment().config().max_memory()
     }
@@ -106,7 +127,7 @@ impl ResourceLimiter for ProcessState {
     }
 }
 
-impl ErrorCtx for ProcessState {
+impl ErrorCtx for DefaultProcessState {
     fn error_resources(&self) -> &ErrorResource {
         &self.resources.errors
     }
@@ -116,7 +137,7 @@ impl ErrorCtx for ProcessState {
     }
 }
 
-impl ProcessCtx for ProcessState {
+impl ProcessCtx for DefaultProcessState {
     fn mailbox(&mut self) -> &mut MessageMailbox {
         &mut self.message_mailbox
     }
@@ -138,7 +159,7 @@ impl ProcessCtx for ProcessState {
     }
 }
 
-impl NetworkingCtx for ProcessState {
+impl NetworkingCtx for DefaultProcessState {
     fn tcp_listener_resources(&self) -> &lunatic_networking_api::TcpListenerResources {
         &self.resources.tcp_listeners
     }
@@ -172,7 +193,7 @@ impl NetworkingCtx for ProcessState {
     }
 }
 
-impl LunaticWasiCtx for ProcessState {
+impl LunaticWasiCtx for DefaultProcessState {
     fn wasi(&mut self) -> &mut WasiCtx {
         &mut self.wasi
     }
@@ -189,4 +210,25 @@ pub(crate) struct Resources {
     pub(crate) tcp_streams: HashMapId<TcpStream>,
     pub(crate) udp_sockets: HashMapId<Arc<UdpSocket>>,
     pub(crate) errors: HashMapId<anyhow::Error>,
+}
+
+mod tests {
+    #[async_std::test]
+    async fn import_filter_signature_matches() {
+        use crate::{EnvConfig, Environment};
+
+        // The default configuration includes both, the "lunatic::*" and "wasi_*" namespaces.
+        let config = EnvConfig::default();
+        let environment = Environment::local(config).unwrap();
+        let raw_module = wat::parse_file("./wat/all_imports.wat").unwrap();
+        let module = environment.create_module(raw_module).await.unwrap();
+        module.spawn("hello", Vec::new(), None).await.unwrap();
+
+        // This configuration should still compile, even all host calls will trap.
+        let config = EnvConfig::new(0, None);
+        let environment = Environment::local(config).unwrap();
+        let raw_module = wat::parse_file("./wat/all_imports.wat").unwrap();
+        let module = environment.create_module(raw_module).await.unwrap();
+        module.spawn("hello", Vec::new(), None).await.unwrap();
+    }
 }
