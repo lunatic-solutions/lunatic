@@ -8,4 +8,4 @@ description = "Lunatic host functions for getting Lunatic host version"
 
 [dependencies]
 anyhow = "^1.0"
-wasmtime = "^0.34"
+wasmtime = "^0.35"

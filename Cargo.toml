@@ -25,8 +25,8 @@ clap = { version = "^3.0", features = ["cargo"] }
 lazy_static = "^1.4"
 tokio = { version = "^1.14", features = ["macros"] }
 async-std = { version = "^1.0", features = ["attributes", "unstable"] }
-wasmtime = "^0.34"
-wasmtime-wasi = "^0.34"
+wasmtime = "^0.35"
+wasmtime-wasi = "^0.35"
 wasmparser = "^0.81"
 wasm-encoder = "^0.8"
 env_logger = "^0.9"

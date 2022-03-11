@@ -12,5 +12,5 @@ anyhow = "^1.0"
 async-std = { version = "^1.0", features = ["attributes", "unstable"] }
 log = "^0.4"
 tokio = { version = "^1.14", features = ["macros"] }
-wasmtime = "^0.34"
+wasmtime = "^0.35"
 serde = "^1.0"
