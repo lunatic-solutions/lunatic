@@ -1,8 +1,8 @@
 use anyhow::Result;
 use hash_map_id::HashMapId;
-use lunatic_common_api::{get_memory, link_if_match, IntoTrap};
-use wasmtime::{Caller, Linker, ValType};
-use wasmtime::{FuncType, Trap};
+use lunatic_common_api::{get_memory, IntoTrap};
+use wasmtime::Trap;
+use wasmtime::{Caller, Linker};
 
 pub type ErrorResource = HashMapId<anyhow::Error>;
 
@@ -12,34 +12,10 @@ pub trait ErrorCtx {
 }
 
 // Register the error APIs to the linker
-pub fn register<T: ErrorCtx + 'static>(
-    linker: &mut Linker<T>,
-    namespace_filter: &[String],
-) -> Result<()> {
-    link_if_match(
-        linker,
-        "lunatic::error",
-        "string_size",
-        FuncType::new([ValType::I64], [ValType::I32]),
-        string_size::<T>,
-        namespace_filter,
-    )?;
-    link_if_match(
-        linker,
-        "lunatic::error",
-        "to_string",
-        FuncType::new([ValType::I64, ValType::I32], []),
-        to_string::<T>,
-        namespace_filter,
-    )?;
-    link_if_match(
-        linker,
-        "lunatic::error",
-        "drop",
-        FuncType::new([ValType::I64], []),
-        drop::<T>,
-        namespace_filter,
-    )?;
+pub fn register<T: ErrorCtx + 'static>(linker: &mut Linker<T>) -> Result<()> {
+    linker.func_wrap("lunatic::error", "string_size", string_size::<T>)?;
+    linker.func_wrap("lunatic::error", "to_string", to_string::<T>)?;
+    linker.func_wrap("lunatic::error", "drop", drop::<T>)?;
     Ok(())
 }
 

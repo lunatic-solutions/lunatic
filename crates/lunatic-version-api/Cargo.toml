@@ -9,4 +9,3 @@ description = "Lunatic host functions for getting Lunatic host version"
 [dependencies]
 anyhow = "^1.0"
 wasmtime = "^0.34"
-lunatic-common-api = { version = "0.1", path = "../lunatic-common-api" }

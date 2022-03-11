@@ -29,7 +29,7 @@ impl WasmtimeRuntime {
         let module = wasmtime::Module::new(&self.engine, data.as_slice())?;
         let mut linker = wasmtime::Linker::new(&self.engine);
         // Register host functions to linker.
-        <T as ProcessState>::register(&mut linker, &["REMOVE".to_string()])?;
+        <T as ProcessState>::register(&mut linker)?;
         // The `default_state` and `store` are just used for resolving host functions that are not
         // owned by any particular `Store`. The "real" instance state and store are created inside
         // the `instantiate` function.

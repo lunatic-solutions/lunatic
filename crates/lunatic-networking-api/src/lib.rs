@@ -13,14 +13,10 @@ use async_std::net::{TcpListener, TcpStream, UdpSocket};
 use dns::DnsIterator;
 use hash_map_id::HashMapId;
 use lunatic_error_api::ErrorCtx;
-use wasmtime::{Caller, FuncType, Linker, ValType};
+use wasmtime::{Caller, Linker};
 use wasmtime::{Memory, Trap};
 
-use lunatic_common_api::{
-    get_memory, link_async10_if_match, link_async2_if_match, link_async3_if_match,
-    link_async4_if_match, link_async5_if_match, link_async6_if_match, link_async7_if_match,
-    link_async8_if_match, link_if_match, IntoTrap,
-};
+use lunatic_common_api::{get_memory, IntoTrap};
 
 pub type TcpListenerResources = HashMapId<TcpListener>;
 pub type TcpStreamResources = HashMapId<TcpStream>;
@@ -41,332 +37,82 @@ pub trait NetworkingCtx {
 // Register the error APIs to the linker
 pub fn register<T: NetworkingCtx + ErrorCtx + Send + 'static>(
     linker: &mut Linker<T>,
-    namespace_filter: &[String],
 ) -> Result<()> {
-    link_async4_if_match(
-        linker,
-        "lunatic::networking",
-        "resolve",
-        FuncType::new(
-            [ValType::I32, ValType::I32, ValType::I32, ValType::I32],
-            [ValType::I32],
-        ),
-        resolve::<T>,
-        namespace_filter,
-    )?;
-    link_if_match(
-        linker,
+    linker.func_wrap4_async("lunatic::networking", "resolve", resolve::<T>)?;
+    linker.func_wrap(
         "lunatic::networking",
         "drop_dns_iterator",
-        FuncType::new([ValType::I64], []),
         drop_dns_iterator::<T>,
-        namespace_filter,
     )?;
-    link_if_match(
-        linker,
-        "lunatic::networking",
-        "resolve_next",
-        FuncType::new(
-            [
-                ValType::I64,
-                ValType::I32,
-                ValType::I32,
-                ValType::I32,
-                ValType::I32,
-                ValType::I32,
-            ],
-            [ValType::I32],
-        ),
-        resolve_next::<T>,
-        namespace_filter,
-    )?;
-    link_async6_if_match(
-        linker,
-        "lunatic::networking",
-        "tcp_bind",
-        FuncType::new(
-            [
-                ValType::I32,
-                ValType::I32,
-                ValType::I32,
-                ValType::I32,
-                ValType::I32,
-                ValType::I32,
-            ],
-            [ValType::I32],
-        ),
-        tcp_bind::<T>,
-        namespace_filter,
-    )?;
-    link_if_match(
-        linker,
+    linker.func_wrap("lunatic::networking", "resolve_next", resolve_next::<T>)?;
+    linker.func_wrap6_async("lunatic::networking", "tcp_bind", tcp_bind::<T>)?;
+    linker.func_wrap(
         "lunatic::networking",
         "drop_tcp_listener",
-        FuncType::new([ValType::I64], []),
         drop_tcp_listener::<T>,
-        namespace_filter,
     )?;
-    link_if_match(
-        linker,
-        "lunatic::networking",
-        "tcp_local_addr",
-        FuncType::new([ValType::I64, ValType::I32], [ValType::I32]),
-        tcp_local_addr::<T>,
-        namespace_filter,
-    )?;
-    link_if_match(
-        linker,
-        "lunatic::networking",
-        "udp_local_addr",
-        FuncType::new([ValType::I64, ValType::I32], [ValType::I32]),
-        udp_local_addr::<T>,
-        namespace_filter,
-    )?;
-    link_async3_if_match(
-        linker,
-        "lunatic::networking",
-        "tcp_accept",
-        FuncType::new([ValType::I64, ValType::I32, ValType::I32], [ValType::I32]),
-        tcp_accept::<T>,
-        namespace_filter,
-    )?;
-    link_async7_if_match(
-        linker,
-        "lunatic::networking",
-        "tcp_connect",
-        FuncType::new(
-            [
-                ValType::I32,
-                ValType::I32,
-                ValType::I32,
-                ValType::I32,
-                ValType::I32,
-                ValType::I32,
-                ValType::I32,
-            ],
-            [ValType::I32],
-        ),
-        tcp_connect::<T>,
-        namespace_filter,
-    )?;
-    link_if_match(
-        linker,
+    linker.func_wrap("lunatic::networking", "tcp_local_addr", tcp_local_addr::<T>)?;
+    linker.func_wrap("lunatic::networking", "udp_local_addr", udp_local_addr::<T>)?;
+    linker.func_wrap3_async("lunatic::networking", "tcp_accept", tcp_accept::<T>)?;
+    linker.func_wrap7_async("lunatic::networking", "tcp_connect", tcp_connect::<T>)?;
+    linker.func_wrap(
         "lunatic::networking",
         "drop_tcp_stream",
-        FuncType::new([ValType::I64], []),
         drop_tcp_stream::<T>,
-        namespace_filter,
     )?;
-    link_if_match(
-        linker,
+    linker.func_wrap(
         "lunatic::networking",
         "clone_tcp_stream",
-        FuncType::new([ValType::I64], [ValType::I64]),
         clone_tcp_stream::<T>,
-        namespace_filter,
     )?;
-    link_async5_if_match(
-        linker,
+    linker.func_wrap5_async(
         "lunatic::networking",
         "tcp_write_vectored",
-        FuncType::new(
-            [
-                ValType::I64,
-                ValType::I32,
-                ValType::I32,
-                ValType::I32,
-                ValType::I32,
-            ],
-            [ValType::I32],
-        ),
         tcp_write_vectored::<T>,
-        namespace_filter,
     )?;
-    link_async5_if_match(
-        linker,
-        "lunatic::networking",
-        "tcp_read",
-        FuncType::new(
-            [
-                ValType::I64,
-                ValType::I32,
-                ValType::I32,
-                ValType::I32,
-                ValType::I32,
-            ],
-            [ValType::I32],
-        ),
-        tcp_read::<T>,
-        namespace_filter,
-    )?;
-    link_async2_if_match(
-        linker,
-        "lunatic::networking",
-        "tcp_flush",
-        FuncType::new([ValType::I64, ValType::I32], [ValType::I32]),
-        tcp_flush::<T>,
-        namespace_filter,
-    )?;
-    link_async6_if_match(
-        linker,
-        "lunatic::networking",
-        "udp_bind",
-        FuncType::new(
-            [
-                ValType::I32,
-                ValType::I32,
-                ValType::I32,
-                ValType::I32,
-                ValType::I32,
-                ValType::I32,
-            ],
-            [ValType::I32],
-        ),
-        udp_bind::<T>,
-        namespace_filter,
-    )?;
-    link_if_match(
-        linker,
+    linker.func_wrap5_async("lunatic::networking", "tcp_read", tcp_read::<T>)?;
+    linker.func_wrap2_async("lunatic::networking", "tcp_flush", tcp_flush::<T>)?;
+    linker.func_wrap6_async("lunatic::networking", "udp_bind", udp_bind::<T>)?;
+    linker.func_wrap(
         "lunatic::networking",
         "drop_udp_socket",
-        FuncType::new([ValType::I64], []),
         drop_udp_socket::<T>,
-        namespace_filter,
     )?;
-    link_async5_if_match(
-        linker,
-        "lunatic::networking",
-        "udp_receive",
-        FuncType::new(
-            [
-                ValType::I64,
-                ValType::I32,
-                ValType::I32,
-                ValType::I32,
-                ValType::I32,
-            ],
-            [ValType::I32],
-        ),
-        udp_receive::<T>,
-        namespace_filter,
-    )?;
-    link_async6_if_match(
-        linker,
+    linker.func_wrap5_async("lunatic::networking", "udp_receive", udp_receive::<T>)?;
+    linker.func_wrap6_async(
         "lunatic::networking",
         "udp_receive_from",
-        FuncType::new(
-            [
-                ValType::I64,
-                ValType::I32,
-                ValType::I32,
-                ValType::I32,
-                ValType::I32,
-                ValType::I32,
-            ],
-            [ValType::I32],
-        ),
         udp_receive_from::<T>,
-        namespace_filter,
     )?;
-    link_async8_if_match(
-        linker,
-        "lunatic::networking",
-        "udp_connect",
-        FuncType::new(
-            [
-                ValType::I64,
-                ValType::I32,
-                ValType::I32,
-                ValType::I32,
-                ValType::I32,
-                ValType::I32,
-                ValType::I32,
-                ValType::I32,
-            ],
-            [ValType::I32],
-        ),
-        udp_connect::<T>,
-        namespace_filter,
-    )?;
-    link_if_match(
-        linker,
+    linker.func_wrap8_async("lunatic::networking", "udp_connect", udp_connect::<T>)?;
+    linker.func_wrap(
         "lunatic::networking",
         "clone_udp_socket",
-        FuncType::new([ValType::I64], [ValType::I64]),
         clone_udp_socket::<T>,
-        namespace_filter,
     )?;
-    link_if_match(
-        linker,
+    linker.func_wrap(
         "lunatic::networking",
         "set_udp_socket_broadcast",
-        FuncType::new([ValType::I64, ValType::I32], []),
-        set_udp_socket_broadcast,
-        namespace_filter,
+        set_udp_socket_broadcast::<T>,
     )?;
-    link_if_match(
-        linker,
+    linker.func_wrap(
         "lunatic::networking",
         "get_udp_socket_broadcast",
-        FuncType::new([ValType::I64], [ValType::I32]),
         get_udp_socket_broadcast::<T>,
-        namespace_filter,
     )?;
-    link_if_match(
-        linker,
+    linker.func_wrap(
         "lunatic::networking",
         "set_udp_socket_ttl",
-        FuncType::new([ValType::I64, ValType::I32], []),
         set_udp_socket_ttl::<T>,
-        namespace_filter,
     )?;
-    link_if_match(
-        linker,
+    linker.func_wrap(
         "lunatic::networking",
         "get_udp_socket_ttl",
-        FuncType::new([ValType::I64], [ValType::I32]),
         get_udp_socket_ttl::<T>,
-        namespace_filter,
     )?;
-    link_async10_if_match(
-        linker,
-        "lunatic::networking",
-        "udp_send_to",
-        FuncType::new(
-            [
-                ValType::I64,
-                ValType::I32,
-                ValType::I32,
-                ValType::I32,
-                ValType::I32,
-                ValType::I32,
-                ValType::I32,
-                ValType::I32,
-                ValType::I32,
-                ValType::I32,
-            ],
-            [ValType::I32],
-        ),
-        udp_send_to::<T>,
-        namespace_filter,
-    )?;
-    link_async5_if_match(
-        linker,
-        "lunatic::networking",
-        "udp_send",
-        FuncType::new(
-            [
-                ValType::I64,
-                ValType::I32,
-                ValType::I32,
-                ValType::I32,
-                ValType::I32,
-            ],
-            [ValType::I32],
-        ),
-        udp_send::<T>,
-        namespace_filter,
-    )?;
+    linker.func_wrap10_async("lunatic::networking", "udp_send_to", udp_send_to::<T>)?;
+    linker.func_wrap5_async("lunatic::networking", "udp_send", udp_send::<T>)?;
+
     Ok(())
 }
 

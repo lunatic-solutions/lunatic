@@ -6,12 +6,10 @@ use std::{
 };
 
 use anyhow::Result;
-use lunatic_common_api::{
-    get_memory, link_async2_if_match, link_async3_if_match, link_if_match, IntoTrap,
-};
+use lunatic_common_api::{get_memory, IntoTrap};
 use lunatic_networking_api::NetworkingCtx;
 use lunatic_process_api::ProcessCtx;
-use wasmtime::{Caller, FuncType, Linker, Trap, ValType};
+use wasmtime::{Caller, Linker, Trap};
 
 use lunatic_process::{
     message::{DataMessage, Message},
@@ -22,128 +20,27 @@ use lunatic_process::{
 // Register the mailbox APIs to the linker
 pub fn register<T: ProcessState + ProcessCtx<T> + NetworkingCtx + Send + 'static>(
     linker: &mut Linker<T>,
-    namespace_filter: &[String],
 ) -> Result<()> {
-    link_if_match(
-        linker,
-        "lunatic::message",
-        "create_data",
-        FuncType::new([ValType::I64, ValType::I64], []),
-        create_data::<T>,
-        namespace_filter,
-    )?;
-    link_if_match(
-        linker,
-        "lunatic::message",
-        "write_data",
-        FuncType::new([ValType::I32, ValType::I32], [ValType::I32]),
-        write_data::<T>,
-        namespace_filter,
-    )?;
-    link_if_match(
-        linker,
-        "lunatic::message",
-        "read_data",
-        FuncType::new([ValType::I32, ValType::I32], [ValType::I32]),
-        read_data::<T>,
-        namespace_filter,
-    )?;
-    link_if_match(
-        linker,
-        "lunatic::message",
-        "seek_data",
-        FuncType::new([ValType::I64], []),
-        seek_data::<T>,
-        namespace_filter,
-    )?;
-    link_if_match(
-        linker,
-        "lunatic::message",
-        "get_tag",
-        FuncType::new([], [ValType::I64]),
-        get_tag::<T>,
-        namespace_filter,
-    )?;
-    link_if_match(
-        linker,
-        "lunatic::message",
-        "data_size",
-        FuncType::new([], [ValType::I64]),
-        data_size::<T>,
-        namespace_filter,
-    )?;
-    link_if_match(
-        linker,
-        "lunatic::message",
-        "push_process",
-        FuncType::new([ValType::I64], [ValType::I64]),
-        push_process::<T>,
-        namespace_filter,
-    )?;
-    link_if_match(
-        linker,
-        "lunatic::message",
-        "take_process",
-        FuncType::new([ValType::I64], [ValType::I64]),
-        take_process::<T>,
-        namespace_filter,
-    )?;
-    link_if_match(
-        linker,
-        "lunatic::message",
-        "push_tcp_stream",
-        FuncType::new([ValType::I64], [ValType::I64]),
-        push_tcp_stream::<T>,
-        namespace_filter,
-    )?;
-    link_if_match(
-        linker,
-        "lunatic::message",
-        "take_tcp_stream",
-        FuncType::new([ValType::I64], [ValType::I64]),
-        take_tcp_stream::<T>,
-        namespace_filter,
-    )?;
-    link_if_match(
-        linker,
-        "lunatic::message",
-        "send",
-        FuncType::new([ValType::I64], []),
-        send::<T>,
-        namespace_filter,
-    )?;
-    link_async2_if_match(
-        linker,
+    linker.func_wrap("lunatic::message", "create_data", create_data::<T>)?;
+    linker.func_wrap("lunatic::message", "write_data", write_data::<T>)?;
+    linker.func_wrap("lunatic::message", "read_data", read_data::<T>)?;
+    linker.func_wrap("lunatic::message", "seek_data", seek_data::<T>)?;
+    linker.func_wrap("lunatic::message", "get_tag", get_tag::<T>)?;
+    linker.func_wrap("lunatic::message", "data_size", data_size::<T>)?;
+    linker.func_wrap("lunatic::message", "push_process", push_process::<T>)?;
+    linker.func_wrap("lunatic::message", "take_process", take_process::<T>)?;
+    linker.func_wrap("lunatic::message", "push_tcp_stream", push_tcp_stream::<T>)?;
+    linker.func_wrap("lunatic::message", "take_tcp_stream", take_tcp_stream::<T>)?;
+    linker.func_wrap("lunatic::message", "send", send::<T>)?;
+    linker.func_wrap2_async(
         "lunatic::message",
         "send_receive_skip_search",
-        FuncType::new([ValType::I64, ValType::I32], [ValType::I32]),
         send_receive_skip_search::<T>,
-        namespace_filter,
     )?;
-    link_async3_if_match(
-        linker,
-        "lunatic::message",
-        "receive",
-        FuncType::new([ValType::I32, ValType::I32, ValType::I32], [ValType::I32]),
-        receive::<T>,
-        namespace_filter,
-    )?;
-    link_if_match(
-        linker,
-        "lunatic::message",
-        "push_udp_socket",
-        FuncType::new([ValType::I64], [ValType::I64]),
-        push_udp_socket::<T>,
-        namespace_filter,
-    )?;
-    link_if_match(
-        linker,
-        "lunatic::message",
-        "take_udp_socket",
-        FuncType::new([ValType::I64], [ValType::I64]),
-        take_udp_socket::<T>,
-        namespace_filter,
-    )?;
+    linker.func_wrap3_async("lunatic::message", "receive", receive::<T>)?;
+    linker.func_wrap("lunatic::message", "push_udp_socket", push_udp_socket::<T>)?;
+    linker.func_wrap("lunatic::message", "take_udp_socket", take_udp_socket::<T>)?;
+
     Ok(())
 }
 

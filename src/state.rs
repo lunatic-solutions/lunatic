@@ -79,12 +79,12 @@ impl ProcessState for DefaultProcessState {
         Ok(state)
     }
 
-    fn register(linker: &mut Linker<Self>, namespace_filter: &[String]) -> Result<()> {
-        lunatic_error_api::register(linker, namespace_filter)?;
+    fn register(linker: &mut Linker<Self>) -> Result<()> {
+        lunatic_error_api::register(linker)?;
         lunatic_process_api::register(linker)?;
-        lunatic_messaging_api::register(linker, namespace_filter)?;
-        lunatic_networking_api::register(linker, namespace_filter)?;
-        lunatic_version_api::register(linker, namespace_filter)?;
+        lunatic_messaging_api::register(linker)?;
+        lunatic_networking_api::register(linker)?;
+        lunatic_version_api::register(linker)?;
         lunatic_wasi_api::register(linker)?;
         Ok(())
     }
