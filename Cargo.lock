@@ -1160,7 +1160,9 @@ dependencies = [
  "async-std",
  "hash-map-id",
  "lunatic-common-api",
+ "lunatic-networking-api",
  "lunatic-process",
+ "lunatic-process-api",
  "tokio",
  "wasmtime",
 ]
@@ -1186,7 +1188,22 @@ dependencies = [
  "anyhow",
  "async-std",
  "log",
+ "serde",
  "tokio",
+ "uuid",
+ "wasmtime",
+]
+
+[[package]]
+name = "lunatic-process-api"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-std",
+ "hash-map-id",
+ "lunatic-common-api",
+ "lunatic-error-api",
+ "lunatic-process",
  "uuid",
  "wasmtime",
 ]
@@ -1210,6 +1227,7 @@ dependencies = [
  "lunatic-messaging-api",
  "lunatic-networking-api",
  "lunatic-process",
+ "lunatic-process-api",
  "lunatic-version-api",
  "lunatic-wasi-api",
  "pretty_assertions",

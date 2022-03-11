@@ -1,10 +1,11 @@
-use std::{env, fs, path::Path};
+use std::{env, fs, path::Path, sync::Arc};
 
 use async_std::channel;
 use clap::{crate_version, Arg, Command};
 
 use anyhow::{Context, Result};
-use lunatic_runtime::{node::Node, EnvConfig, Environment, NODE};
+use lunatic_process::runtimes;
+use lunatic_runtime::{spawn_wasm, state::DefaultProcessState, DefaultProcessConfig};
 
 #[async_std::main]
 async fn main() -> Result<()> {
@@ -71,7 +72,7 @@ async fn main() -> Result<()> {
         )
         .get_matches();
 
-    let mut config = EnvConfig::default();
+    let mut config = DefaultProcessConfig::default();
 
     // Set correct command line arguments for the guest
     let wasi_args = args
@@ -89,16 +90,19 @@ async fn main() -> Result<()> {
             config.preopen_dir(dir);
         }
     }
-    let env = Environment::local(config)?;
 
     // Setup a node if flag is set
-    if let Some(node_address) = args.value_of("node") {
-        let name = args.value_of("node_name").unwrap().to_string();
-        let peer = args.value_of("peer");
-        let node = Node::new(name, node_address, peer).await?;
+    // if let Some(node_address) = args.value_of("node") {
+    //     let name = args.value_of("node_name").unwrap().to_string();
+    //     let peer = args.value_of("peer");
+    //     let node = Node::new(name, node_address, peer).await?;
 
-        *NODE.write().await = Some(node);
-    }
+    //     *NODE.write().await = Some(node);
+    // }
+
+    // Create wasmtime runtime
+    let wasmtime_config = runtimes::wasmtime::default_config();
+    let mut runtime = runtimes::wasmtime::WasmtimeRuntime::new(&wasmtime_config)?;
 
     if args.is_present("no_entry") {
         // Block forever
@@ -109,14 +113,22 @@ async fn main() -> Result<()> {
         let path = args.value_of("wasm").unwrap();
         let path = Path::new(path);
         let module = fs::read(path)?;
-        let module = env.create_module(module).await?;
-        let (task, _) = module
-            .spawn("_start", Vec::new(), None)
-            .await
-            .context(format!(
-                "Failed to spawn process from {}::_start()",
-                path.to_string_lossy()
-            ))?;
+
+        let module_index = runtime.compile_module::<DefaultProcessState>(module)?;
+
+        let (task, _) = spawn_wasm(
+            runtime,
+            module_index,
+            Arc::new(config),
+            "_start",
+            Vec::new(),
+            None,
+        )
+        .await
+        .context(format!(
+            "Failed to spawn process from {}::_start()",
+            path.to_string_lossy()
+        ))?;
         // Wait on the main process to finish
         task.await;
     }

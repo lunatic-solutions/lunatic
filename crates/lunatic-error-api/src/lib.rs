@@ -43,12 +43,12 @@ pub fn register<T: ErrorCtx + 'static>(
     Ok(())
 }
 
-//% lunatic::error::string_size(error: u64) -> u32
-//%
-//% Returns the size of the string representation of the error.
-//%
-//% Traps:
-//% * If the error ID doesn't exist.
+// lunatic::error::string_size(error: u64) -> u32
+//
+// Returns the size of the string representation of the error.
+//
+// Traps:
+// * If the error ID doesn't exist.
 fn string_size<T: ErrorCtx>(caller: Caller<T>, error_id: u64) -> Result<u32, Trap> {
     let error = caller
         .data()
@@ -58,14 +58,14 @@ fn string_size<T: ErrorCtx>(caller: Caller<T>, error_id: u64) -> Result<u32, Tra
     Ok(error.to_string().len() as u32)
 }
 
-//% lunatic::error::to_string(error_id: u64, error_str_ptr: u32)
-//%
-//% Write the string representation of the error to the guest memory.
-//% `lunatic::error::string_size` can be called to get the string size.
-//%
-//% Traps:
-//% * If the error ID doesn't exist.
-//% * If **error_str_ptr + length of the error string** is outside the memory.
+// lunatic::error::to_string(error_id: u64, error_str_ptr: u32)
+//
+// Write the string representation of the error to the guest memory.
+// `lunatic::error::string_size` can be called to get the string size.
+//
+// Traps:
+// * If the error ID doesn't exist.
+// * If **error_str_ptr + length of the error string** is outside the memory.
 fn to_string<T: ErrorCtx>(
     mut caller: Caller<T>,
     error_id: u64,
@@ -84,12 +84,12 @@ fn to_string<T: ErrorCtx>(
     Ok(())
 }
 
-//% lunatic::error::drop(error_id: u64)
-//%
-//% Drops the error resource.
-//%
-//% Traps:
-//% * If the error ID doesn't exist.
+// lunatic::error::drop(error_id: u64)
+//
+// Drops the error resource.
+//
+// Traps:
+// * If the error ID doesn't exist.
 fn drop<T: ErrorCtx>(mut caller: Caller<T>, error_id: u64) -> Result<(), Trap> {
     caller
         .data_mut()

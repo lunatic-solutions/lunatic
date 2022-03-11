@@ -1,10 +1,11 @@
 use std::fmt::Debug;
 
+use lunatic_process::config::ProcessConfig;
 use serde::{Deserialize, Serialize};
 
-/// Configuration structure for environments.
+///
 #[derive(Clone, Serialize, Deserialize)]
-pub struct EnvConfig {
+pub struct DefaultProcessConfig {
     // Maximum amount of memory that can be used by processes in bytes
     max_memory: usize,
     // Maximum amount of compute expressed in units of 100k instructions.
@@ -15,7 +16,7 @@ pub struct EnvConfig {
     wasi_envs: Option<Vec<(String, String)>>,
 }
 
-impl Debug for EnvConfig {
+impl Debug for DefaultProcessConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
         f.debug_struct("EnvConfig")
             .field("max_memory", &self.max_memory)
@@ -28,27 +29,25 @@ impl Debug for EnvConfig {
     }
 }
 
-impl EnvConfig {
-    /// Create a new environment configuration.
-    pub fn new(max_memory: usize, max_fuel: Option<u64>) -> Self {
-        Self {
-            max_memory,
-            max_fuel,
-            allowed_namespaces: Vec::new(),
-            preopened_dirs: Vec::new(),
-            wasi_args: None,
-            wasi_envs: None,
-        }
+impl ProcessConfig for DefaultProcessConfig {
+    fn set_max_fuel(&mut self, max_fuel: Option<u64>) {
+        self.max_fuel = max_fuel;
     }
 
-    pub fn max_memory(&self) -> usize {
-        self.max_memory
-    }
-
-    pub fn max_fuel(&self) -> Option<u64> {
+    fn get_max_fuel(&self) -> Option<u64> {
         self.max_fuel
     }
 
+    fn set_max_memory(&mut self, max_memory: usize) {
+        self.max_memory = max_memory
+    }
+
+    fn get_max_memory(&self) -> usize {
+        self.max_memory
+    }
+}
+
+impl DefaultProcessConfig {
     pub fn allowed_namespace(&self) -> &[String] {
         &self.allowed_namespaces
     }
@@ -84,10 +83,10 @@ impl EnvConfig {
     }
 }
 
-impl Default for EnvConfig {
+impl Default for DefaultProcessConfig {
     fn default() -> Self {
         Self {
-            max_memory: 0xA00000000, // = 4 GB in bytes
+            max_memory: u32::MAX as usize, // = 4 GB
             max_fuel: None,
             allowed_namespaces: vec![
                 String::from("lunatic::"),

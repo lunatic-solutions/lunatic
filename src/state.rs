@@ -2,39 +2,34 @@ use std::fmt::Debug;
 use std::sync::Arc;
 
 use anyhow::Result;
-use async_std::channel::Sender;
+use async_std::channel::{unbounded, Sender};
 use async_std::net::{TcpListener, TcpStream, UdpSocket};
 use hash_map_id::HashMapId;
 use lunatic_error_api::{ErrorCtx, ErrorResource};
-use lunatic_messaging_api::ProcessCtx;
 use lunatic_networking_api::dns::DnsIterator;
 use lunatic_networking_api::NetworkingCtx;
+use lunatic_process::config::ProcessConfig;
+use lunatic_process::runtimes::wasmtime::{WasmtimeCompiledModule, WasmtimeRuntime};
+use lunatic_process::state::ProcessState;
 use lunatic_process::{mailbox::MessageMailbox, message::Message, Process, Signal};
+use lunatic_process_api::ProcessCtx;
 use lunatic_wasi_api::{build_wasi, LunaticWasiCtx};
 use uuid::Uuid;
 use wasmtime::{Linker, ResourceLimiter};
 use wasmtime_wasi::WasiCtx;
 
-use crate::api::process;
-use crate::module::Module;
-use crate::{EnvConfig, Environment};
-
-/// The internal state of a process.
-///
-/// The `ProcessState` has two main roles:
-/// - It holds onto all vm resources (file descriptors, tcp streams, channels, ...)
-/// - Registers all host functions working on those resources to the `Linker`
-pub trait ProcessState: Sized {
-    /// Register all host functions to the linker.
-    fn register(linker: &mut Linker<Self>, namespace_filter: &[String]) -> Result<()>;
-}
+use crate::DefaultProcessConfig;
 
 // The default process state
-pub(crate) struct DefaultProcessState {
+pub struct DefaultProcessState {
     // Process id
     pub(crate) id: Uuid,
+    // The WebAssembly runtime
+    runtime: Option<WasmtimeRuntime>,
     // The module that this process was spawned from
-    pub(crate) module: Module,
+    pub(crate) module: Option<WasmtimeCompiledModule<Self>>,
+    // The process configuration
+    pub(crate) config: Arc<DefaultProcessConfig>,
     // A space that can be used to temporarily store messages when sending or receiving them.
     // Messages can contain resources that need to be added across multiple host. Likewise,
     // receiving messages is done in two steps, first the message size is returned to allow the
@@ -55,28 +50,21 @@ pub(crate) struct DefaultProcessState {
 }
 
 impl ProcessState for DefaultProcessState {
-    fn register(linker: &mut Linker<Self>, namespace_filter: &[String]) -> Result<()> {
-        lunatic_error_api::register(linker, namespace_filter)?;
-        process::register(linker, namespace_filter)?;
-        lunatic_messaging_api::register(linker, namespace_filter)?;
-        lunatic_networking_api::register(linker, namespace_filter)?;
-        lunatic_version_api::register(linker, namespace_filter)?;
-        lunatic_wasi_api::register(linker, namespace_filter)?;
-        Ok(())
-    }
-}
+    type Config = DefaultProcessConfig;
 
-impl DefaultProcessState {
-    pub fn new(
+    fn new(
         id: Uuid,
-        module: Module,
+        runtime: WasmtimeRuntime,
+        module: WasmtimeCompiledModule<Self>,
+        config: Arc<DefaultProcessConfig>,
         signal_mailbox: Sender<Signal>,
         message_mailbox: MessageMailbox,
-        config: &EnvConfig,
     ) -> Result<Self> {
         let state = Self {
             id,
-            module,
+            runtime: Some(runtime),
+            module: Some(module),
+            config: config.clone(),
             message: None,
             signal_mailbox,
             message_mailbox,
@@ -89,6 +77,69 @@ impl DefaultProcessState {
             initialized: false,
         };
         Ok(state)
+    }
+
+    fn register(linker: &mut Linker<Self>, namespace_filter: &[String]) -> Result<()> {
+        lunatic_error_api::register(linker, namespace_filter)?;
+        lunatic_process_api::register(linker)?;
+        lunatic_messaging_api::register(linker, namespace_filter)?;
+        lunatic_networking_api::register(linker, namespace_filter)?;
+        lunatic_version_api::register(linker, namespace_filter)?;
+        lunatic_wasi_api::register(linker)?;
+        Ok(())
+    }
+
+    fn initialize(&mut self) {
+        self.initialized = true;
+    }
+
+    fn is_initialized(&self) -> bool {
+        self.initialized
+    }
+
+    fn runtime(&self) -> &WasmtimeRuntime {
+        &self.runtime.as_ref().unwrap()
+    }
+
+    fn config(&self) -> &Arc<DefaultProcessConfig> {
+        &self.config
+    }
+
+    fn module(&self) -> &WasmtimeCompiledModule<Self> {
+        &self.module.as_ref().unwrap()
+    }
+
+    fn id(&self) -> Uuid {
+        self.id
+    }
+
+    fn signal_mailbox(&self) -> &Sender<Signal> {
+        &self.signal_mailbox
+    }
+}
+
+impl Default for DefaultProcessState {
+    fn default() -> Self {
+        let config = DefaultProcessConfig::default();
+        let (signal_mailbox, _) = unbounded();
+        let message_mailbox = MessageMailbox::default();
+        Self {
+            id: Uuid::new_v4(),
+            runtime: None,
+            module: None,
+            config: Arc::new(config.clone()),
+            message: None,
+            signal_mailbox,
+            message_mailbox,
+            resources: Resources::default(),
+            wasi: build_wasi(
+                config.wasi_args().as_ref(),
+                config.wasi_envs().as_ref(),
+                config.preopened_dirs(),
+            )
+            .unwrap(),
+            initialized: false,
+        }
     }
 }
 
@@ -103,7 +154,7 @@ impl Debug for DefaultProcessState {
 // Limit the maximum memory of the process depending on the environment it was spawned in.
 impl ResourceLimiter for DefaultProcessState {
     fn memory_growing(&mut self, _current: usize, desired: usize, _maximum: Option<usize>) -> bool {
-        desired <= self.module.environment().config().max_memory()
+        desired <= self.config().get_max_memory()
     }
 
     // TODO: What would be a reasonable table limit be?
@@ -137,7 +188,7 @@ impl ErrorCtx for DefaultProcessState {
     }
 }
 
-impl ProcessCtx for DefaultProcessState {
+impl ProcessCtx<DefaultProcessState> for DefaultProcessState {
     fn mailbox(&mut self) -> &mut MessageMailbox {
         &mut self.message_mailbox
     }
@@ -146,16 +197,35 @@ impl ProcessCtx for DefaultProcessState {
         &mut self.message
     }
 
-    fn process_resources_mut(&mut self) -> &mut lunatic_messaging_api::ProcessResource {
+    fn module_resources(&self) -> &lunatic_process_api::ModuleResources<DefaultProcessState> {
+        &self.resources.modules
+    }
+
+    fn module_resources_mut(
+        &mut self,
+    ) -> &mut lunatic_process_api::ModuleResources<DefaultProcessState> {
+        &mut self.resources.modules
+    }
+
+    fn config_resources(
+        &self,
+    ) -> &lunatic_process_api::ConfigResources<<DefaultProcessState as ProcessState>::Config> {
+        &self.resources.configs
+    }
+
+    fn config_resources_mut(
+        &mut self,
+    ) -> &mut lunatic_process_api::ConfigResources<<DefaultProcessState as ProcessState>::Config>
+    {
+        &mut self.resources.configs
+    }
+
+    fn process_resources(&self) -> &lunatic_process_api::ProcessResources {
+        &self.resources.processes
+    }
+
+    fn process_resources_mut(&mut self) -> &mut lunatic_process_api::ProcessResources {
         &mut self.resources.processes
-    }
-
-    fn tcp_resources_mut(&mut self) -> &mut lunatic_messaging_api::TcpResource {
-        &mut self.resources.tcp_streams
-    }
-
-    fn udp_resources_mut(&mut self) -> &mut lunatic_messaging_api::UdpResource {
-        &mut self.resources.udp_sockets
     }
 }
 
@@ -201,9 +271,8 @@ impl LunaticWasiCtx for DefaultProcessState {
 
 #[derive(Default, Debug)]
 pub(crate) struct Resources {
-    pub(crate) configs: HashMapId<EnvConfig>,
-    pub(crate) environments: HashMapId<Environment>,
-    pub(crate) modules: HashMapId<Module>,
+    pub(crate) configs: HashMapId<DefaultProcessConfig>,
+    pub(crate) modules: HashMapId<WasmtimeCompiledModule<DefaultProcessState>>,
     pub(crate) processes: HashMapId<Arc<dyn Process>>,
     pub(crate) dns_iterators: HashMapId<DnsIterator>,
     pub(crate) tcp_listeners: HashMapId<TcpListener>,
@@ -215,20 +284,27 @@ pub(crate) struct Resources {
 mod tests {
     #[async_std::test]
     async fn import_filter_signature_matches() {
-        use crate::{EnvConfig, Environment};
+        use crate::state::DefaultProcessState;
+        use crate::DefaultProcessConfig;
+        use lunatic_process::runtimes::wasmtime::WasmtimeRuntime;
+        use lunatic_process::wasm::spawn_wasm;
+        use std::sync::Arc;
 
         // The default configuration includes both, the "lunatic::*" and "wasi_*" namespaces.
-        let config = EnvConfig::default();
-        let environment = Environment::local(config).unwrap();
-        let raw_module = wat::parse_file("./wat/all_imports.wat").unwrap();
-        let module = environment.create_module(raw_module).await.unwrap();
-        module.spawn("hello", Vec::new(), None).await.unwrap();
+        let config = DefaultProcessConfig::default();
 
-        // This configuration should still compile, even all host calls will trap.
-        let config = EnvConfig::new(0, None);
-        let environment = Environment::local(config).unwrap();
+        // Create wasmtime runtime
+        let mut wasmtime_config = wasmtime::Config::new();
+        wasmtime_config.async_support(true).consume_fuel(true);
+        let mut runtime = WasmtimeRuntime::new(&wasmtime_config).unwrap();
+
         let raw_module = wat::parse_file("./wat/all_imports.wat").unwrap();
-        let module = environment.create_module(raw_module).await.unwrap();
-        module.spawn("hello", Vec::new(), None).await.unwrap();
+        let module = runtime
+            .compile_module::<DefaultProcessState>(raw_module)
+            .unwrap();
+
+        spawn_wasm(runtime, module, Arc::new(config), "hello", Vec::new(), None)
+            .await
+            .unwrap();
     }
 }

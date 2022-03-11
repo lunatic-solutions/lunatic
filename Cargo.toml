@@ -38,6 +38,7 @@ dashmap = "^4.0"
 hash-map-id = { version = "^0.1", path = "crates/hash-map-id" }
 lunatic-process = { version = "^0.1", path = "crates/lunatic-process" }
 lunatic-common-api = { version = "^0.1", path = "crates/lunatic-common-api" }
+lunatic-process-api = { version = "^0.1", path = "crates/lunatic-process-api" }
 lunatic-error-api = { version = "^0.1", path = "crates/lunatic-error-api" }
 lunatic-messaging-api = { version = "^0.1", path = "crates/lunatic-messaging-api" }
 lunatic-networking-api = { version = "^0.1", path = "crates/lunatic-networking-api" }
@@ -60,8 +61,9 @@ members = [
     "crates/hash-map-id",
     "crates/lunatic-process",
     "crates/lunatic-common-api",
+    "crates/lunatic-process-api",
     "crates/lunatic-error-api",
     "crates/lunatic-messaging-api",
     "crates/lunatic-version-api",
-    "crates/lunatic-wasi-api"
+    "crates/lunatic-wasi-api",
 ]

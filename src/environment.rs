@@ -1,16 +1,15 @@
 use anyhow::{anyhow, Result};
 use wasmtime::{Config, Engine, InstanceAllocationStrategy, Linker, OptLevel, ProfilingStrategy};
 
-use super::config::EnvConfig;
+use super::config::ProcessConfig;
 use crate::{
-    module::Module,
+    module::CompiledModule,
     node::Peer,
     registry::EnvRegistry,
     state::{DefaultProcessState, ProcessState},
 };
 
-// One unit of fuel represents around 100k instructions.
-pub const UNIT_OF_COMPUTE_IN_INSTRUCTIONS: u64 = 100_000;
+
 
 /// The environment represents a set of characteristics that processes spawned from it will have.
 ///
@@ -25,15 +24,15 @@ pub enum Environment {
 }
 
 impl Environment {
-    pub fn local(config: EnvConfig) -> Result<Self> {
+    pub fn local(config: ProcessConfig) -> Result<Self> {
         Ok(Self::Local(EnvironmentLocal::new(config)?))
     }
-    pub async fn remote(node_name: &str, config: EnvConfig) -> Result<Self> {
+    pub async fn remote(node_name: &str, config: ProcessConfig) -> Result<Self> {
         Ok(Self::Remote(
             EnvironmentRemote::new(node_name, config).await?,
         ))
     }
-    pub async fn create_module(&self, data: Vec<u8>) -> Result<Module> {
+    pub async fn create_module(&self, data: Vec<u8>) -> Result<CompiledModule> {
         match self {
             Environment::Local(local) => local.create_module(data).await,
             Environment::Remote(remote) => remote.create_module(remote.id, data).await,
@@ -55,7 +54,7 @@ pub struct EnvironmentRemote {
 }
 
 impl EnvironmentRemote {
-    pub async fn new(node_name: &str, config: EnvConfig) -> Result<Self> {
+    pub async fn new(node_name: &str, config: ProcessConfig) -> Result<Self> {
         let node = crate::NODE.read().await;
         if node.is_none() {
             return Err(anyhow!(
@@ -79,8 +78,8 @@ impl EnvironmentRemote {
         })
     }
 
-    pub async fn create_module(&self, env_id: u64, data: Vec<u8>) -> Result<Module> {
-        Ok(Module::remote(env_id, self.peer.clone(), data).await?)
+    pub async fn create_module(&self, env_id: u64, data: Vec<u8>) -> Result<CompiledModule> {
+        Ok(CompiledModule::remote(env_id, self.peer.clone(), data).await?)
     }
 
     pub fn registry(&self) -> &EnvRegistry {
@@ -92,13 +91,13 @@ impl EnvironmentRemote {
 pub struct EnvironmentLocal {
     engine: Engine,
     linker: Linker<DefaultProcessState>,
-    config: EnvConfig,
+    config: ProcessConfig,
     registry: EnvRegistry,
 }
 
 impl EnvironmentLocal {
     /// Create a new environment from a configuration.
-    pub fn new(config: EnvConfig) -> Result<Box<Self>> {
+    pub fn new(config: ProcessConfig) -> Result<Box<Self>> {
         let mut wasmtime_config = Config::new();
         wasmtime_config
             .async_support(true)
@@ -142,16 +141,10 @@ impl EnvironmentLocal {
     /// All plugins in this environment will get instantiated and their `lunatic_create_module_hook`
     /// function will be called. Plugins can use host functions to modify the module before it's JIT
     /// compiled by `Wasmtime`.
-    pub async fn create_module(&self, data: Vec<u8>) -> Result<Module> {
+    pub async fn create_module(&self, data: Vec<u8>) -> Result<CompiledModule> {
         let env = self.clone();
         // The compilation of a module is a CPU intensive tasks and can take some time.
-        let module = async_std::task::spawn_blocking(move || {
-            match wasmtime::Module::new(env.engine(), data.as_slice()) {
-                Ok(wasmtime_module) => Ok(Module::local(data, env, wasmtime_module)),
-                Err(err) => Err(err),
-            }
-        })
-        .await?;
+        let module = async_std::task::spawn_blocking(move || {}).await;
         Ok(module)
     }
 
@@ -159,7 +152,7 @@ impl EnvironmentLocal {
         &self.engine
     }
 
-    pub fn config(&self) -> &EnvConfig {
+    pub fn config(&self) -> &ProcessConfig {
         &self.config
     }
 

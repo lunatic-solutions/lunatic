@@ -22,7 +22,7 @@ use lunatic_process::{Process, Signal};
 use serde::{Deserialize, Serialize};
 use wasmtime::Val;
 
-use crate::{async_map, module::Module, EnvConfig, Environment};
+use crate::{async_map, module::CompiledModule, Environment, ProcessConfig};
 
 /// A node holds information about other peers in a distributed system and local resources that can
 /// be accessed by remote peers.
@@ -396,7 +396,7 @@ impl Peer {
         self.inner.response.insert(tag, response);
     }
 
-    pub async fn create_environment(&self, config: EnvConfig) -> Result<u64> {
+    pub async fn create_environment(&self, config: ProcessConfig) -> Result<u64> {
         let response = self.request(Message::CreateEnvironment(config)).await?;
         match response {
             Response::Resource(id) => Ok(id),
@@ -497,7 +497,7 @@ enum Message {
     // Receive peers from a node
     Peers(Vec<(String, SocketAddr)>),
     // Create environment on remote node.
-    CreateEnvironment(EnvConfig),
+    CreateEnvironment(ProcessConfig),
     // Send module to remote node's environment.
     CreateModule(u64, Vec<u8>),
     // Spawn a process on a remote node.
@@ -696,7 +696,7 @@ enum Response {
 
 pub(crate) enum Resource {
     Environment(Environment),
-    Module(Module),
+    Module(CompiledModule),
     Process(Arc<dyn Process>),
 }
 
@@ -706,7 +706,7 @@ mod tests {
 
     use lunatic_process::{Process, Signal};
 
-    use crate::{node::Resource, EnvConfig};
+    use crate::{node::Resource, ProcessConfig};
 
     use super::{Link, Node};
 
@@ -780,7 +780,7 @@ mod tests {
         // Create environment on node2
         let mut peers1 = node1.peers().await;
         let peer2 = peers1.get_mut("node2").unwrap();
-        let config = EnvConfig::default();
+        let config = ProcessConfig::default();
         let id = peer2.create_environment(config).await.unwrap();
 
         // Check if config exists on node2
@@ -803,7 +803,7 @@ mod tests {
         // Create environment on node2
         let mut peers1 = node1.peers().await;
         let peer2 = peers1.get_mut("node2").unwrap();
-        let config = EnvConfig::default();
+        let config = ProcessConfig::default();
         let env_id = peer2.create_environment(config).await.unwrap();
         let raw_module = wat::parse_file("./wat/hello.wat").unwrap();
         let mod_id = peer2.create_module(env_id, raw_module).await.unwrap();
@@ -836,7 +836,7 @@ mod tests {
         // Create environment on node2
         let mut peers1 = node1.peers().await;
         let peer2 = peers1.get_mut("node2").unwrap();
-        let config = EnvConfig::default();
+        let config = ProcessConfig::default();
         let env_id = peer2.create_environment(config).await.unwrap();
         let wasm_wat = r#"(module (func (export "hello") unreachable))"#;
         let wasm = wat::parse_str(wasm_wat).unwrap();
