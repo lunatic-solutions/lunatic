@@ -91,7 +91,7 @@ impl ProcessConfigCtx for DefaultProcessConfig {
     }
 
     fn set_can_spawn_processes(&mut self, can: bool) {
-        self.can_create_configs = can
+        self.can_spawn_processes = can
     }
 }
 

@@ -5,6 +5,7 @@ use clap::{crate_version, Arg, Command};
 
 use anyhow::{Context, Result};
 use lunatic_process::runtimes;
+use lunatic_process_api::ProcessConfigCtx;
 use lunatic_runtime::{spawn_wasm, state::DefaultProcessState, DefaultProcessConfig};
 
 #[async_std::main]
@@ -73,6 +74,9 @@ async fn main() -> Result<()> {
         .get_matches();
 
     let mut config = DefaultProcessConfig::default();
+    // Allow initial process to create configurations and spawn sub-processes
+    config.set_can_create_configs(true);
+    config.set_can_spawn_processes(true);
 
     // Set correct command line arguments for the guest
     let wasi_args = args

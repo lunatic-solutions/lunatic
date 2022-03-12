@@ -350,8 +350,13 @@ fn spawn<T>(
 where
     T: ProcessState + ProcessCtx<T> + ErrorCtx + ResourceLimiter + Send + 'static,
     for<'a> &'a T: Send,
+    T::Config: ProcessConfigCtx,
 {
     Box::new(async move {
+        if caller.data().config().can_spawn_processes() == false {
+            return Err(anyhow!("Process doesn't have permissions to spawn sub-processes").into());
+        }
+
         let state = caller.data();
         if !state.is_initialized() {
             return Err(anyhow!("Cannot spawn process during module initialization").into());
