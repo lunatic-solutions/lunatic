@@ -20,6 +20,13 @@ pub type ConfigResources<T> = HashMapId<T>;
 pub type ProcessResources = HashMapId<Arc<dyn Process>>;
 pub type ModuleResources<T> = HashMapId<WasmtimeCompiledModule<T>>;
 
+pub trait ProcessConfigCtx {
+    fn can_create_configs(&self) -> bool;
+    fn set_can_create_configs(&mut self, can: bool);
+    fn can_spawn_processes(&self) -> bool;
+    fn set_can_spawn_processes(&mut self, can: bool);
+}
+
 pub trait ProcessCtx<S: ProcessState> {
     fn mailbox(&mut self) -> &mut MessageMailbox;
     fn message_scratch_area(&mut self) -> &mut Option<Message>;
@@ -36,6 +43,7 @@ pub fn register<T>(linker: &mut Linker<T>) -> Result<()>
 where
     T: ProcessState + ProcessCtx<T> + ErrorCtx + Send + ResourceLimiter + 'static,
     for<'a> &'a T: Send,
+    T::Config: ProcessConfigCtx,
 {
     linker.func_wrap("lunatic::process", "create_config", create_config)?;
     linker.func_wrap("lunatic::process", "drop_config", drop_config)?;
@@ -59,6 +67,28 @@ where
         "config_get_max_fuel",
         config_get_max_fuel,
     )?;
+
+    linker.func_wrap(
+        "lunatic::process",
+        "config_can_create_configs",
+        config_can_create_configs,
+    )?;
+    linker.func_wrap(
+        "lunatic::process",
+        "config_set_can_create_configs",
+        config_set_can_create_configs,
+    )?;
+    linker.func_wrap(
+        "lunatic::process",
+        "config_can_spawn_processes",
+        config_can_spawn_processes,
+    )?;
+    linker.func_wrap(
+        "lunatic::process",
+        "config_set_can_spawn_processes",
+        config_set_can_spawn_processes,
+    )?;
+
     linker.func_wrap8_async("lunatic::process", "spawn", spawn)?;
 
     linker.func_wrap("lunatic::process", "drop_process", drop_process)?;
@@ -79,10 +109,18 @@ where
 // There is no memory or fuel limit set on the newly created configuration.
 //
 // Returns:
-// * ID of newly created configuration.
-fn create_config<T: ProcessState + ProcessCtx<T>>(mut caller: Caller<T>) -> u64 {
+// * ID of newly created configuration in case of success
+// * -1 in case the process doesn't have permission to create new configurations
+fn create_config<T>(mut caller: Caller<T>) -> i64
+where
+    T: ProcessState + ProcessCtx<T>,
+    T::Config: ProcessConfigCtx,
+{
+    if caller.data().config().can_create_configs() == false {
+        return -1;
+    }
     let config = T::Config::default();
-    caller.data_mut().config_resources_mut().add(config)
+    caller.data_mut().config_resources_mut().add(config) as i64
 }
 
 // Drops the configuration from resources.
@@ -127,11 +165,11 @@ fn config_set_max_memory<T: ProcessState + ProcessCtx<T>>(
 // Traps:
 // * If the config ID doesn't exist.
 fn config_get_max_memory<T: ProcessState + ProcessCtx<T>>(
-    mut caller: Caller<T>,
+    caller: Caller<T>,
     config_id: u64,
 ) -> Result<u64, Trap> {
     let max_memory = caller
-        .data_mut()
+        .data()
         .config_resources()
         .get(config_id)
         .or_trap("lunatic::process::config_get_max_memory: Config ID doesn't exist")?
@@ -171,11 +209,11 @@ fn config_set_max_fuel<T: ProcessState + ProcessCtx<T>>(
 // Traps:
 // * If the config ID doesn't exist.
 fn config_get_max_fuel<T: ProcessState + ProcessCtx<T>>(
-    mut caller: Caller<T>,
+    caller: Caller<T>,
     config_id: u64,
 ) -> Result<u64, Trap> {
     let max_fuel = caller
-        .data_mut()
+        .data()
         .config_resources()
         .get(config_id)
         .or_trap("lunatic::process::config_get_max_fuel: Config ID doesn't exist")?
@@ -186,11 +224,97 @@ fn config_get_max_fuel<T: ProcessState + ProcessCtx<T>>(
     }
 }
 
+// Returns 1 if processes spawned from this configuration can create other configurations,
+// otherwise 0.
+//
+// Traps:
+// * If the config ID doesn't exist.
+fn config_can_create_configs<T>(caller: Caller<T>, config_id: u64) -> Result<u32, Trap>
+where
+    T: ProcessState + ProcessCtx<T>,
+    T::Config: ProcessConfigCtx,
+{
+    let can = caller
+        .data()
+        .config_resources()
+        .get(config_id)
+        .or_trap("lunatic::process::config_can_create_configs: Config ID doesn't exist")?
+        .can_create_configs();
+    Ok(can as u32)
+}
+
+// If set to a value >0 (true), processes spawned from this configuration will be able to create
+// other configuration.
+//
+// Traps:
+// * If the config ID doesn't exist.
+fn config_set_can_create_configs<T>(
+    mut caller: Caller<T>,
+    config_id: u64,
+    can: u32,
+) -> Result<(), Trap>
+where
+    T: ProcessState + ProcessCtx<T>,
+    T::Config: ProcessConfigCtx,
+{
+    caller
+        .data_mut()
+        .config_resources_mut()
+        .get_mut(config_id)
+        .or_trap("lunatic::process::config_set_can_create_configs: Config ID doesn't exist")?
+        .set_can_create_configs(can != 0);
+    Ok(())
+}
+
+// Returns 1 if processes spawned from this configuration can spawn sub-processes, otherwise 0.
+//
+// Traps:
+// * If the config ID doesn't exist.
+fn config_can_spawn_processes<T>(caller: Caller<T>, config_id: u64) -> Result<u32, Trap>
+where
+    T: ProcessState + ProcessCtx<T>,
+    T::Config: ProcessConfigCtx,
+{
+    let can = caller
+        .data()
+        .config_resources()
+        .get(config_id)
+        .or_trap("lunatic::process::config_can_spawn_processes: Config ID doesn't exist")?
+        .can_spawn_processes();
+    Ok(can as u32)
+}
+
+// If set to a value >0 (true), processes spawned from this configuration will be able to spawn
+// sub-processes.
+//
+// Traps:
+// * If the config ID doesn't exist.
+fn config_set_can_spawn_processes<T>(
+    mut caller: Caller<T>,
+    config_id: u64,
+    can: u32,
+) -> Result<(), Trap>
+where
+    T: ProcessState + ProcessCtx<T>,
+    T::Config: ProcessConfigCtx,
+{
+    caller
+        .data_mut()
+        .config_resources_mut()
+        .get_mut(config_id)
+        .or_trap("lunatic::process::config_set_can_spawn_processes: Config ID doesn't exist")?
+        .set_can_spawn_processes(can != 0);
+    Ok(())
+}
+
 // Spawns a new process using the passed in function inside a module as the entry point.
 //
 // If **link** is not 0, it will link the child and parent processes. The value of the **link**
 // argument will be used as the link-tag for the child. This means, if the child traps the parent
 // is going to get a signal back with the value used as the tag.
+//
+// If *config_id* or *module_id* have the value -1, the same module/config is used as in the
+// process calling this function.
 //
 // The function arguments are passed as an array with the following structure:
 // [0 byte = type ID; 1..17 bytes = value as u128, ...]

@@ -38,80 +38,60 @@ pub trait NetworkingCtx {
 pub fn register<T: NetworkingCtx + ErrorCtx + Send + 'static>(
     linker: &mut Linker<T>,
 ) -> Result<()> {
-    linker.func_wrap4_async("lunatic::networking", "resolve", resolve::<T>)?;
+    linker.func_wrap4_async("lunatic::networking", "resolve", resolve)?;
     linker.func_wrap(
         "lunatic::networking",
         "drop_dns_iterator",
-        drop_dns_iterator::<T>,
+        drop_dns_iterator,
     )?;
-    linker.func_wrap("lunatic::networking", "resolve_next", resolve_next::<T>)?;
-    linker.func_wrap6_async("lunatic::networking", "tcp_bind", tcp_bind::<T>)?;
+    linker.func_wrap("lunatic::networking", "resolve_next", resolve_next)?;
+    linker.func_wrap6_async("lunatic::networking", "tcp_bind", tcp_bind)?;
     linker.func_wrap(
         "lunatic::networking",
         "drop_tcp_listener",
-        drop_tcp_listener::<T>,
+        drop_tcp_listener,
     )?;
-    linker.func_wrap("lunatic::networking", "tcp_local_addr", tcp_local_addr::<T>)?;
-    linker.func_wrap("lunatic::networking", "udp_local_addr", udp_local_addr::<T>)?;
-    linker.func_wrap3_async("lunatic::networking", "tcp_accept", tcp_accept::<T>)?;
-    linker.func_wrap7_async("lunatic::networking", "tcp_connect", tcp_connect::<T>)?;
-    linker.func_wrap(
-        "lunatic::networking",
-        "drop_tcp_stream",
-        drop_tcp_stream::<T>,
-    )?;
-    linker.func_wrap(
-        "lunatic::networking",
-        "clone_tcp_stream",
-        clone_tcp_stream::<T>,
-    )?;
+    linker.func_wrap("lunatic::networking", "tcp_local_addr", tcp_local_addr)?;
+    linker.func_wrap("lunatic::networking", "udp_local_addr", udp_local_addr)?;
+    linker.func_wrap3_async("lunatic::networking", "tcp_accept", tcp_accept)?;
+    linker.func_wrap7_async("lunatic::networking", "tcp_connect", tcp_connect)?;
+    linker.func_wrap("lunatic::networking", "drop_tcp_stream", drop_tcp_stream)?;
+    linker.func_wrap("lunatic::networking", "clone_tcp_stream", clone_tcp_stream)?;
     linker.func_wrap5_async(
         "lunatic::networking",
         "tcp_write_vectored",
-        tcp_write_vectored::<T>,
+        tcp_write_vectored,
     )?;
-    linker.func_wrap5_async("lunatic::networking", "tcp_read", tcp_read::<T>)?;
-    linker.func_wrap2_async("lunatic::networking", "tcp_flush", tcp_flush::<T>)?;
-    linker.func_wrap6_async("lunatic::networking", "udp_bind", udp_bind::<T>)?;
-    linker.func_wrap(
-        "lunatic::networking",
-        "drop_udp_socket",
-        drop_udp_socket::<T>,
-    )?;
-    linker.func_wrap5_async("lunatic::networking", "udp_receive", udp_receive::<T>)?;
-    linker.func_wrap6_async(
-        "lunatic::networking",
-        "udp_receive_from",
-        udp_receive_from::<T>,
-    )?;
-    linker.func_wrap8_async("lunatic::networking", "udp_connect", udp_connect::<T>)?;
-    linker.func_wrap(
-        "lunatic::networking",
-        "clone_udp_socket",
-        clone_udp_socket::<T>,
-    )?;
+    linker.func_wrap5_async("lunatic::networking", "tcp_read", tcp_read)?;
+    linker.func_wrap2_async("lunatic::networking", "tcp_flush", tcp_flush)?;
+    linker.func_wrap6_async("lunatic::networking", "udp_bind", udp_bind)?;
+    linker.func_wrap("lunatic::networking", "drop_udp_socket", drop_udp_socket)?;
+    linker.func_wrap5_async("lunatic::networking", "udp_receive", udp_receive)?;
+    linker.func_wrap6_async("lunatic::networking", "udp_receive_from", udp_receive_from)?;
+    linker.func_wrap8_async("lunatic::networking", "udp_connect", udp_connect)?;
+    linker.func_wrap("lunatic::networking", "clone_udp_socket", clone_udp_socket)?;
     linker.func_wrap(
         "lunatic::networking",
         "set_udp_socket_broadcast",
-        set_udp_socket_broadcast::<T>,
+        set_udp_socket_broadcast,
     )?;
     linker.func_wrap(
         "lunatic::networking",
         "get_udp_socket_broadcast",
-        get_udp_socket_broadcast::<T>,
+        get_udp_socket_broadcast,
     )?;
     linker.func_wrap(
         "lunatic::networking",
         "set_udp_socket_ttl",
-        set_udp_socket_ttl::<T>,
+        set_udp_socket_ttl,
     )?;
     linker.func_wrap(
         "lunatic::networking",
         "get_udp_socket_ttl",
-        get_udp_socket_ttl::<T>,
+        get_udp_socket_ttl,
     )?;
-    linker.func_wrap10_async("lunatic::networking", "udp_send_to", udp_send_to::<T>)?;
-    linker.func_wrap5_async("lunatic::networking", "udp_send", udp_send::<T>)?;
+    linker.func_wrap10_async("lunatic::networking", "udp_send_to", udp_send_to)?;
+    linker.func_wrap5_async("lunatic::networking", "udp_send", udp_send)?;
 
     Ok(())
 }

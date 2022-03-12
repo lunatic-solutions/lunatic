@@ -1,6 +1,7 @@
 use std::fmt::Debug;
 
 use lunatic_process::config::ProcessConfig;
+use lunatic_process_api::ProcessConfigCtx;
 use serde::{Deserialize, Serialize};
 
 ///
@@ -10,7 +11,10 @@ pub struct DefaultProcessConfig {
     max_memory: usize,
     // Maximum amount of compute expressed in units of 100k instructions.
     max_fuel: Option<u64>,
-    allowed_namespaces: Vec<String>,
+    // Can this process create new configurations
+    can_create_configs: bool,
+    // Can this process spawn sub-processes
+    can_spawn_processes: bool,
     preopened_dirs: Vec<String>,
     wasi_args: Option<Vec<String>>,
     wasi_envs: Option<Vec<(String, String)>>,
@@ -21,7 +25,6 @@ impl Debug for DefaultProcessConfig {
         f.debug_struct("EnvConfig")
             .field("max_memory", &self.max_memory)
             .field("max_fuel", &self.max_fuel)
-            .field("allowed_namespaces", &self.allowed_namespaces)
             .field("preopened_dirs", &self.preopened_dirs)
             .field("wasi_args", &self.wasi_args)
             .field("wasi_envs", &self.wasi_envs)
@@ -48,15 +51,6 @@ impl ProcessConfig for DefaultProcessConfig {
 }
 
 impl DefaultProcessConfig {
-    pub fn allowed_namespace(&self) -> &[String] {
-        &self.allowed_namespaces
-    }
-
-    /// Allow a WebAssembly host function namespace to be used with this config.
-    pub fn allow_namespace<S: Into<String>>(&mut self, namespace: S) {
-        self.allowed_namespaces.push(namespace.into())
-    }
-
     pub fn preopened_dirs(&self) -> &[String] {
         &self.preopened_dirs
     }
@@ -83,15 +77,31 @@ impl DefaultProcessConfig {
     }
 }
 
+impl ProcessConfigCtx for DefaultProcessConfig {
+    fn can_create_configs(&self) -> bool {
+        self.can_create_configs
+    }
+
+    fn set_can_create_configs(&mut self, can: bool) {
+        self.can_create_configs = can
+    }
+
+    fn can_spawn_processes(&self) -> bool {
+        self.can_spawn_processes
+    }
+
+    fn set_can_spawn_processes(&mut self, can: bool) {
+        self.can_create_configs = can
+    }
+}
+
 impl Default for DefaultProcessConfig {
     fn default() -> Self {
         Self {
             max_memory: u32::MAX as usize, // = 4 GB
             max_fuel: None,
-            allowed_namespaces: vec![
-                String::from("lunatic::"),
-                String::from("wasi_snapshot_preview1::"),
-            ],
+            can_create_configs: false,
+            can_spawn_processes: false,
             preopened_dirs: vec![],
             wasi_args: None,
             wasi_envs: None,

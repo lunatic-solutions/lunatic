@@ -98,7 +98,7 @@ impl ProcessState for DefaultProcessState {
     }
 
     fn runtime(&self) -> &WasmtimeRuntime {
-        &self.runtime.as_ref().unwrap()
+        self.runtime.as_ref().unwrap()
     }
 
     fn config(&self) -> &Arc<DefaultProcessConfig> {
@@ -106,7 +106,7 @@ impl ProcessState for DefaultProcessState {
     }
 
     fn module(&self) -> &WasmtimeCompiledModule<Self> {
-        &self.module.as_ref().unwrap()
+        self.module.as_ref().unwrap()
     }
 
     fn id(&self) -> Uuid {
