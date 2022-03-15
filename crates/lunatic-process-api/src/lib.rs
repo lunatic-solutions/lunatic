@@ -21,6 +21,8 @@ pub type ProcessResources = HashMapId<Arc<dyn Process>>;
 pub type ModuleResources<T> = HashMapId<WasmtimeCompiledModule<T>>;
 
 pub trait ProcessConfigCtx {
+    fn can_compile_modules(&self) -> bool;
+    fn set_can_compile_modules(&mut self, can: bool);
     fn can_create_configs(&self) -> bool;
     fn set_can_create_configs(&mut self, can: bool);
     fn can_spawn_processes(&self) -> bool;
@@ -45,6 +47,8 @@ where
     for<'a> &'a T: Send,
     T::Config: ProcessConfigCtx,
 {
+    linker.func_wrap("lunatic::process", "compile_module", compile_module)?;
+    linker.func_wrap("lunatic::process", "drop_module", drop_module)?;
     linker.func_wrap("lunatic::process", "create_config", create_config)?;
     linker.func_wrap("lunatic::process", "drop_config", drop_config)?;
     linker.func_wrap(
@@ -67,7 +71,16 @@ where
         "config_get_max_fuel",
         config_get_max_fuel,
     )?;
-
+    linker.func_wrap(
+        "lunatic::process",
+        "config_can_compile_modules",
+        config_can_compile_modules,
+    )?;
+    linker.func_wrap(
+        "lunatic::process",
+        "config_set_can_compile_modules",
+        config_set_can_compile_modules,
+    )?;
     linker.func_wrap(
         "lunatic::process",
         "config_can_create_configs",
@@ -104,6 +117,63 @@ where
     Ok(())
 }
 
+// Compile a new WebAssembly module.
+//
+// The `spawn` function can be used to spawn new processes from the module.
+// Module compilation can be a CPU intensive task.
+//
+// Returns:
+// *  0 on success - The ID of the newly created module is written to **id_ptr**
+// *  1 on error   - The error ID is written to **id_ptr**
+// * -1 in case the process doesn't have permission to compile modules.
+fn compile_module<T>(
+    mut caller: Caller<T>,
+    module_data_ptr: u32,
+    module_data_len: u32,
+    id_ptr: u32,
+) -> Result<i32, Trap>
+where
+    T: ProcessState + ProcessCtx<T> + ErrorCtx,
+    T::Config: ProcessConfigCtx,
+{
+    // TODO: Module compilation is CPU intensive and should be done on the blocking task thread pool.
+    if !caller.data().config().can_compile_modules() {
+        return Ok(-1);
+    }
+
+    let mut module = vec![0; module_data_len as usize];
+    let memory = get_memory(&mut caller)?;
+    memory
+        .read(&caller, module_data_ptr as usize, module.as_mut_slice())
+        .or_trap("lunatic::process::compile_module")?;
+
+    let (mod_or_error_id, result) = match caller.data().runtime().compile_module(module) {
+        Ok(module) => (caller.data_mut().module_resources_mut().add(module), 0),
+        Err(error) => (caller.data_mut().error_resources_mut().add(error), 1),
+    };
+
+    memory
+        .write(&mut caller, id_ptr as usize, &mod_or_error_id.to_le_bytes())
+        .or_trap("lunatic::process::compile_module")?;
+    Ok(result)
+}
+
+// Drops the module from resources.
+//
+// Traps:
+// * If the module ID doesn't exist.
+fn drop_module<T: ProcessState + ProcessCtx<T>>(
+    mut caller: Caller<T>,
+    module_id: u64,
+) -> Result<(), Trap> {
+    caller
+        .data_mut()
+        .module_resources_mut()
+        .remove(module_id)
+        .or_trap("lunatic::process::drop_module: Module ID doesn't exist")?;
+    Ok(())
+}
+
 // Create a new configuration with all permissions denied.
 //
 // There is no memory or fuel limit set on the newly created configuration.
@@ -116,7 +186,7 @@ where
     T: ProcessState + ProcessCtx<T>,
     T::Config: ProcessConfigCtx,
 {
-    if caller.data().config().can_create_configs() == false {
+    if !caller.data().config().can_create_configs() {
         return -1;
     }
     let config = T::Config::default();
@@ -222,6 +292,47 @@ fn config_get_max_fuel<T: ProcessState + ProcessCtx<T>>(
         None => Ok(0),
         Some(max_fuel) => Ok(max_fuel),
     }
+}
+
+// Returns 1 if processes spawned from this configuration can compile Wasm modules, otherwise 0.
+//
+// Traps:
+// * If the config ID doesn't exist.
+fn config_can_compile_modules<T>(caller: Caller<T>, config_id: u64) -> Result<u32, Trap>
+where
+    T: ProcessState + ProcessCtx<T>,
+    T::Config: ProcessConfigCtx,
+{
+    let can = caller
+        .data()
+        .config_resources()
+        .get(config_id)
+        .or_trap("lunatic::process::config_can_compile_modules: Config ID doesn't exist")?
+        .can_compile_modules();
+    Ok(can as u32)
+}
+
+// If set to a value >0 (true), processes spawned from this configuration will be able to compile
+// Wasm modules.
+//
+// Traps:
+// * If the config ID doesn't exist.
+fn config_set_can_compile_modules<T>(
+    mut caller: Caller<T>,
+    config_id: u64,
+    can: u32,
+) -> Result<(), Trap>
+where
+    T: ProcessState + ProcessCtx<T>,
+    T::Config: ProcessConfigCtx,
+{
+    caller
+        .data_mut()
+        .config_resources_mut()
+        .get_mut(config_id)
+        .or_trap("lunatic::process::config_set_can_compile_modules: Config ID doesn't exist")?
+        .set_can_compile_modules(can != 0);
+    Ok(())
 }
 
 // Returns 1 if processes spawned from this configuration can create other configurations,
@@ -353,7 +464,7 @@ where
     T::Config: ProcessConfigCtx,
 {
     Box::new(async move {
-        if caller.data().config().can_spawn_processes() == false {
+        if !caller.data().config().can_spawn_processes() {
             return Err(anyhow!("Process doesn't have permissions to spawn sub-processes").into());
         }
 

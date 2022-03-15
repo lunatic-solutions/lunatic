@@ -11,6 +11,8 @@ pub struct DefaultProcessConfig {
     max_memory: usize,
     // Maximum amount of compute expressed in units of 100k instructions.
     max_fuel: Option<u64>,
+    // Can this process compile new WebAssembly modules
+    can_compile_modules: bool,
     // Can this process create new configurations
     can_create_configs: bool,
     // Can this process spawn sub-processes
@@ -78,6 +80,14 @@ impl DefaultProcessConfig {
 }
 
 impl ProcessConfigCtx for DefaultProcessConfig {
+    fn can_compile_modules(&self) -> bool {
+        self.can_compile_modules
+    }
+
+    fn set_can_compile_modules(&mut self, can: bool) {
+        self.can_compile_modules = can
+    }
+
     fn can_create_configs(&self) -> bool {
         self.can_create_configs
     }
@@ -100,6 +110,7 @@ impl Default for DefaultProcessConfig {
         Self {
             max_memory: u32::MAX as usize, // = 4 GB
             max_fuel: None,
+            can_compile_modules: false,
             can_create_configs: false,
             can_spawn_processes: false,
             preopened_dirs: vec![],

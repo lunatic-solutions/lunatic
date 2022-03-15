@@ -296,7 +296,7 @@ mod tests {
         // Create wasmtime runtime
         let mut wasmtime_config = wasmtime::Config::new();
         wasmtime_config.async_support(true).consume_fuel(true);
-        let mut runtime = WasmtimeRuntime::new(&wasmtime_config).unwrap();
+        let runtime = WasmtimeRuntime::new(&wasmtime_config).unwrap();
 
         let raw_module = wat::parse_file("./wat/all_imports.wat").unwrap();
         let module = runtime

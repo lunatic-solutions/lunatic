@@ -22,7 +22,7 @@ impl WasmtimeRuntime {
     }
 
     /// Compiles a wasm module to machine code and performs type-checking on host functions.
-    pub fn compile_module<T>(&mut self, data: RawWasm) -> Result<WasmtimeCompiledModule<T>>
+    pub fn compile_module<T>(&self, data: RawWasm) -> Result<WasmtimeCompiledModule<T>>
     where
         T: ProcessState,
     {

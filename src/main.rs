@@ -74,7 +74,8 @@ async fn main() -> Result<()> {
         .get_matches();
 
     let mut config = DefaultProcessConfig::default();
-    // Allow initial process to create configurations and spawn sub-processes
+    // Allow initial process to compile modules, create configurations and spawn sub-processes
+    config.set_can_compile_modules(true);
     config.set_can_create_configs(true);
     config.set_can_spawn_processes(true);
 
@@ -106,7 +107,7 @@ async fn main() -> Result<()> {
 
     // Create wasmtime runtime
     let wasmtime_config = runtimes::wasmtime::default_config();
-    let mut runtime = runtimes::wasmtime::WasmtimeRuntime::new(&wasmtime_config)?;
+    let runtime = runtimes::wasmtime::WasmtimeRuntime::new(&wasmtime_config)?;
 
     if args.is_present("no_entry") {
         // Block forever

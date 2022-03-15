@@ -48,18 +48,20 @@
     (import "lunatic::networking" "udp_send_to" (func (param i64 i32 i32 i32 i32 i32 i32 i32 i32 i32) (result i32)))
     (import "lunatic::networking" "udp_send" (func (param i64 i32 i32 i32 i32) (result i32)))
 
+    (import "lunatic::process" "compile_module" (func (param i32 i32 i32) (result i32)))
+    (import "lunatic::process" "drop_module" (func (param i64)))
     (import "lunatic::process" "create_config" (func (result i64)))
     (import "lunatic::process" "drop_config" (func (param i64)))
-
     (import "lunatic::process" "config_set_max_memory" (func (param i64 i64)))
     (import "lunatic::process" "config_get_max_memory" (func (param i64) (result i64)))
     (import "lunatic::process" "config_set_max_fuel" (func (param i64 i64)))
     (import "lunatic::process" "config_get_max_fuel" (func (param i64) (result i64)))
+    (import "lunatic::process" "config_can_compile_modules" (func (param i64) (result i32)))
+    (import "lunatic::process" "config_set_can_compile_modules" (func (param i64 i32)))
     (import "lunatic::process" "config_can_create_configs" (func (param i64) (result i32)))
     (import "lunatic::process" "config_set_can_create_configs" (func (param i64 i32)))
     (import "lunatic::process" "config_can_spawn_processes" (func (param i64) (result i32)))
     (import "lunatic::process" "config_set_can_spawn_processes" (func (param i64 i32)))
-
     (import "lunatic::process" "spawn" (func (param i64 i64 i64 i32 i32 i32 i32 i32) (result i32)))
     (import "lunatic::process" "drop_process" (func (param i64)))
     (import "lunatic::process" "clone_process" (func (param i64) (result i64)))
@@ -73,8 +75,6 @@
     (import "lunatic::version" "major" (func (result i32)))
     (import "lunatic::version" "minor" (func (result i32)))
     (import "lunatic::version" "patch" (func (result i32)))
-
-    ;; TODO: Add all WASI imports
 
     (func (export "hello") nop)
 )
