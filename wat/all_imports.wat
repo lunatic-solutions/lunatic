@@ -76,5 +76,9 @@
     (import "lunatic::version" "minor" (func (result i32)))
     (import "lunatic::version" "patch" (func (result i32)))
 
+    (import "lunatic::wasi" "config_add_environment_variable" (func (param i64 i32 i32 i32 i32)))
+    (import "lunatic::wasi" "config_add_command_line_argument" (func (param i64 i32 i32)))
+    (import "lunatic::wasi" "config_preopen_dir" (func (param i64 i32 i32)))
+
     (func (export "hello") nop)
 )

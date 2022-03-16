@@ -85,11 +85,13 @@ async fn main() -> Result<()> {
         .unwrap_or_default()
         .map(|arg| arg.to_string())
         .collect();
-    config.set_wasi_args(wasi_args);
+    config.set_command_line_arguments(wasi_args);
 
     // Inherit environment variables
-    config.set_wasi_envs(env::vars().collect());
+    config.set_environment_variables(env::vars().collect());
 
+    // Always preopen the current dir
+    config.preopen_dir(".");
     if let Some(dirs) = args.values_of("dir") {
         for dir in dirs {
             config.preopen_dir(dir);

@@ -440,7 +440,7 @@ where
 // * 1 on error   - The error ID is written to **id_ptr**
 //
 // Traps:
-// * If the module index doesn't exist.
+// * If the module ID doesn't exist.
 // * If the function string is not a valid utf8 string.
 // * If the params array is in a wrong format.
 // * If **func_str_ptr + func_str_len** is outside the memory.

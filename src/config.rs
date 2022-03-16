@@ -2,6 +2,7 @@ use std::fmt::Debug;
 
 use lunatic_process::config::ProcessConfig;
 use lunatic_process_api::ProcessConfigCtx;
+use lunatic_wasi_api::LunaticWasiConfigCtx;
 use serde::{Deserialize, Serialize};
 
 ///
@@ -17,9 +18,10 @@ pub struct DefaultProcessConfig {
     can_create_configs: bool,
     // Can this process spawn sub-processes
     can_spawn_processes: bool,
+    // WASI configs
     preopened_dirs: Vec<String>,
-    wasi_args: Option<Vec<String>>,
-    wasi_envs: Option<Vec<(String, String)>>,
+    command_line_arguments: Vec<String>,
+    environment_variables: Vec<(String, String)>,
 }
 
 impl Debug for DefaultProcessConfig {
@@ -28,8 +30,8 @@ impl Debug for DefaultProcessConfig {
             .field("max_memory", &self.max_memory)
             .field("max_fuel", &self.max_fuel)
             .field("preopened_dirs", &self.preopened_dirs)
-            .field("wasi_args", &self.wasi_args)
-            .field("wasi_envs", &self.wasi_envs)
+            .field("args", &self.command_line_arguments)
+            .field("envs", &self.environment_variables)
             .finish()
     }
 }
@@ -52,6 +54,20 @@ impl ProcessConfig for DefaultProcessConfig {
     }
 }
 
+impl LunaticWasiConfigCtx for DefaultProcessConfig {
+    fn add_environment_variable(&mut self, key: String, value: String) {
+        self.environment_variables.push((key, value));
+    }
+
+    fn add_command_line_argument(&mut self, argument: String) {
+        self.command_line_arguments.push(argument);
+    }
+
+    fn preopen_dir(&mut self, dir: String) {
+        self.preopened_dirs.push(dir);
+    }
+}
+
 impl DefaultProcessConfig {
     pub fn preopened_dirs(&self) -> &[String] {
         &self.preopened_dirs
@@ -62,20 +78,20 @@ impl DefaultProcessConfig {
         self.preopened_dirs.push(dir.into())
     }
 
-    pub fn set_wasi_args(&mut self, args: Vec<String>) {
-        self.wasi_args = Some(args);
+    pub fn set_command_line_arguments(&mut self, args: Vec<String>) {
+        self.command_line_arguments = args;
     }
 
-    pub fn wasi_args(&self) -> &Option<Vec<String>> {
-        &self.wasi_args
+    pub fn command_line_arguments(&self) -> &Vec<String> {
+        &self.command_line_arguments
     }
 
-    pub fn set_wasi_envs(&mut self, envs: Vec<(String, String)>) {
-        self.wasi_envs = Some(envs);
+    pub fn set_environment_variables(&mut self, envs: Vec<(String, String)>) {
+        self.environment_variables = envs;
     }
 
-    pub fn wasi_envs(&self) -> &Option<Vec<(String, String)>> {
-        &self.wasi_envs
+    pub fn environment_variables(&self) -> &Vec<(String, String)> {
+        &self.environment_variables
     }
 }
 
@@ -114,8 +130,8 @@ impl Default for DefaultProcessConfig {
             can_create_configs: false,
             can_spawn_processes: false,
             preopened_dirs: vec![],
-            wasi_args: None,
-            wasi_envs: None,
+            command_line_arguments: vec![],
+            environment_variables: vec![],
         }
     }
 }

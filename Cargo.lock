@@ -1268,6 +1268,8 @@ dependencies = [
  "async-std",
  "hash-map-id",
  "lunatic-common-api",
+ "lunatic-process",
+ "lunatic-process-api",
  "tokio",
  "wasmtime",
  "wasmtime-wasi",

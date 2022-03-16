@@ -70,8 +70,8 @@ impl ProcessState for DefaultProcessState {
             message_mailbox,
             resources: Resources::default(),
             wasi: build_wasi(
-                config.wasi_args().as_ref(),
-                config.wasi_envs().as_ref(),
+                Some(config.command_line_arguments()),
+                Some(config.environment_variables()),
                 config.preopened_dirs(),
             )?,
             initialized: false,
@@ -133,8 +133,8 @@ impl Default for DefaultProcessState {
             message_mailbox,
             resources: Resources::default(),
             wasi: build_wasi(
-                config.wasi_args().as_ref(),
-                config.wasi_envs().as_ref(),
+                Some(config.command_line_arguments()),
+                Some(config.environment_variables()),
                 config.preopened_dirs(),
             )
             .unwrap(),
