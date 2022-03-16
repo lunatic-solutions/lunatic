@@ -19,12 +19,8 @@ use crate::{Process, Signal, WasmProcess};
 /// and host function properties (filesystem access, networking, ..).
 ///
 /// After it's spawned the process will keep running in the background. A process can be killed
-/// by sending a `Signal::Kill` to it. If you would like to block until the process is finished
-/// you can `.await` on the returned `JoinHandle<()>`.
-///
-/// Note: The 'a lifetime is here just because Rust has a bug in handling `dyn Trait` in async:
-/// https://github.com/rust-lang/rust/issues/63033
-/// If it ever becomes an issue there are other workarounds that could be used instead.
+/// with `Signal::Kill` signal. If you would like to block until the process is finished you can
+/// `.await` on the returned `JoinHandle<()>`.
 pub async fn spawn_wasm<S>(
     runtime: WasmtimeRuntime,
     module: WasmtimeCompiledModule<S>,

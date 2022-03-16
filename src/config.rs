@@ -5,7 +5,6 @@ use lunatic_process_api::ProcessConfigCtx;
 use lunatic_wasi_api::LunaticWasiConfigCtx;
 use serde::{Deserialize, Serialize};
 
-///
 #[derive(Clone, Serialize, Deserialize)]
 pub struct DefaultProcessConfig {
     // Maximum amount of memory that can be used by processes in bytes

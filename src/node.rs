@@ -517,7 +517,7 @@ enum Message {
 #[derive(Serialize, Deserialize, Debug)]
 pub enum SignalOverNetwork {
     DataMessage(DataMessageOverNetwork),
-    SignalMessage(Option<i64>),
+    LinkDiedMessage(Option<i64>),
     Kill,
     DieWhenLinkDies(bool),
     Link(Option<i64>, u64),
@@ -561,8 +561,8 @@ impl SignalOverNetwork {
                     };
                     Ok(SignalOverNetwork::DataMessage(msg))
                 }
-                lunatic_process::message::Message::Signal(tag) => {
-                    Ok(SignalOverNetwork::SignalMessage(tag))
+                lunatic_process::message::Message::LinkDied(tag) => {
+                    Ok(SignalOverNetwork::LinkDiedMessage(tag))
                 }
             },
             Signal::Kill => Ok(SignalOverNetwork::Kill),
@@ -599,8 +599,8 @@ impl SignalOverNetwork {
                     msg,
                 )))
             }
-            SignalOverNetwork::SignalMessage(tag) => Ok(Signal::Message(
-                lunatic_process::message::Message::Signal(tag),
+            SignalOverNetwork::LinkDiedMessage(tag) => Ok(Signal::Message(
+                lunatic_process::message::Message::LinkDied(tag),
             )),
             SignalOverNetwork::Kill => Ok(Signal::Kill),
             SignalOverNetwork::DieWhenLinkDies(flag) => Ok(Signal::DieWhenLinkDies(flag)),
@@ -851,7 +851,7 @@ mod tests {
                 lunatic_process::message::Message::Data(_) => {
                     unreachable!("Only a signal can be received")
                 }
-                lunatic_process::message::Message::Signal(tag) => {
+                lunatic_process::message::Message::LinkDied(tag) => {
                     assert_eq!(tag, Some(1337));
                 }
             }

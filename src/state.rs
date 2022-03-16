@@ -20,7 +20,6 @@ use wasmtime_wasi::WasiCtx;
 
 use crate::DefaultProcessConfig;
 
-// The default process state
 pub struct DefaultProcessState {
     // Process id
     pub(crate) id: Uuid,

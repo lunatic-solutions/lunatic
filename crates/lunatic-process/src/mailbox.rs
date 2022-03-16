@@ -89,7 +89,7 @@ impl MessageMailbox {
     /// The way processes work is that they run a bit of code, *stop*, look for new signals/messages
     /// before running more code. This stop can only happen if there is an `.await` point in the
     /// code. Sending signals/messages is not an async task and we don't need to `.await` on it.
-    /// When using this function we need to make sure that sending a specific tags and waiting for it
+    /// When using this function we need to make sure that sending a specific tag and waiting on it
     /// doesn't contain any `.await` calls in-between. This implementation detail can be hidden
     /// inside of atomic host function calls so that end users don't need to worry about it.
     pub async fn pop_skip_search(&self, tags: Option<&[i64]>) -> Message {
@@ -167,11 +167,11 @@ mod tests {
     #[async_std::test]
     async fn no_tags_signal_message() {
         let mailbox = MessageMailbox::default();
-        let message = Message::Signal(None);
+        let message = Message::LinkDied(None);
         mailbox.push(message);
         let result = mailbox.pop(None).await;
         match result {
-            Message::Signal(None) => (),
+            Message::LinkDied(None) => (),
             _ => panic!("Wrong message received"),
         }
     }
@@ -180,7 +180,7 @@ mod tests {
     async fn tag_signal_message() {
         let mailbox = MessageMailbox::default();
         let tag = 1337;
-        let message = Message::Signal(Some(tag));
+        let message = Message::LinkDied(Some(tag));
         mailbox.push(message);
         let message = mailbox.pop(None).await;
         assert_eq!(message.tag(), Some(tag));
@@ -194,11 +194,11 @@ mod tests {
         let tag3 = 3;
         let tag4 = 4;
         let tag5 = 5;
-        mailbox.push(Message::Signal(Some(tag1)));
-        mailbox.push(Message::Signal(Some(tag2)));
-        mailbox.push(Message::Signal(Some(tag3)));
-        mailbox.push(Message::Signal(Some(tag4)));
-        mailbox.push(Message::Signal(Some(tag5)));
+        mailbox.push(Message::LinkDied(Some(tag1)));
+        mailbox.push(Message::LinkDied(Some(tag2)));
+        mailbox.push(Message::LinkDied(Some(tag3)));
+        mailbox.push(Message::LinkDied(Some(tag4)));
+        mailbox.push(Message::LinkDied(Some(tag5)));
         let message = mailbox.pop(Some(&[tag2])).await;
         assert_eq!(message.tag(), Some(tag2));
         let message = mailbox.pop(Some(&[tag1])).await;
@@ -220,11 +220,11 @@ mod tests {
         let tag3 = 3;
         let tag4 = 4;
         let tag5 = 5;
-        mailbox.push(Message::Signal(Some(tag1)));
-        mailbox.push(Message::Signal(Some(tag2)));
-        mailbox.push(Message::Signal(Some(tag3)));
-        mailbox.push(Message::Signal(Some(tag4)));
-        mailbox.push(Message::Signal(Some(tag5)));
+        mailbox.push(Message::LinkDied(Some(tag1)));
+        mailbox.push(Message::LinkDied(Some(tag2)));
+        mailbox.push(Message::LinkDied(Some(tag3)));
+        mailbox.push(Message::LinkDied(Some(tag4)));
+        mailbox.push(Message::LinkDied(Some(tag5)));
         let message = mailbox.pop(Some(&[tag2, tag1, tag3])).await;
         assert_eq!(message.tag(), Some(tag1));
         let message = mailbox.pop(Some(&[tag2, tag1, tag3])).await;
@@ -265,7 +265,7 @@ mod tests {
         assert!(result.is_pending());
         assert_eq!(*waker_ref.0.lock().unwrap(), false);
         // Pushing a message to the mailbox will call the waker
-        mailbox.push(Message::Signal(tags));
+        mailbox.push(Message::LinkDied(tags));
         assert_eq!(*waker_ref.0.lock().unwrap(), true);
         // Next poll will return the value
         let result = fut.as_mut().poll(&mut context);
@@ -288,15 +288,15 @@ mod tests {
         assert!(result.is_pending());
         assert_eq!(*waker_ref.0.lock().unwrap(), false);
         // Pushing a message with the `None` tags should not trigger the waker
-        mailbox.push(Message::Signal(None));
+        mailbox.push(Message::LinkDied(None));
         assert_eq!(*waker_ref.0.lock().unwrap(), false);
         // Next poll will still not have the value with the tags 1337
         let result = fut.as_mut().poll(&mut context);
         assert!(result.is_pending());
         // Pushing another None in the meantime should not remove the waker
-        mailbox.push(Message::Signal(None));
+        mailbox.push(Message::LinkDied(None));
         // Pushing a message with tags 1337 should trigger the waker
-        mailbox.push(Message::Signal(Some(1337)));
+        mailbox.push(Message::LinkDied(Some(1337)));
         assert_eq!(*waker_ref.0.lock().unwrap(), true);
         // Next poll will have the message ready
         let result = fut.as_mut().poll(&mut context);
@@ -318,7 +318,7 @@ mod tests {
         assert!(result.is_pending());
         assert_eq!(*waker_ref.0.lock().unwrap(), false);
         // Pushing a message with the `None` tags should call the waker()
-        mailbox.push(Message::Signal(None));
+        mailbox.push(Message::LinkDied(None));
         assert_eq!(*waker_ref.0.lock().unwrap(), true);
         // Dropping the future will cancel it
         drop(fut);
@@ -333,7 +333,7 @@ mod tests {
         let result = fut.poll(&mut context);
         match result {
             Poll::Ready(message) => match message {
-                Message::Signal(tags) => assert_eq!(tags, None),
+                Message::LinkDied(tags) => assert_eq!(tags, None),
                 _ => panic!("Unexpected message"),
             },
             _ => panic!("Unexpected message"),

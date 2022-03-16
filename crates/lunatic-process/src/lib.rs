@@ -17,14 +17,14 @@ use uuid::Uuid;
 
 use crate::{mailbox::MessageMailbox, message::Message};
 
-/// The `Process` is the main abstraction unit in lunatic.
+/// The `Process` is the main abstraction in lunatic.
 ///
 /// It usually represents some code that is being executed (Wasm instance or V8 isolate), but it
 /// could also be a resource (GPU, UDP connection) that can be interacted with through messages.
 ///
 /// The only way of interacting with them is through signals. These signals can come in different
 /// shapes (message, kill, link, ...). Most signals have well defined meanings, but others such as
-/// a [`Message`] can be interpreted by the receiver in different ways.
+/// a [`Message`] are opaque and left to the receiver for interpretation.
 pub trait Process: Send + Sync {
     fn id(&self) -> Uuid;
     fn send(&self, signal: Signal);
@@ -52,8 +52,9 @@ impl Hash for dyn Process {
 
 /// Signals can be sent to processes to interact with them.
 pub enum Signal {
+    // Messages can contain opaque data.
     Message(Message),
-    // When received process should stop.
+    // When received, the process should stop immediately.
     Kill,
     // Change behaviour of what happens if a linked process dies.
     DieWhenLinkDies(bool),
@@ -94,8 +95,8 @@ pub enum Finished<T> {
 
 /// A `WasmProcess` represents an instance of a Wasm module that is being executed.
 ///
-/// They are created inside the `Environment::spawn` method, and once spawned they will be running
-/// in the background and can't be observed directly.
+/// They can be created with [`spawn_wasm`](crate::wasm::spawn_wasm), and once spawned they will be
+/// running in the background and can't be observed directly.
 #[derive(Debug, Clone)]
 pub struct WasmProcess {
     id: Uuid,
@@ -122,8 +123,19 @@ impl Process for WasmProcess {
     }
 }
 
-// Turns a Future into a process, enabling signals (e.g. kill).
-pub async fn new<F>(
+/// Turns a `Future` into a process, enabling signals (e.g. kill).
+///
+/// This function represents the core execution loop of lunatic processes:
+///
+/// 1. The process will first check if there are any new signals and handle them.
+/// 2. If no signals are available, it will poll the `Future` and advance the execution.
+///
+/// This steps are repeated until the `Future` returns `Poll::Ready`, indicating the end of the
+/// computation.
+///
+/// The `Future` is in charge to periodically yield back the execution with `Poll::Pending` to give
+/// the signal handler a chance to run and process pending signals.
+pub(crate) async fn new<F>(
     fut: F,
     id: Uuid,
     signal_mailbox: Receiver<Signal>,
@@ -167,7 +179,7 @@ pub async fn new<F>(
                             //       same notification to an already dead process.
                             break Finished::Signal(Signal::Kill)
                         } else {
-                            let message = Message::Signal(tag);
+                            let message = Message::LinkDied(tag);
                             message_mailbox.push(message);
                         }
                     },

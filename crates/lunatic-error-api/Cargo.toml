@@ -2,7 +2,7 @@
 name = "lunatic-error-api"
 version = "0.1.0"
 edition = "2021"
-description = "Lunatic host functions that make dealing with Anyhow errors easy."
+description = "Lunatic host functions that make dealing with Anyhow errors simpler."
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

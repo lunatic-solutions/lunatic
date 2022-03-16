@@ -44,13 +44,12 @@ pub fn register<T: ProcessState + ProcessCtx<T> + NetworkingCtx + Send + 'static
     Ok(())
 }
 
-// lunatic::message
-//
 // There are two kinds of messages a lunatic process can receive:
-// * **data message** that contains a buffer of raw `u8` data and host side resources.
-// * **signal message**, representing a signal that was turned into a message. By setting a flag,
-//   a process can control if when a link dies the process should die too, or just receive a
-//   signal message notifying it about the link's death.
+//
+// 1. **Data message** that contains a buffer of raw `u8` data and host side resources.
+// 2. **LinkDied message**, representing a `LinkDied` signal that was turned into a message. The
+//    process can control if when a link dies the process should die too, or just receive a
+//    `LinkDied` message notifying it about the link's death.
 //
 // All messages have a `tag` allowing for selective receives. If there are already messages in the
 // receiving queue, they will be first searched for a specific tag and the first match returned.
@@ -113,13 +112,14 @@ pub fn register<T: ProcessState + ProcessCtx<T> + NetworkingCtx + Send + 'static
 // deserializing them on the receiving side, when an index needs to be turned into an actual
 // resource ID.
 
-// lunatic::message::create_data(tag: i64, buffer_capacity: u64)
+// Creates a new data message.
 //
+// This message is intended to be modified by other functions in this namespace. Once
+// `lunatic::message::send` is called it will be sent to another process.
+//
+// Arguments:
 // * tag - An identifier that can be used for selective receives. If value is 0, no tag is used.
 // * buffer_capacity - A hint to the message to pre-allocate a large enough buffer for writes.
-//
-// Creates a new data message. This message is intended to be modified by other functions in this
-// namespace. Once `lunatic::message::send` is called it will be sent to another process.
 fn create_data<T: ProcessState + ProcessCtx<T>>(
     mut caller: Caller<T>,
     tag: i64,
@@ -136,12 +136,10 @@ fn create_data<T: ProcessState + ProcessCtx<T>>(
         .replace(Message::Data(message));
 }
 
-// lunatic::message::write_data(data_ptr: u32, data_len: u32) -> u32
-//
 // Writes some data into the message buffer and returns how much data is written in bytes.
 //
 // Traps:
-// * If **data_ptr + data_len** is outside the memory.
+// * If any memory outside of the guest heap space is referenced.
 // * If it's called without a data message being inside of the scratch area.
 fn write_data<T: ProcessState + ProcessCtx<T>>(
     mut caller: Caller<T>,
@@ -160,8 +158,8 @@ fn write_data<T: ProcessState + ProcessCtx<T>>(
         .or_trap("lunatic::message::write_data")?;
     let bytes = match &mut message {
         Message::Data(data) => data.write(buffer).or_trap("lunatic::message::write_data")?,
-        Message::Signal(_) => {
-            return Err(Trap::new("Unexpected `Message::Signal` in scratch area"))
+        Message::LinkDied(_) => {
+            return Err(Trap::new("Unexpected `Message::LinkDied` in scratch area"))
         }
     };
     // Put message back after writing to it.
@@ -170,12 +168,10 @@ fn write_data<T: ProcessState + ProcessCtx<T>>(
     Ok(bytes as u32)
 }
 
-// lunatic::message::read_data(data_ptr: u32, data_len: u32) -> u32
-//
 // Reads some data from the message buffer and returns how much data is read in bytes.
 //
 // Traps:
-// * If **data_ptr + data_len** is outside the memory.
+// * If any memory outside of the guest heap space is referenced.
 // * If it's called without a data message being inside of the scratch area.
 fn read_data<T: ProcessState + ProcessCtx<T>>(
     mut caller: Caller<T>,
@@ -194,8 +190,8 @@ fn read_data<T: ProcessState + ProcessCtx<T>>(
         .or_trap("lunatic::message::read_data")?;
     let bytes = match &mut message {
         Message::Data(data) => data.read(buffer).or_trap("lunatic::message::read_data")?,
-        Message::Signal(_) => {
-            return Err(Trap::new("Unexpected `Message::Signal` in scratch area"))
+        Message::LinkDied(_) => {
+            return Err(Trap::new("Unexpected `Message::LinkDied` in scratch area"))
         }
     };
     // Put message back after reading from it.
@@ -204,8 +200,6 @@ fn read_data<T: ProcessState + ProcessCtx<T>>(
     Ok(bytes as u32)
 }
 
-// lunatic::message::seek_data(index: u64)
-//
 // Moves reading head of the internal message buffer. It's useful if you wish to read the a bit
 // of a message, decide that someone else will handle it, `seek_data(0)` to reset the read
 // position for the new receiver and `send` it to another process.
@@ -223,15 +217,13 @@ fn seek_data<T: ProcessState + ProcessCtx<T>>(
         .or_trap("lunatic::message::seek_data")?;
     match &mut message {
         Message::Data(data) => data.seek(index as usize),
-        Message::Signal(_) => {
-            return Err(Trap::new("Unexpected `Message::Signal` in scratch area"))
+        Message::LinkDied(_) => {
+            return Err(Trap::new("Unexpected `Message::LinkDied` in scratch area"))
         }
     };
     Ok(())
 }
 
-// lunatic::message::get_tag() -> i64
-//
 // Returns the message tag or 0 if no tag was set.
 //
 // Traps:
@@ -248,8 +240,6 @@ fn get_tag<T: ProcessState + ProcessCtx<T>>(mut caller: Caller<T>) -> Result<i64
     }
 }
 
-// lunatic::message::data_size() -> u64
-//
 // Returns the size in bytes of the message buffer.
 //
 // Traps:
@@ -262,19 +252,18 @@ fn data_size<T: ProcessState + ProcessCtx<T>>(mut caller: Caller<T>) -> Result<u
         .or_trap("lunatic::message::data_size")?;
     let bytes = match message {
         Message::Data(data) => data.size(),
-        Message::Signal(_) => {
-            return Err(Trap::new("Unexpected `Message::Signal` in scratch area"))
+        Message::LinkDied(_) => {
+            return Err(Trap::new("Unexpected `Message::LinkDied` in scratch area"))
         }
     };
 
     Ok(bytes as u64)
 }
 
-// lunatic::message::push_process(process_id: u64) -> u64
-//
 // Adds a process resource to the message that is currently in the scratch area and returns
-// the location in the array the process was added to. This will remove the process handle from
-// the current process' resources.
+// the location in the array the process was added to.
+//
+// This will remove the process handle from the current process' resources.
 //
 // Traps:
 // * If process ID doesn't exist
@@ -295,15 +284,13 @@ fn push_process<T: ProcessState + ProcessCtx<T>>(
         .or_trap("lunatic::message::push_process")?;
     let index = match message {
         Message::Data(data) => data.add_process(process) as u64,
-        Message::Signal(_) => {
-            return Err(Trap::new("Unexpected `Message::Signal` in scratch area"))
+        Message::LinkDied(_) => {
+            return Err(Trap::new("Unexpected `Message::LinkDied` in scratch area"))
         }
     };
     Ok(index)
 }
 
-// lunatic::message::take_process(index: u64) -> u64
-//
 // Takes the process handle from the message that is currently in the scratch area by index, puts
 // it into the process' resources and returns the resource ID.
 //
@@ -323,15 +310,13 @@ fn take_process<T: ProcessState + ProcessCtx<T>>(
         Message::Data(data) => data
             .take_process(index as usize)
             .or_trap("lunatic::message::take_process")?,
-        Message::Signal(_) => {
-            return Err(Trap::new("Unexpected `Message::Signal` in scratch area"))
+        Message::LinkDied(_) => {
+            return Err(Trap::new("Unexpected `Message::LinkDied` in scratch area"))
         }
     };
     Ok(caller.data_mut().process_resources_mut().add(process))
 }
 
-// lunatic::message::push_tcp_stream(stream_id: u64) -> u64
-//
 // Adds a tcp stream resource to the message that is currently in the scratch area and returns
 // the new location of it. This will remove the tcp stream from  the current process' resources.
 //
@@ -354,15 +339,13 @@ fn push_tcp_stream<T: ProcessState + ProcessCtx<T> + NetworkingCtx>(
         .or_trap("lunatic::message::push_tcp_stream")?;
     let index = match message {
         Message::Data(data) => data.add_tcp_stream(stream) as u64,
-        Message::Signal(_) => {
-            return Err(Trap::new("Unexpected `Message::Signal` in scratch area"))
+        Message::LinkDied(_) => {
+            return Err(Trap::new("Unexpected `Message::LinkDied` in scratch area"))
         }
     };
     Ok(index)
 }
 
-// lunatic::message::take_tcp_stream(index: u64) -> u64
-//
 // Takes the tcp stream from the message that is currently in the scratch area by index, puts
 // it into the process' resources and returns the resource ID.
 //
@@ -382,19 +365,16 @@ fn take_tcp_stream<T: ProcessState + ProcessCtx<T> + NetworkingCtx>(
         Message::Data(data) => data
             .take_tcp_stream(index as usize)
             .or_trap("lunatic::message::take_tcp_stream")?,
-        Message::Signal(_) => {
-            return Err(Trap::new("Unexpected `Message::Signal` in scratch area"))
+        Message::LinkDied(_) => {
+            return Err(Trap::new("Unexpected `Message::LinkDied` in scratch area"))
         }
     };
     Ok(caller.data_mut().tcp_stream_resources_mut().add(tcp_stream))
 }
 
-// lunatic::message::send(
-//     process_id: u64,
-// )
+// Sends the message to a process.
 //
-// Sends the message to a process. There are no guarantees that the process will ever receive
-// the message.
+// There are no guarantees that the message will be received.
 //
 // Traps:
 // * If the process ID doesn't exist.
@@ -417,12 +397,6 @@ fn send<T: ProcessState + ProcessCtx<T>>(
     Ok(())
 }
 
-// lunatic::message::send_receive_skip_search(process_id: u64, timeout: u32) -> u32
-//
-// Returns:
-// * 0    if message arrived.
-// * 9027 if call timed out.
-//
 // Sends the message to a process and waits for a reply, but doesn't look through existing
 // messages in the mailbox queue while waiting. This is an optimization that only makes sense
 // with tagged messages. In a request/reply scenario we can tag the request message with an
@@ -433,6 +407,10 @@ fn send<T: ProcessState + ProcessCtx<T>>(
 //
 // If timeout is specified (value different from 0), the function will return on timeout
 // expiration with value 9027.
+//
+// Returns:
+// * 0    if message arrived.
+// * 9027 if call timed out.
 //
 // Traps:
 // * If the process ID doesn't exist.
@@ -474,13 +452,6 @@ fn send_receive_skip_search<T: ProcessState + ProcessCtx<T> + Send>(
     })
 }
 
-// lunatic::message::receive(tag_ptr: u32, tag_len: u32, timeout: u32) -> u32
-//
-// Returns:
-// * 0    if it's a data message.
-// * 1    if it's a signal turned into a message.
-// * 9027 if call timed out.
-//
 // Takes the next message out of the queue or blocks until the next message is received if queue
 // is empty.
 //
@@ -493,6 +464,11 @@ fn send_receive_skip_search<T: ProcessState + ProcessCtx<T> + Send>(
 //
 // Once the message is received, functions like `lunatic::message::read_data()` can be used to
 // extract data out of it.
+//
+// Returns:
+// * 0    if it's a data message.
+// * 1    if it's a signal turned into a message.
+// * 9027 if call timed out.
 //
 // Traps:
 // * If **tag_ptr + (ciovec_array_len * 8) is outside the memory
@@ -526,7 +502,7 @@ fn receive<T: ProcessState + ProcessCtx<T> + Send>(
         } {
             let result = match message {
                 Message::Data(_) => 0,
-                Message::Signal(_) => 1,
+                Message::LinkDied(_) => 1,
             };
             // Put the message into the scratch area
             caller.data_mut().message_scratch_area().replace(message);
@@ -537,8 +513,6 @@ fn receive<T: ProcessState + ProcessCtx<T> + Send>(
     })
 }
 
-// lunatic::message::push_udp_socket(socket_id: u64) -> u64
-//
 // Adds a udp socket resource to the message that is currently in the scratch area and returns
 // the new location of it. This will remove the socket from the current process' resources.
 //
@@ -560,15 +534,13 @@ fn push_udp_socket<T: ProcessState + ProcessCtx<T> + NetworkingCtx>(
         .or_trap("lunatic::message::push_udp_socket")?;
     let index = match message {
         Message::Data(data) => data.add_udp_socket(socket) as u64,
-        Message::Signal(_) => {
-            return Err(Trap::new("Unexpected `Message::Signal` in scratch area"))
+        Message::LinkDied(_) => {
+            return Err(Trap::new("Unexpected `Message::LinkDied` in scratch area"))
         }
     };
     Ok(index)
 }
 
-// lunatic::message::take_udp_socket(index: u64) -> u64
-//
 // Takes the udp socket from the message that is currently in the scratch area by index, puts
 // it into the process' resources and returns the resource ID.
 //
@@ -588,8 +560,8 @@ fn take_udp_socket<T: ProcessState + ProcessCtx<T> + NetworkingCtx>(
         Message::Data(data) => data
             .take_udp_socket(index as usize)
             .or_trap("lunatic::message::take_udp_socket")?,
-        Message::Signal(_) => {
-            return Err(Trap::new("Unexpected `Message::Signal` in scratch area"))
+        Message::LinkDied(_) => {
+            return Err(Trap::new("Unexpected `Message::LinkDied` in scratch area"))
         }
     };
     Ok(caller.data_mut().udp_resources_mut().add(udp_socket))

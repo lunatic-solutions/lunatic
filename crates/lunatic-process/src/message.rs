@@ -1,7 +1,7 @@
 /*!
 The [`Message`] is a special variant of a [`Signal`](crate::Signal) that can be sent to
 processes. The most common kind of Message is a [`DataMessage`], but there are also some special
-kinds of messages, like the [`Message::Signal`], that is received if a linked process dies.
+kinds of messages, like the [`Message::LinkDied`], that is received if a linked process dies.
 */
 
 use std::{
@@ -18,20 +18,20 @@ use crate::Process;
 ///
 /// A [`Message`] has 2 variants:
 /// * Data - Regular message containing a tag, buffer and resources.
-/// * Signal - A signal (`LinkDied`) that was turned into a message.
+/// * LinkDied - A `LinkDied` signal that was turned into a message.
 ///
 /// [0]: crate::Signal
 #[derive(Debug)]
 pub enum Message {
     Data(DataMessage),
-    Signal(Option<i64>),
+    LinkDied(Option<i64>),
 }
 
 impl Message {
     pub fn tag(&self) -> Option<i64> {
         match self {
             Message::Data(message) => message.tag,
-            Message::Signal(tag) => *tag,
+            Message::LinkDied(tag) => *tag,
         }
     }
 }
