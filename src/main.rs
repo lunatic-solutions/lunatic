@@ -98,7 +98,7 @@ async fn main() -> Result<()> {
         }
     }
 
-    // Setup a node if flag is set
+    // Set up a node if flag is set
     // if let Some(node_address) = args.value_of("node") {
     //     let name = args.value_of("node_name").unwrap().to_string();
     //     let peer = args.value_of("peer");
