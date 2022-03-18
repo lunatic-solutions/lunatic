@@ -1,17 +1,16 @@
 [package]
-name = "lunatic-networking-api"
+name = "lunatic-process-api"
 version = "0.1.0"
 edition = "2021"
-description = "Lunatic host functions for tcp and udp networking."
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+hash-map-id = { version = "^0.1", path = "../hash-map-id" }
+uuid = { version = "^0.8", features = ["v4"] }
 anyhow = "^1.0"
 wasmtime = "^0.35"
 async-std = { version = "^1.0", features = ["attributes", "unstable"] }
-async-net = "^1.6"
-tokio = { version = "^1.14", features = ["macros"] }
-hash-map-id = { version = "^0.1", path = "../hash-map-id" }
 lunatic-common-api = { version = "0.1", path = "../lunatic-common-api" }
 lunatic-error-api = { version = "0.1", path = "../lunatic-error-api" }
+lunatic-process = { version = "0.1", path = "../lunatic-process" }

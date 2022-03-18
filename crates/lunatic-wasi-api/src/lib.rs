@@ -1,8 +1,11 @@
 use anyhow::Result;
-use lunatic_common_api::namespace_matches_filter;
-use wasmtime::{Linker, Trap};
+use lunatic_common_api::{get_memory, IntoTrap};
+use lunatic_process::state::ProcessState;
+use lunatic_process_api::ProcessCtx;
+use wasmtime::{Caller, Linker, Trap};
 use wasmtime_wasi::{ambient_authority, Dir, WasiCtx, WasiCtxBuilder};
 
+/// Create a `WasiCtx` from configuration settings.
 pub fn build_wasi(
     args: Option<&Vec<String>>,
     envs: Option<&Vec<(String, String)>>,
@@ -22,328 +25,151 @@ pub fn build_wasi(
     Ok(wasi.build())
 }
 
+pub trait LunaticWasiConfigCtx {
+    fn add_environment_variable(&mut self, key: String, value: String);
+    fn add_command_line_argument(&mut self, argument: String);
+    fn preopen_dir(&mut self, dir: String);
+}
+
 pub trait LunaticWasiCtx {
     fn wasi(&mut self) -> &mut WasiCtx;
 }
 
 // Register WASI APIs to the linker
-pub fn register<T: LunaticWasiCtx + Send + 'static>(
-    linker: &mut Linker<T>,
-    namespace_filter: &[String],
-) -> Result<()> {
-    // Add all WASI functions at first
+pub fn register<T>(linker: &mut Linker<T>) -> Result<()>
+where
+    T: ProcessState + ProcessCtx<T> + LunaticWasiCtx + Send + 'static,
+    T::Config: LunaticWasiConfigCtx,
+{
+    // Register all wasi host functions
     wasmtime_wasi::sync::snapshots::preview_1::add_wasi_snapshot_preview1_to_linker(
         linker,
         |ctx| ctx.wasi(),
     )?;
 
-    // Override all functions not matched with a trap implementation.
-    if !namespace_matches_filter("wasi_snapshot_preview1", "args_get", namespace_filter) {
-        linker.func_wrap("wasi_snapshot_preview1", "args_get", |_: i32, _: i32| -> Result<i32, Trap> {
-            Err(Trap::new("Host function `wasi_snapshot_preview1::args_get` unavailable in this environment."))
-        })?;
-    }
-    if !namespace_matches_filter("wasi_snapshot_preview1", "args_sizes_get", namespace_filter) {
-        linker.func_wrap("wasi_snapshot_preview1", "args_sizes_get", |_: i32, _: i32| -> Result<i32, Trap> {
-        Err(Trap::new("Host function `wasi_snapshot_preview1::args_sizes_get` unavailable in this environment."))
-    })?;
-    }
-    if !namespace_matches_filter("wasi_snapshot_preview1", "clock_res_get", namespace_filter) {
-        linker.func_wrap("wasi_snapshot_preview1", "clock_res_get", |_: i32, _: i32| -> Result<i32, Trap> {
-        Err(Trap::new("Host function `wasi_snapshot_preview1::clock_res_get` unavailable in this environment."))
-    })?;
-    }
-    if !namespace_matches_filter("wasi_snapshot_preview1", "clock_time_get", namespace_filter) {
-        linker.func_wrap("wasi_snapshot_preview1", "clock_time_get", |_: i32, _:i64, _: i32| -> Result<i32, Trap> {
-        Err(Trap::new("Host function `wasi_snapshot_preview1::clock_time_get` unavailable in this environment."))
-    })?;
-    }
-    if !namespace_matches_filter("wasi_snapshot_preview1", "environ_get", namespace_filter) {
-        linker.func_wrap("wasi_snapshot_preview1", "environ_get", |_: i32, _: i32| -> Result<i32, Trap> {
-        Err(Trap::new("Host function `wasi_snapshot_preview1::environ_get` unavailable in this environment."))
-    })?;
-    }
-    if !namespace_matches_filter("wasi_snapshot_preview1", "fd_advise", namespace_filter) {
-        linker.func_wrap("wasi_snapshot_preview1", "fd_advise", |_: i32, _:i64, _:i64, _: i32| -> Result<i32, Trap> {
-        Err(Trap::new("Host function `wasi_snapshot_preview1::fd_advise` unavailable in this environment."))
-    })?;
-    }
-    if !namespace_matches_filter("wasi_snapshot_preview1", "fd_allocate", namespace_filter) {
-        linker.func_wrap("wasi_snapshot_preview1", "fd_allocate", |_: i32, _:i64, _:i64| -> Result<i32, Trap> {
-        Err(Trap::new("Host function `wasi_snapshot_preview1::fd_allocate` unavailable in this environment."))
-    })?;
-    }
-    if !namespace_matches_filter("wasi_snapshot_preview1", "fd_close", namespace_filter) {
-        linker.func_wrap(
-            "wasi_snapshot_preview1",
-            "fd_close",
-            |_: i32| -> Result<i32, Trap> {
-                Err(Trap::new(
-                "Host function `wasi_snapshot_preview1::fd_close` unavailable in this environment.",
-            ))
-            },
-        )?;
-    }
-    if !namespace_matches_filter("wasi_snapshot_preview1", "fd_datasync", namespace_filter) {
-        linker.func_wrap("wasi_snapshot_preview1", "fd_datasync", |_: i32| -> Result<i32, Trap> {
-        Err(Trap::new("Host function `wasi_snapshot_preview1::fd_datasync` unavailable in this environment."))
-    })?;
-    }
-    if !namespace_matches_filter("wasi_snapshot_preview1", "fd_fdstat_get", namespace_filter) {
-        linker.func_wrap("wasi_snapshot_preview1", "fd_fdstat_get", |_: i32, _: i32| -> Result<i32, Trap> {
-        Err(Trap::new("Host function `wasi_snapshot_preview1::fd_fdstat_get` unavailable in this environment."))
-    })?;
-    }
-    if !namespace_matches_filter(
-        "wasi_snapshot_preview1",
-        "fd_fdstat_set_flags",
-        namespace_filter,
-    ) {
-        linker.func_wrap("wasi_snapshot_preview1", "fd_fdstat_set_flags", |_: i32, _: i32| -> Result<i32, Trap> {
-                Err(Trap::new("Host function `wasi_snapshot_preview1::fd_fdstat_set_flags` unavailable in this environment."))
-            })?;
-    }
-    if !namespace_matches_filter(
-        "wasi_snapshot_preview1",
-        "fd_fdstat_set_rights",
-        namespace_filter,
-    ) {
-        linker.func_wrap("wasi_snapshot_preview1", "fd_fdstat_set_rights", |_: i32, _:i64, _:i64| -> Result<i32, Trap> {
-        Err(Trap::new("Host function `wasi_snapshot_preview1::fd_fdstat_set_rights` unavailable in this environment."))
-    })?;
-    }
-    if !namespace_matches_filter(
-        "wasi_snapshot_preview1",
-        "fd_filestat_get",
-        namespace_filter,
-    ) {
-        linker.func_wrap("wasi_snapshot_preview1", "fd_filestat_get", |_: i32, _: i32| -> Result<i32, Trap> {
-        Err(Trap::new("Host function `wasi_snapshot_preview1::fd_filestat_get` unavailable in this environment."))
-    })?;
-    }
-    if !namespace_matches_filter(
-        "wasi_snapshot_preview1",
-        "fd_filestat_set_size",
-        namespace_filter,
-    ) {
-        linker.func_wrap("wasi_snapshot_preview1", "fd_filestat_set_size", |_: i32, _: i64| -> Result<i32, Trap> {
-        Err(Trap::new("Host function `wasi_snapshot_preview1::fd_filestat_set_size` unavailable in this environment."))
-    })?;
-    }
-    if !namespace_matches_filter(
-        "wasi_snapshot_preview1",
-        "fd_filestat_set_times",
-        namespace_filter,
-    ) {
-        linker.func_wrap("wasi_snapshot_preview1", "fd_filestat_set_times", |_: i32, _:i64, _:i64, _: i32| -> Result<i32, Trap> {
-        Err(Trap::new("Host function `wasi_snapshot_preview1::fd_filestat_set_times` unavailable in this environment."))
-    })?;
-    }
-    if !namespace_matches_filter("wasi_snapshot_preview1", "fd_pread", namespace_filter) {
-        linker.func_wrap(
-            "wasi_snapshot_preview1",
-            "fd_pread",
-            |_: i32, _: i32, _: i32, _: i64, _: i32| -> Result<i32, Trap> {
-                Err(Trap::new(
-                "Host function `wasi_snapshot_preview1::fd_pread` unavailable in this environment.",
-            ))
-            },
-        )?;
-    }
-    if !namespace_matches_filter(
-        "wasi_snapshot_preview1",
-        "fd_prestat_dir_name",
-        namespace_filter,
-    ) {
-        linker.func_wrap("wasi_snapshot_preview1", "fd_prestat_dir_name", |_: i32, _: i32, _: i32| -> Result<i32, Trap> {
-        Err(Trap::new("Host function `wasi_snapshot_preview1::fd_prestat_dir_name` unavailable in this environment."))
-    })?;
-    }
-    if !namespace_matches_filter("wasi_snapshot_preview1", "fd_prestat_get", namespace_filter) {
-        linker.func_wrap("wasi_snapshot_preview1", "fd_prestat_get", |_: i32, _: i32| -> Result<i32, Trap> {
-        Err(Trap::new("Host function `wasi_snapshot_preview1::fd_prestat_get` unavailable in this environment."))
-    })?;
-    }
-    if !namespace_matches_filter("wasi_snapshot_preview1", "fd_pwrite", namespace_filter) {
-        linker.func_wrap("wasi_snapshot_preview1", "fd_pwrite", |_: i32, _: i32, _: i32, _: i64, _:i32| -> Result<i32, Trap> {
-        Err(Trap::new("Host function `wasi_snapshot_preview1::fd_pwrite` unavailable in this environment."))
-    })?;
-    }
-    if !namespace_matches_filter("wasi_snapshot_preview1", "fd_read", namespace_filter) {
-        linker.func_wrap(
-            "wasi_snapshot_preview1",
-            "fd_read",
-            |_: i32, _: i32, _: i32, _: i32| -> Result<i32, Trap> {
-                Err(Trap::new(
-                "Host function `wasi_snapshot_preview1::fd_read` unavailable in this environment.",
-            ))
-            },
-        )?;
-    }
-    if !namespace_matches_filter("wasi_snapshot_preview1", "fd_readdir", namespace_filter) {
-        linker.func_wrap("wasi_snapshot_preview1", "fd_readdir", |_: i32, _: i32, _: i32, _: i64, _:i32| -> Result<i32, Trap> {
-        Err(Trap::new("Host function `wasi_snapshot_preview1::fd_readdir` unavailable in this environment."))
-    })?;
-    }
-    if !namespace_matches_filter("wasi_snapshot_preview1", "fd_renumber", namespace_filter) {
-        linker.func_wrap("wasi_snapshot_preview1", "fd_renumber", |_: i32, _: i32| -> Result<i32, Trap> {
-        Err(Trap::new("Host function `wasi_snapshot_preview1::fd_renumber` unavailable in this environment."))
-    })?;
-    }
-    if !namespace_matches_filter("wasi_snapshot_preview1", "fd_seek", namespace_filter) {
-        linker.func_wrap(
-            "wasi_snapshot_preview1",
-            "fd_seek",
-            |_: i32, _: i64, _: i32, _: i32| -> Result<i32, Trap> {
-                Err(Trap::new(
-                "Host function `wasi_snapshot_preview1::fd_seek` unavailable in this environment.",
-            ))
-            },
-        )?;
-    }
-    if !namespace_matches_filter("wasi_snapshot_preview1", "fd_sync", namespace_filter) {
-        linker.func_wrap(
-            "wasi_snapshot_preview1",
-            "fd_sync",
-            |_: i32| -> Result<i32, Trap> {
-                Err(Trap::new(
-                "Host function `wasi_snapshot_preview1::fd_sync` unavailable in this environment.",
-            ))
-            },
-        )?;
-    }
-    if !namespace_matches_filter("wasi_snapshot_preview1", "fd_tell", namespace_filter) {
-        linker.func_wrap(
-            "wasi_snapshot_preview1",
-            "fd_tell",
-            |_: i32, _: i32| -> Result<i32, Trap> {
-                Err(Trap::new(
-                "Host function `wasi_snapshot_preview1::fd_tell` unavailable in this environment.",
-            ))
-            },
-        )?;
-    }
-    if !namespace_matches_filter("wasi_snapshot_preview1", "fd_write", namespace_filter) {
-        linker.func_wrap(
-            "wasi_snapshot_preview1",
-            "fd_write",
-            |_: i32, _: i32, _: i32, _: i32| -> Result<i32, Trap> {
-                Err(Trap::new(
-                "Host function `wasi_snapshot_preview1::fd_write` unavailable in this environment.",
-            ))
-            },
-        )?;
-    }
-    if !namespace_matches_filter(
-        "wasi_snapshot_preview1",
-        "fdpath_create_directory_tell",
-        namespace_filter,
-    ) {
-        linker.func_wrap("wasi_snapshot_preview1", "fdpath_create_directory_tell", |_: i32, _: i32, _: i32| -> Result<i32, Trap> {
-        Err(Trap::new("Host function `wasi_snapshot_preview1::path_create_directory` unavailable in this environment."))
-    })?;
-    }
-    if !namespace_matches_filter(
-        "wasi_snapshot_preview1",
-        "path_filestat_get",
-        namespace_filter,
-    ) {
-        linker.func_wrap("wasi_snapshot_preview1", "path_filestat_get", |_: i32, _: i32, _: i32, _: i32, _: i32| -> Result<i32, Trap> {
-        Err(Trap::new("Host function `wasi_snapshot_preview1::path_filestat_get` unavailable in this environment."))
-    })?;
-    }
-    if !namespace_matches_filter(
-        "wasi_snapshot_preview1",
-        "path_filestat_set_times",
-        namespace_filter,
-    ) {
-        linker.func_wrap("wasi_snapshot_preview1", "path_filestat_set_times", |_: i32, _: i32, _: i32, _: i32, _: i64, _: i64, _: i32| -> Result<i32, Trap> {
-        Err(Trap::new("Host function `wasi_snapshot_preview1::path_filestat_set_times` unavailable in this environment."))
-    })?;
-    }
-    if !namespace_matches_filter("wasi_snapshot_preview1", "path_link", namespace_filter) {
-        linker.func_wrap("wasi_snapshot_preview1", "path_link", |_: i32, _: i32, _: i32, _: i32, _: i32, _: i32, _: i32| -> Result<i32, Trap> {
-        Err(Trap::new("Host function `wasi_snapshot_preview1::path_link` unavailable in this environment."))
-    })?;
-    }
-    if !namespace_matches_filter("wasi_snapshot_preview1", "path_open", namespace_filter) {
-        linker.func_wrap("wasi_snapshot_preview1", "path_open", |_: i32, _: i32, _: i32, _: i32, _: i32, _: i64, _: i64, _: i32, _: i32| -> Result<i32, Trap> {
-        Err(Trap::new("Host function `wasi_snapshot_preview1::path_open` unavailable in this environment."))
-    })?;
-    }
-    if !namespace_matches_filter("wasi_snapshot_preview1", "path_readlink", namespace_filter) {
-        linker.func_wrap("wasi_snapshot_preview1", "path_readlink", |_: i32, _: i32, _: i32, _: i32, _: i32, _: i32| -> Result<i32, Trap> {
-        Err(Trap::new("Host function `wasi_snapshot_preview1::path_readlink` unavailable in this environment."))
-    })?;
-    }
-    if !namespace_matches_filter(
-        "wasi_snapshot_preview1",
-        "path_remove_directory",
-        namespace_filter,
-    ) {
-        linker.func_wrap("wasi_snapshot_preview1", "path_remove_directory", |_: i32, _: i32, _: i32| -> Result<i32, Trap> {
-        Err(Trap::new("Host function `wasi_snapshot_preview1::path_remove_directory` unavailable in this environment."))
-    })?;
-    }
-    if !namespace_matches_filter("wasi_snapshot_preview1", "path_rename", namespace_filter) {
-        linker.func_wrap("wasi_snapshot_preview1", "path_rename", |_: i32, _: i32, _: i32, _: i32, _: i32, _: i32| -> Result<i32, Trap> {
-        Err(Trap::new("Host function `wasi_snapshot_preview1::path_rename` unavailable in this environment."))
-    })?;
-    }
-    if !namespace_matches_filter("wasi_snapshot_preview1", "path_symlink", namespace_filter) {
-        linker.func_wrap("wasi_snapshot_preview1", "path_symlink", |_: i32, _: i32, _: i32, _: i32, _: i32| -> Result<i32, Trap> {
-        Err(Trap::new("Host function `wasi_snapshot_preview1::path_symlink` unavailable in this environment."))
-    })?;
-    }
-    if !namespace_matches_filter(
-        "wasi_snapshot_preview1",
-        "path_unlink_file",
-        namespace_filter,
-    ) {
-        linker.func_wrap("wasi_snapshot_preview1", "path_unlink_file", |_: i32, _: i32, _: i32| -> Result<i32, Trap> {
-        Err(Trap::new("Host function `wasi_snapshot_preview1::path_unlink_file` unavailable in this environment."))
-    })?;
-    }
-    if !namespace_matches_filter("wasi_snapshot_preview1", "poll_oneoff", namespace_filter) {
-        linker.func_wrap("wasi_snapshot_preview1", "poll_oneoff", |_: i32, _: i32, _: i32, _: i32| -> Result<i32, Trap> {
-        Err(Trap::new("Host function `wasi_snapshot_preview1::poll_oneoff` unavailable in this environment."))
-    })?;
-    }
-    if !namespace_matches_filter("wasi_snapshot_preview1", "proc_exit", namespace_filter) {
-        linker.func_wrap("wasi_snapshot_preview1", "proc_exit", |_: i32| -> Result<(), Trap> {
-        Err(Trap::new("Host function `wasi_snapshot_preview1::proc_exit` unavailable in this environment."))
-    })?;
-    }
-    if !namespace_matches_filter("wasi_snapshot_preview1", "proc_raise", namespace_filter) {
-        linker.func_wrap("wasi_snapshot_preview1", "proc_raise", |_: i32| -> Result<i32, Trap> {
-        Err(Trap::new("Host function `wasi_snapshot_preview1::proc_raise` unavailable in this environment."))
-    })?;
-    }
-    if !namespace_matches_filter("wasi_snapshot_preview1", "random_get", namespace_filter) {
-        linker.func_wrap("wasi_snapshot_preview1", "random_get", |_: i32, _: i32| -> Result<i32, Trap> {
-        Err(Trap::new("Host function `wasi_snapshot_preview1::random_get` unavailable in this environment."))
-    })?;
-    }
-    if !namespace_matches_filter("wasi_snapshot_preview1", "sched_yield", namespace_filter) {
-        linker.func_wrap("wasi_snapshot_preview1", "sched_yield", || -> Result<i32, Trap> {
-        Err(Trap::new("Host function `wasi_snapshot_preview1::sched_yield` unavailable in this environment."))
-    })?;
-    }
-    if !namespace_matches_filter("wasi_snapshot_preview1", "sock_recv", namespace_filter) {
-        linker.func_wrap("wasi_snapshot_preview1", "sock_recv", |_: i32, _: i32, _: i32, _: i32, _: i32, _: i32| -> Result<i32, Trap> {
-        Err(Trap::new("Host function `wasi_snapshot_preview1::sock_recv` unavailable in this environment."))
-    })?;
-    }
-    if !namespace_matches_filter("wasi_snapshot_preview1", "sock_send", namespace_filter) {
-        linker.func_wrap("wasi_snapshot_preview1", "sock_send", |_: i32, _: i32, _: i32, _: i32, _: i32| -> Result<i32, Trap> {
-        Err(Trap::new("Host function `wasi_snapshot_preview1::sock_send` unavailable in this environment."))
-    })?;
-    }
-    if !namespace_matches_filter("wasi_snapshot_preview1", "sock_shutdown", namespace_filter) {
-        linker.func_wrap("wasi_snapshot_preview1", "sock_shutdown", |_: i32, _: i32| -> Result<i32, Trap> {
-        Err(Trap::new("Host function `wasi_snapshot_preview1::sock_shutdown` unavailable in this environment."))
-    })?;
-    }
+    // Register host functions to configure wasi
+    linker.func_wrap(
+        "lunatic::wasi",
+        "config_add_environment_variable",
+        add_environment_variable,
+    )?;
+    linker.func_wrap(
+        "lunatic::wasi",
+        "config_add_command_line_argument",
+        add_command_line_argument,
+    )?;
+    linker.func_wrap("lunatic::wasi", "config_preopen_dir", preopen_dir)?;
 
+    Ok(())
+}
+
+// Adds environment variable to a configuration.
+//
+// Traps:
+// * If the config ID doesn't exist.
+// * If the key or value string is not a valid utf8 string.
+// * If any of the memory slices falls outside of the memory.
+fn add_environment_variable<T>(
+    mut caller: Caller<T>,
+    config_id: u64,
+    key_ptr: u32,
+    key_len: u32,
+    value_ptr: u32,
+    value_len: u32,
+) -> Result<(), Trap>
+where
+    T: ProcessState + ProcessCtx<T>,
+    T::Config: LunaticWasiConfigCtx,
+{
+    let memory = get_memory(&mut caller)?;
+    let key_str = memory
+        .data(&caller)
+        .get(key_ptr as usize..(key_ptr + key_len) as usize)
+        .or_trap("lunatic::wasi::config_add_environment_variable")?;
+    let key = std::str::from_utf8(key_str)
+        .or_trap("lunatic::wasi::config_add_environment_variable")?
+        .to_string();
+    let value_str = memory
+        .data(&caller)
+        .get(value_ptr as usize..(value_ptr + value_len) as usize)
+        .or_trap("lunatic::wasi::config_add_environment_variable")?;
+    let value = std::str::from_utf8(value_str)
+        .or_trap("lunatic::wasi::config_add_environment_variable")?
+        .to_string();
+
+    caller
+        .data_mut()
+        .config_resources_mut()
+        .get_mut(config_id)
+        .or_trap("lunatic::wasi::config_set_max_memory: Config ID doesn't exist")?
+        .add_environment_variable(key, value);
+    Ok(())
+}
+
+// Adds command line argument to a configuration.
+//
+// Traps:
+// * If the config ID doesn't exist.
+// * If the argument string is not a valid utf8 string.
+// * If any of the memory slices falls outside of the memory.
+fn add_command_line_argument<T>(
+    mut caller: Caller<T>,
+    config_id: u64,
+    argument_ptr: u32,
+    argument_len: u32,
+) -> Result<(), Trap>
+where
+    T: ProcessState + ProcessCtx<T>,
+    T::Config: LunaticWasiConfigCtx,
+{
+    let memory = get_memory(&mut caller)?;
+    let argument_str = memory
+        .data(&caller)
+        .get(argument_ptr as usize..(argument_ptr + argument_len) as usize)
+        .or_trap("lunatic::wasi::add_command_line_argument")?;
+    let argument = std::str::from_utf8(argument_str)
+        .or_trap("lunatic::wasi::add_command_line_argument")?
+        .to_string();
+
+    caller
+        .data_mut()
+        .config_resources_mut()
+        .get_mut(config_id)
+        .or_trap("lunatic::wasi::add_command_line_argument: Config ID doesn't exist")?
+        .add_command_line_argument(argument);
+    Ok(())
+}
+
+// Mark a directory as preopened in the configuration.
+//
+// Traps:
+// * If the config ID doesn't exist.
+// * If the directory string is not a valid utf8 string.
+// * If any of the memory slices falls outside of the memory.
+fn preopen_dir<T>(
+    mut caller: Caller<T>,
+    config_id: u64,
+    dir_ptr: u32,
+    dir_len: u32,
+) -> Result<(), Trap>
+where
+    T: ProcessState + ProcessCtx<T>,
+    T::Config: LunaticWasiConfigCtx,
+{
+    let memory = get_memory(&mut caller)?;
+    let dir_str = memory
+        .data(&caller)
+        .get(dir_ptr as usize..(dir_ptr + dir_len) as usize)
+        .or_trap("lunatic::wasi::preopen_dir")?;
+    let dir = std::str::from_utf8(dir_str)
+        .or_trap("lunatic::wasi::preopen_dir")?
+        .to_string();
+
+    caller
+        .data_mut()
+        .config_resources_mut()
+        .get_mut(config_id)
+        .or_trap("lunatic::wasi::preopen_dir: Config ID doesn't exist")?
+        .preopen_dir(dir);
     Ok(())
 }

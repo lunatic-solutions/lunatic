@@ -8,5 +8,5 @@ description = "Common functionality for building lunatic host function APIs."
 
 [dependencies]
 anyhow = "^1.0"
-wasmtime = "^0.34"
+wasmtime = "^0.35"
 paste = "^1.0"

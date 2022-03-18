@@ -24,34 +24,15 @@ Wasm modules, checkout out the [lunatic crate](https://crates.io/crates/lunatic)
 * [`WasmProcess`](process::WasmProcess) - a handle to send signals and messages to spawned
   Wasm processes. It implements the [`Process`](process::Process) trait.
 
-## Plugins
-
-TODO
 
 ## WebAssembly module requirements
 
 TODO
 */
 
-pub(crate) mod api;
 pub mod async_map;
 mod config;
-mod environment;
-pub mod message;
-pub(crate) mod module;
-pub mod node;
-pub mod registry;
-pub(crate) mod state;
+pub mod state;
 
-use async_std::sync::RwLock;
-use lazy_static::lazy_static;
-
-pub use config::EnvConfig;
-pub use environment::Environment;
-pub use lunatic_process::{spawn, Finished, Process, Signal, WasmProcess};
-use node::Node;
-
-// Global node singleton.
-lazy_static! {
-    pub static ref NODE: RwLock<Option<Node>> = RwLock::new(None);
-}
+pub use config::DefaultProcessConfig;
+pub use lunatic_process::{spawn, wasm::spawn_wasm, Finished, Process, Signal, WasmProcess};

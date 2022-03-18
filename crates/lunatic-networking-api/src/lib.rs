@@ -13,14 +13,10 @@ use async_std::net::{TcpListener, TcpStream, UdpSocket};
 use dns::DnsIterator;
 use hash_map_id::HashMapId;
 use lunatic_error_api::ErrorCtx;
-use wasmtime::{Caller, FuncType, Linker, ValType};
+use wasmtime::{Caller, Linker};
 use wasmtime::{Memory, Trap};
 
-use lunatic_common_api::{
-    get_memory, link_async10_if_match, link_async2_if_match, link_async3_if_match,
-    link_async4_if_match, link_async5_if_match, link_async6_if_match, link_async7_if_match,
-    link_async8_if_match, link_if_match, IntoTrap,
-};
+use lunatic_common_api::{get_memory, IntoTrap};
 
 pub type TcpListenerResources = HashMapId<TcpListener>;
 pub type TcpStreamResources = HashMapId<TcpStream>;
@@ -41,354 +37,76 @@ pub trait NetworkingCtx {
 // Register the error APIs to the linker
 pub fn register<T: NetworkingCtx + ErrorCtx + Send + 'static>(
     linker: &mut Linker<T>,
-    namespace_filter: &[String],
 ) -> Result<()> {
-    link_async4_if_match(
-        linker,
-        "lunatic::networking",
-        "resolve",
-        FuncType::new(
-            [ValType::I32, ValType::I32, ValType::I32, ValType::I32],
-            [ValType::I32],
-        ),
-        resolve::<T>,
-        namespace_filter,
-    )?;
-    link_if_match(
-        linker,
+    linker.func_wrap4_async("lunatic::networking", "resolve", resolve)?;
+    linker.func_wrap(
         "lunatic::networking",
         "drop_dns_iterator",
-        FuncType::new([ValType::I64], []),
-        drop_dns_iterator::<T>,
-        namespace_filter,
+        drop_dns_iterator,
     )?;
-    link_if_match(
-        linker,
-        "lunatic::networking",
-        "resolve_next",
-        FuncType::new(
-            [
-                ValType::I64,
-                ValType::I32,
-                ValType::I32,
-                ValType::I32,
-                ValType::I32,
-                ValType::I32,
-            ],
-            [ValType::I32],
-        ),
-        resolve_next::<T>,
-        namespace_filter,
-    )?;
-    link_async6_if_match(
-        linker,
-        "lunatic::networking",
-        "tcp_bind",
-        FuncType::new(
-            [
-                ValType::I32,
-                ValType::I32,
-                ValType::I32,
-                ValType::I32,
-                ValType::I32,
-                ValType::I32,
-            ],
-            [ValType::I32],
-        ),
-        tcp_bind::<T>,
-        namespace_filter,
-    )?;
-    link_if_match(
-        linker,
+    linker.func_wrap("lunatic::networking", "resolve_next", resolve_next)?;
+    linker.func_wrap6_async("lunatic::networking", "tcp_bind", tcp_bind)?;
+    linker.func_wrap(
         "lunatic::networking",
         "drop_tcp_listener",
-        FuncType::new([ValType::I64], []),
-        drop_tcp_listener::<T>,
-        namespace_filter,
+        drop_tcp_listener,
     )?;
-    link_if_match(
-        linker,
-        "lunatic::networking",
-        "tcp_local_addr",
-        FuncType::new([ValType::I64, ValType::I32], [ValType::I32]),
-        tcp_local_addr::<T>,
-        namespace_filter,
-    )?;
-    link_if_match(
-        linker,
-        "lunatic::networking",
-        "udp_local_addr",
-        FuncType::new([ValType::I64, ValType::I32], [ValType::I32]),
-        udp_local_addr::<T>,
-        namespace_filter,
-    )?;
-    link_async3_if_match(
-        linker,
-        "lunatic::networking",
-        "tcp_accept",
-        FuncType::new([ValType::I64, ValType::I32, ValType::I32], [ValType::I32]),
-        tcp_accept::<T>,
-        namespace_filter,
-    )?;
-    link_async7_if_match(
-        linker,
-        "lunatic::networking",
-        "tcp_connect",
-        FuncType::new(
-            [
-                ValType::I32,
-                ValType::I32,
-                ValType::I32,
-                ValType::I32,
-                ValType::I32,
-                ValType::I32,
-                ValType::I32,
-            ],
-            [ValType::I32],
-        ),
-        tcp_connect::<T>,
-        namespace_filter,
-    )?;
-    link_if_match(
-        linker,
-        "lunatic::networking",
-        "drop_tcp_stream",
-        FuncType::new([ValType::I64], []),
-        drop_tcp_stream::<T>,
-        namespace_filter,
-    )?;
-    link_if_match(
-        linker,
-        "lunatic::networking",
-        "clone_tcp_stream",
-        FuncType::new([ValType::I64], [ValType::I64]),
-        clone_tcp_stream::<T>,
-        namespace_filter,
-    )?;
-    link_async5_if_match(
-        linker,
+    linker.func_wrap("lunatic::networking", "tcp_local_addr", tcp_local_addr)?;
+    linker.func_wrap("lunatic::networking", "udp_local_addr", udp_local_addr)?;
+    linker.func_wrap3_async("lunatic::networking", "tcp_accept", tcp_accept)?;
+    linker.func_wrap7_async("lunatic::networking", "tcp_connect", tcp_connect)?;
+    linker.func_wrap("lunatic::networking", "drop_tcp_stream", drop_tcp_stream)?;
+    linker.func_wrap("lunatic::networking", "clone_tcp_stream", clone_tcp_stream)?;
+    linker.func_wrap5_async(
         "lunatic::networking",
         "tcp_write_vectored",
-        FuncType::new(
-            [
-                ValType::I64,
-                ValType::I32,
-                ValType::I32,
-                ValType::I32,
-                ValType::I32,
-            ],
-            [ValType::I32],
-        ),
-        tcp_write_vectored::<T>,
-        namespace_filter,
+        tcp_write_vectored,
     )?;
-    link_async5_if_match(
-        linker,
-        "lunatic::networking",
-        "tcp_read",
-        FuncType::new(
-            [
-                ValType::I64,
-                ValType::I32,
-                ValType::I32,
-                ValType::I32,
-                ValType::I32,
-            ],
-            [ValType::I32],
-        ),
-        tcp_read::<T>,
-        namespace_filter,
-    )?;
-    link_async2_if_match(
-        linker,
-        "lunatic::networking",
-        "tcp_flush",
-        FuncType::new([ValType::I64, ValType::I32], [ValType::I32]),
-        tcp_flush::<T>,
-        namespace_filter,
-    )?;
-    link_async6_if_match(
-        linker,
-        "lunatic::networking",
-        "udp_bind",
-        FuncType::new(
-            [
-                ValType::I32,
-                ValType::I32,
-                ValType::I32,
-                ValType::I32,
-                ValType::I32,
-                ValType::I32,
-            ],
-            [ValType::I32],
-        ),
-        udp_bind::<T>,
-        namespace_filter,
-    )?;
-    link_if_match(
-        linker,
-        "lunatic::networking",
-        "drop_udp_socket",
-        FuncType::new([ValType::I64], []),
-        drop_udp_socket::<T>,
-        namespace_filter,
-    )?;
-    link_async5_if_match(
-        linker,
-        "lunatic::networking",
-        "udp_receive",
-        FuncType::new(
-            [
-                ValType::I64,
-                ValType::I32,
-                ValType::I32,
-                ValType::I32,
-                ValType::I32,
-            ],
-            [ValType::I32],
-        ),
-        udp_receive::<T>,
-        namespace_filter,
-    )?;
-    link_async6_if_match(
-        linker,
-        "lunatic::networking",
-        "udp_receive_from",
-        FuncType::new(
-            [
-                ValType::I64,
-                ValType::I32,
-                ValType::I32,
-                ValType::I32,
-                ValType::I32,
-                ValType::I32,
-            ],
-            [ValType::I32],
-        ),
-        udp_receive_from::<T>,
-        namespace_filter,
-    )?;
-    link_async8_if_match(
-        linker,
-        "lunatic::networking",
-        "udp_connect",
-        FuncType::new(
-            [
-                ValType::I64,
-                ValType::I32,
-                ValType::I32,
-                ValType::I32,
-                ValType::I32,
-                ValType::I32,
-                ValType::I32,
-                ValType::I32,
-            ],
-            [ValType::I32],
-        ),
-        udp_connect::<T>,
-        namespace_filter,
-    )?;
-    link_if_match(
-        linker,
-        "lunatic::networking",
-        "clone_udp_socket",
-        FuncType::new([ValType::I64], [ValType::I64]),
-        clone_udp_socket::<T>,
-        namespace_filter,
-    )?;
-    link_if_match(
-        linker,
+    linker.func_wrap5_async("lunatic::networking", "tcp_read", tcp_read)?;
+    linker.func_wrap2_async("lunatic::networking", "tcp_flush", tcp_flush)?;
+    linker.func_wrap6_async("lunatic::networking", "udp_bind", udp_bind)?;
+    linker.func_wrap("lunatic::networking", "drop_udp_socket", drop_udp_socket)?;
+    linker.func_wrap5_async("lunatic::networking", "udp_receive", udp_receive)?;
+    linker.func_wrap6_async("lunatic::networking", "udp_receive_from", udp_receive_from)?;
+    linker.func_wrap8_async("lunatic::networking", "udp_connect", udp_connect)?;
+    linker.func_wrap("lunatic::networking", "clone_udp_socket", clone_udp_socket)?;
+    linker.func_wrap(
         "lunatic::networking",
         "set_udp_socket_broadcast",
-        FuncType::new([ValType::I64, ValType::I32], []),
         set_udp_socket_broadcast,
-        namespace_filter,
     )?;
-    link_if_match(
-        linker,
+    linker.func_wrap(
         "lunatic::networking",
         "get_udp_socket_broadcast",
-        FuncType::new([ValType::I64], [ValType::I32]),
-        get_udp_socket_broadcast::<T>,
-        namespace_filter,
+        get_udp_socket_broadcast,
     )?;
-    link_if_match(
-        linker,
+    linker.func_wrap(
         "lunatic::networking",
         "set_udp_socket_ttl",
-        FuncType::new([ValType::I64, ValType::I32], []),
-        set_udp_socket_ttl::<T>,
-        namespace_filter,
+        set_udp_socket_ttl,
     )?;
-    link_if_match(
-        linker,
+    linker.func_wrap(
         "lunatic::networking",
         "get_udp_socket_ttl",
-        FuncType::new([ValType::I64], [ValType::I32]),
-        get_udp_socket_ttl::<T>,
-        namespace_filter,
+        get_udp_socket_ttl,
     )?;
-    link_async10_if_match(
-        linker,
-        "lunatic::networking",
-        "udp_send_to",
-        FuncType::new(
-            [
-                ValType::I64,
-                ValType::I32,
-                ValType::I32,
-                ValType::I32,
-                ValType::I32,
-                ValType::I32,
-                ValType::I32,
-                ValType::I32,
-                ValType::I32,
-                ValType::I32,
-            ],
-            [ValType::I32],
-        ),
-        udp_send_to::<T>,
-        namespace_filter,
-    )?;
-    link_async5_if_match(
-        linker,
-        "lunatic::networking",
-        "udp_send",
-        FuncType::new(
-            [
-                ValType::I64,
-                ValType::I32,
-                ValType::I32,
-                ValType::I32,
-                ValType::I32,
-            ],
-            [ValType::I32],
-        ),
-        udp_send::<T>,
-        namespace_filter,
-    )?;
+    linker.func_wrap10_async("lunatic::networking", "udp_send_to", udp_send_to)?;
+    linker.func_wrap5_async("lunatic::networking", "udp_send", udp_send)?;
+
     Ok(())
 }
 
-//% lunatic::networking::resolve(
-//%     name_str_ptr: u32,
-//%     name_str_len: u32,
-//%     timeout: u32,
-//%     id_u64_ptr: u32,
-//% ) -> u32
-//%
-//% Returns:
-//% * 0 on success - The ID of the newly created DNS iterator is written to **id_u64_ptr**
-//% * 1 on error   - The error ID is written to **id_u64_ptr**
-//% * 9027 if the operation timed out
-//%
-//% Performs a DNS resolution. The returned iterator may not actually yield any values
-//% depending on the outcome of any resolution performed.
-//%
-//% Traps:
-//% * If the name is not a valid utf8 string.
-//% * If **name_str_ptr + name_str_len** is outside the memory.
-//% * If **id_ptr** is outside the memory.
+// Performs a DNS resolution. The returned iterator may not actually yield any values
+// depending on the outcome of any resolution performed.
+//
+// Returns:
+// * 0 on success - The ID of the newly created DNS iterator is written to **id_u64_ptr**
+// * 1 on error   - The error ID is written to **id_u64_ptr**
+// * 9027 if the operation timed out
+//
+// Traps:
+// * If the name is not a valid utf8 string.
+// * If any memory outside of the guest heap space is referenced.
 fn resolve<T: NetworkingCtx + ErrorCtx + Send>(
     mut caller: Caller<T>,
     name_str_ptr: u32,
@@ -439,12 +157,10 @@ fn resolve<T: NetworkingCtx + ErrorCtx + Send>(
     })
 }
 
-//% lunatic::networking::drop_dns_iterator(dns_iter_id: u64)
-//%
-//% Drops the DNS iterator resource..
-//%
-//% Traps:
-//% * If the DNS iterator ID doesn't exist.
+// Drops the DNS iterator resource..
+//
+// Traps:
+// * If the DNS iterator ID doesn't exist.
 fn drop_dns_iterator<T: NetworkingCtx>(
     mut caller: Caller<T>,
     dns_iter_id: u64,
@@ -457,31 +173,19 @@ fn drop_dns_iterator<T: NetworkingCtx>(
     Ok(())
 }
 
-//% lunatic::networking::resolve_next(
-//%     dns_iter_id: u64,
-//%     addr_type_u32_ptr: u32,
-//%     addr_u8_ptr: u32,
-//%     port_u16_ptr: u32,
-//%     flow_info_u32_ptr: u32,
-//%     scope_id_u32_ptr: u32,
-//%  ) -> u32
-//%
-//% Returns:
-//% * 0 on success
-//% * 1 on error   - There are no more addresses in this iterator
-//%
-//% Takes the next socket address from DNS iterator and writes it to the passed in pointers.
-//% Addresses type is going to be a value of `4` or `6`, representing v4 or v6 addresses. The
-//% caller needs to reserve enough space at `addr_u8_ptr` for both values to fit in (16 bytes).
-//% `flow_info_u32_ptr` & `scope_id_u32_ptr` are only going to be used with version v6.
-//%
-//% Traps:
-//% * If the DNS iterator ID doesn't exist.
-//% * If **addr_type_u32_ptr** is outside the memory
-//% * If **addr_u8_ptr** is outside the memory
-//% * If **port_u16_ptr** is outside the memory
-//% * If **flow_info_u32_ptr** is outside the memory
-//% * If **scope_id_u32_ptr** is outside the memory
+// Takes the next socket address from DNS iterator and writes it to the passed in pointers.
+//
+// Addresses type is going to be a value of `4` or `6`, representing v4 or v6 addresses. The
+// caller needs to reserve enough space at `addr_u8_ptr` for both values to fit in (16 bytes).
+// `flow_info_u32_ptr` & `scope_id_u32_ptr` are only going to be used with version v6.
+//
+// Returns:
+// * 0 on success
+// * 1 on error   - There are no more addresses in this iterator
+//
+// Traps:
+// * If the DNS iterator ID doesn't exist.
+// * If any memory outside of the guest heap space is referenced.
 fn resolve_next<T: NetworkingCtx>(
     mut caller: Caller<T>,
     dns_iter_id: u64,
@@ -544,29 +248,18 @@ fn resolve_next<T: NetworkingCtx>(
     }
 }
 
-//% lunatic::networking::tcp_bind(
-//%     addr_type: u32,
-//%     addr_u8_ptr: u32,
-//%     port: u32,
-//%     flow_info: u32,
-//%     scope_id: u32,
-//%     id_u64_ptr: u32
-//% ) -> u32
-//%
-//% Returns:
-//% * 0 on success - The ID of the newly created TCP listener is written to **id_u64_ptr**
-//% * 1 on error   - The error ID is written to **id_u64_ptr**
-//%
-//% Creates a new TCP listener, which will be bound to the specified address. The returned listener
-//% is ready for accepting connections.
-//%
-//% Binding with a port number of 0 will request that the OS assigns a port to this listener. The
-//% port allocated can be queried via the `tcp_local_addr` (TODO) method.
-//%
-//% Traps:
-//% * If **addr_type** is neither 4 or 6.
-//% * If **addr_u8_ptr** is outside the memory
-//% * If **id_u64_ptr** is outside the memory.
+// Creates a new TCP listener, which will be bound to the specified address. The returned listener
+// is ready for accepting connections.
+//
+// Binding with a port number of 0 will request that the OS assigns a port to this listener. The
+// port allocated can be queried via the `tcp_local_addr` (TODO) method.
+//
+// Returns:
+// * 0 on success - The ID of the newly created TCP listener is written to **id_u64_ptr**
+// * 1 on error   - The error ID is written to **id_u64_ptr**
+//
+// Traps:
+// * If any memory outside of the guest heap space is referenced.
 fn tcp_bind<T: NetworkingCtx + ErrorCtx + Send>(
     mut caller: Caller<T>,
     addr_type: u32,
@@ -606,12 +299,10 @@ fn tcp_bind<T: NetworkingCtx + ErrorCtx + Send>(
     })
 }
 
-//% lunatic::networking::drop_tcp_listener(tcp_listener_id: i64)
-//%
-//% Drops the TCP listener resource.
-//%
-//% Traps:
-//% * If the TCP listener ID doesn't exist.
+// Drops the TCP listener resource.
+//
+// Traps:
+// * If the TCP listener ID doesn't exist.
 fn drop_tcp_listener<T: NetworkingCtx>(
     mut caller: Caller<T>,
     tcp_listener_id: u64,
@@ -624,18 +315,16 @@ fn drop_tcp_listener<T: NetworkingCtx>(
     Ok(())
 }
 
-//% lunatic::networking::tcp_local_addr(tcp_listener_id: i64, id_u64_ptr: u32) -> i64
-//%
-//% Returns the local address that this listener is bound to as an DNS iterator with just one
-//% element.
-//% * 0 on success - The local address that this listener is bound to is returned as an DNS
-//%                  iterator with just one element and written to **id_ptr**.
-//%
-//% * 1 on error   - The error ID is written to **id_u64_ptr**
-//%
-//% Traps:
-//% * If the tcp listener ID doesn't exist.
-//% * If **peer_socket_addr_id_ptr** is outside the memory.
+// Returns the local address that this listener is bound to as an DNS iterator with just one
+// element.
+// * 0 on success - The local address that this listener is bound to is returned as an DNS
+//                  iterator with just one element and written to **id_ptr**.
+//
+// * 1 on error   - The error ID is written to **id_u64_ptr**
+//
+// Traps:
+// * If the tcp listener ID doesn't exist.
+// * If any memory outside of the guest heap space is referenced.
 fn tcp_local_addr<T: NetworkingCtx + ErrorCtx>(
     mut caller: Caller<T>,
     tcp_listener_id: u64,
@@ -669,22 +358,15 @@ fn tcp_local_addr<T: NetworkingCtx + ErrorCtx>(
     Ok(result)
 }
 
-//% lunatic::networking::tcp_accept(
-//%     listener_id: u64,
-//%     id_u64_ptr: u32,
-//%     peer_addr_dns_iter_id_u64_ptr: u32
-//% ) -> u32
-//%
-//% Returns:
-//% * 0 on success - The ID of the newly created TCP stream is written to **id_u64_ptr** and the
-//%                  peer address is returned as an DNS iterator with just one element and written
-//%                  to **peer_addr_dns_iter_id_u64_ptr**.
-//% * 1 on error   - The error ID is written to **id_u64_ptr**
-//%
-//% Traps:
-//% * If the tcp listener ID doesn't exist.
-//% * If **id_u64_ptr** is outside the memory.
-//% * If **peer_socket_addr_id_ptr** is outside the memory.
+// Returns:
+// * 0 on success - The ID of the newly created TCP stream is written to **id_u64_ptr** and the
+//                  peer address is returned as an DNS iterator with just one element and written
+//                  to **peer_addr_dns_iter_id_u64_ptr**.
+// * 1 on error   - The error ID is written to **id_u64_ptr**
+//
+// Traps:
+// * If the tcp listener ID doesn't exist.
+// * If any memory outside of the guest heap space is referenced.
 fn tcp_accept<T: NetworkingCtx + ErrorCtx + Send>(
     mut caller: Caller<T>,
     listener_id: u64,
@@ -733,24 +415,13 @@ fn tcp_accept<T: NetworkingCtx + ErrorCtx + Send>(
     })
 }
 
-//% lunatic::networking::tcp_connect(
-//%     addr_type: u32,
-//%     addr_u8_ptr: u32,
-//%     port: u32,
-//%     flow_info: u32,
-//%     scope_id: u32,
-//%     timeout: u32,
-//%     id_u64_ptr: u32,
-//% ) -> u32
-//%
-//% Returns:
-//% * 0 on success - The ID of the newly created TCP stream is written to **id_ptr**.
-//% * 1 on error   - The error ID is written to **id_ptr**
-//%
-//% Traps:
-//% * If **addr_type** is neither 4 or 6.
-//% * If **addr_u8_ptr** is outside the memory
-//% * If **id_u64_ptr** is outside the memory.
+// Returns:
+// * 0 on success - The ID of the newly created TCP stream is written to **id_ptr**.
+// * 1 on error   - The error ID is written to **id_ptr**
+//
+// Traps:
+// * If **addr_type** is neither 4 or 6.
+// * If any memory outside of the guest heap space is referenced.
 #[allow(clippy::too_many_arguments)]
 fn tcp_connect<T: NetworkingCtx + ErrorCtx + Send>(
     mut caller: Caller<T>,
@@ -798,12 +469,10 @@ fn tcp_connect<T: NetworkingCtx + ErrorCtx + Send>(
     })
 }
 
-//% lunatic::networking::drop_tcp_stream(tcp_stream_id: u64)
-//%
-//% Drops the TCP stream resource..
-//%
-//% Traps:
-//% * If the DNS iterator ID doesn't exist.
+// Drops the TCP stream resource..
+//
+// Traps:
+// * If the DNS iterator ID doesn't exist.
 fn drop_tcp_stream<T: NetworkingCtx>(
     mut caller: Caller<T>,
     tcp_stream_id: u64,
@@ -816,12 +485,10 @@ fn drop_tcp_stream<T: NetworkingCtx>(
     Ok(())
 }
 
-//% lunatic::networking::clone_tcp_stream(tcp_stream_id: u64) -> u64
-//%
-//% Clones a TCP stream returning the ID of the clone.
-//%
-//% Traps:
-//% * If the stream ID doesn't exist.
+// Clones a TCP stream returning the ID of the clone.
+//
+// Traps:
+// * If the stream ID doesn't exist.
 fn clone_tcp_stream<T: NetworkingCtx>(
     mut caller: Caller<T>,
     tcp_stream_id: u64,
@@ -836,26 +503,16 @@ fn clone_tcp_stream<T: NetworkingCtx>(
     Ok(id)
 }
 
-//% lunatic::networking::tcp_write_vectored(
-//%     stream_id: u64,
-//%     ciovec_array_ptr: u32,
-//%     ciovec_array_len: u32,
-//%     timeout: u32,
-//%     i64_opaque_ptr: u32,
-//% ) -> u32
-//%
-//% Returns:
-//% * 0 on success - The number of bytes written is written to **opaque_ptr**
-//% * 1 on error   - The error ID is written to **opaque_ptr**
-//%
-//% Gathers data from the vector buffers and writes them to the stream. **ciovec_array_ptr** points
-//% to an array of (ciovec_ptr, ciovec_len) pairs where each pair represents a buffer to be written.
-//%
-//% Traps:
-//% * If the stream ID doesn't exist.
-//% * If **ciovec_array_ptr + (ciovec_array_len * 8)** is outside the memory, or any of the sub
-//%   ciovecs point outside of the memory.
-//% * If **i64_opaque_ptr** is outside the memory.
+// Gathers data from the vector buffers and writes them to the stream. **ciovec_array_ptr** points
+// to an array of (ciovec_ptr, ciovec_len) pairs where each pair represents a buffer to be written.
+//
+// Returns:
+// * 0 on success - The number of bytes written is written to **opaque_ptr**
+// * 1 on error   - The error ID is written to **opaque_ptr**
+//
+// Traps:
+// * If the stream ID doesn't exist.
+// * If any memory outside of the guest heap space is referenced.
 fn tcp_write_vectored<T: NetworkingCtx + ErrorCtx + Send>(
     mut caller: Caller<T>,
     stream_id: u64,
@@ -917,25 +574,16 @@ fn tcp_write_vectored<T: NetworkingCtx + ErrorCtx + Send>(
     })
 }
 
-//% lunatic::networking::tcp_read(
-//%     stream_id: u64,
-//%     buffer_ptr: u32,
-//%     buffer_len: u32,
-//%     timeout: u32,
-//%     i64_opaque_ptr: u32,
-//% ) -> i32
-//%
-//% Returns:
-//% * 0 on success - The number of bytes read is written to **opaque_ptr**
-//% * 1 on error   - The error ID is written to **opaque_ptr**
-//% * 9027 if the operation timed out
-//%
-//% Reads data from TCP stream and writes it to the buffer.
-//%
-//% Traps:
-//% * If the stream ID doesn't exist.
-//% * If **buffer_ptr + buffer_len** is outside the memory.
-//% * If **i64_opaque_ptr** is outside the memory.
+// Reads data from TCP stream and writes it to the buffer.
+//
+// Returns:
+// * 0 on success - The number of bytes read is written to **opaque_ptr**
+// * 1 on error   - The error ID is written to **opaque_ptr**
+// * 9027 if the operation timed out
+//
+// Traps:
+// * If the stream ID doesn't exist.
+// * If any memory outside of the guest heap space is referenced.
 fn tcp_read<T: NetworkingCtx + ErrorCtx + Send>(
     mut caller: Caller<T>,
     stream_id: u64,
@@ -980,18 +628,16 @@ fn tcp_read<T: NetworkingCtx + ErrorCtx + Send>(
     })
 }
 
-//% lunatic::networking::tcp_flush(stream_id: u64, error_id_ptr: u32) -> u32
-//%
-//% Returns:
-//% * 0 on success
-//% * 1 on error   - The error ID is written to **error_id_ptr**
-//%
-//% Flushes this output stream, ensuring that all intermediately buffered contents reach their
-//% destination.
-//%
-//% Traps:
-//% * If the stream ID doesn't exist.
-//% * If **error_id_ptr** is outside the memory.
+// Flushes this output stream, ensuring that all intermediately buffered contents reach their
+// destination.
+//
+// Returns:
+// * 0 on success
+// * 1 on error   - The error ID is written to **error_id_ptr**
+//
+// Traps:
+// * If the stream ID doesn't exist.
+// * If any memory outside of the guest heap space is referenced.
 fn tcp_flush<T: NetworkingCtx + ErrorCtx + Send>(
     mut caller: Caller<T>,
     stream_id: u64,
@@ -1018,29 +664,19 @@ fn tcp_flush<T: NetworkingCtx + ErrorCtx + Send>(
     })
 }
 
-//% lunatic::networking::udp_bind(
-//%     addr_type: u32,
-//%     addr_u8_ptr: u32,
-//%     port: u32,
-//%     flow_info: u32,
-//%     scope_id: u32,
-//%     id_u64_ptr: u32
-//% ) -> u32
-//%
-//% Returns:
-//% * 0 on success - The ID of the newly created UDP socket is written to **id_u64_ptr**
-//% * 1 on error   - The error ID is written to **id_u64_ptr**
-//%
-//% Creates a new UDP socket, which will be bound to the specified address. The returned socket
-//% is ready for receiving messages.
-//%
-//% Binding with a port number of 0 will request that the OS assigns a port to this socket. The
-//% port allocated can be queried via the `udp_local_addr` method.
-//%
-//% Traps:
-//% * If **addr_type** is neither 4 or 6.
-//% * If **addr_u8_ptr** is outside the memory
-//% * If **id_u64_ptr** is outside the memory.
+// Creates a new UDP socket, which will be bound to the specified address. The returned socket
+// is ready for receiving messages.
+//
+// Binding with a port number of 0 will request that the OS assigns a port to this socket. The
+// port allocated can be queried via the `udp_local_addr` method.
+//
+// Returns:
+// * 0 on success - The ID of the newly created UDP socket is written to **id_u64_ptr**
+// * 1 on error   - The error ID is written to **id_u64_ptr**
+//
+// Traps:
+// * If **addr_type** is neither 4 or 6.
+// * If any memory outside of the guest heap space is referenced.
 fn udp_bind<T: NetworkingCtx + ErrorCtx + Send>(
     mut caller: Caller<T>,
     addr_type: u32,
@@ -1083,12 +719,10 @@ fn udp_bind<T: NetworkingCtx + ErrorCtx + Send>(
     })
 }
 
-//% lunatic::networking::drop_udp_listener(udp_listener_id: i64)
-//%
-//% Drops the UdpSocket resource.
-//%
-//% Traps:
-//% * If the UDP listener ID doesn't exist.
+// Drops the UdpSocket resource.
+//
+// Traps:
+// * If the UDP listener ID doesn't exist.
 fn drop_udp_socket<T: NetworkingCtx>(
     mut caller: Caller<T>,
     udp_listener_id: u64,
@@ -1101,26 +735,17 @@ fn drop_udp_socket<T: NetworkingCtx>(
     Ok(())
 }
 
-//% lunatic::networking::udp_receive(
-//%     socket_id: u64,
-//%     buffer_ptr: u32,
-//%     buffer_len: u32,
-//%     timeout: u32,
-//%     i64_opaque_ptr: u32,
-//% ) -> i32
-//%
-//% Returns:
-//% * 0 on success    - The number of bytes read is written to **opaque_ptr**
-//% * 1 on error      - The error ID is written to **opaque_ptr**
-//% * 9027 on timeout - The socket receive timed out.
-//%
-//% Reads data from the connected udp socket and writes it to the given buffer. This method will
-//% fail if the socket is not connected.
-//%
-//% Traps:
-//% * If the socket ID doesn't exist.
-//% * If **buffer_ptr + buffer_len** is outside the memory.
-//% * If **i64_opaque_ptr** is outside the memory.
+// Reads data from the connected udp socket and writes it to the given buffer. This method will
+// fail if the socket is not connected.
+//
+// Returns:
+// * 0 on success    - The number of bytes read is written to **opaque_ptr**
+// * 1 on error      - The error ID is written to **opaque_ptr**
+// * 9027 on timeout - The socket receive timed out.
+//
+// Traps:
+// * If the socket ID doesn't exist.
+// * If any memory outside of the guest heap space is referenced.
 fn udp_receive<T: NetworkingCtx + ErrorCtx + Send>(
     mut caller: Caller<T>,
     socket_id: u64,
@@ -1165,28 +790,17 @@ fn udp_receive<T: NetworkingCtx + ErrorCtx + Send>(
     })
 }
 
-//% lunatic::networking::udp_receive_from(
-//%     socket_id: u64,
-//%     buffer_ptr: u32,
-//%     buffer_len: u32,
-//%     timeout: u32,
-//%     i64_opaque_ptr: u32,
-//%     i64_dns_iter_ptr: u32,
-//% ) -> i32
-//%
-//% Returns:
-//% * 0 on success    - The number of bytes read is written to **opaque_ptr** and the sender's
-//%                     address is returned as a DNS iterator through i64_dns_iter_ptr.
-//% * 1 on error      - The error ID is written to **opaque_ptr**
-//% * 9027 on timeout - The socket receive timed out.
-//%
-//% Receives data from the socket.
-//%
-//% Traps:
-//% * If the stream ID doesn't exist.
-//% * If **buffer_ptr + buffer_len** is outside the memory.
-//% * If **i64_opaque_ptr** is outside the memory.
-//% * If **i64_dns_iter_ptr** is outside the memory.
+// Receives data from the socket.
+//
+// Returns:
+// * 0 on success    - The number of bytes read is written to **opaque_ptr** and the sender's
+//                     address is returned as a DNS iterator through i64_dns_iter_ptr.
+// * 1 on error      - The error ID is written to **opaque_ptr**
+// * 9027 on timeout - The socket receive timed out.
+//
+// Traps:
+// * If the stream ID doesn't exist.
+// * If any memory outside of the guest heap space is referenced.
 fn udp_receive_from<T: NetworkingCtx + ErrorCtx + Send>(
     mut caller: Caller<T>,
     socket_id: u64,
@@ -1249,32 +863,19 @@ fn udp_receive_from<T: NetworkingCtx + ErrorCtx + Send>(
     })
 }
 
-//% lunatic::networking::udp_connect(
-//%     udp_socket_id: u64,
-//%     addr_type: u32,
-//%     addr_u8_ptr: u32,
-//%     port: u32,
-//%     flow_info: u32,
-//%     scope_id: u32,
-//%     timeout: u32,
-//%     id_u64_ptr: u32,
-//% ) -> u32
-//%
-//% Returns:
-//% * 0 on success
-//% * 1 on error      - The error ID is written to **id_ptr**.
-//% * 9027 on timeout - The socket connect operation timed out.
-//%
-//% Connects the UDP socket to a remote address.
-//%
-//% When connected, methods `networking::send` and `networking::receive` will use the specified
-//% address for sending and receiving messages. Additionally, a filter will be applied to
-//% `networking::receive_from` so that it only receives messages from that same address.
-//%
-//% Traps:
-//% * If **addr_type** is neither 4 or 6.
-//% * If **addr_u8_ptr** is outside the memory
-//% * If **id_u64_ptr** is outside the memory.
+// Connects the UDP socket to a remote address.
+//
+// When connected, methods `networking::send` and `networking::receive` will use the specified
+// address for sending and receiving messages. Additionally, a filter will be applied to
+// `networking::receive_from` so that it only receives messages from that same address.
+//
+// Returns:
+// * 0 on success
+// * 1 on error      - The error ID is written to **id_ptr**.
+// * 9027 on timeout - The socket connect operation timed out.
+//
+// Traps:
+// * If any memory outside of the guest heap space is referenced.
 #[allow(clippy::too_many_arguments)]
 fn udp_connect<T: NetworkingCtx + ErrorCtx + Send>(
     mut caller: Caller<T>,
@@ -1325,12 +926,10 @@ fn udp_connect<T: NetworkingCtx + ErrorCtx + Send>(
     })
 }
 
-//% lunatic::networking::clone_udp_socket(udp_socket_id: u64) -> u64
-//%
-//% Clones a UDP socket returning the ID of the clone.
-//%
-//% Traps:
-//% * If the stream ID doesn't exist.
+// Clones a UDP socket returning the ID of the clone.
+//
+// Traps:
+// * If the stream ID doesn't exist.
 fn clone_udp_socket<T: NetworkingCtx>(
     mut caller: Caller<T>,
     udp_socket_id: u64,
@@ -1345,13 +944,11 @@ fn clone_udp_socket<T: NetworkingCtx>(
     Ok(id)
 }
 
-//% lunatic::networking::set_udp_socket_broadcast(udp_socket_id: u64, broadcast: u32) -> u64
-//%
-//% Sets the broadcast state of the UDP socket.
-//%
-//% Traps:
-//% * If the socket ID doesn't exist.
-//% * If set_broadcast traps.
+// Sets the broadcast state of the UDP socket.
+//
+// Traps:
+// * If the socket ID doesn't exist.
+// * If set_broadcast traps.
 fn set_udp_socket_broadcast<T: NetworkingCtx>(
     caller: Caller<T>,
     udp_socket_id: u64,
@@ -1367,13 +964,11 @@ fn set_udp_socket_broadcast<T: NetworkingCtx>(
     Ok(())
 }
 
-//% lunatic::networking::get_udp_socket_broadcast(udp_socket_id: u64) -> u64
-//%
-//% Gets the current broadcast state of the UdpSocket.
-//%
-//% Traps:
-//% * If the socket ID doesn't exist.
-//% * If broadcast traps.
+// Gets the current broadcast state of the UdpSocket.
+//
+// Traps:
+// * If the socket ID doesn't exist.
+// * If broadcast traps.
 fn get_udp_socket_broadcast<T: NetworkingCtx>(
     caller: Caller<T>,
     udp_socket_id: u64,
@@ -1391,14 +986,12 @@ fn get_udp_socket_broadcast<T: NetworkingCtx>(
     Ok(result as i32)
 }
 
-//% lunatic::networking::set_udp_socket_ttl(udp_socket_id: u64, ttl: u32) -> u64
-//%
-//% Sets the ttl of the UDP socket. This value sets the time-to-live field that is used in
-//% every packet sent from this socket.
-//%
-//% Traps:
-//% * If the socket ID doesn't exist.
-//% * If set_ttl traps.
+// Sets the ttl of the UDP socket. This value sets the time-to-live field that is used in
+// every packet sent from this socket.
+//
+// Traps:
+// * If the socket ID doesn't exist.
+// * If set_ttl traps.
 fn set_udp_socket_ttl<T: NetworkingCtx>(
     caller: Caller<T>,
     udp_socket_id: u64,
@@ -1414,13 +1007,11 @@ fn set_udp_socket_ttl<T: NetworkingCtx>(
     Ok(())
 }
 
-//% lunatic::networking::get_udp_socket_ttl(udp_socket_id: u64) -> u64
-//%
-//% Gets the current ttl value set on the UdpSocket.
-//%
-//% Traps:
-//% * If the socket ID doesn't exist.
-//% * If ttl() traps.
+// Gets the current ttl value set on the UdpSocket.
+//
+// Traps:
+// * If the socket ID doesn't exist.
+// * If ttl() traps.
 fn get_udp_socket_ttl<T: NetworkingCtx>(
     caller: Caller<T>,
     udp_socket_id: u64,
@@ -1436,31 +1027,16 @@ fn get_udp_socket_ttl<T: NetworkingCtx>(
     Ok(result)
 }
 
-//% lunatic::networking::udp_send_to(
-//%     socket_id: u64,
-//%     buffer_ptr: u32,
-//%     buffer_len: u32,
-//%     addr_type: u32,
-//%     addr_u8_ptr: u32,
-//%     port: u32,
-//%     flow_info: u32,
-//%     scope_id: u32,
-//%     timeout: u32,
-//%     opaque_ptr: u32,
-//% ) -> u32
-//%
-//% Returns:
-//% * 0 on success    - The number of bytes written is written to **opaque_ptr**
-//% * 1 on error      - The error ID is written to **opaque_ptr**
-//% * 9027 on timeout - The socket send timed out.
-//%
-//% Sends data on the socket to the given address.
-//%
-//% Traps:
-//% * If the stream ID doesn't exist.
-//% * If **buffer_ptr + buffer_len** is outside the memory.
-//% * If **i64_opaque_ptr** is outside the memory.
-//% * If **addr_u8_ptr** is outside the memory.
+// Sends data on the socket to the given address.
+//
+// Returns:
+// * 0 on success    - The number of bytes written is written to **opaque_ptr**
+// * 1 on error      - The error ID is written to **opaque_ptr**
+// * 9027 on timeout - The socket send timed out.
+//
+// Traps:
+// * If the stream ID doesn't exist.
+// * If any memory outside of the guest heap space is referenced.
 #[allow(clippy::too_many_arguments)]
 fn udp_send_to<T: NetworkingCtx + ErrorCtx + Send>(
     mut caller: Caller<T>,
@@ -1520,28 +1096,19 @@ fn udp_send_to<T: NetworkingCtx + ErrorCtx + Send>(
     })
 }
 
-//% lunatic::networking::udp_send(
-//%     socket_id: u64,
-//%     buffer_ptr: u32,
-//%     buffer_len: u32,
-//%     timeout: u32,
-//%     opaque_ptr: u32,
-//% ) -> u32
-//%
-//% Returns:
-//% * 0 on success    - The number of bytes written is written to **opaque_ptr**
-//% * 1 on error      - The error ID is written to **opaque_ptr**
-//% * 9027 on timeout - The socket send timed out.
-//%
-//% Sends data on the socket to the remote address to which it is connected.
-//%
-//% The `networking::udp_connect` method will connect this socket to a remote address. This method
-//% will fail if the socket is not connected.
-//%
-//% Traps:
-//% * If the stream ID doesn't exist.
-//% * If **buffer_ptr + buffer_len** is outside the memory.
-//% * If **opaque_ptr** is outside the memory.
+// Sends data on the socket to the remote address to which it is connected.
+//
+// The `networking::udp_connect` method will connect this socket to a remote address. This method
+// will fail if the socket is not connected.
+//
+// Returns:
+// * 0 on success    - The number of bytes written is written to **opaque_ptr**
+// * 1 on error      - The error ID is written to **opaque_ptr**
+// * 9027 on timeout - The socket send timed out.
+//
+// Traps:
+// * If the stream ID doesn't exist.
+// * If any memory outside of the guest heap space is referenced.
 fn udp_send<T: NetworkingCtx + ErrorCtx + Send>(
     mut caller: Caller<T>,
     socket_id: u64,
@@ -1587,18 +1154,16 @@ fn udp_send<T: NetworkingCtx + ErrorCtx + Send>(
     })
 }
 
-//% lunatic::networking::udp_local_addr(udp_socket_id: i64, id_u64_ptr: u32) -> i64
-//%
-//% Returns the local address of this socket, bound to a DNS iterator with just one
-//% element.
-//%
-//% * 0 on success - The local address that this socket is bound to, returned as a DNS
-//%                  iterator with just one element and written to **id_ptr**.
-//% * 1 on error   - The error ID is written to **id_u64_ptr**.
-//%
-//% Traps:
-//% * If the udp socket ID doesn't exist.
-//% * If **id_u64_ptr** is outside the memory.
+// Returns the local address of this socket, bound to a DNS iterator with just one
+// element.
+//
+// * 0 on success - The local address that this socket is bound to, returned as a DNS
+//                  iterator with just one element and written to **id_ptr**.
+// * 1 on error   - The error ID is written to **id_u64_ptr**.
+//
+// Traps:
+// * If the udp socket ID doesn't exist.
+// * If any memory outside of the guest heap space is referenced.
 fn udp_local_addr<T: NetworkingCtx + ErrorCtx + Send>(
     mut caller: Caller<T>,
     udp_socket_id: u64,

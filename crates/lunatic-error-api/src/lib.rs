@@ -1,8 +1,8 @@
 use anyhow::Result;
 use hash_map_id::HashMapId;
-use lunatic_common_api::{get_memory, link_if_match, IntoTrap};
-use wasmtime::{Caller, Linker, ValType};
-use wasmtime::{FuncType, Trap};
+use lunatic_common_api::{get_memory, IntoTrap};
+use wasmtime::Trap;
+use wasmtime::{Caller, Linker};
 
 pub type ErrorResource = HashMapId<anyhow::Error>;
 
@@ -12,43 +12,17 @@ pub trait ErrorCtx {
 }
 
 // Register the error APIs to the linker
-pub fn register<T: ErrorCtx + 'static>(
-    linker: &mut Linker<T>,
-    namespace_filter: &[String],
-) -> Result<()> {
-    link_if_match(
-        linker,
-        "lunatic::error",
-        "string_size",
-        FuncType::new([ValType::I64], [ValType::I32]),
-        string_size::<T>,
-        namespace_filter,
-    )?;
-    link_if_match(
-        linker,
-        "lunatic::error",
-        "to_string",
-        FuncType::new([ValType::I64, ValType::I32], []),
-        to_string::<T>,
-        namespace_filter,
-    )?;
-    link_if_match(
-        linker,
-        "lunatic::error",
-        "drop",
-        FuncType::new([ValType::I64], []),
-        drop::<T>,
-        namespace_filter,
-    )?;
+pub fn register<T: ErrorCtx + 'static>(linker: &mut Linker<T>) -> Result<()> {
+    linker.func_wrap("lunatic::error", "string_size", string_size)?;
+    linker.func_wrap("lunatic::error", "to_string", to_string)?;
+    linker.func_wrap("lunatic::error", "drop", drop)?;
     Ok(())
 }
 
-//% lunatic::error::string_size(error: u64) -> u32
-//%
-//% Returns the size of the string representation of the error.
-//%
-//% Traps:
-//% * If the error ID doesn't exist.
+// Returns the size of the string representation of the error.
+//
+// Traps:
+// * If the error ID doesn't exist.
 fn string_size<T: ErrorCtx>(caller: Caller<T>, error_id: u64) -> Result<u32, Trap> {
     let error = caller
         .data()
@@ -58,14 +32,12 @@ fn string_size<T: ErrorCtx>(caller: Caller<T>, error_id: u64) -> Result<u32, Tra
     Ok(error.to_string().len() as u32)
 }
 
-//% lunatic::error::to_string(error_id: u64, error_str_ptr: u32)
-//%
-//% Write the string representation of the error to the guest memory.
-//% `lunatic::error::string_size` can be called to get the string size.
-//%
-//% Traps:
-//% * If the error ID doesn't exist.
-//% * If **error_str_ptr + length of the error string** is outside the memory.
+// Writes the string representation of the error to the guest memory.
+// `lunatic::error::string_size` can be used to get the string size.
+//
+// Traps:
+// * If the error ID doesn't exist.
+// * If any memory outside of the guest heap space is referenced.
 fn to_string<T: ErrorCtx>(
     mut caller: Caller<T>,
     error_id: u64,
@@ -84,12 +56,10 @@ fn to_string<T: ErrorCtx>(
     Ok(())
 }
 
-//% lunatic::error::drop(error_id: u64)
-//%
-//% Drops the error resource.
-//%
-//% Traps:
-//% * If the error ID doesn't exist.
+// Drops the error resource.
+//
+// Traps:
+// * If the error ID doesn't exist.
 fn drop<T: ErrorCtx>(mut caller: Caller<T>, error_id: u64) -> Result<(), Trap> {
     caller
         .data_mut()
