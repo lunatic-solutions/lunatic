@@ -4,9 +4,9 @@ use async_std::channel;
 use clap::{crate_version, Arg, Command};
 
 use anyhow::{Context, Result};
-use lunatic_process::runtimes;
+use lunatic_process::{env::Environment, runtimes};
 use lunatic_process_api::ProcessConfigCtx;
-use lunatic_runtime::{spawn_wasm, state::DefaultProcessState, DefaultProcessConfig};
+use lunatic_runtime::{state::DefaultProcessState, DefaultProcessConfig};
 
 #[async_std::main]
 async fn main() -> Result<()> {
@@ -123,19 +123,21 @@ async fn main() -> Result<()> {
 
         let module_index = runtime.compile_module::<DefaultProcessState>(module)?;
 
-        let (task, _) = spawn_wasm(
-            runtime,
-            module_index,
-            Arc::new(config),
-            "_start",
-            Vec::new(),
-            None,
-        )
-        .await
-        .context(format!(
-            "Failed to spawn process from {}::_start()",
-            path.to_string_lossy()
-        ))?;
+        let env = Environment::new(1);
+        let (task, _) = env
+            .spawn_wasm(
+                runtime,
+                module_index,
+                Arc::new(config),
+                "_start",
+                Vec::new(),
+                None,
+            )
+            .await
+            .context(format!(
+                "Failed to spawn process from {}::_start()",
+                path.to_string_lossy()
+            ))?;
         // Wait on the main process to finish
         task.await;
     }

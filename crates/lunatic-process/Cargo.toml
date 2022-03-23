@@ -14,3 +14,4 @@ log = "^0.4"
 tokio = { version = "^1.14", features = ["macros"] }
 wasmtime = "^0.35"
 serde = "^1.0"
+dashmap = "5.2.0"

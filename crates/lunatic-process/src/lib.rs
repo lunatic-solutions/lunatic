@@ -1,4 +1,5 @@
 pub mod config;
+pub mod env;
 pub mod mailbox;
 pub mod message;
 pub mod runtimes;
@@ -8,12 +9,11 @@ pub mod wasm;
 use std::{collections::HashMap, fmt::Debug, future::Future, hash::Hash, sync::Arc};
 
 use anyhow::Result;
+use env::Environment;
 use log::{debug, log_enabled, trace, warn, Level};
 
 use async_std::channel::{unbounded, Receiver, Sender};
 use async_std::task::JoinHandle;
-
-use uuid::Uuid;
 
 use crate::{mailbox::MessageMailbox, message::Message};
 
@@ -26,7 +26,7 @@ use crate::{mailbox::MessageMailbox, message::Message};
 /// shapes (message, kill, link, ...). Most signals have well defined meanings, but others such as
 /// a [`Message`] are opaque and left to the receiver for interpretation.
 pub trait Process: Send + Sync {
-    fn id(&self) -> Uuid;
+    fn id(&self) -> u64;
     fn send(&self, signal: Signal);
 }
 
@@ -99,19 +99,19 @@ pub enum Finished<T> {
 /// running in the background and can't be observed directly.
 #[derive(Debug, Clone)]
 pub struct WasmProcess {
-    id: Uuid,
+    id: u64,
     signal_mailbox: Sender<Signal>,
 }
 
 impl WasmProcess {
     /// Create a new WasmProcess
-    pub fn new(id: Uuid, signal_mailbox: Sender<Signal>) -> Self {
+    pub fn new(id: u64, signal_mailbox: Sender<Signal>) -> Self {
         Self { id, signal_mailbox }
     }
 }
 
 impl Process for WasmProcess {
-    fn id(&self) -> Uuid {
+    fn id(&self) -> u64 {
         self.id
     }
     fn send(&self, signal: Signal) {
@@ -137,7 +137,7 @@ impl Process for WasmProcess {
 /// the signal handler a chance to run and process pending signals.
 pub(crate) async fn new<F>(
     fut: F,
-    id: Uuid,
+    id: u64,
     signal_mailbox: Receiver<Signal>,
     message_mailbox: MessageMailbox,
 ) where
@@ -236,7 +236,7 @@ pub(crate) async fn new<F>(
 /// A process spawned from a native Rust closure.
 #[derive(Clone, Debug)]
 pub struct NativeProcess {
-    id: Uuid,
+    id: u64,
     signal_mailbox: Sender<Signal>,
 }
 
@@ -251,26 +251,27 @@ pub struct NativeProcess {
 ///     Ok(())
 /// });
 /// ```
-pub fn spawn<F, K>(func: F) -> (JoinHandle<()>, NativeProcess)
-where
-    K: Future<Output = Result<()>> + Send + 'static,
-    F: FnOnce(NativeProcess, MessageMailbox) -> K,
-{
-    // TODO: Switch to new_v1() for distributed Lunatic to assure uniqueness across nodes.
-    let id = Uuid::new_v4();
-    let (signal_sender, signal_mailbox) = unbounded::<Signal>();
-    let message_mailbox = MessageMailbox::default();
-    let process = NativeProcess {
-        id,
-        signal_mailbox: signal_sender,
-    };
-    let fut = func(process.clone(), message_mailbox.clone());
-    let join = async_std::task::spawn(new(fut, id, signal_mailbox, message_mailbox));
-    (join, process)
+impl Environment {
+    pub fn spawn<F, K>(&self, func: F) -> (JoinHandle<()>, NativeProcess)
+    where
+        K: Future<Output = Result<()>> + Send + 'static,
+        F: FnOnce(NativeProcess, MessageMailbox) -> K,
+    {
+        let id = self.get_next_process_id();
+        let (signal_sender, signal_mailbox) = unbounded::<Signal>();
+        let message_mailbox = MessageMailbox::default();
+        let process = NativeProcess {
+            id,
+            signal_mailbox: signal_sender,
+        };
+        let fut = func(process.clone(), message_mailbox.clone());
+        let join = async_std::task::spawn(new(fut, id, signal_mailbox, message_mailbox));
+        (join, process)
+    }
 }
 
 impl Process for NativeProcess {
-    fn id(&self) -> Uuid {
+    fn id(&self) -> u64 {
         self.id
     }
     fn send(&self, signal: Signal) {

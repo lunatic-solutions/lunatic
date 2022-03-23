@@ -27,8 +27,6 @@ pub fn register<T: ProcessState + ProcessCtx<T> + NetworkingCtx + Send + 'static
     linker.func_wrap("lunatic::message", "seek_data", seek_data)?;
     linker.func_wrap("lunatic::message", "get_tag", get_tag)?;
     linker.func_wrap("lunatic::message", "data_size", data_size)?;
-    linker.func_wrap("lunatic::message", "push_process", push_process)?;
-    linker.func_wrap("lunatic::message", "take_process", take_process)?;
     linker.func_wrap("lunatic::message", "push_tcp_stream", push_tcp_stream)?;
     linker.func_wrap("lunatic::message", "take_tcp_stream", take_tcp_stream)?;
     linker.func_wrap("lunatic::message", "send", send)?;
@@ -260,63 +258,6 @@ fn data_size<T: ProcessState + ProcessCtx<T>>(mut caller: Caller<T>) -> Result<u
     Ok(bytes as u64)
 }
 
-// Adds a process resource to the message that is currently in the scratch area and returns
-// the location in the array the process was added to.
-//
-// This will remove the process handle from the current process' resources.
-//
-// Traps:
-// * If process ID doesn't exist
-// * If no data message is in the scratch area.
-fn push_process<T: ProcessState + ProcessCtx<T>>(
-    mut caller: Caller<T>,
-    process_id: u64,
-) -> Result<u64, Trap> {
-    let process = caller
-        .data_mut()
-        .process_resources_mut()
-        .remove(process_id)
-        .or_trap("lunatic::message::push_process")?;
-    let message = caller
-        .data_mut()
-        .message_scratch_area()
-        .as_mut()
-        .or_trap("lunatic::message::push_process")?;
-    let index = match message {
-        Message::Data(data) => data.add_process(process) as u64,
-        Message::LinkDied(_) => {
-            return Err(Trap::new("Unexpected `Message::LinkDied` in scratch area"))
-        }
-    };
-    Ok(index)
-}
-
-// Takes the process handle from the message that is currently in the scratch area by index, puts
-// it into the process' resources and returns the resource ID.
-//
-// Traps:
-// * If index ID doesn't exist or matches the wrong resource (not process).
-// * If no data message is in the scratch area.
-fn take_process<T: ProcessState + ProcessCtx<T>>(
-    mut caller: Caller<T>,
-    index: u64,
-) -> Result<u64, Trap> {
-    let message = caller
-        .data_mut()
-        .message_scratch_area()
-        .as_mut()
-        .or_trap("lunatic::message::take_process")?;
-    let process = match message {
-        Message::Data(data) => data
-            .take_process(index as usize)
-            .or_trap("lunatic::message::take_process")?,
-        Message::LinkDied(_) => {
-            return Err(Trap::new("Unexpected `Message::LinkDied` in scratch area"))
-        }
-    };
-    Ok(caller.data_mut().process_resources_mut().add(process))
-}
-
 // Adds a tcp stream resource to the message that is currently in the scratch area and returns
 // the new location of it. This will remove the tcp stream from  the current process' resources.
 //
@@ -381,6 +322,7 @@ fn take_tcp_stream<T: ProcessState + ProcessCtx<T> + NetworkingCtx>(
 // * If it's called before creating the next message.
 fn send<T: ProcessState + ProcessCtx<T>>(
     mut caller: Caller<T>,
+    _node_id: u64,
     process_id: u64,
 ) -> Result<(), Trap> {
     let message = caller
@@ -390,8 +332,8 @@ fn send<T: ProcessState + ProcessCtx<T>>(
         .or_trap("lunatic::message::send")?;
     let process = caller
         .data_mut()
-        .process_resources_mut()
-        .get(process_id)
+        .environment()
+        .get_process(process_id)
         .or_trap("lunatic::message::send")?;
     process.send(Signal::Message(message));
     Ok(())
@@ -435,8 +377,8 @@ fn send_receive_skip_search<T: ProcessState + ProcessCtx<T> + Send>(
         };
         let process = caller
             .data_mut()
-            .process_resources_mut()
-            .get(process_id)
+            .environment()
+            .get_process(process_id)
             .or_trap("lunatic::message::send_receive_skip_search")?;
         process.send(Signal::Message(message));
         if let Some(message) = tokio::select! {

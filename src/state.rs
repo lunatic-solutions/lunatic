@@ -9,12 +9,12 @@ use lunatic_error_api::{ErrorCtx, ErrorResource};
 use lunatic_networking_api::dns::DnsIterator;
 use lunatic_networking_api::NetworkingCtx;
 use lunatic_process::config::ProcessConfig;
+use lunatic_process::env::Environment;
 use lunatic_process::runtimes::wasmtime::{WasmtimeCompiledModule, WasmtimeRuntime};
 use lunatic_process::state::ProcessState;
-use lunatic_process::{mailbox::MessageMailbox, message::Message, Process, Signal};
+use lunatic_process::{mailbox::MessageMailbox, message::Message, Signal};
 use lunatic_process_api::ProcessCtx;
 use lunatic_wasi_api::{build_wasi, LunaticWasiCtx};
-use uuid::Uuid;
 use wasmtime::{Linker, ResourceLimiter};
 use wasmtime_wasi::WasiCtx;
 
@@ -22,7 +22,8 @@ use crate::DefaultProcessConfig;
 
 pub struct DefaultProcessState {
     // Process id
-    pub(crate) id: Uuid,
+    pub(crate) id: u64,
+    pub(crate) environment: Environment,
     // The WebAssembly runtime
     runtime: Option<WasmtimeRuntime>,
     // The module that this process was spawned from
@@ -52,7 +53,7 @@ impl ProcessState for DefaultProcessState {
     type Config = DefaultProcessConfig;
 
     fn new(
-        id: Uuid,
+        environment: Environment,
         runtime: WasmtimeRuntime,
         module: WasmtimeCompiledModule<Self>,
         config: Arc<DefaultProcessConfig>,
@@ -60,7 +61,8 @@ impl ProcessState for DefaultProcessState {
         message_mailbox: MessageMailbox,
     ) -> Result<Self> {
         let state = Self {
-            id,
+            id: environment.get_next_process_id(),
+            environment,
             runtime: Some(runtime),
             module: Some(module),
             config: config.clone(),
@@ -76,6 +78,30 @@ impl ProcessState for DefaultProcessState {
             initialized: false,
         };
         Ok(state)
+    }
+
+    fn state_for_instantiation() -> Self {
+        let config = DefaultProcessConfig::default();
+        let (signal_mailbox, _) = unbounded();
+        let message_mailbox = MessageMailbox::default();
+        Self {
+            id: 0,
+            environment: Environment::new(0),
+            runtime: None,
+            module: None,
+            config: Arc::new(config.clone()),
+            message: None,
+            signal_mailbox,
+            message_mailbox,
+            resources: Resources::default(),
+            wasi: build_wasi(
+                Some(config.command_line_arguments()),
+                Some(config.environment_variables()),
+                config.preopened_dirs(),
+            )
+            .unwrap(),
+            initialized: false,
+        }
     }
 
     fn register(linker: &mut Linker<Self>) -> Result<()> {
@@ -108,37 +134,16 @@ impl ProcessState for DefaultProcessState {
         self.module.as_ref().unwrap()
     }
 
-    fn id(&self) -> Uuid {
+    fn id(&self) -> u64 {
         self.id
+    }
+
+    fn node_id(&self) -> u64 {
+        0 // TODO
     }
 
     fn signal_mailbox(&self) -> &Sender<Signal> {
         &self.signal_mailbox
-    }
-}
-
-impl Default for DefaultProcessState {
-    fn default() -> Self {
-        let config = DefaultProcessConfig::default();
-        let (signal_mailbox, _) = unbounded();
-        let message_mailbox = MessageMailbox::default();
-        Self {
-            id: Uuid::new_v4(),
-            runtime: None,
-            module: None,
-            config: Arc::new(config.clone()),
-            message: None,
-            signal_mailbox,
-            message_mailbox,
-            resources: Resources::default(),
-            wasi: build_wasi(
-                Some(config.command_line_arguments()),
-                Some(config.environment_variables()),
-                config.preopened_dirs(),
-            )
-            .unwrap(),
-            initialized: false,
-        }
     }
 }
 
@@ -219,12 +224,8 @@ impl ProcessCtx<DefaultProcessState> for DefaultProcessState {
         &mut self.resources.configs
     }
 
-    fn process_resources(&self) -> &lunatic_process_api::ProcessResources {
-        &self.resources.processes
-    }
-
-    fn process_resources_mut(&mut self) -> &mut lunatic_process_api::ProcessResources {
-        &mut self.resources.processes
+    fn environment(&self) -> &lunatic_process::env::Environment {
+        &self.environment
     }
 }
 
@@ -272,7 +273,6 @@ impl LunaticWasiCtx for DefaultProcessState {
 pub(crate) struct Resources {
     pub(crate) configs: HashMapId<DefaultProcessConfig>,
     pub(crate) modules: HashMapId<WasmtimeCompiledModule<DefaultProcessState>>,
-    pub(crate) processes: HashMapId<Arc<dyn Process>>,
     pub(crate) dns_iterators: HashMapId<DnsIterator>,
     pub(crate) tcp_listeners: HashMapId<TcpListener>,
     pub(crate) tcp_streams: HashMapId<TcpStream>,
@@ -286,7 +286,6 @@ mod tests {
         use crate::state::DefaultProcessState;
         use crate::DefaultProcessConfig;
         use lunatic_process::runtimes::wasmtime::WasmtimeRuntime;
-        use lunatic_process::wasm::spawn_wasm;
         use std::sync::Arc;
 
         // The default configuration includes both, the "lunatic::*" and "wasi_*" namespaces.
@@ -302,7 +301,8 @@ mod tests {
             .compile_module::<DefaultProcessState>(raw_module)
             .unwrap();
 
-        spawn_wasm(runtime, module, Arc::new(config), "hello", Vec::new(), None)
+        let env = lunatic_process::env::Environment::new(1);
+        env.spawn_wasm(runtime, module, Arc::new(config), "hello", Vec::new(), None)
             .await
             .unwrap();
     }

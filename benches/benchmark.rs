@@ -2,8 +2,11 @@ use std::sync::Arc;
 
 use criterion::{criterion_group, criterion_main, Criterion};
 // TODO: Re-export this under lunatic_runtime
-use lunatic_process::runtimes::wasmtime::{default_config, WasmtimeRuntime};
-use lunatic_runtime::{spawn_wasm, state::DefaultProcessState, DefaultProcessConfig};
+use lunatic_process::{
+    env::Environment,
+    runtimes::wasmtime::{default_config, WasmtimeRuntime},
+};
+use lunatic_runtime::{state::DefaultProcessState, DefaultProcessConfig};
 
 fn criterion_benchmark(c: &mut Criterion) {
     let rt = tokio::runtime::Runtime::new().unwrap();
@@ -17,9 +20,10 @@ fn criterion_benchmark(c: &mut Criterion) {
         .compile_module::<DefaultProcessState>(raw_module)
         .unwrap();
 
+    let env = Environment::new(1);
     c.bench_function("spawn process", |b| {
         b.to_async(&rt).iter(|| async {
-            spawn_wasm(
+            env.spawn_wasm(
                 runtime.clone(),
                 module.clone(),
                 config.clone(),

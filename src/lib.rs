@@ -32,7 +32,8 @@ TODO
 
 pub mod async_map;
 mod config;
+mod node;
 pub mod state;
 
 pub use config::DefaultProcessConfig;
-pub use lunatic_process::{spawn, wasm::spawn_wasm, Finished, Process, Signal, WasmProcess};
+pub use lunatic_process::{Finished, Process, Signal, WasmProcess};
