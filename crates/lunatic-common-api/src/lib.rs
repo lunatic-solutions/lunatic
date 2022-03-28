@@ -1,3 +1,5 @@
+pub mod actor;
+
 use anyhow::Result;
 use std::fmt::Display;
 use wasmtime::{Caller, Memory, Trap};
