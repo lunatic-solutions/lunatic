@@ -2,7 +2,7 @@ use std::fmt::Debug;
 use std::sync::Arc;
 
 use anyhow::Result;
-use async_std::channel::{unbounded, Sender};
+use async_std::channel::{unbounded, Receiver, Sender};
 use async_std::net::{TcpListener, TcpStream, UdpSocket};
 use hash_map_id::HashMapId;
 use lunatic_error_api::{ErrorCtx, ErrorResource};
@@ -22,43 +22,55 @@ use crate::DefaultProcessConfig;
 
 pub struct DefaultProcessState {
     // Process id
-    pub(crate) id: Uuid,
+    id: Uuid,
     // The WebAssembly runtime
     runtime: Option<WasmtimeRuntime>,
     // The module that this process was spawned from
-    pub(crate) module: Option<WasmtimeCompiledModule<Self>>,
+    module: Option<WasmtimeCompiledModule<Self>>,
     // The process configuration
-    pub(crate) config: Arc<DefaultProcessConfig>,
+    config: Arc<DefaultProcessConfig>,
     // A space that can be used to temporarily store messages when sending or receiving them.
     // Messages can contain resources that need to be added across multiple host. Likewise,
     // receiving messages is done in two steps, first the message size is returned to allow the
     // guest to reserve enough space and then the it's received. Both of those actions use
     // `message` as a temp space to store messages across host calls.
-    pub(crate) message: Option<Message>,
-    // This field is only part of the state to make it possible to create a Wasm process handle
-    // from inside itself. See the `lunatic::process::this()` Wasm API.
-    pub(crate) signal_mailbox: Sender<Signal>,
+    message: Option<Message>,
+    // Signals sent to the mailbox
+    signal_mailbox: (Sender<Signal>, Receiver<Signal>),
     // Messages sent to the process
-    pub(crate) message_mailbox: MessageMailbox,
+    message_mailbox: MessageMailbox,
     // Resources
-    pub(crate) resources: Resources,
+    resources: Resources,
     // WASI
-    pub(crate) wasi: WasiCtx,
+    wasi: WasiCtx,
     // Set to true if the WASM module has been instantiated
-    pub(crate) initialized: bool,
+    initialized: bool,
+}
+
+impl DefaultProcessState {
+    // Redirect the stdout stream
+    pub fn set_stdout(&mut self, f: Box<dyn wasmtime_wasi::WasiFile>) {
+        self.wasi.set_stdout(f);
+    }
+
+    // Redirect the stderr stream
+    pub fn set_stderr(&mut self, f: Box<dyn wasmtime_wasi::WasiFile>) {
+        self.wasi.set_stderr(f);
+    }
 }
 
 impl ProcessState for DefaultProcessState {
     type Config = DefaultProcessConfig;
 
     fn new(
-        id: Uuid,
         runtime: WasmtimeRuntime,
         module: WasmtimeCompiledModule<Self>,
         config: Arc<DefaultProcessConfig>,
-        signal_mailbox: Sender<Signal>,
-        message_mailbox: MessageMailbox,
     ) -> Result<Self> {
+        // TODO: Switch to new_v1() for distributed Lunatic to assure uniqueness across nodes.
+        let id = Uuid::new_v4();
+        let signal_mailbox = unbounded::<Signal>();
+        let message_mailbox = MessageMailbox::default();
         let state = Self {
             id,
             runtime: Some(runtime),
@@ -112,15 +124,19 @@ impl ProcessState for DefaultProcessState {
         self.id
     }
 
-    fn signal_mailbox(&self) -> &Sender<Signal> {
+    fn signal_mailbox(&self) -> &(Sender<Signal>, Receiver<Signal>) {
         &self.signal_mailbox
+    }
+
+    fn message_mailbox(&self) -> &MessageMailbox {
+        &self.message_mailbox
     }
 }
 
 impl Default for DefaultProcessState {
     fn default() -> Self {
         let config = DefaultProcessConfig::default();
-        let (signal_mailbox, _) = unbounded();
+        let signal_mailbox = unbounded::<Signal>();
         let message_mailbox = MessageMailbox::default();
         Self {
             id: Uuid::new_v4(),
@@ -286,6 +302,7 @@ mod tests {
         use crate::state::DefaultProcessState;
         use crate::DefaultProcessConfig;
         use lunatic_process::runtimes::wasmtime::WasmtimeRuntime;
+        use lunatic_process::state::ProcessState;
         use lunatic_process::wasm::spawn_wasm;
         use std::sync::Arc;
 
@@ -298,11 +315,11 @@ mod tests {
         let runtime = WasmtimeRuntime::new(&wasmtime_config).unwrap();
 
         let raw_module = wat::parse_file("./wat/all_imports.wat").unwrap();
-        let module = runtime
-            .compile_module::<DefaultProcessState>(raw_module)
-            .unwrap();
+        let module = runtime.compile_module(raw_module).unwrap();
+        let state =
+            DefaultProcessState::new(runtime.clone(), module.clone(), Arc::new(config)).unwrap();
 
-        spawn_wasm(runtime, module, Arc::new(config), "hello", Vec::new(), None)
+        spawn_wasm(runtime, module, state, "hello", Vec::new(), None)
             .await
             .unwrap();
     }

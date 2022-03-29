@@ -27,6 +27,7 @@ tokio = { version = "^1.14", features = ["macros"] }
 async-std = { version = "^1.0", features = ["attributes", "unstable"] }
 wasmtime = "^0.35"
 wasmtime-wasi = "^0.35"
+wasi-common = "^0.35"
 wasmparser = "^0.81"
 wasm-encoder = "^0.8"
 env_logger = "^0.9"
@@ -35,6 +36,7 @@ semver = "^1.0"
 serde = "^1.0"
 bincode = "^1.3"
 dashmap = "^4.0"
+regex = "^1.5"
 hash-map-id = { version = "^0.1", path = "crates/hash-map-id" }
 lunatic-process = { version = "^0.1", path = "crates/lunatic-process" }
 lunatic-common-api = { version = "^0.1", path = "crates/lunatic-common-api" }
