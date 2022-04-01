@@ -138,15 +138,24 @@ pub(crate) async fn test() -> Result<()> {
                 // Check if test should panic
                 let test = if name.starts_with("#panic_") {
                     let name = name.strip_prefix("#panic_").unwrap();
-                    // TODO: Handle escaped `\#`
-                    let panic: String = name.chars().take_while(|c| c.ne(&'#')).collect();
+                    // Take all characters until `#`, but skip over escaped ones `\#`.
+                    let mut prev_char = ' ';
+                    let panic: String = name
+                        .chars()
+                        .take_while(|c| {
+                            let condition = !(*c == '#' && prev_char != '\\');
+                            prev_char = *c;
+                            condition
+                        })
+                        .collect();
+                    let panic_unescaped = panic.replace("\\#", "#");
                     let panic_prefix = format!("{}#", panic);
                     let function_name = name.strip_prefix(&panic_prefix).unwrap().to_string();
                     Test {
                         filtered: !function_name.contains(filter),
                         wasm_export_name: wasm_export_name.to_string(),
                         function_name,
-                        panic: Some(panic),
+                        panic: Some(panic_unescaped),
                         ignored,
                     }
                 } else {
