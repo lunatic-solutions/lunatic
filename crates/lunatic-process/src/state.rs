@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use async_std::channel::{Receiver, Sender};
+use hash_map_id::HashMapId;
 use uuid::Uuid;
 use wasmtime::Linker;
 
@@ -11,6 +12,8 @@ use crate::{
     runtimes::wasmtime::{WasmtimeCompiledModule, WasmtimeRuntime},
     Signal,
 };
+
+pub type ConfigResources<T> = HashMapId<T>;
 
 /// The internal state of a process.
 ///
@@ -47,4 +50,8 @@ pub trait ProcessState: Sized + Default {
     fn signal_mailbox(&self) -> &(Sender<Signal>, Receiver<Signal>);
     // Returns message mailbox
     fn message_mailbox(&self) -> &MessageMailbox;
+
+    // Config resources
+    fn config_resources(&self) -> &ConfigResources<Self::Config>;
+    fn config_resources_mut(&mut self) -> &mut ConfigResources<Self::Config>;
 }

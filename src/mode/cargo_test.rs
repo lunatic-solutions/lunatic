@@ -6,6 +6,8 @@ use clap::{crate_version, Arg, Command};
 use lunatic_process::{runtimes, state::ProcessState};
 use lunatic_process_api::ProcessConfigCtx;
 use lunatic_runtime::{spawn_wasm, DefaultProcessConfig, DefaultProcessState};
+use lunatic_stdout_capture::StdoutCapture;
+use lunatic_wasi_api::LunaticWasiCtx;
 
 pub(crate) async fn test() -> Result<()> {
     // Set logger level to "error" to avoid printing process failures warnings during tests.
@@ -181,7 +183,7 @@ pub(crate) async fn test() -> Result<()> {
                 .send(TestResult {
                     name: test_function.function_name,
                     status: TestStatus::Ignored,
-                    stdout: String::new(),
+                    stdout: StdoutCapture::new(),
                 })
                 .await
                 .unwrap();
@@ -190,10 +192,10 @@ pub(crate) async fn test() -> Result<()> {
 
         let mut state =
             DefaultProcessState::new(runtime.clone(), module.clone(), config.clone()).unwrap();
-        // Use in-memory stdout & stderr to hide output in case of success and no `--nocapture` flag.
-        let stdout = wasi_common::pipe::WritePipe::new_in_memory();
-        state.set_stdout(Box::new(stdout.clone()));
-        state.set_stderr(Box::new(stdout.clone()));
+        // Use in-memory stdout & stderr to hide output in case of success.
+        let stdout = StdoutCapture::new();
+        state.set_stdout(stdout.clone());
+        state.set_stderr(stdout.clone());
 
         let (task, _) = spawn_wasm(
             runtime.clone(),
@@ -213,14 +215,7 @@ pub(crate) async fn test() -> Result<()> {
         let sender = sender.clone();
         async_std::task::spawn(async move {
             let result = match task.await {
-                Ok(state) => {
-                    // State must be dropped before stderr is accessed.
-                    drop(state);
-                    let stdout: Vec<u8> = stdout
-                        .try_into_inner()
-                        .expect("sole remaining reference to WritePipe")
-                        .into_inner();
-                    let mut stdout = String::from_utf8_lossy(&stdout).to_string();
+                Ok(_state) => {
                     // If we didn't expect a panic and didn't get one
                     if test_function.panic.is_none() {
                         TestResult {
@@ -230,7 +225,7 @@ pub(crate) async fn test() -> Result<()> {
                         }
                     } else {
                         // If we expected a panic, but didn't get one
-                        stdout.push_str("note: test did not panic as expected");
+                        stdout.push_str("note: test did not panic as expected\n");
                         TestResult {
                             name: test_function.function_name,
                             status: TestStatus::PanicFailed,
@@ -239,12 +234,6 @@ pub(crate) async fn test() -> Result<()> {
                     }
                 }
                 Err(_err) => {
-                    let stdout: Vec<u8> = stdout
-                        .try_into_inner()
-                        .expect("sole remaining reference to WritePipe")
-                        .into_inner();
-                    let mut stdout = String::from_utf8_lossy(&stdout).to_string();
-
                     // If we didn't expect a panic, but got one
                     if test_function.panic.is_none() {
                         TestResult {
@@ -260,7 +249,8 @@ pub(crate) async fn test() -> Result<()> {
                             // * s: allow . to match \n
                             regex::Regex::new("(?ms)^thread '.*' panicked at '(.*)', ").unwrap();
 
-                        let panic = panic_regex.captures(&stdout);
+                        let content = stdout.content();
+                        let panic = panic_regex.captures(&content);
                         match panic {
                             Some(panic) => {
                                 let expected_panic = match test_function.panic {
@@ -276,7 +266,7 @@ pub(crate) async fn test() -> Result<()> {
                                     }
                                 } else {
                                     let note = format!(
-                                        "note: panic did not contain expected string\n      panic message: `\"{}\"`,\n expected substring: `\"{}\"`",
+                                        "note: panic did not contain expected string\n      panic message: `\"{}\"`,\n expected substring: `\"{}\"`\n",
                                         panic_message,
                                         expected_panic
                                     );
@@ -419,7 +409,7 @@ struct Test {
 #[derive(Debug)]
 struct TestResult {
     name: String,
-    stdout: String,
+    stdout: StdoutCapture,
     status: TestStatus,
 }
 

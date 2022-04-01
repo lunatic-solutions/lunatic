@@ -737,6 +737,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "dyn-clone"
+version = "1.0.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "21e50f3adc76d6a43f5ed73b698a87d0760ca74617f60f7c3b879003536fdd28"
+
+[[package]]
 name = "either"
 version = "1.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1196,6 +1202,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-std",
+ "hash-map-id",
  "log",
  "serde",
  "tokio",
@@ -1213,6 +1220,8 @@ dependencies = [
  "lunatic-common-api",
  "lunatic-error-api",
  "lunatic-process",
+ "lunatic-stdout-capture",
+ "lunatic-wasi-api",
  "uuid",
  "wasmtime",
 ]
@@ -1227,6 +1236,7 @@ dependencies = [
  "clap 3.1.0",
  "criterion",
  "dashmap",
+ "dyn-clone",
  "env_logger",
  "hash-map-id",
  "lazy_static",
@@ -1237,6 +1247,7 @@ dependencies = [
  "lunatic-networking-api",
  "lunatic-process",
  "lunatic-process-api",
+ "lunatic-stdout-capture",
  "lunatic-version-api",
  "lunatic-wasi-api",
  "pretty_assertions",
@@ -1252,6 +1263,14 @@ dependencies = [
  "wasmtime",
  "wasmtime-wasi",
  "wat",
+]
+
+[[package]]
+name = "lunatic-stdout-capture"
+version = "0.1.0"
+dependencies = [
+ "wasi-common",
+ "wiggle",
 ]
 
 [[package]]
@@ -1271,7 +1290,7 @@ dependencies = [
  "hash-map-id",
  "lunatic-common-api",
  "lunatic-process",
- "lunatic-process-api",
+ "lunatic-stdout-capture",
  "tokio",
  "wasmtime",
  "wasmtime-wasi",
@@ -2440,6 +2459,7 @@ dependencies = [
  "tracing",
  "wasmtime",
  "wiggle-macro",
+ "witx",
 ]
 
 [[package]]

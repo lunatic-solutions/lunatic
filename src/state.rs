@@ -10,9 +10,10 @@ use lunatic_networking_api::dns::DnsIterator;
 use lunatic_networking_api::NetworkingCtx;
 use lunatic_process::config::ProcessConfig;
 use lunatic_process::runtimes::wasmtime::{WasmtimeCompiledModule, WasmtimeRuntime};
-use lunatic_process::state::ProcessState;
+use lunatic_process::state::{ConfigResources, ProcessState};
 use lunatic_process::{mailbox::MessageMailbox, message::Message, Process, Signal};
 use lunatic_process_api::ProcessCtx;
+use lunatic_stdout_capture::StdoutCapture;
 use lunatic_wasi_api::{build_wasi, LunaticWasiCtx};
 use uuid::Uuid;
 use wasmtime::{Linker, ResourceLimiter};
@@ -43,20 +44,12 @@ pub struct DefaultProcessState {
     resources: Resources,
     // WASI
     wasi: WasiCtx,
+    // WASI stdout stream
+    wasi_stdout: Option<StdoutCapture>,
+    // WASI stderr stream
+    wasi_stderr: Option<StdoutCapture>,
     // Set to true if the WASM module has been instantiated
     initialized: bool,
-}
-
-impl DefaultProcessState {
-    // Redirect the stdout stream
-    pub fn set_stdout(&mut self, f: Box<dyn wasmtime_wasi::WasiFile>) {
-        self.wasi.set_stdout(f);
-    }
-
-    // Redirect the stderr stream
-    pub fn set_stderr(&mut self, f: Box<dyn wasmtime_wasi::WasiFile>) {
-        self.wasi.set_stderr(f);
-    }
 }
 
 impl ProcessState for DefaultProcessState {
@@ -85,6 +78,8 @@ impl ProcessState for DefaultProcessState {
                 Some(config.environment_variables()),
                 config.preopened_dirs(),
             )?,
+            wasi_stdout: None,
+            wasi_stderr: None,
             initialized: false,
         };
         Ok(state)
@@ -131,6 +126,16 @@ impl ProcessState for DefaultProcessState {
     fn message_mailbox(&self) -> &MessageMailbox {
         &self.message_mailbox
     }
+
+    fn config_resources(&self) -> &ConfigResources<<DefaultProcessState as ProcessState>::Config> {
+        &self.resources.configs
+    }
+
+    fn config_resources_mut(
+        &mut self,
+    ) -> &mut ConfigResources<<DefaultProcessState as ProcessState>::Config> {
+        &mut self.resources.configs
+    }
 }
 
 impl Default for DefaultProcessState {
@@ -153,6 +158,8 @@ impl Default for DefaultProcessState {
                 config.preopened_dirs(),
             )
             .unwrap(),
+            wasi_stdout: None,
+            wasi_stderr: None,
             initialized: false,
         }
     }
@@ -222,19 +229,6 @@ impl ProcessCtx<DefaultProcessState> for DefaultProcessState {
         &mut self.resources.modules
     }
 
-    fn config_resources(
-        &self,
-    ) -> &lunatic_process_api::ConfigResources<<DefaultProcessState as ProcessState>::Config> {
-        &self.resources.configs
-    }
-
-    fn config_resources_mut(
-        &mut self,
-    ) -> &mut lunatic_process_api::ConfigResources<<DefaultProcessState as ProcessState>::Config>
-    {
-        &mut self.resources.configs
-    }
-
     fn process_resources(&self) -> &lunatic_process_api::ProcessResources {
         &self.resources.processes
     }
@@ -279,8 +273,32 @@ impl NetworkingCtx for DefaultProcessState {
 }
 
 impl LunaticWasiCtx for DefaultProcessState {
-    fn wasi(&mut self) -> &mut WasiCtx {
+    fn wasi(&self) -> &WasiCtx {
+        &self.wasi
+    }
+
+    fn wasi_mut(&mut self) -> &mut WasiCtx {
         &mut self.wasi
+    }
+
+    // Redirect the stdout stream
+    fn set_stdout(&mut self, stdout: StdoutCapture) {
+        self.wasi_stdout = Some(stdout.clone());
+        self.wasi.set_stdout(Box::new(stdout));
+    }
+
+    // Redirect the stderr stream
+    fn set_stderr(&mut self, stderr: StdoutCapture) {
+        self.wasi_stderr = Some(stderr.clone());
+        self.wasi.set_stderr(Box::new(stderr));
+    }
+
+    fn get_stdout(&self) -> Option<&StdoutCapture> {
+        self.wasi_stdout.as_ref()
+    }
+
+    fn get_stderr(&self) -> Option<&StdoutCapture> {
+        self.wasi_stderr.as_ref()
     }
 }
 
