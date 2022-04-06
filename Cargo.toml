@@ -51,8 +51,6 @@ lunatic-wasi-api = { version = "^0.1", path = "crates/lunatic-wasi-api" }
 
 [dev-dependencies]
 wat = "^1.0"
-wabt = "^0.10"
-pretty_assertions = "^1.0"
 tokio = { version = "^1.14", features = ["rt-multi-thread"] }
 criterion = { version = "^0.3", features = ["async_tokio"] }
 

@@ -243,29 +243,31 @@ pub(crate) async fn test() -> Result<()> {
                     }
                 }
                 Err(_err) => {
-                    // If we didn't expect a panic, but got one
+                    // Find panic output
+                    let panic_regex =
+                    // Modes:
+                    // * m: ^ and $ match begin/end of line (not string)
+                    // * s: allow . to match \n
+                    regex::Regex::new("(?ms)^thread '.*' panicked at '(.*)', ").unwrap();
+
+                    let content = stdout.content();
+                    let panic_detected = panic_regex.captures(&content);
+
+                    // If we didn't expect a panic, but got one or were killed by a signal
                     if test_function.panic.is_none() {
+                        if panic_detected.is_none() {
+                            stdout.push_str("note: Process received kill signal\n");
+                        }
                         TestResult {
                             name: test_function.function_name,
                             status: TestStatus::Failed,
                             stdout,
                         }
                     } else {
-                        // Find panic output
-                        let panic_regex =
-                            // Modes:
-                            // * m: ^ and $ match begin/end of line (not string)
-                            // * s: allow . to match \n
-                            regex::Regex::new("(?ms)^thread '.*' panicked at '(.*)', ").unwrap();
-
-                        let content = stdout.content();
-                        let panic = panic_regex.captures(&content);
-                        match panic {
+                        match panic_detected {
                             Some(panic) => {
-                                let expected_panic = match test_function.panic {
-                                    Some(text) => text,
-                                    None => String::from(""),
-                                };
+                                // `test_function.panic` is always `Some` in this branch.
+                                let expected_panic = test_function.panic.unwrap();
                                 let panic_message = panic.get(1).map_or("", |m| m.as_str());
                                 if panic_message.contains(&expected_panic) {
                                     TestResult {
@@ -291,7 +293,19 @@ pub(crate) async fn test() -> Result<()> {
                             // Process didn't panic, but was killed by a signal.
                             None => TestResult {
                                 name: test_function.function_name,
-                                status: TestStatus::PanicFailed,
+                                // This is only considered a success if the `expected` panic string
+                                // didn't contain anything.
+                                status: if test_function.panic.as_ref().unwrap() == "" {
+                                    TestStatus::PanicOk
+                                } else {
+                                    stdout.push_str(
+                                        &format!(
+                                            "note: Process received kill signal, but expected a panic that contains `{}`\n",
+                                            test_function.panic.unwrap()
+                                        )
+                                    );
+                                    TestStatus::PanicFailed
+                                },
                                 stdout,
                             },
                         }

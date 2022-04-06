@@ -69,7 +69,10 @@ impl StdoutCapture {
     pub fn next(&self) -> Self {
         {
             let mut writers = RwLock::write(&self.writers).unwrap();
-            writers.push(Mutex::new(Cursor::new(Vec::new())));
+            // If the stream already exists don't add a new one, e.g. stdout & stderr share the same stream.
+            if self.index == writers.len() - 1 {
+                writers.push(Mutex::new(Cursor::new(Vec::new())));
+            }
         }
         Self {
             writers: self.writers.clone(),
