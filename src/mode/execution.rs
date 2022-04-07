@@ -47,12 +47,18 @@ pub(crate) async fn execute() -> Result<()> {
     config.set_can_create_configs(true);
     config.set_can_spawn_processes(true);
 
+    // Path to wasm file
+    let path = args.value_of("wasm").unwrap();
+    let path = Path::new(path);
+
     // Set correct command line arguments for the guest
-    let wasi_args = args
+    let filename = path.file_name().unwrap().to_string_lossy().to_string();
+    let mut wasi_args = vec![filename];
+    let wasm_args = args
         .values_of("wasm_args")
         .unwrap_or_default()
-        .map(|arg| arg.to_string())
-        .collect();
+        .map(|arg| arg.to_string());
+    wasi_args.extend(wasm_args);
     config.set_command_line_arguments(wasi_args);
 
     // Inherit environment variables
@@ -71,8 +77,6 @@ pub(crate) async fn execute() -> Result<()> {
     let runtime = runtimes::wasmtime::WasmtimeRuntime::new(&wasmtime_config)?;
 
     // Spawn main process
-    let path = args.value_of("wasm").unwrap();
-    let path = Path::new(path);
     let module = fs::read(path)?;
 
     let module = runtime.compile_module::<DefaultProcessState>(module)?;
