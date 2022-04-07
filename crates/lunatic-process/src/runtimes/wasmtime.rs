@@ -1,11 +1,12 @@
 use std::sync::Arc;
 
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use wasmtime::ResourceLimiter;
 
 use crate::{
     config::{ProcessConfig, UNIT_OF_COMPUTE_IN_INSTRUCTIONS},
     state::ProcessState,
+    ExecutionResult, ResultValue,
 };
 
 use super::RawWasm;
@@ -38,7 +39,7 @@ impl WasmtimeRuntime {
         let default_state = T::default();
         let mut store = wasmtime::Store::new(&self.engine, default_state);
         let instance_pre = linker.instantiate_pre(&mut store, &module)?;
-        let compiled_module = WasmtimeCompiledModule::new(data, instance_pre);
+        let compiled_module = WasmtimeCompiledModule::new(data, module, instance_pre);
         Ok(compiled_module)
     }
 
@@ -81,19 +82,26 @@ pub struct WasmtimeCompiledModule<T> {
 
 pub struct WasmtimeCompiledModuleInner<T> {
     source: RawWasm,
+    module: wasmtime::Module,
     instance_pre: wasmtime::InstancePre<T>,
 }
 
 impl<T> WasmtimeCompiledModule<T> {
     pub fn new(
         source: RawWasm,
+        module: wasmtime::Module,
         instance_pre: wasmtime::InstancePre<T>,
     ) -> WasmtimeCompiledModule<T> {
         let inner = Arc::new(WasmtimeCompiledModuleInner {
             source,
+            module,
             instance_pre,
         });
         Self { inner }
+    }
+
+    pub fn exports(&self) -> impl ExactSizeIterator<Item = wasmtime::ExportType<'_>> {
+        self.inner.module.exports()
     }
 
     pub fn source(&self) -> &RawWasm {
@@ -125,15 +133,44 @@ impl<T> WasmtimeInstance<T>
 where
     T: Send,
 {
-    pub async fn call(&mut self, function: &str, params: Vec<wasmtime::Val>) -> Result<()> {
-        let entry = self
-            .instance
-            .get_func(&mut self.store, function)
-            .map_or(Err(anyhow!("Function '{}' not found", function)), |func| {
-                Ok(func)
-            })?;
-        entry.call_async(&mut self.store, &params, &mut []).await?;
-        Ok(())
+    pub async fn call(mut self, function: &str, params: Vec<wasmtime::Val>) -> ExecutionResult<T> {
+        let entry = self.instance.get_func(&mut self.store, function);
+
+        if entry.is_none() {
+            return ExecutionResult {
+                state: self.store.into_data(),
+                result: ResultValue::SpawnError(format!("Function '{}' not found", function)),
+            };
+        }
+
+        let result = entry
+            .unwrap()
+            .call_async(&mut self.store, &params, &mut [])
+            .await;
+
+        ExecutionResult {
+            state: self.store.into_data(),
+            result: match result {
+                Ok(()) => ResultValue::Ok,
+                Err(err) => {
+                    // If the trap is a result of calling `proc_exit(0)`, treat it as an no-error finish.
+                    match err.downcast_ref::<wasmtime::Trap>() {
+                        Some(trap) => {
+                            if trap.i32_exit_status().is_some()
+                                && trap.i32_exit_status().unwrap() == 0
+                            {
+                                ResultValue::Ok
+                            } else {
+                                ResultValue::Failed(trap.to_string())
+                            }
+                        }
+                        None => {
+                            ResultValue::Failed("Can't downcast trap to wasmtime::Trap".to_string())
+                        }
+                    }
+                }
+            },
+        }
     }
 }
 

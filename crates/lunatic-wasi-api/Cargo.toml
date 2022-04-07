@@ -15,4 +15,4 @@ tokio = { version = "^1.14", features = ["macros"] }
 hash-map-id = { version = "^0.1", path = "../hash-map-id" }
 lunatic-common-api = { version = "0.1", path = "../lunatic-common-api" }
 lunatic-process = { version = "0.1", path = "../lunatic-process" }
-lunatic-process-api = { version = "0.1", path = "../lunatic-process-api" }
+lunatic-stdout-capture = { version = "0.1", path = "../lunatic-stdout-capture" }

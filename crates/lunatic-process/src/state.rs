@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
 use anyhow::Result;
-use async_std::channel::Sender;
+use async_std::channel::{Receiver, Sender};
+use hash_map_id::HashMapId;
 use uuid::Uuid;
 use wasmtime::Linker;
 
@@ -11,6 +12,8 @@ use crate::{
     runtimes::wasmtime::{WasmtimeCompiledModule, WasmtimeRuntime},
     Signal,
 };
+
+pub type ConfigResources<T> = HashMapId<T>;
 
 /// The internal state of a process.
 ///
@@ -22,12 +25,9 @@ pub trait ProcessState: Sized + Default {
 
     // Create a new `ProcessState`
     fn new(
-        id: Uuid,
         runtime: WasmtimeRuntime,
         module: WasmtimeCompiledModule<Self>,
         config: Arc<Self::Config>,
-        signal_mailbox: Sender<Signal>,
-        message_mailbox: MessageMailbox,
     ) -> Result<Self>;
 
     /// Register all host functions to the linker.
@@ -44,8 +44,14 @@ pub trait ProcessState: Sized + Default {
     /// Returns the process configuration
     fn config(&self) -> &Arc<Self::Config>;
 
-    // Returns process ID
+    // Returns ID
     fn id(&self) -> Uuid;
-    // Returns process signal mailbox
-    fn signal_mailbox(&self) -> &Sender<Signal>;
+    // Returns signal mailbox
+    fn signal_mailbox(&self) -> &(Sender<Signal>, Receiver<Signal>);
+    // Returns message mailbox
+    fn message_mailbox(&self) -> &MessageMailbox;
+
+    // Config resources
+    fn config_resources(&self) -> &ConfigResources<Self::Config>;
+    fn config_resources_mut(&mut self) -> &mut ConfigResources<Self::Config>;
 }

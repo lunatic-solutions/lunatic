@@ -1,13 +1,10 @@
 use std::sync::Arc;
 
 use anyhow::Result;
-use async_std::channel::unbounded;
 use async_std::task::JoinHandle;
 use log::trace;
-use uuid::Uuid;
 use wasmtime::{ResourceLimiter, Val};
 
-use crate::mailbox::MessageMailbox;
 use crate::runtimes::wasmtime::{WasmtimeCompiledModule, WasmtimeRuntime};
 use crate::state::ProcessState;
 use crate::{Process, Signal, WasmProcess};
@@ -24,29 +21,21 @@ use crate::{Process, Signal, WasmProcess};
 pub async fn spawn_wasm<S>(
     runtime: WasmtimeRuntime,
     module: WasmtimeCompiledModule<S>,
-    config: Arc<S::Config>,
+    state: S,
     function: &str,
     params: Vec<Val>,
     link: Option<(Option<i64>, Arc<dyn Process>)>,
-) -> Result<(JoinHandle<()>, Arc<dyn Process>)>
+) -> Result<(JoinHandle<Result<S>>, Arc<dyn Process>)>
 where
     S: ProcessState + Send + ResourceLimiter + 'static,
 {
-    // TODO: Switch to new_v1() for distributed Lunatic to assure uniqueness across nodes.
-    let id = Uuid::new_v4();
+    let id = state.id();
     trace!("Spawning process: {}", id);
-    let signal_mailbox = unbounded::<Signal>();
-    let message_mailbox = MessageMailbox::default();
-    let state = S::new(
-        id,
-        runtime.clone(),
-        module.clone(),
-        config,
-        signal_mailbox.0.clone(),
-        message_mailbox.clone(),
-    )?;
 
-    let mut instance = runtime.instantiate(&module, state).await?;
+    let signal_mailbox = state.signal_mailbox().clone();
+    let message_mailbox = state.message_mailbox().clone();
+
+    let instance = runtime.instantiate(&module, state).await?;
     let function = function.to_string();
     let fut = async move { instance.call(&function, params).await };
     let child_process = crate::new(fut, id, signal_mailbox.1, message_mailbox);

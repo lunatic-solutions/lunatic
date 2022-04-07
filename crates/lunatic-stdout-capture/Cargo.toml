@@ -1,0 +1,11 @@
+[package]
+name = "lunatic-stdout-capture"
+version = "0.1.0"
+edition = "2021"
+description = "Utilities for captuaring standard output from lunatic processes and subprocesses"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+wiggle = "^0.35"
+wasi-common = "^0.35"
