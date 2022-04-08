@@ -210,6 +210,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "async_cell"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1286341ebadf3b2e48fd3e6601fbf277dae37862c76f4e7d756d8cb9d5eed3d3"
+dependencies = [
+ "parking_lot",
+]
+
+[[package]]
 name = "atomic-waker"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1173,6 +1182,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "lunatic-control"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-std",
+ "async_cell",
+ "bincode",
+ "dashmap 5.2.0",
+ "log",
+ "lunatic-common-api",
+ "serde",
+]
+
+[[package]]
 name = "lunatic-error-api"
 version = "0.1.0"
 dependencies = [
@@ -1219,6 +1242,7 @@ dependencies = [
  "async-std",
  "dashmap 5.2.0",
  "log",
+ "lunatic-common-api",
  "serde",
  "tokio",
  "uuid",
@@ -1254,6 +1278,7 @@ dependencies = [
  "lazy_static",
  "log",
  "lunatic-common-api",
+ "lunatic-control",
  "lunatic-error-api",
  "lunatic-messaging-api",
  "lunatic-networking-api",

@@ -1,4 +1,5 @@
 pub mod actor;
+pub mod control;
 
 use anyhow::Result;
 use std::fmt::Display;

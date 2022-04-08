@@ -20,7 +20,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         .compile_module::<DefaultProcessState>(raw_module)
         .unwrap();
 
-    let env = Environment::new(1);
+    let env = Environment::local();
     c.bench_function("spawn process", |b| {
         b.to_async(&rt).iter(|| async {
             env.spawn_wasm(

@@ -1,10 +1,12 @@
 use std::{env, fs, path::Path, sync::Arc};
 
-use async_std::channel;
+use async_std::{channel, task};
 use clap::{crate_version, Arg, Command};
 
 use anyhow::{Context, Result};
-use lunatic_process::{env::Environment, runtimes};
+use lunatic_common_api::control::GetNodeIds;
+use lunatic_control::server::control_server;
+use lunatic_process::{env::Environment, local_control::local_control, runtimes};
 use lunatic_process_api::ProcessConfigCtx;
 use lunatic_runtime::{state::DefaultProcessState, DefaultProcessConfig};
 
@@ -29,24 +31,21 @@ async fn main() -> Result<()> {
                 .long("node")
                 .value_name("NODE_ADDRESS")
                 .help("Turns local process into a node and binds it to the provided address.")
-                .requires("node_name")
+                .requires("control")
                 .takes_value(true),
         )
         .arg(
-            Arg::new("node_name")
-                .long("node-name")
-                .value_name("NODE_NAME")
-                .help("Name of the node.")
-                .requires("node")
-                .takes_value(true),
-        )
-        .arg(
-            Arg::new("peer")
-                .long("peer")
-                .value_name("PEER_ADDRESS")
-                .help("Address of another node inside the cluster that will be used for bootstrapping.")
+            Arg::new("control")
+                .long("control")
+                .value_name("CONTROL_ADDRESS")
+                .help("Address of a control node inside the cluster that will be used for bootstrapping.")
                 .takes_value(true)
-                .requires("node"),
+        )
+        .arg(
+            Arg::new("control_server")
+                .long("control-server")
+                .help("When set run the control server")
+                .requires("control"),
         )
         .arg(
             Arg::new("no_entry")
@@ -98,14 +97,30 @@ async fn main() -> Result<()> {
         }
     }
 
-    // Set up a node if flag is set
-    // if let Some(node_address) = args.value_of("node") {
-    //     let name = args.value_of("node_name").unwrap().to_string();
-    //     let peer = args.value_of("peer");
-    //     let node = Node::new(name, node_address, peer).await?;
+    // Run control server
+    if args.is_present("control_server") {
+        if let Some(control_address) = args.value_of("control") {
+            // TODO unwrap, better message
+            task::spawn(control_server(control_address.parse().unwrap()));
+        }
+    }
 
-    //     *NODE.write().await = Some(node);
-    // }
+    let control = if let (Some(node_address), Some(control_address)) =
+        (args.value_of("node"), args.value_of("control"))
+    {
+        // TODO unwrap, better message
+        let ctrl = lunatic_control::client::register(
+            node_address.parse().unwrap(),
+            control_address.parse().unwrap(),
+        )
+        .await?;
+        log::info!("Registration successful, node id {}", ctrl.node_id);
+        let resp = ctrl.get_nodes.call(GetNodeIds {}).await;
+        log::info!("List nodes {resp:?}");
+        ctrl
+    } else {
+        local_control()
+    };
 
     // Create wasmtime runtime
     let wasmtime_config = runtimes::wasmtime::default_config();
@@ -123,7 +138,7 @@ async fn main() -> Result<()> {
 
         let module_index = runtime.compile_module::<DefaultProcessState>(module)?;
 
-        let env = Environment::new(1);
+        let env = Environment::new(1, control);
         let (task, _) = env
             .spawn_wasm(
                 runtime,

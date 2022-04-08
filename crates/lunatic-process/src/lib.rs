@@ -1,5 +1,6 @@
 pub mod config;
 pub mod env;
+pub mod local_control;
 pub mod mailbox;
 pub mod message;
 pub mod runtimes;

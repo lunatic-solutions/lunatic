@@ -7,7 +7,7 @@ use std::{
 
 use anyhow::{anyhow, Result};
 use hash_map_id::HashMapId;
-use lunatic_common_api::{get_memory, IntoTrap};
+use lunatic_common_api::{actor::ActorCtx, control::GetNodeIds, get_memory, IntoTrap};
 use lunatic_error_api::ErrorCtx;
 use lunatic_process::{
     config::ProcessConfig, env::Environment, mailbox::MessageMailbox, message::Message,
@@ -41,7 +41,13 @@ pub trait ProcessCtx<S: ProcessState> {
 // Register the process APIs to the linker
 pub fn register<T>(linker: &mut Linker<T>) -> Result<()>
 where
-    T: ProcessState + ProcessCtx<T> + ErrorCtx + Send + ResourceLimiter + 'static,
+    T: ProcessState
+        + ProcessCtx<T>
+        + ActorCtx<GetNodeIds>
+        + ErrorCtx
+        + Send
+        + ResourceLimiter
+        + 'static,
     for<'a> &'a T: Send,
     T::Config: ProcessConfigCtx,
 {
@@ -456,11 +462,21 @@ fn spawn<T>(
     id_ptr: u32,
 ) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_>
 where
-    T: ProcessState + ProcessCtx<T> + ErrorCtx + ResourceLimiter + Send + 'static,
+    T: ProcessState
+        + ProcessCtx<T>
+        + ActorCtx<GetNodeIds>
+        + ErrorCtx
+        + ResourceLimiter
+        + Send
+        + 'static,
     for<'a> &'a T: Send,
     T::Config: ProcessConfigCtx,
 {
     Box::new(async move {
+        // TODO
+        // let node_registry: ActorHandle<GetNodeIds> = caller.data().actor();
+        // let nodes = node_registry.call(GetNodeIds {}).await;
+
         if !caller.data().config().can_spawn_processes() {
             return Err(anyhow!("Process doesn't have permissions to spawn sub-processes").into());
         }

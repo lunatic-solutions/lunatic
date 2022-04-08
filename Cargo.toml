@@ -44,6 +44,7 @@ lunatic-messaging-api = { version = "^0.1", path = "crates/lunatic-messaging-api
 lunatic-networking-api = { version = "^0.1", path = "crates/lunatic-networking-api" }
 lunatic-version-api = { version = "^0.1", path = "crates/lunatic-version-api" }
 lunatic-wasi-api = { version = "^0.1", path = "crates/lunatic-wasi-api" }
+lunatic-control = { version = "^0.1", path = "crates/lunatic-control" }
 
 [dev-dependencies]
 wat = "^1.0"
@@ -60,6 +61,7 @@ harness = false
 members = [
     "crates/hash-map-id",
     "crates/lunatic-process",
+    "crates/lunatic-control",
     "crates/lunatic-common-api",
     "crates/lunatic-process-api",
     "crates/lunatic-error-api",
