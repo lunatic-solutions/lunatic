@@ -13,9 +13,9 @@ use lunatic_process::{
     config::ProcessConfig, env::Environment, mailbox::MessageMailbox, message::Message,
     runtimes::wasmtime::WasmtimeCompiledModule, state::ProcessState, Process, Signal, WasmProcess,
 };
+use lunatic_wasi_api::LunaticWasiCtx;
 use wasmtime::{Caller, Linker, ResourceLimiter, Trap, Val};
 
-pub type ConfigResources<T> = HashMapId<T>;
 pub type ProcessResources = HashMapId<Arc<dyn Process>>;
 pub type ModuleResources<T> = HashMapId<WasmtimeCompiledModule<T>>;
 
@@ -33,8 +33,6 @@ pub trait ProcessCtx<S: ProcessState> {
     fn message_scratch_area(&mut self) -> &mut Option<Message>;
     fn module_resources(&self) -> &ModuleResources<S>;
     fn module_resources_mut(&mut self) -> &mut ModuleResources<S>;
-    fn config_resources(&self) -> &ConfigResources<S::Config>;
-    fn config_resources_mut(&mut self) -> &mut ConfigResources<S::Config>;
     fn environment(&self) -> &Environment;
 }
 
@@ -45,6 +43,7 @@ where
         + ProcessCtx<T>
         + ActorCtx<GetNodeIds>
         + ErrorCtx
+        + LunaticWasiCtx
         + Send
         + ResourceLimiter
         + 'static,
@@ -445,9 +444,7 @@ where
 // * If the module ID doesn't exist.
 // * If the function string is not a valid utf8 string.
 // * If the params array is in a wrong format.
-// * If **func_str_ptr + func_str_len** is outside the memory.
-// * If **params_ptr + params_len** is outside the memory.
-// * If **id_ptr** is outside the memory.
+// * If any memory outside of the guest heap space is referenced.
 #[allow(clippy::too_many_arguments)]
 fn spawn<T>(
     mut caller: Caller<T>,
@@ -466,6 +463,7 @@ where
         + ProcessCtx<T>
         + ActorCtx<GetNodeIds>
         + ErrorCtx
+        + LunaticWasiCtx
         + ResourceLimiter
         + Send
         + 'static,
@@ -537,19 +535,36 @@ where
             tag => {
                 let id = caller.data().id();
                 let signal_mailbox = caller.data().signal_mailbox().clone();
-                let process = WasmProcess::new(id, signal_mailbox);
+                let process = WasmProcess::new(id, signal_mailbox.0);
                 Some((Some(tag), Arc::new(process)))
             }
         };
+
         let runtime = caller.data().runtime().clone();
+        let env = caller.data().environment().clone();
+
+        let mut state = T::new(env, runtime.clone(), module.clone(), config)?;
+
+        // Inherit stdout and stderr streams if they are redirected by the parent.
+        if let Some(stdout) = caller.data().get_stdout() {
+            let next_stream = stdout.next();
+            state.set_stdout(next_stream);
+        }
+        if let Some(stderr) = caller.data().get_stderr() {
+            let next_stream = stderr.next();
+            state.set_stderr(next_stream);
+        }
+
+        // set state instead of config TODO
         let env = caller.data().environment();
         let (proc_or_error_id, result) = match env
-            .spawn_wasm(runtime, module, config, function, params, link)
+            .spawn_wasm(runtime, module, state, function, params, link)
             .await
         {
             Ok((_, process)) => (process.id(), 0),
             Err(error) => (caller.data_mut().error_resources_mut().add(error), 1),
         };
+
         memory
             .write(
                 &mut caller,
@@ -584,6 +599,7 @@ fn die_when_link_dies<T: ProcessState + ProcessCtx<T>>(mut caller: Caller<T>, tr
     caller
         .data_mut()
         .signal_mailbox()
+        .0
         .try_send(Signal::DieWhenLinkDies(trap != 0))
         .expect("The signal is sent to itself and the receiver must exist at this point");
 }
@@ -616,7 +632,7 @@ fn link<T: ProcessState + ProcessCtx<T>>(
     // Create handle to itself
     let id = caller.data().id();
     let signal_mailbox = caller.data().signal_mailbox().clone();
-    let this_process = WasmProcess::new(id, signal_mailbox);
+    let this_process = WasmProcess::new(id, signal_mailbox.0);
 
     // Send link signal to other process
     let process = caller
@@ -631,6 +647,7 @@ fn link<T: ProcessState + ProcessCtx<T>>(
     caller
         .data_mut()
         .signal_mailbox()
+        .0
         .try_send(Signal::Link(tag, process))
         .expect("The signal is sent to itself and the receiver must exist at this point");
     Ok(())
@@ -648,7 +665,7 @@ fn unlink<T: ProcessState + ProcessCtx<T>>(
     // Create handle to itself
     let id = caller.data().id();
     let signal_mailbox = caller.data().signal_mailbox().clone();
-    let this_process = WasmProcess::new(id, signal_mailbox);
+    let this_process = WasmProcess::new(id, signal_mailbox.0);
 
     // Send unlink signal to other process
     let process = caller
@@ -663,6 +680,7 @@ fn unlink<T: ProcessState + ProcessCtx<T>>(
     caller
         .data_mut()
         .signal_mailbox()
+        .0
         .try_send(Signal::UnLink(process))
         .expect("The signal is sent to itself and the receiver must exist at this point");
     Ok(())

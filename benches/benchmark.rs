@@ -5,6 +5,7 @@ use criterion::{criterion_group, criterion_main, Criterion};
 use lunatic_process::{
     env::Environment,
     runtimes::wasmtime::{default_config, WasmtimeRuntime},
+    state::ProcessState,
 };
 use lunatic_runtime::{state::DefaultProcessState, DefaultProcessConfig};
 
@@ -23,10 +24,17 @@ fn criterion_benchmark(c: &mut Criterion) {
     let env = Environment::local();
     c.bench_function("spawn process", |b| {
         b.to_async(&rt).iter(|| async {
-            env.spawn_wasm(
+            let state = DefaultProcessState::new(
+                env.clone(),
                 runtime.clone(),
                 module.clone(),
                 config.clone(),
+            )
+            .unwrap();
+            env.spawn_wasm(
+                runtime.clone(),
+                module.clone(),
+                state,
                 "hello",
                 Vec::new(),
                 None,
@@ -34,29 +42,10 @@ fn criterion_benchmark(c: &mut Criterion) {
             .await
             .unwrap()
             .0
-            .await;
+            .await
+            .unwrap();
         });
     });
-
-    // TODO: Plugin has a bug when run on modules without a table
-    // let path = Path::new("target/wasm/stdlib.wasm");
-    // let module = fs::read(path).unwrap();
-    // let mut config = EnvConfig::default();
-    // config.add_plugin(module).unwrap();
-    // let environment = Environment::new(config).unwrap();
-
-    // // Reload module into modified environment (added plugin)
-    // let raw_module =  wat::parse_file("./wat/hello.wat").unwrap();
-    // let module = rt.block_on(environment.create_module(raw_module)).unwrap();
-
-    // c.bench_function("spawn process with stdlib plugin", |b| {
-    //     b.to_async(&rt).iter(|| async {
-    //         environment
-    //             .spawn(&module, "hello", Vec::new())
-    //             .await
-    //             .unwrap();
-    //     });
-    // });
 }
 
 criterion_group!(benches, criterion_benchmark);

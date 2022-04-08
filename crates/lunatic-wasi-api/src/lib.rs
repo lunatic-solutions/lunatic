@@ -1,7 +1,7 @@
 use anyhow::Result;
 use lunatic_common_api::{get_memory, IntoTrap};
 use lunatic_process::state::ProcessState;
-use lunatic_process_api::ProcessCtx;
+use lunatic_stdout_capture::StdoutCapture;
 use wasmtime::{Caller, Linker, Trap};
 use wasmtime_wasi::{ambient_authority, Dir, WasiCtx, WasiCtxBuilder};
 
@@ -32,19 +32,24 @@ pub trait LunaticWasiConfigCtx {
 }
 
 pub trait LunaticWasiCtx {
-    fn wasi(&mut self) -> &mut WasiCtx;
+    fn wasi(&self) -> &WasiCtx;
+    fn wasi_mut(&mut self) -> &mut WasiCtx;
+    fn set_stdout(&mut self, stdout: StdoutCapture);
+    fn get_stdout(&self) -> Option<&StdoutCapture>;
+    fn set_stderr(&mut self, stderr: StdoutCapture);
+    fn get_stderr(&self) -> Option<&StdoutCapture>;
 }
 
 // Register WASI APIs to the linker
 pub fn register<T>(linker: &mut Linker<T>) -> Result<()>
 where
-    T: ProcessState + ProcessCtx<T> + LunaticWasiCtx + Send + 'static,
+    T: ProcessState + LunaticWasiCtx + Send + 'static,
     T::Config: LunaticWasiConfigCtx,
 {
     // Register all wasi host functions
     wasmtime_wasi::sync::snapshots::preview_1::add_wasi_snapshot_preview1_to_linker(
         linker,
-        |ctx| ctx.wasi(),
+        |ctx| ctx.wasi_mut(),
     )?;
 
     // Register host functions to configure wasi
@@ -78,7 +83,7 @@ fn add_environment_variable<T>(
     value_len: u32,
 ) -> Result<(), Trap>
 where
-    T: ProcessState + ProcessCtx<T>,
+    T: ProcessState,
     T::Config: LunaticWasiConfigCtx,
 {
     let memory = get_memory(&mut caller)?;
@@ -119,7 +124,7 @@ fn add_command_line_argument<T>(
     argument_len: u32,
 ) -> Result<(), Trap>
 where
-    T: ProcessState + ProcessCtx<T>,
+    T: ProcessState,
     T::Config: LunaticWasiConfigCtx,
 {
     let memory = get_memory(&mut caller)?;
@@ -153,7 +158,7 @@ fn preopen_dir<T>(
     dir_len: u32,
 ) -> Result<(), Trap>
 where
-    T: ProcessState + ProcessCtx<T>,
+    T: ProcessState,
     T::Config: LunaticWasiConfigCtx,
 {
     let memory = get_memory(&mut caller)?;

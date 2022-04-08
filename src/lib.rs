@@ -30,10 +30,10 @@ Wasm modules, checkout out the [lunatic crate](https://crates.io/crates/lunatic)
 TODO
 */
 
-pub mod async_map;
 mod config;
 mod node;
 pub mod state;
 
 pub use config::DefaultProcessConfig;
 pub use lunatic_process::{Finished, Process, Signal, WasmProcess};
+pub use state::DefaultProcessState;

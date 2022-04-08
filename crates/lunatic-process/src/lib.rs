@@ -9,7 +9,7 @@ pub mod wasm;
 
 use std::{collections::HashMap, fmt::Debug, future::Future, hash::Hash, sync::Arc};
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use env::Environment;
 use log::{debug, log_enabled, trace, warn, Level};
 
@@ -90,8 +90,8 @@ pub enum Finished<T> {
     /// In case of Wasm this could mean that the entry function returned normally or that it
     /// **trapped**.
     Normal(T),
-    /// The process was terminated by an external signal.
-    Signal(Signal),
+    /// The process was terminated by an external `Kill` signal.
+    KillSignal,
 }
 
 /// A `WasmProcess` represents an instance of a Wasm module that is being executed.
@@ -136,13 +136,18 @@ impl Process for WasmProcess {
 ///
 /// The `Future` is in charge to periodically yield back the execution with `Poll::Pending` to give
 /// the signal handler a chance to run and process pending signals.
-pub(crate) async fn new<F>(
+///
+/// In case of success, the process state `S` is returned. It's not possible to return the process
+/// state in case of failure because of limitations in the Wasmtime API:
+/// https://github.com/bytecodealliance/wasmtime/issues/2986
+pub(crate) async fn new<F, S>(
     fut: F,
     id: u64,
     signal_mailbox: Receiver<Signal>,
     message_mailbox: MessageMailbox,
-) where
-    F: Future<Output = Result<()>> + Send + 'static,
+) -> Result<S>
+where
+    F: Future<Output = ExecutionResult<S>> + Send + 'static,
 {
     trace!("Process {} spawned", id);
     tokio::pin!(fut);
@@ -169,7 +174,7 @@ pub(crate) async fn new<F>(
                     // Remove process from list
                     Ok(Signal::UnLink(proc)) => { links.remove(&proc); }
                     // Exit loop and don't poll anymore the future if Signal::Kill received.
-                    Ok(Signal::Kill) => break Finished::Signal(Signal::Kill),
+                    Ok(Signal::Kill) => break Finished::KillSignal,
                     // Depending if `die_when_link_dies` is set, process will die or turn the
                     // signal into a message
                     Ok(Signal::LinkDied(tag)) => {
@@ -178,7 +183,7 @@ pub(crate) async fn new<F>(
                             // this process and should be propagated as such.
                             // TODO: Remove sender from our notify list, so we don't send back the
                             //       same notification to an already dead process.
-                            break Finished::Signal(Signal::Kill)
+                            break Finished::KillSignal
                         } else {
                             let message = Message::LinkDied(tag);
                             message_mailbox.push(message);
@@ -192,34 +197,30 @@ pub(crate) async fn new<F>(
         }
     };
     match result {
-        Finished::Normal(Result::Err(err)) => {
-            // If the trap is a result of calling `proc_exit(0)` treat it as an no-error finish.
-            // TODO: Try to remove Wasmtime as dependency
-            if let Some(trap) = err.downcast_ref::<wasmtime::Trap>() {
-                if let Some(exit_status) = trap.i32_exit_status() {
-                    if exit_status == 0 {
-                        return;
+        Finished::Normal(result) => {
+            if let Some(failure) = result.failure() {
+                warn!(
+                    "Process {} failed, notifying: {} links {}",
+                    id,
+                    links.len(),
+                    // If the log level is WARN instruct user how to display the stacktrace
+                    if !log_enabled!(Level::Debug) {
+                        "\n\t\t\t    (Set ENV variable `RUST_LOG=lunatic=debug` to show stacktrace)"
+                    } else {
+                        ""
                     }
-                }
-            };
-            warn!(
-                "Process {} trapped, notifying: {} links {}",
-                id,
-                links.len(),
-                // If the log level is WARN instruct user how to display the stacktrace
-                if !log_enabled!(Level::Debug) {
-                    "\n\t\t\t    (Set ENV variable `RUST_LOG=lunatic=debug` to show stacktrace)"
-                } else {
-                    ""
-                }
-            );
-            debug!("{}", err);
-            // Notify all links that we finished with an error
-            links.iter().for_each(|(proc, tag)| {
-                let _ = proc.send(Signal::LinkDied(*tag));
-            });
+                );
+                debug!("{}", failure);
+                // Notify all links that we finished with an error
+                links.iter().for_each(|(proc, tag)| {
+                    let _ = proc.send(Signal::LinkDied(*tag));
+                });
+                Err(anyhow!(failure.to_string()))
+            } else {
+                Ok(result.state())
+            }
         }
-        Finished::Signal(Signal::Kill) => {
+        Finished::KillSignal => {
             warn!(
                 "Process {} was killed, notifying: {} links",
                 id,
@@ -229,8 +230,8 @@ pub(crate) async fn new<F>(
             links.iter().for_each(|(proc, tag)| {
                 let _ = proc.send(Signal::LinkDied(*tag));
             });
+            Err(anyhow!("Process received Kill signal"))
         }
-        _ => {} // Finished normally
     }
 }
 
@@ -252,10 +253,12 @@ pub struct NativeProcess {
 ///     Ok(())
 /// });
 /// ```
+
 impl Environment {
-    pub fn spawn<F, K>(&self, func: F) -> (JoinHandle<()>, NativeProcess)
+    pub fn spawn<T, F, K>(&self, func: F) -> (JoinHandle<Result<T>>, NativeProcess)
     where
-        K: Future<Output = Result<()>> + Send + 'static,
+        T: Send + 'static,
+        K: Future<Output = ExecutionResult<T>> + Send + 'static,
         F: FnOnce(NativeProcess, MessageMailbox) -> K,
     {
         let id = self.get_next_process_id();
@@ -282,4 +285,35 @@ impl Process for NativeProcess {
         // to relay on it and could signal wrong guarantees to users.
         let _ = self.signal_mailbox.try_send(signal);
     }
+}
+
+// Contains the result of a process execution.
+//
+// Can be also used to extract the state of a process after the execution is done.
+pub struct ExecutionResult<T> {
+    state: T,
+    result: ResultValue,
+}
+
+impl<T> ExecutionResult<T> {
+    // Returns the failure as `String` if the process failed.
+    pub fn failure(&self) -> Option<&str> {
+        match self.result {
+            ResultValue::Failed(ref failure) => Some(failure),
+            ResultValue::SpawnError(ref failure) => Some(failure),
+            _ => None,
+        }
+    }
+
+    // Returns the process state
+    pub fn state(self) -> T {
+        self.state
+    }
+}
+
+#[derive(PartialEq, Eq)]
+pub enum ResultValue {
+    Ok,
+    Failed(String),
+    SpawnError(String),
 }

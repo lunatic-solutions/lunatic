@@ -26,11 +26,12 @@ impl Environment {
         &self,
         runtime: WasmtimeRuntime,
         module: WasmtimeCompiledModule<S>,
-        config: Arc<S::Config>,
+        state: S,
         function: &str,
         params: Vec<Val>,
         link: Option<(Option<i64>, Arc<dyn Process>)>,
-    ) -> Result<(JoinHandle<()>, Arc<dyn Process>)>
+        //) -> Result<(JoinHandle<anyhow::Error>, Arc<dyn Process>)>
+    ) -> Result<(JoinHandle<Result<S>>, Arc<dyn Process>)>
     where
         S: ProcessState + Send + ResourceLimiter + 'static,
     {
@@ -38,16 +39,8 @@ impl Environment {
         trace!("Spawning process: {}", id);
         let signal_mailbox = unbounded::<Signal>();
         let message_mailbox = MessageMailbox::default();
-        let state = S::new(
-            self.clone(),
-            runtime.clone(),
-            module.clone(),
-            config,
-            signal_mailbox.0.clone(),
-            message_mailbox.clone(),
-        )?;
 
-        let mut instance = runtime.instantiate(&module, state).await?;
+        let instance = runtime.instantiate(&module, state).await?;
         let function = function.to_string();
         let fut = async move { instance.call(&function, params).await };
         let child_process = crate::new(fut, id, signal_mailbox.1, message_mailbox);

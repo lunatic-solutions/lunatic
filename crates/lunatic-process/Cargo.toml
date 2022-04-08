@@ -16,3 +16,4 @@ wasmtime = "^0.35"
 serde = "^1.0"
 dashmap = "5.2.0"
 lunatic-common-api = { version = "^0.1", path = "../lunatic-common-api" }
+hash-map-id = { version = "^0.1", path = "../hash-map-id" }
