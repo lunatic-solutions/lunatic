@@ -80,6 +80,13 @@ impl StdoutCapture {
         }
     }
 
+    /// Returns true if stream's content is empty
+    pub fn is_empty(&self) -> bool {
+        let streams = RwLock::read(&self.writers).unwrap();
+        let stream = streams[self.index].lock().unwrap();
+        stream.get_ref().is_empty()
+    }
+
     /// Returns stream's content
     pub fn content(&self) -> String {
         let streams = RwLock::read(&self.writers).unwrap();
