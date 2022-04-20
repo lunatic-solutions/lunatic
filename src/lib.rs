@@ -31,7 +31,6 @@ TODO
 */
 
 mod config;
-mod node;
 pub mod state;
 
 pub use config::DefaultProcessConfig;

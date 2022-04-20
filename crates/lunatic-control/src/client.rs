@@ -16,7 +16,7 @@ use crate::{
 };
 use lunatic_common_api::{
     actor::{self, Actor, Responder},
-    control::{ControlInterface, GetModule, GetNodeIds, RegisterModule},
+    control::{ControlInterface, GetModule, GetNodes, NodeInfo, RegisterModule},
 };
 
 #[derive(Clone)]
@@ -143,14 +143,22 @@ impl<T: ConvertRequest + actor::Request + Sync + Send + 'static> Actor<T> for Cl
     }
 }
 
-impl ConvertRequest for GetNodeIds {
+impl ConvertRequest for GetNodes {
     fn into_ctrl_request(self) -> Request {
         Request::ListNodes
     }
 
     fn from_ctrl_response(resp: Response) -> Option<Self::Response> {
         if let Response::Nodes(nodes) = resp {
-            Some(nodes)
+            Some(
+                nodes
+                    .into_iter()
+                    .map(|(id, r)| NodeInfo {
+                        id,
+                        address: r.node_address,
+                    })
+                    .collect(),
+            )
         } else {
             None
         }

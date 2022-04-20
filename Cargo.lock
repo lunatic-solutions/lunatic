@@ -1174,6 +1174,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "lunatic-distributed"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-std",
+ "async_cell",
+ "bincode",
+ "dashmap 5.2.0",
+ "log",
+ "lunatic-common-api",
+ "lunatic-process",
+ "serde",
+]
+
+[[package]]
 name = "lunatic-error-api"
 version = "0.1.0"
 dependencies = [
@@ -1261,6 +1276,7 @@ dependencies = [
  "log",
  "lunatic-common-api",
  "lunatic-control",
+ "lunatic-distributed",
  "lunatic-error-api",
  "lunatic-messaging-api",
  "lunatic-networking-api",

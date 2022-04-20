@@ -6,13 +6,12 @@ use async_std::channel::{unbounded, Receiver, Sender};
 use async_std::net::{TcpListener, TcpStream, UdpSocket};
 use hash_map_id::HashMapId;
 use lunatic_common_api::actor::ActorCtx;
-use lunatic_common_api::control::GetNodeIds;
+use lunatic_common_api::control::GetNodes;
 use lunatic_error_api::{ErrorCtx, ErrorResource};
 use lunatic_networking_api::dns::DnsIterator;
 use lunatic_networking_api::NetworkingCtx;
 use lunatic_process::config::ProcessConfig;
 use lunatic_process::env::Environment;
-use lunatic_process::local_control::local_control;
 use lunatic_process::runtimes::wasmtime::{WasmtimeCompiledModule, WasmtimeRuntime};
 use lunatic_process::state::{ConfigResources, ProcessState};
 use lunatic_process::{mailbox::MessageMailbox, message::Message, Signal};
@@ -95,7 +94,7 @@ impl ProcessState for DefaultProcessState {
         let message_mailbox = MessageMailbox::default();
         Self {
             id: 1,
-            environment: Environment::new(0, local_control()),
+            environment: Environment::local(),
             runtime: None,
             module: None,
             config: Arc::new(config.clone()),
@@ -305,8 +304,8 @@ impl LunaticWasiCtx for DefaultProcessState {
     }
 }
 
-impl ActorCtx<GetNodeIds> for DefaultProcessState {
-    fn actor(&self) -> lunatic_common_api::actor::ActorHandle<GetNodeIds> {
+impl ActorCtx<GetNodes> for DefaultProcessState {
+    fn actor(&self) -> lunatic_common_api::actor::ActorHandle<GetNodes> {
         todo!()
     }
 }

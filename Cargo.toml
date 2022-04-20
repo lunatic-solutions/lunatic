@@ -49,6 +49,7 @@ lunatic-networking-api = { version = "^0.1", path = "crates/lunatic-networking-a
 lunatic-version-api = { version = "^0.1", path = "crates/lunatic-version-api" }
 lunatic-wasi-api = { version = "^0.1", path = "crates/lunatic-wasi-api" }
 lunatic-control = { version = "^0.1", path = "crates/lunatic-control" }
+lunatic-distributed = { version = "^0.1", path = "crates/lunatic-distributed" }
 
 [dev-dependencies]
 wat = "^1.0"
@@ -65,6 +66,7 @@ members = [
     "crates/lunatic-stdout-capture",
     "crates/lunatic-process",
     "crates/lunatic-control",
+    "crates/lunatic-distributed",
     "crates/lunatic-common-api",
     "crates/lunatic-process-api",
     "crates/lunatic-error-api",

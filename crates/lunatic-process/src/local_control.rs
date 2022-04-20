@@ -4,7 +4,7 @@ use async_std::{channel::Receiver, task};
 use dashmap::DashMap;
 use lunatic_common_api::{
     actor::{Actor, Responder},
-    control::{ControlInterface, GetModule, GetNodeIds},
+    control::{ControlInterface, GetModule, GetNodes},
 };
 
 #[derive(Clone)]
@@ -20,11 +20,11 @@ impl LocalControl {
     }
 }
 
-impl Actor<GetNodeIds> for LocalControl {
-    fn spawn_task(self, receiver: Receiver<(GetNodeIds, Responder<GetNodeIds>)>) {
+impl Actor<GetNodes> for LocalControl {
+    fn spawn_task(self, receiver: Receiver<(GetNodes, Responder<GetNodes>)>) {
         task::spawn(async move {
             while let Ok((_, resp)) = receiver.recv().await {
-                resp.respond(vec![1]).await;
+                resp.respond(vec![]).await;
             }
         });
     }

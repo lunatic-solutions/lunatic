@@ -1,4 +1,4 @@
-use async_std::channel;
+use async_std::{channel, task};
 
 pub trait Request {
     type Response: Send;
@@ -53,6 +53,16 @@ pub trait Actor<A: Request>: Sized {
         let (sender, receiver) = channel::unbounded();
         self.spawn_task(receiver);
         ActorHandle { sender }
+    }
+}
+
+impl<A: Request + Send + 'static> Actor<A> for fn(A) -> A::Response {
+    fn spawn_task(self, receiver: channel::Receiver<(A, Responder<A>)>) {
+        task::spawn(async move {
+            while let Ok((req, resp)) = receiver.recv().await {
+                resp.respond(self(req)).await
+            }
+        });
     }
 }
 

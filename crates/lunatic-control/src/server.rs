@@ -18,7 +18,7 @@ pub struct Server {
     inner: Arc<InnerServer>,
 }
 
-pub struct InnerServer {
+struct InnerServer {
     next_node_id: AtomicU64,
     nodes: DashMap<u64, Registration>,
     next_module_id: AtomicU64,
@@ -56,7 +56,13 @@ impl Server {
     }
 
     fn list_nodes(&self) -> Response {
-        Response::Nodes(self.inner.nodes.iter().map(|e| *e.key()).collect())
+        Response::Nodes(
+            self.inner
+                .nodes
+                .iter()
+                .map(|e| (*e.key(), e.value().clone()))
+                .collect(),
+        )
     }
 
     fn register_module(&self, bytes: Vec<u8>) -> Response {

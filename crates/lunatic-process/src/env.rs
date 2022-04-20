@@ -1,11 +1,14 @@
 use dashmap::DashMap;
-use lunatic_common_api::control::{ControlInterface, GetModule};
+use lunatic_common_api::{
+    control::{ControlInterface, GetModule},
+    distributed::DistributedInterface,
+};
 use std::sync::{
     atomic::{AtomicU64, Ordering},
     Arc,
 };
 
-use crate::{local_control::local_control, Process, Signal};
+use crate::{local_control::local_control, local_dist::dummy_distributed, Process, Signal};
 
 #[derive(Clone)]
 pub struct Environment {
@@ -13,20 +16,23 @@ pub struct Environment {
     next_process_id: Arc<AtomicU64>,
     processes: Arc<DashMap<u64, Arc<dyn Process>>>,
     control: ControlInterface,
+    #[allow(unused)]
+    distributed: DistributedInterface,
 }
 
 impl Environment {
-    pub fn new(id: u64, control: ControlInterface) -> Self {
+    pub fn new(id: u64, control: ControlInterface, distributed: DistributedInterface) -> Self {
         Self {
             environment_id: id,
             processes: Arc::new(DashMap::new()),
             next_process_id: Arc::new(AtomicU64::new(1)),
             control,
+            distributed,
         }
     }
 
     pub fn local() -> Self {
-        Self::new(1, local_control())
+        Self::new(1, local_control(), dummy_distributed())
     }
 
     pub fn get_process(&self, id: u64) -> Option<Arc<dyn Process>> {

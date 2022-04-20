@@ -7,7 +7,7 @@ use std::{
 
 use anyhow::{anyhow, Result};
 use hash_map_id::HashMapId;
-use lunatic_common_api::{actor::ActorCtx, control::GetNodeIds, get_memory, IntoTrap};
+use lunatic_common_api::{actor::ActorCtx, control::GetNodes, get_memory, IntoTrap};
 use lunatic_error_api::ErrorCtx;
 use lunatic_process::{
     config::ProcessConfig, env::Environment, mailbox::MessageMailbox, message::Message,
@@ -41,7 +41,7 @@ pub fn register<T>(linker: &mut Linker<T>) -> Result<()>
 where
     T: ProcessState
         + ProcessCtx<T>
-        + ActorCtx<GetNodeIds>
+        + ActorCtx<GetNodes>
         + ErrorCtx
         + LunaticWasiCtx
         + Send
@@ -461,7 +461,7 @@ fn spawn<T>(
 where
     T: ProcessState
         + ProcessCtx<T>
-        + ActorCtx<GetNodeIds>
+        + ActorCtx<GetNodes>
         + ErrorCtx
         + LunaticWasiCtx
         + ResourceLimiter

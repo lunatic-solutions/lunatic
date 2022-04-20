@@ -13,7 +13,7 @@ pub enum Request {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum Response {
     Register(u64),
-    Nodes(Vec<u64>),
+    Nodes(Vec<(u64, Registration)>),
     RegisterModule(u64),
     Module(Option<Vec<u8>>),
 }

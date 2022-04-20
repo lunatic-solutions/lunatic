@@ -5,6 +5,7 @@ use async_std::channel;
 use clap::{crate_version, Arg, Command};
 
 use lunatic_control::server::control_server;
+use lunatic_distributed::node::Node;
 use lunatic_process::{
     env::Environment, local_control::local_control, runtimes, state::ProcessState,
 };
@@ -90,15 +91,17 @@ pub(crate) async fn execute() -> Result<()> {
         )
         .await?;
         log::info!("Registration successful, node id {}", ctrl.node_id);
-        let resp = ctrl
-            .get_nodes
-            .call(lunatic_common_api::control::GetNodeIds {})
-            .await;
-        log::info!("List nodes {resp:?}");
+        let node = Node::new();
+        async_std::task::spawn(lunatic_distributed::server::node_server(
+            node,
+            node_address.parse().unwrap(),
+        ));
         ctrl
     } else {
         local_control()
     };
+
+    let distributed = lunatic_distributed::client::start_client(control.clone()).await?;
 
     let mut config = DefaultProcessConfig::default();
     // Allow initial process to compile modules, create configurations and spawn sub-processes
@@ -141,7 +144,7 @@ pub(crate) async fn execute() -> Result<()> {
 
         let module = runtime.compile_module::<DefaultProcessState>(module)?;
 
-        let env = Environment::new(1, control);
+        let env = Environment::new(1, control, distributed);
         let state = DefaultProcessState::new(
             env.clone(),
             runtime.clone(),

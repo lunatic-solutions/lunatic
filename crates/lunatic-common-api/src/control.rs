@@ -1,3 +1,5 @@
+use std::net::SocketAddr;
+
 use crate::actor::{ActorHandle, Request};
 
 #[derive(Debug, Clone)]
@@ -19,16 +21,22 @@ impl Request for GetModule {
 }
 
 #[derive(Debug, Copy, Clone)]
-pub struct GetNodeIds {}
+pub struct GetNodes {}
 
-impl Request for GetNodeIds {
-    type Response = Vec<u64>;
+#[derive(Debug, Clone)]
+pub struct NodeInfo {
+    pub id: u64,
+    pub address: SocketAddr,
+}
+
+impl Request for GetNodes {
+    type Response = Vec<NodeInfo>;
 }
 
 #[derive(Clone)]
 pub struct ControlInterface {
     pub node_id: u64,
     pub get_module: ActorHandle<GetModule>,
-    pub register_module: ActorHandle<GetNodeIds>,
-    pub get_nodes: ActorHandle<GetNodeIds>,
+    pub register_module: ActorHandle<GetNodes>,
+    pub get_nodes: ActorHandle<GetNodes>,
 }
