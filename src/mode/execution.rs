@@ -8,7 +8,6 @@ use lunatic_process_api::ProcessConfigCtx;
 use lunatic_runtime::{spawn_wasm, DefaultProcessConfig, DefaultProcessState};
 
 pub(crate) async fn execute() -> Result<()> {
-    // Init logger
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).init();
 
     // Parse command line arguments
@@ -21,6 +20,11 @@ pub(crate) async fn execute() -> Result<()> {
                 .help("Grant access to the given host directory")
                 .multiple_occurrences(true)
                 .takes_value(true),
+        )
+        .arg(
+            Arg::new("bench")
+                .long("bench")
+                .help("Indicate that a benchmark is running"),
         )
         .arg(
             Arg::new("wasm")
@@ -59,6 +63,10 @@ pub(crate) async fn execute() -> Result<()> {
         .unwrap_or_default()
         .map(|arg| arg.to_string());
     wasi_args.extend(wasm_args);
+    // Forward `--bench` flag to process
+    if args.is_present("bench") {
+        wasi_args.push("--bench".to_owned());
+    }
     config.set_command_line_arguments(wasi_args);
 
     // Inherit environment variables
