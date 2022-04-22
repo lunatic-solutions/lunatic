@@ -179,13 +179,12 @@ pub fn default_config() -> wasmtime::Config {
     config
         .async_support(true)
         .debug_info(false)
-        // The behaviour of fuel running out is defined on the Store
+        // The behavior of fuel running out is defined on the Store
         .consume_fuel(true)
         .wasm_reference_types(true)
         .wasm_bulk_memory(true)
         .wasm_multi_value(true)
         .wasm_multi_memory(true)
-        .wasm_module_linking(false)
         .cranelift_opt_level(wasmtime::OptLevel::SpeedAndSize)
         // Allocate resources on demand because we can't predict how many process will exist
         .allocation_strategy(wasmtime::InstanceAllocationStrategy::OnDemand)

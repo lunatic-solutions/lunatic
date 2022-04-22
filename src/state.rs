@@ -4,6 +4,7 @@ use std::sync::Arc;
 use anyhow::Result;
 use async_std::channel::{unbounded, Receiver, Sender};
 use async_std::net::{TcpListener, TcpStream, UdpSocket};
+use dashmap::DashMap;
 use hash_map_id::HashMapId;
 use lunatic_error_api::{ErrorCtx, ErrorResource};
 use lunatic_networking_api::dns::DnsIterator;
@@ -50,6 +51,8 @@ pub struct DefaultProcessState {
     wasi_stderr: Option<StdoutCapture>,
     // Set to true if the WASM module has been instantiated
     initialized: bool,
+    // Shared process registry
+    registry: Arc<DashMap<String, Arc<dyn Process>>>,
 }
 
 impl ProcessState for DefaultProcessState {
@@ -59,6 +62,7 @@ impl ProcessState for DefaultProcessState {
         runtime: WasmtimeRuntime,
         module: WasmtimeCompiledModule<Self>,
         config: Arc<DefaultProcessConfig>,
+        registry: Arc<DashMap<String, Arc<dyn Process>>>,
     ) -> Result<Self> {
         // TODO: Switch to new_v1() for distributed Lunatic to assure uniqueness across nodes.
         let id = Uuid::new_v4();
@@ -81,6 +85,7 @@ impl ProcessState for DefaultProcessState {
             wasi_stdout: None,
             wasi_stderr: None,
             initialized: false,
+            registry,
         };
         Ok(state)
     }
@@ -92,6 +97,7 @@ impl ProcessState for DefaultProcessState {
         lunatic_networking_api::register(linker)?;
         lunatic_version_api::register(linker)?;
         lunatic_wasi_api::register(linker)?;
+        lunatic_registry_api::register(linker)?;
         Ok(())
     }
 
@@ -136,6 +142,10 @@ impl ProcessState for DefaultProcessState {
     ) -> &mut ConfigResources<<DefaultProcessState as ProcessState>::Config> {
         &mut self.resources.configs
     }
+
+    fn registry(&self) -> &Arc<DashMap<String, Arc<dyn Process>>> {
+        &self.registry
+    }
 }
 
 impl Default for DefaultProcessState {
@@ -161,6 +171,7 @@ impl Default for DefaultProcessState {
             wasi_stdout: None,
             wasi_stderr: None,
             initialized: false,
+            registry: Arc::new(DashMap::new()),
         }
     }
 }
@@ -179,9 +190,8 @@ impl ResourceLimiter for DefaultProcessState {
         desired <= self.config().get_max_memory()
     }
 
-    // TODO: What would be a reasonable table limit be?
     fn table_growing(&mut self, _current: u32, desired: u32, _maximum: Option<u32>) -> bool {
-        desired < 10_000
+        desired < 100_000
     }
 
     // Allow one instance per store
@@ -334,8 +344,10 @@ mod tests {
 
         let raw_module = wat::parse_file("./wat/all_imports.wat").unwrap();
         let module = runtime.compile_module(raw_module).unwrap();
+        let registry = Arc::new(dashmap::DashMap::new());
         let state =
-            DefaultProcessState::new(runtime.clone(), module.clone(), Arc::new(config)).unwrap();
+            DefaultProcessState::new(runtime.clone(), module.clone(), Arc::new(config), registry)
+                .unwrap();
 
         spawn_wasm(runtime, module, state, "hello", Vec::new(), None)
             .await

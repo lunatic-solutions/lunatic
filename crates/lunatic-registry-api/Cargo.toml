@@ -1,18 +1,14 @@
 [package]
-name = "lunatic-messaging-api"
+name = "lunatic-registry-api"
 version = "0.1.0"
 edition = "2021"
-description = "Lunatic host functions for message sending."
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 anyhow = "^1.0"
 wasmtime = "^0.36"
-async-std = { version = "^1.0", features = ["attributes", "unstable"] }
-tokio = { version = "^1.14", features = ["macros"] }
 hash-map-id = { version = "^0.1", path = "../hash-map-id" }
 lunatic-process = { version = "0.1", path = "../lunatic-process" }
-lunatic-common-api = { version = "0.1", path = "../lunatic-common-api" }
 lunatic-process-api = { version = "0.1", path = "../lunatic-process-api" }
-lunatic-networking-api = { version = "0.1", path = "../lunatic-networking-api" }
+lunatic-common-api = { version = "0.1", path = "../lunatic-common-api" }

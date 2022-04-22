@@ -3,6 +3,7 @@ use std::{env, fs, path::Path, sync::Arc};
 use anyhow::{Context, Result};
 use clap::{crate_version, Arg, Command};
 
+use dashmap::DashMap;
 use lunatic_process::{runtimes, state::ProcessState};
 use lunatic_process_api::ProcessConfigCtx;
 use lunatic_runtime::{spawn_wasm, DefaultProcessConfig, DefaultProcessState};
@@ -89,8 +90,10 @@ pub(crate) async fn execute() -> Result<()> {
 
     let module = runtime.compile_module::<DefaultProcessState>(module)?;
 
+    let registry = Arc::new(DashMap::new());
     let state =
-        DefaultProcessState::new(runtime.clone(), module.clone(), Arc::new(config)).unwrap();
+        DefaultProcessState::new(runtime.clone(), module.clone(), Arc::new(config), registry)
+            .unwrap();
     let (task, _) = spawn_wasm(runtime, module, state, "_start", Vec::new(), None)
         .await
         .context(format!(

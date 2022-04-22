@@ -37,7 +37,7 @@ fn string_size<T: ErrorCtx>(caller: Caller<T>, error_id: u64) -> Result<u32, Tra
 //
 // Traps:
 // * If the error ID doesn't exist.
-// * If any memory outside of the guest heap space is referenced.
+// * If any memory outside the guest heap space is referenced.
 fn to_string<T: ErrorCtx>(
     mut caller: Caller<T>,
     error_id: u64,

@@ -73,7 +73,7 @@ where
 // Traps:
 // * If the config ID doesn't exist.
 // * If the key or value string is not a valid utf8 string.
-// * If any of the memory slices falls outside of the memory.
+// * If any of the memory slices falls outside the memory.
 fn add_environment_variable<T>(
     mut caller: Caller<T>,
     config_id: u64,
@@ -116,7 +116,7 @@ where
 // Traps:
 // * If the config ID doesn't exist.
 // * If the argument string is not a valid utf8 string.
-// * If any of the memory slices falls outside of the memory.
+// * If any of the memory slices falls outside the memory.
 fn add_command_line_argument<T>(
     mut caller: Caller<T>,
     config_id: u64,
@@ -150,7 +150,7 @@ where
 // Traps:
 // * If the config ID doesn't exist.
 // * If the directory string is not a valid utf8 string.
-// * If any of the memory slices falls outside of the memory.
+// * If any of the memory slices falls outside the memory.
 fn preopen_dir<T>(
     mut caller: Caller<T>,
     config_id: u64,

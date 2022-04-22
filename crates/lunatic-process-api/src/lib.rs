@@ -441,7 +441,7 @@ where
 // * If the module ID doesn't exist.
 // * If the function string is not a valid utf8 string.
 // * If the params array is in a wrong format.
-// * If any memory outside of the guest heap space is referenced.
+// * If any memory outside the guest heap space is referenced.
 #[allow(clippy::too_many_arguments)]
 fn spawn<T>(
     mut caller: Caller<T>,
@@ -526,7 +526,8 @@ where
         };
 
         let runtime = caller.data().runtime().clone();
-        let mut state = T::new(runtime.clone(), module.clone(), config)?;
+        let registry = caller.data().registry().clone();
+        let mut state = T::new(runtime.clone(), module.clone(), config, registry)?;
 
         // Inherit stdout and stderr streams if they are redirected by the parent.
         if let Some(stdout) = caller.data().get_stdout() {
@@ -632,7 +633,7 @@ fn this<T: ProcessState + ProcessCtx<T>>(mut caller: Caller<T>) -> u64 {
 //
 // Traps:
 // * If the process ID doesn't exist.
-// * If any memory outside of the guest heap space is referenced.
+// * If any memory outside the guest heap space is referenced.
 fn id<T: ProcessState + ProcessCtx<T>>(
     mut caller: Caller<T>,
     process_id: u64,

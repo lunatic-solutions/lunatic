@@ -8,4 +8,4 @@ description = "Utilities for captuaring standard output from lunatic processes a
 
 [dependencies]
 wiggle = "^0.35"
-wasi-common = "^0.35"
+wasi-common = "^0.36"

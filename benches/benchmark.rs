@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use criterion::{criterion_group, criterion_main, Criterion};
+use dashmap::DashMap;
 // TODO: Re-export this under lunatic_runtime
 use lunatic_process::{
     runtimes::wasmtime::{default_config, WasmtimeRuntime},
@@ -22,8 +23,10 @@ fn criterion_benchmark(c: &mut Criterion) {
 
     c.bench_function("spawn process", |b| {
         b.to_async(&rt).iter(|| async {
+            let registry = Arc::new(DashMap::new());
             let state =
-                DefaultProcessState::new(runtime.clone(), module.clone(), config.clone()).unwrap();
+                DefaultProcessState::new(runtime.clone(), module.clone(), config.clone(), registry)
+                    .unwrap();
             spawn_wasm(
                 runtime.clone(),
                 module.clone(),

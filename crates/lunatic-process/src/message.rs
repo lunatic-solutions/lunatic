@@ -165,7 +165,7 @@ impl Read for DataMessage {
         } else {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::OutOfMemory,
-                "Reading outside of message buffer",
+                "Reading outside message buffer",
             ));
         };
         let bytes = buf.write(slice)?;

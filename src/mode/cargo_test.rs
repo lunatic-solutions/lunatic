@@ -3,6 +3,7 @@ use std::{env, fs, path::Path, sync::Arc, time::Instant};
 use anyhow::{Context, Result};
 use clap::{crate_version, Arg, Command};
 
+use dashmap::DashMap;
 use lunatic_process::{runtimes, state::ProcessState};
 use lunatic_process_api::ProcessConfigCtx;
 use lunatic_runtime::{spawn_wasm, DefaultProcessConfig, DefaultProcessState};
@@ -199,8 +200,10 @@ pub(crate) async fn test() -> Result<()> {
             continue;
         }
 
+        let registry = Arc::new(DashMap::new());
         let mut state =
-            DefaultProcessState::new(runtime.clone(), module.clone(), config.clone()).unwrap();
+            DefaultProcessState::new(runtime.clone(), module.clone(), config.clone(), registry)
+                .unwrap();
 
         // If --nocapture is not set, use in-memory stdout & stderr to hide output in case of
         // success

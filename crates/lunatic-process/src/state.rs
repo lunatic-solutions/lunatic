@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use async_std::channel::{Receiver, Sender};
+use dashmap::DashMap;
 use hash_map_id::HashMapId;
 use uuid::Uuid;
 use wasmtime::Linker;
@@ -10,7 +11,7 @@ use crate::{
     config::ProcessConfig,
     mailbox::MessageMailbox,
     runtimes::wasmtime::{WasmtimeCompiledModule, WasmtimeRuntime},
-    Signal,
+    Process, Signal,
 };
 
 pub type ConfigResources<T> = HashMapId<T>;
@@ -28,6 +29,7 @@ pub trait ProcessState: Sized + Default {
         runtime: WasmtimeRuntime,
         module: WasmtimeCompiledModule<Self>,
         config: Arc<Self::Config>,
+        registry: Arc<DashMap<String, Arc<dyn Process>>>,
     ) -> Result<Self>;
 
     /// Register all host functions to the linker.
@@ -54,4 +56,7 @@ pub trait ProcessState: Sized + Default {
     // Config resources
     fn config_resources(&self) -> &ConfigResources<Self::Config>;
     fn config_resources_mut(&mut self) -> &mut ConfigResources<Self::Config>;
+
+    // Registry
+    fn registry(&self) -> &Arc<DashMap<String, Arc<dyn Process>>>;
 }
