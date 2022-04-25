@@ -1,8 +1,18 @@
 # Lunatic Changelog
 
+## v0.9.0
+
+Released 2022-01-20.
+
+### Changes
+
+- UDP support (contributed by [@jtenner](https://github.com/jtenner))
+- Added support for `cargo test` when `lunatic` is used as runner.
+- Temporarily removed support for distributed lunatic while a better design is being developed.
+
 ## v0.7.5
 
-Released 2021-01-20.
+Released 2022-01-20.
 
 ### Changes
 
@@ -12,7 +22,7 @@ Released 2021-01-20.
 
 ## v0.7.4
 
-Released 2021-01-15.
+Released 2022-01-15.
 
 ### Changes
 
