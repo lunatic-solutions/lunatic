@@ -530,13 +530,24 @@ where
         let mut state = T::new(runtime.clone(), module.clone(), config, registry)?;
 
         // Inherit stdout and stderr streams if they are redirected by the parent.
-        if let Some(stdout) = caller.data().get_stdout() {
+        let stdout = if let Some(stdout) = caller.data().get_stdout() {
             let next_stream = stdout.next();
-            state.set_stdout(next_stream);
-        }
+            state.set_stdout(next_stream.clone());
+            Some((stdout.clone(), next_stream))
+        } else {
+            None
+        };
         if let Some(stderr) = caller.data().get_stderr() {
-            let next_stream = stderr.next();
-            state.set_stderr(next_stream);
+            // If stderr is same as stdout, use same `next_stream`.
+            if let Some((stdout, next_stream)) = stdout {
+                if &stdout == stderr {
+                    state.set_stderr(next_stream);
+                } else {
+                    state.set_stderr(stderr.next());
+                }
+            } else {
+                state.set_stderr(stderr.next());
+            }
         }
 
         let (proc_or_error_id, result) =

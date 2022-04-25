@@ -26,6 +26,12 @@ pub struct StdoutCapture {
     index: usize,
 }
 
+impl PartialEq for StdoutCapture {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.writers, &other.writers) && self.index == other.index
+    }
+}
+
 impl Default for StdoutCapture {
     fn default() -> Self {
         Self::new()
@@ -67,24 +73,25 @@ impl StdoutCapture {
 
     /// Returns a clone of `StdoutCapture` pointing to the next stream
     pub fn next(&self) -> Self {
-        {
+        let index = {
             let mut writers = RwLock::write(&self.writers).unwrap();
             // If the stream already exists don't add a new one, e.g. stdout & stderr share the same stream.
-            if self.index == writers.len() - 1 {
-                writers.push(Mutex::new(Cursor::new(Vec::new())));
-            }
-        }
+            writers.push(Mutex::new(Cursor::new(Vec::new())));
+            writers.len() - 1
+        };
         Self {
             writers: self.writers.clone(),
-            index: self.index + 1,
+            index,
         }
     }
 
-    /// Returns true if stream's content is empty
+    /// Returns true if all streams are empty
     pub fn is_empty(&self) -> bool {
         let streams = RwLock::read(&self.writers).unwrap();
-        let stream = streams[self.index].lock().unwrap();
-        stream.get_ref().is_empty()
+        streams.iter().all(|stream| {
+            let stream = stream.lock().unwrap();
+            stream.get_ref().is_empty()
+        })
     }
 
     /// Returns stream's content
