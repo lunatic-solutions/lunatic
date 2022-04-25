@@ -38,12 +38,12 @@ Released 2021-12-01.
 
 ### Changes
 
-This is the first release that supports connecting multiple lunatic instances togethe :tada:.
+This is the first release that supports connecting multiple lunatic instances together :tada:.
 From the perspective of developers that are targeting lunatic there should be no difference
 between locally running processes or remote ones. Spawning and sending messages to them uses the
 same APIs.
 
-To turn your local lunatic instance into a distributed node you will need to provide an unique
+To turn your local lunatic instance into a distributed node you will need to provide a unique
 _name_ and _socket_ to bind to. Both of them can be set through the cli.
 
 #### CLI
@@ -69,12 +69,12 @@ exposed to the code running inside of it. This allows you to dynamically load We
 from already running WebAssembly code, or to create sandboxed environments to execute some code
 on the fly.
 
-The abstraction of an [`Environment`][18], that we used previously to sandbox and limit process
+The abstraction of a [`Environment`][18], that we used previously to sandbox and limit process
 resources, fits perfectly into the world of distributed lunatic. Every time you create a new
 `Environment` you need to explicitly add Wasm [`Modules`][19] to it, because we may need to JIT
 re-compile the module with the new limitations that have been set. Spawning a process from the same
 function in different `Environments` may use different machine generated code to be more efficient
-in regards to the provided sandbox.
+in regard to the provided sandbox.
 
 Now that a `Module` may be sent over the network to a computer running a different operating system
 or even using a different CPU architecture, no changes need to be done to this already existing
@@ -102,7 +102,7 @@ fn main(_: Mailbox<()>) {
 ```
 
 This will print out `Hello world` on the node labeled `foo`. Adding this to the rust library
-required only a few lines of code changes. The whole implementation complexity stays inside of the
+required only a few lines of code changes. The whole implementation complexity stays inside the
 VM. From the developer's perspective it's trivial to just send a closure to be executed on a
 completely different machine that may use a different operating system or CPU architecture.
 
@@ -162,9 +162,9 @@ people working on the VM, but also adds some cool new features.
 
 #### Rust library
 
-- The `Message` trait was removed and we now solely rely on serde's `Serialize` & `Deserialize`
+- The `Message` trait was removed, and we now solely rely on serde's `Serialize` & `Deserialize`
   traits to define what can be a message. Originally I was thinking that this is going to be an
-  issue once we get support for Rust's native `TcpStream` and we can't define serde's traits for
+  issue once we get support for Rust's native `TcpStream`, and we can't define serde's traits for
   it, but this can be solved with [remote derives][13] in the future. This removes a really big
   and complex macro from the library and allows us to use the new [`write_data`][6] and
   [`read_data`][7] host functions for zero-copy de/serialization.
@@ -218,12 +218,12 @@ be built on top of them.
 
 Environments allow you to specify some characteristics of the execution, like how much memory or
 CPU processes can use. They can also define host function namespaces that are allowed to be called.
-Processes that are spawned into an environment inherit theses characteristics, allowing you to
+Processes that are spawned into an environment inherit these characteristics, allowing you to
 dynamically create execution contexts for new processes.
 
 #### Dynamic module loading
 
-WebAssembly modules can be loaded from other WebAssembly modules during runtime. Combined together
+WebAssembly modules can be loaded from other WebAssembly modules during runtime. Combined
 with `Environments` this can be used to load untrusted code and run it inside a sandbox.
 
 #### Libraries
@@ -279,7 +279,7 @@ Instead of dealing with low level pointers + lengths passed from the WebAssembly
 to receive higher level Rust type (e.g. `&mut [IoSliceMut<'_>]`) and the macro is going to create appropriate
 wrappers for us. And of course, it correctly works with `async` functions on Lunatic.
 
-This was an important step forward to make Lunatic runtime agnostic. Currently we support bot Wasmer and Wasmtime,
+This was an important step forward to make Lunatic runtime agnostic. Currently, we support bot Wasmer and Wasmtime,
 but if we wanted, we could add support for another runtime in the future by just adding support to `uptown_funk`.
 
 Sadly, `uptown_funk` doesn't have any documentation yet and is not that useful to other projects. But I intend to
@@ -287,11 +287,11 @@ invest more time into this in the future.
 
 #### 2. Fixed Process canceling cleanup
 
-This issue needs a bit context. All Lunatic processes are executed on a separate stack and if they are waiting
+This issue needs a bit of context. All Lunatic processes are executed on a separate stack and if they are waiting
 for some I/O they will be moved off the execution thread. Now, you can decide while you are waiting on something
 just to cancel this process. Until now this would free the memory region belonging to the stack/heap and finish.
 However, it can happen that the separate stack contains pointers to resources held by the runtime (channels, other
-processes, etc.). Their `drop()` methods would never have been called in this case and the resources would have
+processes, etc.). Their `drop()` methods would have never been called in this case and the resources would have
 been leaked.
 
 This required [a fix](https://github.com/bkolobara/async-wormhole/commit/be7a91ba621c41b49bc834d49479f51c4487cc47)
@@ -317,4 +317,4 @@ A few APIs are still missing, but we have enough to create a TCP listener/client
 #### 6. Miscellaneous fixes
 
 There are too many other small fixes and additions to mention here, but Lunatic is much more stable now than just
-2 months ago and I have removed the experimental warning in the Readme :)
+2 months ago, and I have removed the experimental warning in the Readme :)
