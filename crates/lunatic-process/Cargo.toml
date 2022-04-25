@@ -1,8 +1,12 @@
 [package]
 name = "lunatic-process"
-version = "0.1.0"
+version = "0.9.0"
 edition = "2021"
 description = "Lunatic's core process, mailbox and message abstraction'"
+homepage = "https://lunatic.solutions"
+repository = "https://github.com/lunatic-solutions/lunatic/tree/main/crates/lunatic-process"
+license = "Apache-2.0/MIT"
+
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -14,5 +18,5 @@ log = "^0.4"
 tokio = { version = "^1.14", features = ["macros"] }
 wasmtime = "^0.36"
 serde = "^1.0"
-hash-map-id = { version = "^0.1", path = "../hash-map-id" }
+hash-map-id = { version = "^0.9", path = "../hash-map-id" }
 dashmap = "^4.0"

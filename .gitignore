@@ -3,3 +3,4 @@
 .vscode
 .idea
 debug.log
+publish.sh
