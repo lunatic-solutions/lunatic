@@ -10,9 +10,7 @@ struct DummyDistributed {}
 
 pub fn dummy_distributed() -> DistributedInterface {
     let d = DummyDistributed {};
-    DistributedInterface {
-        spawn: d.spawn(),
-    }
+    DistributedInterface { spawn: d.spawn() }
 }
 
 impl Actor<Spawn> for DummyDistributed {

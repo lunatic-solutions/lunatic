@@ -1,13 +1,11 @@
 use std::sync::Arc;
 
 use anyhow::Result;
-use async_std::channel::unbounded;
 use async_std::task::JoinHandle;
 use log::trace;
 use wasmtime::{ResourceLimiter, Val};
 
 use crate::env::Environment;
-use crate::mailbox::MessageMailbox;
 use crate::runtimes::wasmtime::{WasmtimeCompiledModule, WasmtimeRuntime};
 use crate::state::ProcessState;
 use crate::{Process, Signal, WasmProcess};
@@ -35,16 +33,18 @@ impl Environment {
     where
         S: ProcessState + Send + ResourceLimiter + 'static,
     {
-        let id = self.get_next_process_id();
+        let id = state.id();
         trace!("Spawning process: {}", id);
-        let signal_mailbox = unbounded::<Signal>();
-        let message_mailbox = MessageMailbox::default();
+        let signal_mailbox = state.signal_mailbox().clone();
+        let message_mailbox = state.message_mailbox().clone();
 
         let instance = runtime.instantiate(&module, state).await?;
         let function = function.to_string();
         let fut = async move { instance.call(&function, params).await };
         let child_process = crate::new(fut, id, signal_mailbox.1, message_mailbox);
-        let child_process_handle = WasmProcess::new(id, signal_mailbox.0.clone());
+        let child_process_handle = Arc::new(WasmProcess::new(id, signal_mailbox.0.clone()));
+
+        self.add_process(id, child_process_handle.clone());
 
         // **Child link guarantees**:
         // The link signal is going to be put inside of the child's mailbox and is going to be
@@ -71,7 +71,7 @@ impl Environment {
         //       running somewhere else.
         if let Some((tag, process)) = link {
             // Send signal to itself to perform the linking
-            process.send(Signal::Link(None, Arc::new(child_process_handle.clone())));
+            process.send(Signal::Link(None, child_process_handle.clone()));
             // Suspend itself to process all new signals
             async_std::task::yield_now().await;
             // Send signal to child to link it
@@ -84,6 +84,6 @@ impl Environment {
         // Spawn a background process
         trace!("Process size: {}", std::mem::size_of_val(&child_process));
         let join = async_std::task::spawn(child_process);
-        Ok((join, Arc::new(child_process_handle)))
+        Ok((join, child_process_handle))
     }
 }

@@ -30,7 +30,7 @@ pub fn register<T: ProcessState + ProcessCtx<T> + NetworkingCtx + Send + 'static
     linker.func_wrap("lunatic::message", "push_tcp_stream", push_tcp_stream)?;
     linker.func_wrap("lunatic::message", "take_tcp_stream", take_tcp_stream)?;
     linker.func_wrap("lunatic::message", "send", send)?;
-    linker.func_wrap2_async(
+    linker.func_wrap3_async(
         "lunatic::message",
         "send_receive_skip_search",
         send_receive_skip_search,
@@ -329,12 +329,12 @@ fn send<T: ProcessState + ProcessCtx<T>>(
         .data_mut()
         .message_scratch_area()
         .take()
-        .or_trap("lunatic::message::send")?;
+        .or_trap("lunatic::message::send::no_message")?;
     let process = caller
         .data_mut()
         .environment()
         .get_process(process_id)
-        .or_trap("lunatic::message::send")?;
+        .or_trap("lunatic::message::send::no_process")?;
     process.send(Signal::Message(message));
     Ok(())
 }
@@ -359,6 +359,7 @@ fn send<T: ProcessState + ProcessCtx<T>>(
 // * If it's called with wrong data in the scratch area.
 fn send_receive_skip_search<T: ProcessState + ProcessCtx<T> + Send>(
     mut caller: Caller<T>,
+    _node_id: u64,
     process_id: u64,
     timeout: u32,
 ) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_> {

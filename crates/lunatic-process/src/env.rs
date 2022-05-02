@@ -39,6 +39,10 @@ impl Environment {
         self.processes.get(&id).map(|x| x.clone())
     }
 
+    pub fn add_process(&self, id: u64, proc: Arc<dyn Process>) {
+        self.processes.insert(id, proc);
+    }
+
     pub fn send(&self, id: u64, signal: Signal) {
         if let Some(proc) = self.processes.get(&id) {
             proc.send(signal);
