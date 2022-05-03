@@ -101,7 +101,5 @@ pub(crate) async fn execute() -> Result<()> {
             path.to_string_lossy()
         ))?;
     // Wait on the main process to finish
-    task.await.unwrap();
-
-    Ok(())
+    task.await.map(|_| ())
 }

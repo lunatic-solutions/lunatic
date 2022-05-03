@@ -212,7 +212,7 @@ where
                 debug!("{}", failure);
                 // Notify all links that we finished with an error
                 links.iter().for_each(|(proc, tag)| {
-                    let _ = proc.send(Signal::LinkDied(*tag));
+                    proc.send(Signal::LinkDied(*tag));
                 });
                 Err(anyhow!(failure.to_string()))
             } else {
@@ -227,7 +227,7 @@ where
             );
             // Notify all links that we finished because of a kill signal
             links.iter().for_each(|(proc, tag)| {
-                let _ = proc.send(Signal::LinkDied(*tag));
+                proc.send(Signal::LinkDied(*tag));
             });
             Err(anyhow!("Process received Kill signal"))
         }
