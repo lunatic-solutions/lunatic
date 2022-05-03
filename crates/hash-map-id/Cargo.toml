@@ -1,8 +1,11 @@
 [package]
 name = "hash-map-id"
-version = "0.1.0"
+version = "0.9.0"
 edition = "2021"
 description = "HashMap wrapper with incremental ID (u64) as key"
+homepage = "https://lunatic.solutions"
+repository = "https://github.com/lunatic-solutions/lunatic/tree/main/crates/hash-map-id"
+license = "Apache-2.0/MIT"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

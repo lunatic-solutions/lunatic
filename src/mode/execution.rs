@@ -13,7 +13,6 @@ use lunatic_process_api::ProcessConfigCtx;
 use lunatic_runtime::{DefaultProcessConfig, DefaultProcessState};
 
 pub(crate) async fn execute() -> Result<()> {
-    // Init logger
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).init();
 
     // Parse command line arguments
@@ -53,6 +52,10 @@ pub(crate) async fn execute() -> Result<()> {
                 .long("no-entry")
                 .help("If provided will join other nodes, but not require a .wasm entry file")
                 .requires("node"),
+        ).arg(
+            Arg::new("bench")
+                .long("bench")
+                .help("Indicate that a benchmark is running"),
         )
         .arg(
             Arg::new("wasm")
@@ -122,6 +125,9 @@ pub(crate) async fn execute() -> Result<()> {
             .unwrap_or_default()
             .map(|arg| arg.to_string());
         wasi_args.extend(wasm_args);
+        if args.is_present("bench") {
+            wasi_args.push("--bench".to_owned());
+        }
         config.set_command_line_arguments(wasi_args);
 
         // Inherit environment variables
@@ -150,6 +156,7 @@ pub(crate) async fn execute() -> Result<()> {
             runtime.clone(),
             module.clone(),
             Arc::new(config),
+            Default::default(),
         )
         .unwrap();
 

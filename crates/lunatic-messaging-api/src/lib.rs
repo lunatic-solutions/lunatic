@@ -137,7 +137,7 @@ fn create_data<T: ProcessState + ProcessCtx<T>>(
 // Writes some data into the message buffer and returns how much data is written in bytes.
 //
 // Traps:
-// * If any memory outside of the guest heap space is referenced.
+// * If any memory outside the guest heap space is referenced.
 // * If it's called without a data message being inside of the scratch area.
 fn write_data<T: ProcessState + ProcessCtx<T>>(
     mut caller: Caller<T>,
@@ -169,7 +169,7 @@ fn write_data<T: ProcessState + ProcessCtx<T>>(
 // Reads some data from the message buffer and returns how much data is read in bytes.
 //
 // Traps:
-// * If any memory outside of the guest heap space is referenced.
+// * If any memory outside the guest heap space is referenced.
 // * If it's called without a data message being inside of the scratch area.
 fn read_data<T: ProcessState + ProcessCtx<T>>(
     mut caller: Caller<T>,

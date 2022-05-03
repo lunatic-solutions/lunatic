@@ -4,6 +4,7 @@ use std::sync::Arc;
 use anyhow::Result;
 use async_std::channel::{unbounded, Receiver, Sender};
 use async_std::net::{TcpListener, TcpStream, UdpSocket};
+use dashmap::DashMap;
 use hash_map_id::HashMapId;
 use lunatic_common_api::actor::ActorCtx;
 use lunatic_common_api::control::GetNodes;
@@ -53,6 +54,8 @@ pub struct DefaultProcessState {
     wasi_stderr: Option<StdoutCapture>,
     // Set to true if the WASM module has been instantiated
     initialized: bool,
+    // Shared process registry
+    registry: Arc<DashMap<String, (u64, u64)>>,
 }
 
 impl ProcessState for DefaultProcessState {
@@ -63,6 +66,7 @@ impl ProcessState for DefaultProcessState {
         runtime: WasmtimeRuntime,
         module: WasmtimeCompiledModule<Self>,
         config: Arc<DefaultProcessConfig>,
+        registry: Arc<DashMap<String, (u64, u64)>>,
     ) -> Result<Self> {
         let signal_mailbox = unbounded::<Signal>();
         let message_mailbox = MessageMailbox::default();
@@ -84,6 +88,7 @@ impl ProcessState for DefaultProcessState {
             wasi_stdout: None,
             wasi_stderr: None,
             initialized: false,
+            registry,
         };
         Ok(state)
     }
@@ -97,6 +102,7 @@ impl ProcessState for DefaultProcessState {
             environment: Environment::local(),
             runtime: None,
             module: None,
+            registry: Default::default(),
             config: Arc::new(config.clone()),
             message: None,
             signal_mailbox,
@@ -121,6 +127,7 @@ impl ProcessState for DefaultProcessState {
         lunatic_networking_api::register(linker)?;
         lunatic_version_api::register(linker)?;
         lunatic_wasi_api::register(linker)?;
+        lunatic_registry_api::register(linker)?;
         Ok(())
     }
 
@@ -169,6 +176,10 @@ impl ProcessState for DefaultProcessState {
     ) -> &mut ConfigResources<<DefaultProcessState as ProcessState>::Config> {
         &mut self.resources.configs
     }
+
+    fn registry(&self) -> &Arc<DashMap<String, (u64, u64)>> {
+        &self.registry
+    }
 }
 
 impl Debug for DefaultProcessState {
@@ -185,9 +196,8 @@ impl ResourceLimiter for DefaultProcessState {
         desired <= self.config().get_max_memory()
     }
 
-    // TODO: What would be a reasonable table limit be?
     fn table_growing(&mut self, _current: u32, desired: u32, _maximum: Option<u32>) -> bool {
-        desired < 10_000
+        desired < 100_000
     }
 
     // Allow one instance per store
@@ -342,11 +352,13 @@ mod tests {
         let raw_module = wat::parse_file("./wat/all_imports.wat").unwrap();
         let module = runtime.compile_module(raw_module).unwrap();
         let env = lunatic_process::env::Environment::local();
+        let registry = Arc::new(dashmap::DashMap::new());
         let state = DefaultProcessState::new(
             env.clone(),
             runtime.clone(),
             module.clone(),
             Arc::new(config),
+            registry,
         )
         .unwrap();
 

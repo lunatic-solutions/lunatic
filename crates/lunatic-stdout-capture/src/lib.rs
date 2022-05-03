@@ -26,6 +26,12 @@ pub struct StdoutCapture {
     index: usize,
 }
 
+impl PartialEq for StdoutCapture {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.writers, &other.writers) && self.index == other.index
+    }
+}
+
 impl Default for StdoutCapture {
     fn default() -> Self {
         Self::new()
@@ -67,17 +73,25 @@ impl StdoutCapture {
 
     /// Returns a clone of `StdoutCapture` pointing to the next stream
     pub fn next(&self) -> Self {
-        {
+        let index = {
             let mut writers = RwLock::write(&self.writers).unwrap();
             // If the stream already exists don't add a new one, e.g. stdout & stderr share the same stream.
-            if self.index == writers.len() - 1 {
-                writers.push(Mutex::new(Cursor::new(Vec::new())));
-            }
-        }
+            writers.push(Mutex::new(Cursor::new(Vec::new())));
+            writers.len() - 1
+        };
         Self {
             writers: self.writers.clone(),
-            index: self.index + 1,
+            index,
         }
+    }
+
+    /// Returns true if all streams are empty
+    pub fn is_empty(&self) -> bool {
+        let streams = RwLock::read(&self.writers).unwrap();
+        streams.iter().all(|stream| {
+            let stream = stream.lock().unwrap();
+            stream.get_ref().is_empty()
+        })
     }
 
     /// Returns stream's content
@@ -100,22 +114,22 @@ impl WasiFile for StdoutCapture {
     fn as_any(&self) -> &dyn Any {
         self
     }
-    async fn datasync(&self) -> Result<(), Error> {
+    async fn datasync(&mut self) -> Result<(), Error> {
         Ok(())
     }
-    async fn sync(&self) -> Result<(), Error> {
+    async fn sync(&mut self) -> Result<(), Error> {
         Ok(())
     }
-    async fn get_filetype(&self) -> Result<FileType, Error> {
+    async fn get_filetype(&mut self) -> Result<FileType, Error> {
         Ok(FileType::Pipe)
     }
-    async fn get_fdflags(&self) -> Result<FdFlags, Error> {
+    async fn get_fdflags(&mut self) -> Result<FdFlags, Error> {
         Ok(FdFlags::APPEND)
     }
     async fn set_fdflags(&mut self, _fdflags: FdFlags) -> Result<(), Error> {
         Err(Error::badf())
     }
-    async fn get_filestat(&self) -> Result<Filestat, Error> {
+    async fn get_filestat(&mut self) -> Result<Filestat, Error> {
         Ok(Filestat {
             device_id: 0,
             inode: 0,
@@ -127,46 +141,46 @@ impl WasiFile for StdoutCapture {
             ctim: None,
         })
     }
-    async fn set_filestat_size(&self, _size: u64) -> Result<(), Error> {
+    async fn set_filestat_size(&mut self, _size: u64) -> Result<(), Error> {
         Err(Error::badf())
     }
-    async fn advise(&self, _offset: u64, _len: u64, _advice: Advice) -> Result<(), Error> {
+    async fn advise(&mut self, _offset: u64, _len: u64, _advice: Advice) -> Result<(), Error> {
         Err(Error::badf())
     }
-    async fn allocate(&self, _offset: u64, _len: u64) -> Result<(), Error> {
+    async fn allocate(&mut self, _offset: u64, _len: u64) -> Result<(), Error> {
         Err(Error::badf())
     }
-    async fn read_vectored<'a>(&self, _bufs: &mut [IoSliceMut<'a>]) -> Result<u64, Error> {
+    async fn read_vectored<'a>(&mut self, _bufs: &mut [IoSliceMut<'a>]) -> Result<u64, Error> {
         Err(Error::badf())
     }
     async fn read_vectored_at<'a>(
-        &self,
+        &mut self,
         _bufs: &mut [IoSliceMut<'a>],
         _offset: u64,
     ) -> Result<u64, Error> {
         Err(Error::badf())
     }
-    async fn write_vectored<'a>(&self, bufs: &[IoSlice<'a>]) -> Result<u64, Error> {
+    async fn write_vectored<'a>(&mut self, bufs: &[IoSlice<'a>]) -> Result<u64, Error> {
         let streams = RwLock::read(&self.writers).unwrap();
         let mut stream = streams[self.index].lock().unwrap();
         let n = stream.write_vectored(bufs)?;
         Ok(n.try_into()?)
     }
     async fn write_vectored_at<'a>(
-        &self,
+        &mut self,
         _bufs: &[IoSlice<'a>],
         _offset: u64,
     ) -> Result<u64, Error> {
         Err(Error::badf())
     }
-    async fn seek(&self, _pos: SeekFrom) -> Result<u64, Error> {
+    async fn seek(&mut self, _pos: SeekFrom) -> Result<u64, Error> {
         Err(Error::badf())
     }
-    async fn peek(&self, _buf: &mut [u8]) -> Result<u64, Error> {
+    async fn peek(&mut self, _buf: &mut [u8]) -> Result<u64, Error> {
         Err(Error::badf())
     }
     async fn set_times(
-        &self,
+        &mut self,
         _atime: Option<SystemTimeSpec>,
         _mtime: Option<SystemTimeSpec>,
     ) -> Result<(), Error> {
@@ -175,7 +189,7 @@ impl WasiFile for StdoutCapture {
     async fn num_ready_bytes(&self) -> Result<u64, Error> {
         Ok(0)
     }
-    fn isatty(&self) -> bool {
+    fn isatty(&mut self) -> bool {
         false
     }
     async fn readable(&self) -> Result<(), Error> {

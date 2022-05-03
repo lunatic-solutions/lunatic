@@ -1,14 +1,14 @@
 [package]
 name = "lunatic-distributed"
-version = "0.1.0"
+version = "0.9.0"
 edition = "2021"
 description = "Node to node communication"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-lunatic-common-api = { version = "0.1", path = "../lunatic-common-api" }
-lunatic-process = { version = "^0.1", path = "../lunatic-process" }
+lunatic-common-api = { version = "0.9", path = "../lunatic-common-api" }
+lunatic-process = { version = "^0.9", path = "../lunatic-process" }
 anyhow = "^1.0"
 async-std = { version = "^1.0", features = ["attributes", "unstable"] }
 serde = { version = "^1.0", features = ["derive"] }

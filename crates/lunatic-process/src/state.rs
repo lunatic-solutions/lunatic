@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use async_std::channel::{Receiver, Sender};
+use dashmap::DashMap;
 use hash_map_id::HashMapId;
 use wasmtime::Linker;
 
@@ -29,6 +30,7 @@ pub trait ProcessState: Sized {
         runtime: WasmtimeRuntime,
         module: WasmtimeCompiledModule<Self>,
         config: Arc<Self::Config>,
+        registry: Arc<DashMap<String, (u64, u64)>>,
     ) -> Result<Self>;
 
     fn state_for_instantiation() -> Self;
@@ -59,4 +61,7 @@ pub trait ProcessState: Sized {
     // Config resources
     fn config_resources(&self) -> &ConfigResources<Self::Config>;
     fn config_resources_mut(&mut self) -> &mut ConfigResources<Self::Config>;
+
+    // Registry
+    fn registry(&self) -> &Arc<DashMap<String, (u64, u64)>>;
 }

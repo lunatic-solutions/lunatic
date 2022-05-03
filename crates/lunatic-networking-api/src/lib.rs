@@ -106,7 +106,7 @@ pub fn register<T: NetworkingCtx + ErrorCtx + Send + 'static>(
 //
 // Traps:
 // * If the name is not a valid utf8 string.
-// * If any memory outside of the guest heap space is referenced.
+// * If any memory outside the guest heap space is referenced.
 fn resolve<T: NetworkingCtx + ErrorCtx + Send>(
     mut caller: Caller<T>,
     name_str_ptr: u32,
@@ -185,7 +185,7 @@ fn drop_dns_iterator<T: NetworkingCtx>(
 //
 // Traps:
 // * If the DNS iterator ID doesn't exist.
-// * If any memory outside of the guest heap space is referenced.
+// * If any memory outside the guest heap space is referenced.
 fn resolve_next<T: NetworkingCtx>(
     mut caller: Caller<T>,
     dns_iter_id: u64,
@@ -259,7 +259,7 @@ fn resolve_next<T: NetworkingCtx>(
 // * 1 on error   - The error ID is written to **id_u64_ptr**
 //
 // Traps:
-// * If any memory outside of the guest heap space is referenced.
+// * If any memory outside the guest heap space is referenced.
 fn tcp_bind<T: NetworkingCtx + ErrorCtx + Send>(
     mut caller: Caller<T>,
     addr_type: u32,
@@ -324,7 +324,7 @@ fn drop_tcp_listener<T: NetworkingCtx>(
 //
 // Traps:
 // * If the tcp listener ID doesn't exist.
-// * If any memory outside of the guest heap space is referenced.
+// * If any memory outside the guest heap space is referenced.
 fn tcp_local_addr<T: NetworkingCtx + ErrorCtx>(
     mut caller: Caller<T>,
     tcp_listener_id: u64,
@@ -366,7 +366,7 @@ fn tcp_local_addr<T: NetworkingCtx + ErrorCtx>(
 //
 // Traps:
 // * If the tcp listener ID doesn't exist.
-// * If any memory outside of the guest heap space is referenced.
+// * If any memory outside the guest heap space is referenced.
 fn tcp_accept<T: NetworkingCtx + ErrorCtx + Send>(
     mut caller: Caller<T>,
     listener_id: u64,
@@ -421,7 +421,7 @@ fn tcp_accept<T: NetworkingCtx + ErrorCtx + Send>(
 //
 // Traps:
 // * If **addr_type** is neither 4 or 6.
-// * If any memory outside of the guest heap space is referenced.
+// * If any memory outside the guest heap space is referenced.
 #[allow(clippy::too_many_arguments)]
 fn tcp_connect<T: NetworkingCtx + ErrorCtx + Send>(
     mut caller: Caller<T>,
@@ -512,7 +512,7 @@ fn clone_tcp_stream<T: NetworkingCtx>(
 //
 // Traps:
 // * If the stream ID doesn't exist.
-// * If any memory outside of the guest heap space is referenced.
+// * If any memory outside the guest heap space is referenced.
 fn tcp_write_vectored<T: NetworkingCtx + ErrorCtx + Send>(
     mut caller: Caller<T>,
     stream_id: u64,
@@ -583,7 +583,7 @@ fn tcp_write_vectored<T: NetworkingCtx + ErrorCtx + Send>(
 //
 // Traps:
 // * If the stream ID doesn't exist.
-// * If any memory outside of the guest heap space is referenced.
+// * If any memory outside the guest heap space is referenced.
 fn tcp_read<T: NetworkingCtx + ErrorCtx + Send>(
     mut caller: Caller<T>,
     stream_id: u64,
@@ -637,7 +637,7 @@ fn tcp_read<T: NetworkingCtx + ErrorCtx + Send>(
 //
 // Traps:
 // * If the stream ID doesn't exist.
-// * If any memory outside of the guest heap space is referenced.
+// * If any memory outside the guest heap space is referenced.
 fn tcp_flush<T: NetworkingCtx + ErrorCtx + Send>(
     mut caller: Caller<T>,
     stream_id: u64,
@@ -676,7 +676,7 @@ fn tcp_flush<T: NetworkingCtx + ErrorCtx + Send>(
 //
 // Traps:
 // * If **addr_type** is neither 4 or 6.
-// * If any memory outside of the guest heap space is referenced.
+// * If any memory outside the guest heap space is referenced.
 fn udp_bind<T: NetworkingCtx + ErrorCtx + Send>(
     mut caller: Caller<T>,
     addr_type: u32,
@@ -745,7 +745,7 @@ fn drop_udp_socket<T: NetworkingCtx>(
 //
 // Traps:
 // * If the socket ID doesn't exist.
-// * If any memory outside of the guest heap space is referenced.
+// * If any memory outside the guest heap space is referenced.
 fn udp_receive<T: NetworkingCtx + ErrorCtx + Send>(
     mut caller: Caller<T>,
     socket_id: u64,
@@ -800,7 +800,7 @@ fn udp_receive<T: NetworkingCtx + ErrorCtx + Send>(
 //
 // Traps:
 // * If the stream ID doesn't exist.
-// * If any memory outside of the guest heap space is referenced.
+// * If any memory outside the guest heap space is referenced.
 fn udp_receive_from<T: NetworkingCtx + ErrorCtx + Send>(
     mut caller: Caller<T>,
     socket_id: u64,
@@ -875,7 +875,7 @@ fn udp_receive_from<T: NetworkingCtx + ErrorCtx + Send>(
 // * 9027 on timeout - The socket connect operation timed out.
 //
 // Traps:
-// * If any memory outside of the guest heap space is referenced.
+// * If any memory outside the guest heap space is referenced.
 #[allow(clippy::too_many_arguments)]
 fn udp_connect<T: NetworkingCtx + ErrorCtx + Send>(
     mut caller: Caller<T>,
@@ -1036,7 +1036,7 @@ fn get_udp_socket_ttl<T: NetworkingCtx>(
 //
 // Traps:
 // * If the stream ID doesn't exist.
-// * If any memory outside of the guest heap space is referenced.
+// * If any memory outside the guest heap space is referenced.
 #[allow(clippy::too_many_arguments)]
 fn udp_send_to<T: NetworkingCtx + ErrorCtx + Send>(
     mut caller: Caller<T>,
@@ -1108,7 +1108,7 @@ fn udp_send_to<T: NetworkingCtx + ErrorCtx + Send>(
 //
 // Traps:
 // * If the stream ID doesn't exist.
-// * If any memory outside of the guest heap space is referenced.
+// * If any memory outside the guest heap space is referenced.
 fn udp_send<T: NetworkingCtx + ErrorCtx + Send>(
     mut caller: Caller<T>,
     socket_id: u64,
@@ -1163,7 +1163,7 @@ fn udp_send<T: NetworkingCtx + ErrorCtx + Send>(
 //
 // Traps:
 // * If the udp socket ID doesn't exist.
-// * If any memory outside of the guest heap space is referenced.
+// * If any memory outside the guest heap space is referenced.
 fn udp_local_addr<T: NetworkingCtx + ErrorCtx + Send>(
     mut caller: Caller<T>,
     udp_socket_id: u64,

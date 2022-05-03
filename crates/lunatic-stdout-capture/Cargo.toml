@@ -1,11 +1,14 @@
 [package]
 name = "lunatic-stdout-capture"
-version = "0.1.0"
+version = "0.9.0"
 edition = "2021"
-description = "Utilities for captuaring standard output from lunatic processes and subprocesses"
+description = "Helper library for holding stdout streams of lunatic processes."
+homepage = "https://lunatic.solutions"
+repository = "https://github.com/lunatic-solutions/lunatic/tree/main/crates/lunatic-registry-api"
+license = "Apache-2.0/MIT"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-wiggle = "^0.35"
-wasi-common = "^0.35"
+wiggle = "^0.36"
+wasi-common = "^0.36"

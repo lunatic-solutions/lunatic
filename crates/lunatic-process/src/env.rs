@@ -57,6 +57,10 @@ impl Environment {
         self.environment_id
     }
 
+    pub fn node_id(&self) -> u64 {
+        self.control.node_id
+    }
+
     pub async fn get_module(&self, module_id: u64) {
         self.control.get_module.call(GetModule { module_id }).await;
         todo!()

@@ -75,7 +75,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/') && runner.os == 'Windows'
         uses: vimtor/action-zip@v1
         with:
-          files: README.md LICENSE-MIT LICENSE-APACHE ./target/release/${{ matrix.target_name }}
+          files: README.md LICENSE-MIT LICENSE-APACHE ${{ matrix.target_name }}
           dest: ${{ matrix.asset_name }}
       - name: Get release name
         if: startsWith(github.ref, 'refs/tags/')

@@ -76,5 +76,9 @@
     (import "lunatic::wasi" "config_add_command_line_argument" (func (param i64 i32 i32)))
     (import "lunatic::wasi" "config_preopen_dir" (func (param i64 i32 i32)))
 
+    (import "lunatic::registry" "put" (func (param i32 i32 i64 i64)))
+    (import "lunatic::registry" "get" (func (param i32 i32 i32 i32) (result i32)))
+    (import "lunatic::registry" "remove" (func (param i32 i32)))
+
     (func (export "hello") nop)
 )

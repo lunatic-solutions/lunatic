@@ -3,6 +3,7 @@ use std::{env, fs, path::Path, sync::Arc, time::Instant};
 use anyhow::{Context, Result};
 use clap::{crate_version, Arg, Command};
 
+use dashmap::DashMap;
 use lunatic_process::{env::Environment, runtimes, state::ProcessState};
 use lunatic_process_api::ProcessConfigCtx;
 use lunatic_runtime::{DefaultProcessConfig, DefaultProcessState};
@@ -200,13 +201,24 @@ pub(crate) async fn test() -> Result<()> {
         }
 
         let env = Environment::local();
-        let mut state =
-            DefaultProcessState::new(env.clone(), runtime.clone(), module.clone(), config.clone())
-                .unwrap();
-        // Use in-memory stdout & stderr to hide output in case of success.
+        let registry = Arc::new(DashMap::new());
+        let mut state = DefaultProcessState::new(
+            env.clone(),
+            runtime.clone(),
+            module.clone(),
+            config.clone(),
+            registry,
+        )
+        .unwrap();
+
+        // If --nocapture is not set, use in-memory stdout & stderr to hide output in case of
+        // success
         let stdout = StdoutCapture::new();
-        state.set_stdout(stdout.clone());
-        state.set_stderr(stdout.clone());
+        let no_capture = args.is_present("nocapture");
+        if !no_capture {
+            state.set_stdout(stdout.clone());
+            state.set_stderr(stdout.clone());
+        }
 
         let (task, _) = env
             .spawn_wasm(
@@ -258,8 +270,10 @@ pub(crate) async fn test() -> Result<()> {
 
                     // If we didn't expect a panic, but got one or were killed by a signal
                     if test_function.panic.is_none() {
-                        if panic_detected.is_none() {
-                            stdout.push_str("note: Process received kill signal\n");
+                        // In case of --nocapture the regex will never match (content is empty).
+                        // At this point we can't be certain if there was a panic.
+                        if panic_detected.is_none() && !no_capture {
+                            stdout.push_str("note: Process trapped or received kill signal\n");
                         }
                         TestResult {
                             name: test_function.function_name,
@@ -329,34 +343,18 @@ pub(crate) async fn test() -> Result<()> {
         let name = result.name;
         match result.status {
             TestStatus::Ok => {
-                // If --nocapture is present, print all output
-                if args.is_present("nocapture") {
-                    print!("{}", result.stdout);
-                }
                 println!("test {} ... \x1b[92mok\x1b[0m", name); // green ok
                 successes.push((name, result.stdout));
             }
             TestStatus::Failed => {
-                // If --nocapture is present, print all output
-                if args.is_present("nocapture") {
-                    print!("{}", result.stdout);
-                }
                 println!("test {} ... \x1b[91mFAILED\x1b[0m", name); // red FAIL
                 failures.push((name, result.stdout));
             }
             TestStatus::PanicOk => {
-                // If --nocapture is present, print all output
-                if args.is_present("nocapture") {
-                    print!("{}", result.stdout);
-                }
                 println!("test {} - should panic ... \x1b[92mok\x1b[0m", name); // green ok
                 successes.push((name, result.stdout));
             }
             TestStatus::PanicFailed => {
-                // If --nocapture is present, print all output
-                if args.is_present("nocapture") {
-                    print!("{}", result.stdout);
-                }
                 println!("test {} - should panic ... \x1b[91mFAILED\x1b[0m", name); // red FAIL
                 failures.push((name, result.stdout));
             }
@@ -367,16 +365,17 @@ pub(crate) async fn test() -> Result<()> {
         }
     }
 
-    // If --show-output is present, print success outputs
+    // If --show-output is present, print success outputs if they are not empty
     if args.is_present("showoutput") {
         println!("\nsuccesses:");
-        if !args.is_present("nocapture") {
-            // Print stdout of failures
-            for (success, stdout) in successes.iter() {
+        // Print stdout of successes
+        for (success, stdout) in successes.iter() {
+            if !stdout.is_empty() {
                 println!("\n---- {} stdout ----", success);
                 print!("{}", stdout);
             }
         }
+
         println!("\nsuccesses:");
         for (success, _) in successes.iter() {
             println!("    {}", success);
@@ -387,9 +386,9 @@ pub(crate) async fn test() -> Result<()> {
         println!("\nfailures:");
     }
 
-    if !args.is_present("nocapture") {
-        // Print stdout of failures
-        for (failure, stdout) in failures.iter() {
+    // Print stdout of failures if they are not empty
+    for (failure, stdout) in failures.iter() {
+        if !stdout.is_empty() {
             println!("\n---- {} stdout ----", failure);
             print!("{}", stdout);
         }
