@@ -10,8 +10,8 @@ use async_std::{
 };
 use dashmap::DashMap;
 
-use crate::message::{Request, Response};
-use crate::{connection::Connection, message::Registration};
+use crate::control::message::{Request, Response};
+use crate::{control::connection::Connection, control::message::Registration};
 
 #[derive(Clone)]
 pub struct Server {
@@ -104,7 +104,7 @@ async fn handle_request(
     msg_id: u64,
     request: Request,
 ) -> Result<u64> {
-    use crate::message::Request::*;
+    use crate::control::message::Request::*;
     let response = match request {
         Register(reg) => server.register(reg),
         ListNodes => server.list_nodes(),

@@ -11,7 +11,6 @@ license = "Apache-2.0/MIT"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-uuid = { version = "^0.8", features = ["v4"] }
 anyhow = "^1.0"
 wasmtime = "^0.36"
 async-std = { version = "^1.0", features = ["attributes", "unstable"] }

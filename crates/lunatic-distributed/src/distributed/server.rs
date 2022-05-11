@@ -4,7 +4,7 @@ use async_std::{
     task::spawn,
 };
 
-use crate::{
+use crate::distributed::{
     connection::Connection,
     message::{Request, Response},
     node::Node,

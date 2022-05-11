@@ -8,17 +8,13 @@ use std::{
     time::Duration,
 };
 
-use async_std::{channel::Receiver, net::TcpStream, task};
+use async_std::{net::TcpStream, task};
 
 use crate::{
-    connection::Connection,
-    message::{Request, Response},
-};
-
-use lunatic_common_api::{
-    actor::{self, Actor, Responder},
     control::{ControlInterface, NodeInfo},
-    distributed::{DistributedInterface, Spawn},
+    distributed::connection::Connection,
+    distributed::message::{Request, Response},
+    distributed::DistributedInterface,
 };
 
 #[derive(Clone)]
@@ -45,12 +41,7 @@ pub async fn start_client(control: ControlInterface) -> Result<DistributedInterf
         }),
     };
 
-    let nodes = client
-        .inner
-        .control
-        .get_nodes
-        .call(lunatic_common_api::control::GetNodes {})
-        .await;
+    let nodes = client.inner.control.get_nodes().await;
 
     log::info!("List nodes {nodes:?}");
 
@@ -64,9 +55,7 @@ pub async fn start_client(control: ControlInterface) -> Result<DistributedInterf
         }
     }
 
-    Ok(DistributedInterface {
-        spawn: client.spawn(),
-    })
+    Ok(DistributedInterface {})
 }
 
 impl Client {
@@ -139,43 +128,5 @@ async fn reader_task(client: Client, node_connection: Connection) -> Result<()> 
         if let Ok((id, resp)) = node_connection.receive().await {
             client.process_response(id, resp);
         }
-    }
-}
-trait ConvertRequest: actor::Request {
-    fn into_ctrl_request(self) -> (u64, Request);
-    fn from_ctrl_response(resp: Response) -> Option<Self::Response>;
-}
-
-impl ConvertRequest for Spawn {
-    fn into_ctrl_request(self) -> (u64, Request) {
-        (self.node_id, Request::Spawn)
-    }
-
-    fn from_ctrl_response(resp: Response) -> Option<Self::Response> {
-        if let Response::Spawned = resp {
-            Some(0) // TODO
-        } else {
-            None
-        }
-    }
-}
-
-// Implement the same actor for all control interface messages
-// It converts actor requests into control server requests and waits for the response from the server
-impl<T: ConvertRequest + actor::Request + Sync + Send + 'static> Actor<T> for Client {
-    fn spawn_task(self, receiver: Receiver<(T, Responder<T>)>) {
-        task::spawn(async move {
-            while let Ok((req, resp)) = receiver.recv().await {
-                let client = self.clone();
-                task::spawn(async move {
-                    let (node_id, req) = req.into_ctrl_request();
-                    if let Ok(r) = client.send(node_id, req).await {
-                        if let Some(r) = T::from_ctrl_response(r) {
-                            resp.respond(r).await;
-                        }
-                    };
-                });
-            }
-        });
     }
 }

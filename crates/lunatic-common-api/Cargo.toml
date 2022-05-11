@@ -14,4 +14,3 @@ license = "Apache-2.0/MIT"
 anyhow = "^1.0"
 wasmtime = "^0.36"
 paste = "^1.0"
-async-std = { version = "^1.0", features = ["attributes", "unstable"] }

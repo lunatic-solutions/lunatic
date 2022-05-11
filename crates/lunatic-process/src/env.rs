@@ -1,27 +1,28 @@
 use dashmap::DashMap;
-use lunatic_common_api::{
-    control::{ControlInterface, GetModule},
-    distributed::DistributedInterface,
-};
+use lunatic_distributed::{control::ControlInterface, distributed::DistributedInterface};
 use std::sync::{
     atomic::{AtomicU64, Ordering},
     Arc,
 };
 
-use crate::{local_control::local_control, local_dist::dummy_distributed, Process, Signal};
+use crate::{Process, Signal};
 
 #[derive(Clone)]
 pub struct Environment {
     environment_id: u64,
     next_process_id: Arc<AtomicU64>,
     processes: Arc<DashMap<u64, Arc<dyn Process>>>,
-    control: ControlInterface,
+    control: Option<ControlInterface>,
     #[allow(unused)]
-    distributed: DistributedInterface,
+    distributed: Option<DistributedInterface>,
 }
 
 impl Environment {
-    pub fn new(id: u64, control: ControlInterface, distributed: DistributedInterface) -> Self {
+    pub fn new(
+        id: u64,
+        control: Option<ControlInterface>,
+        distributed: Option<DistributedInterface>,
+    ) -> Self {
         Self {
             environment_id: id,
             processes: Arc::new(DashMap::new()),
@@ -32,7 +33,7 @@ impl Environment {
     }
 
     pub fn local() -> Self {
-        Self::new(1, local_control(), dummy_distributed())
+        Self::new(1, None, None)
     }
 
     pub fn get_process(&self, id: u64) -> Option<Arc<dyn Process>> {
@@ -58,11 +59,10 @@ impl Environment {
     }
 
     pub fn node_id(&self) -> u64 {
-        self.control.node_id
+        self.control.as_ref().map(|c| c.node_id).unwrap_or(1)
     }
 
-    pub async fn get_module(&self, module_id: u64) {
-        self.control.get_module.call(GetModule { module_id }).await;
+    pub async fn get_module(&self, _module_id: u64) {
         todo!()
     }
 }

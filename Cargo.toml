@@ -19,7 +19,6 @@ name = "lunatic"
 path = "src/main.rs"
 
 [dependencies]
-uuid = { version = "^0.8", features = ["v4"] }
 anyhow = "^1.0"
 clap = { version = "^3.0", features = ["cargo"] }
 lazy_static = "^1.4"
@@ -29,18 +28,16 @@ wasmtime = "^0.36"
 wasmtime-wasi = "^0.36"
 wasi-common = "^0.36"
 wasmparser = "^0.81"
-wasm-encoder = "^0.8"
 env_logger = "^0.9"
 log = "^0.4"
-semver = "^1.0"
 serde = "^1.0"
 bincode = "^1.3"
 dashmap = "^5.2.0"
 regex = "^1.5"
-dyn-clone = "^1.0"
 hash-map-id = { version = "^0.9", path = "crates/hash-map-id" }
 lunatic-stdout-capture = { version = "^0.9", path = "crates/lunatic-stdout-capture" }
 lunatic-process = { version = "^0.9", path = "crates/lunatic-process" }
+lunatic-distributed = { version = "^0.9", path = "crates/lunatic-distributed" }
 lunatic-common-api = { version = "^0.9", path = "crates/lunatic-common-api" }
 lunatic-process-api = { version = "^0.9", path = "crates/lunatic-process-api" }
 lunatic-error-api = { version = "^0.9", path = "crates/lunatic-error-api" }
@@ -49,8 +46,7 @@ lunatic-networking-api = { version = "^0.9", path = "crates/lunatic-networking-a
 lunatic-version-api = { version = "^0.9", path = "crates/lunatic-version-api" }
 lunatic-wasi-api = { version = "^0.9", path = "crates/lunatic-wasi-api" }
 lunatic-registry-api = { version = "^0.9", path = "crates/lunatic-registry-api" }
-lunatic-control = { version = "^0.9", path = "crates/lunatic-control" }
-lunatic-distributed = { version = "^0.9", path = "crates/lunatic-distributed" }
+lunatic-distributed-api = { version = "^0.9", path = "crates/lunatic-distributed-api" }
 
 [dev-dependencies]
 wat = "^1.0"
@@ -66,7 +62,6 @@ members = [
     "crates/hash-map-id",
     "crates/lunatic-stdout-capture",
     "crates/lunatic-process",
-    "crates/lunatic-control",
     "crates/lunatic-distributed",
     "crates/lunatic-common-api",
     "crates/lunatic-process-api",
@@ -75,4 +70,5 @@ members = [
     "crates/lunatic-version-api",
     "crates/lunatic-wasi-api",
     "crates/lunatic-registry-api",
+    "crates/lunatic-distributed-api",
 ]

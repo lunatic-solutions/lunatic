@@ -7,16 +7,12 @@ use std::{
     time::Duration,
 };
 
-use async_std::channel::Receiver;
 use async_std::{net::TcpStream, task};
 
+use crate::control::ControlInterface;
 use crate::{
-    connection::Connection,
-    message::{Registration, Request, Response},
-};
-use lunatic_common_api::{
-    actor::{self, Actor, Responder},
-    control::{ControlInterface, GetModule, GetNodes, NodeInfo, RegisterModule},
+    control::connection::Connection,
+    control::message::{Registration, Request, Response},
 };
 
 #[derive(Clone)]
@@ -45,12 +41,7 @@ pub async fn register(node_addr: SocketAddr, control_addr: SocketAddr) -> Result
     // Spawn reader task before register
     task::spawn(reader_task(client.clone()));
     let node_id: u64 = client.register().await?;
-    let control = ControlInterface {
-        node_id,
-        get_module: client.clone().spawn(),
-        get_nodes: client.clone().spawn(),
-        register_module: client.clone().spawn(),
-    };
+    let control = ControlInterface { client, node_id };
     Ok(control)
 }
 
@@ -116,79 +107,6 @@ async fn reader_task(client: Client) -> Result<()> {
     loop {
         if let Ok((id, resp)) = client.recv().await {
             client.process_response(id, resp);
-        }
-    }
-}
-trait ConvertRequest: actor::Request {
-    fn into_ctrl_request(self) -> Request;
-    fn from_ctrl_response(resp: Response) -> Option<Self::Response>;
-}
-
-// Implement the same actor for all control interface messages
-// It converts actor requests into control server requests and waits for the response from the server
-impl<T: ConvertRequest + actor::Request + Sync + Send + 'static> Actor<T> for Client {
-    fn spawn_task(self, receiver: Receiver<(T, Responder<T>)>) {
-        task::spawn(async move {
-            while let Ok((req, resp)) = receiver.recv().await {
-                let client = self.clone();
-                task::spawn(async move {
-                    if let Ok(r) = client.send(req.into_ctrl_request()).await {
-                        if let Some(r) = T::from_ctrl_response(r) {
-                            resp.respond(r).await;
-                        }
-                    };
-                });
-            }
-        });
-    }
-}
-
-impl ConvertRequest for GetNodes {
-    fn into_ctrl_request(self) -> Request {
-        Request::ListNodes
-    }
-
-    fn from_ctrl_response(resp: Response) -> Option<Self::Response> {
-        if let Response::Nodes(nodes) = resp {
-            Some(
-                nodes
-                    .into_iter()
-                    .map(|(id, r)| NodeInfo {
-                        id,
-                        address: r.node_address,
-                    })
-                    .collect(),
-            )
-        } else {
-            None
-        }
-    }
-}
-
-impl ConvertRequest for GetModule {
-    fn into_ctrl_request(self) -> Request {
-        Request::GetModule(self.module_id)
-    }
-
-    fn from_ctrl_response(resp: Response) -> Option<Self::Response> {
-        if let Response::Module(bytes) = resp {
-            Some(bytes)
-        } else {
-            None
-        }
-    }
-}
-
-impl ConvertRequest for RegisterModule {
-    fn into_ctrl_request(self) -> Request {
-        Request::RegisterModule(self.bytes)
-    }
-
-    fn from_ctrl_response(resp: Response) -> Option<Self::Response> {
-        if let Response::RegisterModule(id) = resp {
-            Some(id)
-        } else {
-            None
         }
     }
 }

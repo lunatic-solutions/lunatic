@@ -11,7 +11,6 @@ license = "Apache-2.0/MIT"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-uuid = { version = "^0.8", features = ["v4"] }
 anyhow = "^1.0"
 async-std = { version = "^1.0", features = ["attributes", "unstable"] }
 log = "^0.4"
@@ -20,4 +19,4 @@ wasmtime = "^0.36"
 serde = "^1.0"
 hash-map-id = { version = "^0.9", path = "../hash-map-id" }
 dashmap = "5.2.0"
-lunatic-common-api = { version = "^0.9", path = "../lunatic-common-api" }
+lunatic-distributed = { version = "^0.9", path = "../lunatic-distributed" }

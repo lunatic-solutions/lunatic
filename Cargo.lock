@@ -733,12 +733,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "dyn-clone"
-version = "1.0.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "21e50f3adc76d6a43f5ed73b698a87d0760ca74617f60f7c3b879003536fdd28"
-
-[[package]]
 name = "either"
 version = "1.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1153,13 +1147,12 @@ name = "lunatic-common-api"
 version = "0.9.0"
 dependencies = [
  "anyhow",
- "async-std",
  "paste",
  "wasmtime",
 ]
 
 [[package]]
-name = "lunatic-control"
+name = "lunatic-distributed"
 version = "0.9.0"
 dependencies = [
  "anyhow",
@@ -1168,12 +1161,11 @@ dependencies = [
  "bincode",
  "dashmap",
  "log",
- "lunatic-common-api",
  "serde",
 ]
 
 [[package]]
-name = "lunatic-distributed"
+name = "lunatic-distributed-api"
 version = "0.9.0"
 dependencies = [
  "anyhow",
@@ -1237,10 +1229,9 @@ dependencies = [
  "dashmap",
  "hash-map-id",
  "log",
- "lunatic-common-api",
+ "lunatic-distributed",
  "serde",
  "tokio",
- "uuid",
  "wasmtime",
 ]
 
@@ -1256,7 +1247,6 @@ dependencies = [
  "lunatic-process",
  "lunatic-stdout-capture",
  "lunatic-wasi-api",
- "uuid",
  "wasmtime",
 ]
 
@@ -1282,14 +1272,13 @@ dependencies = [
  "clap 3.1.12",
  "criterion",
  "dashmap",
- "dyn-clone",
  "env_logger",
  "hash-map-id",
  "lazy_static",
  "log",
  "lunatic-common-api",
- "lunatic-control",
  "lunatic-distributed",
+ "lunatic-distributed-api",
  "lunatic-error-api",
  "lunatic-messaging-api",
  "lunatic-networking-api",
@@ -1300,12 +1289,9 @@ dependencies = [
  "lunatic-version-api",
  "lunatic-wasi-api",
  "regex",
- "semver",
  "serde",
  "tokio",
- "uuid",
  "wasi-common",
- "wasm-encoder",
  "wasmparser 0.81.0",
  "wasmtime",
  "wasmtime-wasi",
@@ -2057,15 +2043,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8ccb82d61f80a663efe1f787a51b16b5a51e3314d6ac365b08639f52387b33f3"
 
 [[package]]
-name = "uuid"
-version = "0.8.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bc5cf98d8186244414c848017f0e2676b3fcb46807f6668a97dfe67359a3c4b7"
-dependencies = [
- "getrandom",
-]
-
-[[package]]
 name = "value-bag"
 version = "1.0.0-alpha.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2211,15 +2188,6 @@ name = "wasm-bindgen-shared"
 version = "0.2.80"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d554b7f530dee5964d9a9468d95c1f8b8acae4f282807e7d27d4b03099a46744"
-
-[[package]]
-name = "wasm-encoder"
-version = "0.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "db0c351632e46cc06a58a696a6c11e4cf90cad4b9f8f07a0b59128d616c29bb0"
-dependencies = [
- "leb128",
-]
 
 [[package]]
 name = "wasmparser"

@@ -6,8 +6,6 @@ use async_std::channel::{unbounded, Receiver, Sender};
 use async_std::net::{TcpListener, TcpStream, UdpSocket};
 use dashmap::DashMap;
 use hash_map_id::HashMapId;
-use lunatic_common_api::actor::ActorCtx;
-use lunatic_common_api::control::GetNodes;
 use lunatic_error_api::{ErrorCtx, ErrorResource};
 use lunatic_networking_api::dns::DnsIterator;
 use lunatic_networking_api::NetworkingCtx;
@@ -128,7 +126,7 @@ impl ProcessState for DefaultProcessState {
         lunatic_version_api::register(linker)?;
         lunatic_wasi_api::register(linker)?;
         lunatic_registry_api::register(linker)?;
-        lunatic_distributed::guest_api::register(linker)?;
+        lunatic_distributed_api::register(linker)?;
         Ok(())
     }
 
@@ -312,12 +310,6 @@ impl LunaticWasiCtx for DefaultProcessState {
 
     fn get_stderr(&self) -> Option<&StdoutCapture> {
         self.wasi_stderr.as_ref()
-    }
-}
-
-impl ActorCtx<GetNodes> for DefaultProcessState {
-    fn actor(&self) -> lunatic_common_api::actor::ActorHandle<GetNodes> {
-        todo!()
     }
 }
 

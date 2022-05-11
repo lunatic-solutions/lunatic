@@ -4,11 +4,9 @@ use anyhow::{Context, Result};
 use async_std::channel;
 use clap::{crate_version, Arg, Command};
 
-use lunatic_control::server::control_server;
-use lunatic_distributed::node::Node;
-use lunatic_process::{
-    env::Environment, local_control::local_control, runtimes, state::ProcessState,
-};
+use lunatic_distributed::control::server::control_server;
+use lunatic_distributed::distributed::node::Node;
+use lunatic_process::{env::Environment, runtimes, state::ProcessState};
 use lunatic_process_api::ProcessConfigCtx;
 use lunatic_runtime::{DefaultProcessConfig, DefaultProcessState};
 
@@ -88,23 +86,32 @@ pub(crate) async fn execute() -> Result<()> {
         (args.value_of("node"), args.value_of("control"))
     {
         // TODO unwrap, better message
-        let ctrl = lunatic_control::client::register(
+        let ctrl = lunatic_distributed::control::client::register(
             node_address.parse().unwrap(),
             control_address.parse().unwrap(),
         )
         .await?;
         log::info!("Registration successful, node id {}", ctrl.node_id);
         let node = Node::new();
-        async_std::task::spawn(lunatic_distributed::server::node_server(
+        async_std::task::spawn(lunatic_distributed::distributed::server::node_server(
             node,
             node_address.parse().unwrap(),
         ));
-        ctrl
+        Some(ctrl)
     } else {
-        local_control()
+        None
     };
 
-    let distributed = lunatic_distributed::client::start_client(control.clone()).await?;
+    let distributed = if control.is_some() {
+        Some(
+            lunatic_distributed::distributed::client::start_client(
+                control.as_ref().unwrap().clone(),
+            )
+            .await?,
+        )
+    } else {
+        None
+    };
 
     let mut config = DefaultProcessConfig::default();
     // Allow initial process to compile modules, create configurations and spawn sub-processes

@@ -1,22 +1,8 @@
-use std::{
-    convert::{TryFrom, TryInto},
-    future::Future,
-    sync::Arc,
-    time::Duration,
-};
-
-use anyhow::{anyhow, Result};
-use lunatic_common_api::{
-    actor::{Actor, ActorCtx},
-    control::GetNodes,
-    get_memory, IntoTrap,
-};
-use lunatic_process::{
-    config::ProcessConfig, env::Environment, mailbox::MessageMailbox, message::Message,
-    runtimes::wasmtime::WasmtimeCompiledModule, state::ProcessState, Process, Signal, WasmProcess,
-};
+use anyhow::Result;
+use lunatic_common_api::{get_memory, IntoTrap};
+use lunatic_process::state::ProcessState;
 use lunatic_process_api::{ProcessConfigCtx, ProcessCtx};
-use wasmtime::{Caller, Linker, ResourceLimiter, Trap, Val};
+use wasmtime::{Caller, Linker, ResourceLimiter, Trap};
 
 // Register the process APIs to the linker
 pub fn register<T>(linker: &mut Linker<T>) -> Result<()>
@@ -31,7 +17,7 @@ where
 }
 
 // Returns count of registered nodes
-fn nodes_count<T: ProcessState + ProcessCtx<T>>(caller: Caller<T>) -> u32 {
+fn nodes_count<T: ProcessState + ProcessCtx<T>>(_caller: Caller<T>) -> u32 {
     2
 }
 
@@ -50,6 +36,6 @@ fn get_nodes<T: ProcessState + ProcessCtx<T>>(
                 ..(nodes_ptr as usize + std::mem::size_of::<u64>() * nodes_len as usize),
         )
         .or_trap("lunatic::distributed::get_nodes::memory")?
-        .copy_from_slice(&unsafe { test.align_to::<u8>().1 });
+        .copy_from_slice(unsafe { test.align_to::<u8>().1 });
     Ok(2)
 }
