@@ -128,6 +128,7 @@ impl ProcessState for DefaultProcessState {
         lunatic_version_api::register(linker)?;
         lunatic_wasi_api::register(linker)?;
         lunatic_registry_api::register(linker)?;
+        lunatic_distributed::guest_api::register(linker)?;
         Ok(())
     }
 
