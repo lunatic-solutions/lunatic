@@ -111,6 +111,7 @@ where
     linker.func_wrap("lunatic::process", "id", id)?;
     linker.func_wrap("lunatic::process", "link", link)?;
     linker.func_wrap("lunatic::process", "unlink", unlink)?;
+    linker.func_wrap("lunatic::process", "kill", kill)?;
 
     Ok(())
 }
@@ -731,5 +732,24 @@ fn unlink<T: ProcessState + ProcessCtx<T>>(
         .0
         .try_send(Signal::UnLink(process))
         .expect("The signal is sent to itself and the receiver must exist at this point");
+    Ok(())
+}
+
+// Send a Kill signal to **process_id**.
+//
+// Traps:
+// * If the process ID doesn't exist.
+fn kill<T: ProcessState + ProcessCtx<T>>(
+    mut caller: Caller<T>,
+    process_id: u64,
+) -> Result<(), Trap> {
+    // Send kill signal to process
+    let process = caller
+        .data()
+        .process_resources()
+        .get(process_id)
+        .or_trap("lunatic::process::link")?
+        .clone();
+    process.send(Signal::Kill);
     Ok(())
 }
