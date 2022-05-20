@@ -739,10 +739,7 @@ fn unlink<T: ProcessState + ProcessCtx<T>>(
 //
 // Traps:
 // * If the process ID doesn't exist.
-fn kill<T: ProcessState + ProcessCtx<T>>(
-    mut caller: Caller<T>,
-    process_id: u64,
-) -> Result<(), Trap> {
+fn kill<T: ProcessState + ProcessCtx<T>>(caller: Caller<T>, process_id: u64) -> Result<(), Trap> {
     // Send kill signal to process
     let process = caller
         .data()
