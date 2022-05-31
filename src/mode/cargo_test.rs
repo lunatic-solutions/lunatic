@@ -4,7 +4,7 @@ use anyhow::{Context, Result};
 use clap::{crate_version, Arg, Command};
 
 use dashmap::DashMap;
-use lunatic_process::{env::Environment, runtimes, state::ProcessState};
+use lunatic_process::{env::Environment, runtimes};
 use lunatic_process_api::ProcessConfigCtx;
 use lunatic_runtime::{DefaultProcessConfig, DefaultProcessState};
 use lunatic_stdout_capture::StdoutCapture;
@@ -200,10 +200,11 @@ pub(crate) async fn test() -> Result<()> {
             continue;
         }
 
-        let env = Environment::local();
+        let env = Environment::new(0);
         let registry = Arc::new(DashMap::new());
         let mut state = DefaultProcessState::new(
             env.clone(),
+            None,
             runtime.clone(),
             module.clone(),
             config.clone(),

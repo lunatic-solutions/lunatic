@@ -492,6 +492,8 @@ where
                 .clone(),
         };
 
+        let mut state = state.new_state(module.clone(), config)?;
+
         let memory = get_memory(&mut caller)?;
         let func_str = memory
             .data(&caller)
@@ -527,10 +529,6 @@ where
         };
 
         let runtime = caller.data().runtime().clone();
-        let env = caller.data().environment().clone();
-
-        let registry = caller.data().registry().clone();
-        let mut state = T::new(env, runtime.clone(), module.clone(), config, registry)?;
 
         // Inherit stdout and stderr streams if they are redirected by the parent.
         let stdout = if let Some(stdout) = caller.data().get_stdout() {

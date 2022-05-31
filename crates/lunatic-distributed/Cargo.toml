@@ -14,3 +14,4 @@ dashmap = "5.2.0"
 bincode = "^1.3"
 log = "^0.4"
 async_cell = "0.2.1"
+lunatic-process = { version = "^0.9", path = "../lunatic-process" }

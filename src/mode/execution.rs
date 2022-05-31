@@ -4,9 +4,11 @@ use anyhow::{Context, Result};
 use async_std::channel;
 use clap::{crate_version, Arg, Command};
 
-use lunatic_distributed::control::server::control_server;
-use lunatic_distributed::distributed::node::Node;
-use lunatic_process::{env::Environment, runtimes, state::ProcessState};
+use lunatic_distributed::{
+    control::{self, server::control_server},
+    distributed,
+};
+use lunatic_process::{env::Environment, runtimes};
 use lunatic_process_api::ProcessConfigCtx;
 use lunatic_runtime::{DefaultProcessConfig, DefaultProcessState};
 
@@ -82,33 +84,33 @@ pub(crate) async fn execute() -> Result<()> {
         }
     }
 
-    let control = if let (Some(node_address), Some(control_address)) =
+    let env = Environment::new(1);
+
+    let distributed_state = if let (Some(node_address), Some(control_address)) =
         (args.value_of("node"), args.value_of("control"))
     {
         // TODO unwrap, better message
-        let ctrl = lunatic_distributed::control::client::register(
-            node_address.parse().unwrap(),
-            control_address.parse().unwrap(),
+        let node_address = node_address.parse().unwrap();
+        let control_address = control_address.parse().unwrap();
+        let (node_id, control_client) =
+            control::Client::register(node_address, control_address).await?;
+        let distributed_client = distributed::Client::new(node_id, control_client.clone()).await?;
+
+        let dist = lunatic_distributed::DistributedProcessState::new(
+            node_id,
+            control_client,
+            distributed_client,
         )
         .await?;
-        log::info!("Registration successful, node id {}", ctrl.node_id);
-        let node = Node::new();
-        async_std::task::spawn(lunatic_distributed::distributed::server::node_server(
-            node,
-            node_address.parse().unwrap(),
-        ));
-        Some(ctrl)
-    } else {
-        None
-    };
 
-    let distributed = if control.is_some() {
-        Some(
-            lunatic_distributed::distributed::client::start_client(
-                control.as_ref().unwrap().clone(),
-            )
-            .await?,
-        )
+        async_std::task::spawn(lunatic_distributed::distributed::server::node_server(
+            env.clone(),
+            node_address,
+        ));
+
+        log::info!("Registration successful, node id {}", node_id);
+
+        Some(dist)
     } else {
         None
     };
@@ -154,12 +156,10 @@ pub(crate) async fn execute() -> Result<()> {
 
         // Spawn main process
         let module = fs::read(path)?;
-
         let module = runtime.compile_module::<DefaultProcessState>(module)?;
-
-        let env = Environment::new(1, control, distributed);
         let state = DefaultProcessState::new(
             env.clone(),
+            distributed_state,
             runtime.clone(),
             module.clone(),
             Arc::new(config),

@@ -9,10 +9,10 @@ use std::{
 
 use async_std::{net::TcpStream, task};
 
-use crate::control::ControlInterface;
 use crate::{
-    control::connection::Connection,
+    connection::Connection,
     control::message::{Registration, Request, Response},
+    NodeInfo,
 };
 
 #[derive(Clone)]
@@ -28,24 +28,23 @@ pub struct InnerClient {
     pending_requests: DashMap<u64, Arc<AsyncCell<Response>>>,
 }
 
-pub async fn register(node_addr: SocketAddr, control_addr: SocketAddr) -> Result<ControlInterface> {
-    let client = Client {
-        inner: Arc::new(InnerClient {
-            next_message_id: AtomicU64::new(1),
-            control_addr,
-            node_addr,
-            connection: connect(control_addr, 5).await?,
-            pending_requests: DashMap::new(),
-        }),
-    };
-    // Spawn reader task before register
-    task::spawn(reader_task(client.clone()));
-    let node_id: u64 = client.register().await?;
-    let control = ControlInterface { client, node_id };
-    Ok(control)
-}
-
 impl Client {
+    pub async fn register(node_addr: SocketAddr, control_addr: SocketAddr) -> Result<(u64, Self)> {
+        let client = Client {
+            inner: Arc::new(InnerClient {
+                next_message_id: AtomicU64::new(1),
+                control_addr,
+                node_addr,
+                connection: connect(control_addr, 5).await?,
+                pending_requests: DashMap::new(),
+            }),
+        };
+        // Spawn reader task before register
+        task::spawn(reader_task(client.clone()));
+        let node_id: u64 = client.send_registration().await?;
+        Ok((node_id, client))
+    }
+
     pub fn next_message_id(&self) -> u64 {
         self.inner
             .next_message_id
@@ -74,7 +73,7 @@ impl Client {
         self.inner.connection.receive().await
     }
 
-    async fn register(&self) -> Result<u64> {
+    async fn send_registration(&self) -> Result<u64> {
         let reg = Registration {
             node_address: self.inner.node_addr,
         };
@@ -89,6 +88,20 @@ impl Client {
         if let Some(e) = self.inner.pending_requests.get(&id) {
             e.set(resp);
         };
+    }
+
+    pub async fn get_nodes(&self) -> Vec<NodeInfo> {
+        if let Ok(Response::Nodes(nodes)) = self.send(Request::ListNodes).await {
+            nodes
+                .into_iter()
+                .map(|(id, reg)| NodeInfo {
+                    id,
+                    address: reg.node_address,
+                })
+                .collect()
+        } else {
+            vec![]
+        }
     }
 }
 

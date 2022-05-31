@@ -11,7 +11,7 @@ use async_std::{
 use dashmap::DashMap;
 
 use crate::control::message::{Request, Response};
-use crate::{control::connection::Connection, control::message::Registration};
+use crate::{connection::Connection, control::message::Registration};
 
 #[derive(Clone)]
 pub struct Server {

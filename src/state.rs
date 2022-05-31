@@ -6,6 +6,8 @@ use async_std::channel::{unbounded, Receiver, Sender};
 use async_std::net::{TcpListener, TcpStream, UdpSocket};
 use dashmap::DashMap;
 use hash_map_id::HashMapId;
+use lunatic_distributed::DistributedProcessState;
+use lunatic_distributed_api::DistributedCtx;
 use lunatic_error_api::{ErrorCtx, ErrorResource};
 use lunatic_networking_api::dns::DnsIterator;
 use lunatic_networking_api::NetworkingCtx;
@@ -26,6 +28,7 @@ pub struct DefaultProcessState {
     // Process id
     pub(crate) id: u64,
     pub(crate) environment: Environment,
+    pub(crate) distributed: Option<DistributedProcessState>,
     // The WebAssembly runtime
     runtime: Option<WasmtimeRuntime>,
     // The module that this process was spawned from
@@ -56,11 +59,10 @@ pub struct DefaultProcessState {
     registry: Arc<DashMap<String, (u64, u64)>>,
 }
 
-impl ProcessState for DefaultProcessState {
-    type Config = DefaultProcessConfig;
-
-    fn new(
+impl DefaultProcessState {
+    pub fn new(
         environment: Environment,
+        distributed: Option<DistributedProcessState>,
         runtime: WasmtimeRuntime,
         module: WasmtimeCompiledModule<Self>,
         config: Arc<DefaultProcessConfig>,
@@ -71,6 +73,7 @@ impl ProcessState for DefaultProcessState {
         let state = Self {
             id: environment.get_next_process_id(),
             environment,
+            distributed,
             runtime: Some(runtime),
             module: Some(module),
             config: config.clone(),
@@ -90,6 +93,41 @@ impl ProcessState for DefaultProcessState {
         };
         Ok(state)
     }
+}
+
+impl ProcessState for DefaultProcessState {
+    type Config = DefaultProcessConfig;
+
+    fn new_state(
+        &self,
+        module: WasmtimeCompiledModule<Self>,
+        config: Arc<DefaultProcessConfig>,
+    ) -> Result<Self> {
+        let signal_mailbox = unbounded::<Signal>();
+        let message_mailbox = MessageMailbox::default();
+        let state = Self {
+            id: self.environment.get_next_process_id(),
+            environment: self.environment.clone(),
+            distributed: self.distributed.clone(),
+            runtime: self.runtime.clone(),
+            module: Some(module),
+            config: config.clone(),
+            message: None,
+            signal_mailbox,
+            message_mailbox,
+            resources: Resources::default(),
+            wasi: build_wasi(
+                Some(config.command_line_arguments()),
+                Some(config.environment_variables()),
+                config.preopened_dirs(),
+            )?,
+            wasi_stdout: None,
+            wasi_stderr: None,
+            initialized: false,
+            registry: self.registry.clone(),
+        };
+        Ok(state)
+    }
 
     fn state_for_instantiation() -> Self {
         let config = DefaultProcessConfig::default();
@@ -97,7 +135,8 @@ impl ProcessState for DefaultProcessState {
         let message_mailbox = MessageMailbox::default();
         Self {
             id: 1,
-            environment: Environment::local(),
+            environment: Environment::new(0),
+            distributed: None,
             runtime: None,
             module: None,
             registry: Default::default(),
@@ -324,11 +363,16 @@ pub(crate) struct Resources {
     pub(crate) errors: HashMapId<anyhow::Error>,
 }
 
+impl DistributedCtx for DefaultProcessState {
+    fn distributed(&mut self) -> &mut Option<DistributedProcessState> {
+        &mut self.distributed
+    }
+}
+
 mod tests {
 
     #[async_std::test]
     async fn import_filter_signature_matches() {
-        use super::ProcessState;
         use crate::state::DefaultProcessState;
         use crate::DefaultProcessConfig;
         use lunatic_process::runtimes::wasmtime::WasmtimeRuntime;
@@ -344,10 +388,11 @@ mod tests {
 
         let raw_module = wat::parse_file("./wat/all_imports.wat").unwrap();
         let module = runtime.compile_module(raw_module).unwrap();
-        let env = lunatic_process::env::Environment::local();
+        let env = lunatic_process::env::Environment::new(0);
         let registry = Arc::new(dashmap::DashMap::new());
         let state = DefaultProcessState::new(
             env.clone(),
+            None,
             runtime.clone(),
             module.clone(),
             Arc::new(config),

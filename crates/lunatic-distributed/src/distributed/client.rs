@@ -11,10 +11,10 @@ use std::{
 use async_std::{net::TcpStream, task};
 
 use crate::{
-    control::{ControlInterface, NodeInfo},
-    distributed::connection::Connection,
+    connection::Connection,
+    control,
     distributed::message::{Request, Response},
-    distributed::DistributedInterface,
+    NodeInfo,
 };
 
 #[derive(Clone)]
@@ -27,38 +27,38 @@ pub struct InnerClient {
     node_connections: DashMap<u64, Connection>,
     node_info: DashMap<u64, NodeInfo>,
     pending_requests: DashMap<u64, Arc<AsyncCell<Response>>>,
-    control: ControlInterface,
-}
-
-pub async fn start_client(control: ControlInterface) -> Result<DistributedInterface> {
-    let client = Client {
-        inner: Arc::new(InnerClient {
-            next_message_id: AtomicU64::new(1),
-            node_connections: DashMap::new(),
-            node_info: DashMap::new(),
-            pending_requests: DashMap::new(),
-            control,
-        }),
-    };
-
-    let nodes = client.inner.control.get_nodes().await;
-
-    log::info!("List nodes {nodes:?}");
-
-    for node in nodes {
-        let id = node.id;
-        client.inner.node_info.insert(node.id, node);
-
-        if id != client.inner.control.node_id {
-            let resp = client.send(id, Request::Spawn).await;
-            log::info!("Response {resp:?}")
-        }
-    }
-
-    Ok(DistributedInterface {})
+    control_client: control::Client,
 }
 
 impl Client {
+    pub async fn new(node_id: u64, control_client: control::Client) -> Result<Client> {
+        let client = Client {
+            inner: Arc::new(InnerClient {
+                next_message_id: AtomicU64::new(1),
+                node_connections: DashMap::new(),
+                node_info: DashMap::new(),
+                pending_requests: DashMap::new(),
+                control_client,
+            }),
+        };
+
+        let nodes = client.inner.control_client.get_nodes().await;
+
+        log::info!("List nodes {nodes:?}");
+
+        for node in nodes {
+            let id = node.id;
+            client.inner.node_info.insert(node.id, node);
+
+            if id != node_id {
+                let resp = client.send(id, Request::Spawn).await;
+                log::info!("Response {resp:?}")
+            }
+        }
+
+        Ok(client)
+    }
+
     pub fn next_message_id(&self) -> u64 {
         self.inner
             .next_message_id

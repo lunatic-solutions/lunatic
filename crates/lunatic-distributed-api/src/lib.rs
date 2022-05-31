@@ -1,8 +1,13 @@
 use anyhow::Result;
 use lunatic_common_api::{get_memory, IntoTrap};
+use lunatic_distributed::DistributedProcessState;
 use lunatic_process::state::ProcessState;
 use lunatic_process_api::{ProcessConfigCtx, ProcessCtx};
 use wasmtime::{Caller, Linker, ResourceLimiter, Trap};
+
+pub trait DistributedCtx {
+    fn distributed(&mut self) -> &mut Option<DistributedProcessState>;
+}
 
 // Register the process APIs to the linker
 pub fn register<T>(linker: &mut Linker<T>) -> Result<()>

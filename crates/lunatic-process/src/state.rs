@@ -8,7 +8,6 @@ use wasmtime::Linker;
 
 use crate::{
     config::ProcessConfig,
-    env::Environment,
     mailbox::MessageMailbox,
     runtimes::wasmtime::{WasmtimeCompiledModule, WasmtimeRuntime},
     Signal,
@@ -24,13 +23,13 @@ pub type ConfigResources<T> = HashMapId<T>;
 pub trait ProcessState: Sized {
     type Config: ProcessConfig + Default + Send + Sync;
 
-    // Create a new `ProcessState`
-    fn new(
-        environment: Environment,
-        runtime: WasmtimeRuntime,
+    // Create a new `ProcessState` using the parent's state (self) to inherit environment and
+    // other parts of the state.
+    // This is used in the guest function `spawn` which uses this trait and not the concrete state.
+    fn new_state(
+        &self,
         module: WasmtimeCompiledModule<Self>,
         config: Arc<Self::Config>,
-        registry: Arc<DashMap<String, (u64, u64)>>,
     ) -> Result<Self>;
 
     fn state_for_instantiation() -> Self;
