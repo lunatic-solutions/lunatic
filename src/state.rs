@@ -15,6 +15,7 @@ use lunatic_process::state::{ConfigResources, ProcessState};
 use lunatic_process::{mailbox::MessageMailbox, message::Message, Process, Signal};
 use lunatic_process_api::ProcessCtx;
 use lunatic_stdout_capture::StdoutCapture;
+use lunatic_timer_api::{TimerCtx, TimerResources};
 use lunatic_wasi_api::{build_wasi, LunaticWasiCtx};
 use uuid::Uuid;
 use wasmtime::{Linker, ResourceLimiter};
@@ -94,6 +95,7 @@ impl ProcessState for DefaultProcessState {
         lunatic_error_api::register(linker)?;
         lunatic_process_api::register(linker)?;
         lunatic_messaging_api::register(linker)?;
+        lunatic_timer_api::register(linker)?;
         lunatic_networking_api::register(linker)?;
         lunatic_version_api::register(linker)?;
         lunatic_wasi_api::register(linker)?;
@@ -282,6 +284,16 @@ impl NetworkingCtx for DefaultProcessState {
     }
 }
 
+impl TimerCtx for DefaultProcessState {
+    fn timer_resources(&self) -> &TimerResources {
+        &self.resources.timers
+    }
+
+    fn timer_resources_mut(&mut self) -> &mut TimerResources {
+        &mut self.resources.timers
+    }
+}
+
 impl LunaticWasiCtx for DefaultProcessState {
     fn wasi(&self) -> &WasiCtx {
         &self.wasi
@@ -317,6 +329,7 @@ pub(crate) struct Resources {
     pub(crate) configs: HashMapId<DefaultProcessConfig>,
     pub(crate) modules: HashMapId<WasmtimeCompiledModule<DefaultProcessState>>,
     pub(crate) processes: HashMapId<Arc<dyn Process>>,
+    pub(crate) timers: TimerResources,
     pub(crate) dns_iterators: HashMapId<DnsIterator>,
     pub(crate) tcp_listeners: HashMapId<TcpListener>,
     pub(crate) tcp_streams: HashMapId<TcpStream>,

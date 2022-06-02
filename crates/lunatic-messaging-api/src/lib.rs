@@ -32,7 +32,6 @@ pub fn register<T: ProcessState + ProcessCtx<T> + NetworkingCtx + Send + 'static
     linker.func_wrap("lunatic::message", "push_tcp_stream", push_tcp_stream)?;
     linker.func_wrap("lunatic::message", "take_tcp_stream", take_tcp_stream)?;
     linker.func_wrap("lunatic::message", "send", send)?;
-    linker.func_wrap("lunatic::message", "send_after", send_after)?;
     linker.func_wrap2_async(
         "lunatic::message",
         "send_receive_skip_search",
@@ -395,38 +394,6 @@ fn send<T: ProcessState + ProcessCtx<T>>(
         .get(process_id)
         .or_trap("lunatic::message::send")?;
     process.send(Signal::Message(message));
-    Ok(())
-}
-
-// Sends the message to a process after a delay.
-//
-// There are no guarantees that the message will be received.
-//
-// Traps:
-// * If the process ID doesn't exist.
-// * If it's called before creating the next message.
-fn send_after<T: ProcessState + ProcessCtx<T>>(
-    mut caller: Caller<T>,
-    process_id: u64,
-    after_duration: u64,
-) -> Result<(), Trap> {
-    let message = caller
-        .data_mut()
-        .message_scratch_area()
-        .take()
-        .or_trap("lunatic::message::send_after")?;
-    let process = caller
-        .data_mut()
-        .process_resources_mut()
-        .get(process_id)
-        .or_trap("lunatic::message::send_after")?
-        .clone();
-
-    async_std::task::spawn(async move {
-        async_std::task::sleep(Duration::from_millis(after_duration)).await;
-        process.send(Signal::Message(message));
-    });
-
     Ok(())
 }
 

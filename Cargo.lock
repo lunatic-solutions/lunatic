@@ -1242,6 +1242,7 @@ dependencies = [
  "lunatic-process-api",
  "lunatic-registry-api",
  "lunatic-stdout-capture",
+ "lunatic-timer-api",
  "lunatic-version-api",
  "lunatic-wasi-api",
  "regex",
@@ -1263,6 +1264,19 @@ version = "0.9.0"
 dependencies = [
  "wasi-common",
  "wiggle",
+]
+
+[[package]]
+name = "lunatic-timer-api"
+version = "0.9.0"
+dependencies = [
+ "anyhow",
+ "async-std",
+ "hash-map-id",
+ "lunatic-common-api",
+ "lunatic-process",
+ "lunatic-process-api",
+ "wasmtime",
 ]
 
 [[package]]
