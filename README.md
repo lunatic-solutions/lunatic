@@ -41,7 +41,7 @@ cargo install lunatic-runtime
 
 ---
 
-On **macOS** you can use [Hombrew][6] too:
+On **macOS** you can use [Homebrew][6] too:
 
 ```bash
 brew tap lunatic-solutions/lunatic
