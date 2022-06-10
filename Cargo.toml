@@ -22,8 +22,7 @@ path = "src/main.rs"
 anyhow = "^1.0"
 clap = { version = "^3.0", features = ["cargo"] }
 lazy_static = "^1.4"
-tokio = { version = "^1.14", features = ["macros"] }
-async-std = { version = "^1.0", features = ["attributes", "unstable"] }
+tokio = { version = "^1.14", features = ["macros", "rt-multi-thread", "net", "time"] }
 wasmtime = "^0.36"
 wasmtime-wasi = "^0.36"
 wasi-common = "^0.36"

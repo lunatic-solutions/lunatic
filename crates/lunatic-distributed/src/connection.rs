@@ -1,13 +1,17 @@
 use std::sync::Arc;
 
 use anyhow::Result;
-use async_std::{
-    io::{ReadExt, WriteExt},
-    net::TcpStream,
-    sync::Mutex,
-};
+
 use bincode::{deserialize, serialize};
 use serde::{de::DeserializeOwned, Serialize};
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::{
+        tcp::{OwnedReadHalf, OwnedWriteHalf},
+        TcpStream,
+    },
+    sync::Mutex,
+};
 
 #[derive(Clone)]
 pub struct Connection {
@@ -15,16 +19,17 @@ pub struct Connection {
 }
 
 pub struct InnerConnection {
-    reader: Mutex<TcpStream>,
-    writer: Mutex<TcpStream>,
+    reader: Mutex<OwnedReadHalf>,
+    writer: Mutex<OwnedWriteHalf>,
 }
 
 impl Connection {
     pub fn new(stream: TcpStream) -> Self {
+        let (read_half, write_half) = stream.into_split();
         Connection {
             inner: Arc::new(InnerConnection {
-                reader: Mutex::new(stream.clone()),
-                writer: Mutex::new(stream),
+                reader: Mutex::new(read_half),
+                writer: Mutex::new(write_half),
             }),
         }
     }

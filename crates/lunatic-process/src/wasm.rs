@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use anyhow::Result;
-use async_std::task::JoinHandle;
 use log::trace;
+use tokio::task::JoinHandle;
 use wasmtime::{ResourceLimiter, Val};
 
 use crate::env::Environment;
@@ -55,7 +55,7 @@ impl Environment {
         // handling.
         //
         // **Parent link guarantees**:
-        // A `async_std::task::yield_now()` call is executed to allow the parent to link the child
+        // A `tokio::task::yield_now()` call is executed to allow the parent to link the child
         // before continuing any further execution. This should force the parent to process all
         // signals right away.
         //
@@ -73,17 +73,17 @@ impl Environment {
             // Send signal to itself to perform the linking
             process.send(Signal::Link(None, child_process_handle.clone()));
             // Suspend itself to process all new signals
-            async_std::task::yield_now().await;
+            tokio::task::yield_now().await;
             // Send signal to child to link it
             signal_mailbox
                 .0
-                .try_send(Signal::Link(tag, process))
+                .send(Signal::Link(tag, process))
                 .expect("receiver must exist at this point");
         }
 
         // Spawn a background process
         trace!("Process size: {}", std::mem::size_of_val(&child_process));
-        let join = async_std::task::spawn(child_process);
+        let join = tokio::task::spawn(child_process);
         Ok((join, child_process_handle))
     }
 }

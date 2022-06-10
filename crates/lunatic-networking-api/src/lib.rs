@@ -8,18 +8,21 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Result;
-use async_std::io::{ReadExt, WriteExt};
-use async_std::net::{TcpListener, TcpStream, UdpSocket};
 use dns::DnsIterator;
 use hash_map_id::HashMapId;
 use lunatic_error_api::ErrorCtx;
+use tokio::sync::Mutex;
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::{TcpListener, TcpStream, UdpSocket},
+};
 use wasmtime::{Caller, Linker};
 use wasmtime::{Memory, Trap};
 
 use lunatic_common_api::{get_memory, IntoTrap};
 
 pub type TcpListenerResources = HashMapId<TcpListener>;
-pub type TcpStreamResources = HashMapId<TcpStream>;
+pub type TcpStreamResources = HashMapId<Arc<Mutex<TcpStream>>>;
 pub type UdpResources = HashMapId<Arc<UdpSocket>>;
 pub type DnsResources = HashMapId<DnsIterator>;
 
@@ -123,17 +126,16 @@ fn resolve<T: NetworkingCtx + ErrorCtx + Send>(
         let name = std::str::from_utf8(buffer.as_slice()).or_trap("lunatic::network::resolve")?;
         // Check for timeout during lookup
         let return_ = if let Some(result) = tokio::select! {
-            _ = async_std::task::sleep(Duration::from_millis(timeout as u64)), if timeout != 0 => None,
-            result = async_net::resolve(name) => Some(result)
+            _ = tokio::time::sleep(Duration::from_millis(timeout as u64)), if timeout != 0 => None,
+            result = tokio::net::lookup_host(name) => Some(result)
         } {
             let (iter_or_error_id, result) = match result {
                 Ok(sockets) => {
                     // This is a bug in clippy, this collect is not needless
                     #[allow(clippy::needless_collect)]
-                    let id = caller
-                        .data_mut()
-                        .dns_resources_mut()
-                        .add(DnsIterator::new(sockets.into_iter()));
+                    let id = caller.data_mut().dns_resources_mut().add(DnsIterator::new(
+                        sockets.collect::<Vec<SocketAddr>>().into_iter(),
+                    ));
                     (id, 0)
                 }
                 Err(error) => {
@@ -382,7 +384,10 @@ fn tcp_accept<T: NetworkingCtx + ErrorCtx + Send>(
 
         let (tcp_stream_or_error_id, peer_addr_iter, result) = match tcp_listener.accept().await {
             Ok((stream, socket_addr)) => {
-                let stream_id = caller.data_mut().tcp_stream_resources_mut().add(stream);
+                let stream_id = caller
+                    .data_mut()
+                    .tcp_stream_resources_mut()
+                    .add(Arc::new(Mutex::new(stream)));
                 let dns_iter_id = caller
                     .data_mut()
                     .dns_resources_mut()
@@ -446,11 +451,17 @@ fn tcp_connect<T: NetworkingCtx + ErrorCtx + Send>(
         )?;
 
         if let Some(result) = tokio::select! {
-            _ = async_std::task::sleep(Duration::from_millis(timeout as u64)), if timeout != 0 => None,
+            _ = tokio::time::sleep(Duration::from_millis(timeout as u64)), if timeout != 0 => None,
             result = TcpStream::connect(socket_addr) => Some(result)
         } {
             let (stream_or_error_id, result) = match result {
-                Ok(stream) => (caller.data_mut().tcp_stream_resources_mut().add(stream), 0),
+                Ok(stream) => (
+                    caller
+                        .data_mut()
+                        .tcp_stream_resources_mut()
+                        .add(Arc::new(Mutex::new(stream))),
+                    0,
+                ),
                 Err(error) => (caller.data_mut().error_resources_mut().add(error.into()), 1),
             };
 
@@ -545,16 +556,18 @@ fn tcp_write_vectored<T: NetworkingCtx + ErrorCtx + Send>(
             .collect();
         let vec_slices = vec_slices?;
 
-        let mut stream = caller
+        let stream = caller
             .data()
             .tcp_stream_resources()
             .get(stream_id)
             .or_trap("lunatic::network::tcp_write_vectored")?
             .clone();
 
+        let mut stream = stream.lock().await;
+
         // Check for timeout
         if let Some(result) = tokio::select! {
-            _ = async_std::task::sleep(Duration::from_millis(timeout as u64)), if timeout != 0 => None,
+            _ = tokio::time::sleep(Duration::from_millis(timeout as u64)), if timeout != 0 => None,
             result = stream.write_vectored(vec_slices.as_slice()) => Some(result)
         } {
             let (opaque, return_) = match result {
@@ -593,12 +606,13 @@ fn tcp_read<T: NetworkingCtx + ErrorCtx + Send>(
     opaque_ptr: u32,
 ) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_> {
     Box::new(async move {
-        let mut stream = caller
+        let stream = caller
             .data()
             .tcp_stream_resources()
             .get(stream_id)
             .or_trap("lunatic::network::tcp_read")?
             .clone();
+        let mut stream = stream.lock().await;
 
         let memory = get_memory(&mut caller)?;
         let buffer = memory
@@ -608,7 +622,7 @@ fn tcp_read<T: NetworkingCtx + ErrorCtx + Send>(
 
         // Check for timeout first
         if let Some(result) = tokio::select! {
-            _ = async_std::task::sleep(Duration::from_millis(timeout as u64)), if timeout != 0 => None,
+            _ = tokio::time::sleep(Duration::from_millis(timeout as u64)), if timeout != 0 => None,
             result = stream.read(buffer) => Some(result)
         } {
             let (opaque, return_) = match result {
@@ -644,12 +658,14 @@ fn tcp_flush<T: NetworkingCtx + ErrorCtx + Send>(
     error_id_ptr: u32,
 ) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_> {
     Box::new(async move {
-        let mut stream = caller
+        let stream = caller
             .data()
             .tcp_stream_resources()
             .get(stream_id)
             .or_trap("lunatic::network::tcp_flush")?
             .clone();
+
+        let mut stream = stream.lock().await;
 
         let (error_id, result) = match stream.flush().await {
             Ok(()) => (0, 0),
@@ -769,7 +785,7 @@ fn udp_receive<T: NetworkingCtx + ErrorCtx + Send>(
 
         // Check for timeout first
         if let Some(result) = tokio::select! {
-            _ = async_std::task::sleep(Duration::from_millis(timeout as u64)), if timeout != 0 => None,
+            _ = tokio::time::sleep(Duration::from_millis(timeout as u64)), if timeout != 0 => None,
             result = socket.recv(buffer) => Some(result)
         } {
             let (opaque, return_) = match result {
@@ -825,7 +841,7 @@ fn udp_receive_from<T: NetworkingCtx + ErrorCtx + Send>(
 
         // Check for timeout first
         if let Some(result) = tokio::select! {
-            _ = async_std::task::sleep(Duration::from_millis(timeout as u64)), if timeout != 0 => None,
+            _ = tokio::time::sleep(Duration::from_millis(timeout as u64)), if timeout != 0 => None,
             result = socket.recv_from(buffer) => Some(result)
         } {
             let (opaque, socket_result, return_) = match result {
@@ -907,7 +923,7 @@ fn udp_connect<T: NetworkingCtx + ErrorCtx + Send>(
             .or_trap("lunatic::networking::udp_connect")?;
 
         if let Some(result) = tokio::select! {
-            _ = async_std::task::sleep(Duration::from_millis(timeout as u64)), if timeout != 0 => None,
+            _ = tokio::time::sleep(Duration::from_millis(timeout as u64)), if timeout != 0 => None,
             result = socket.connect(socket_addr) => Some(result)
         } {
             let (opaque, return_) = match result {
@@ -1076,7 +1092,7 @@ fn udp_send_to<T: NetworkingCtx + ErrorCtx + Send>(
 
         // Check for timeout
         if let Some(result) = tokio::select! {
-            _ = async_std::task::sleep(Duration::from_millis(timeout as u64)), if timeout != 0 => None,
+            _ = tokio::time::sleep(Duration::from_millis(timeout as u64)), if timeout != 0 => None,
             result = stream.send_to(buffer, socket_addr) => Some(result)
         } {
             let (opaque, return_) = match result {
@@ -1134,7 +1150,7 @@ fn udp_send<T: NetworkingCtx + ErrorCtx + Send>(
 
         // Check for timeout
         if let Some(result) = tokio::select! {
-            _ = async_std::task::sleep(Duration::from_millis(timeout as u64)), if timeout != 0 => None,
+            _ = tokio::time::sleep(Duration::from_millis(timeout as u64)), if timeout != 0 => None,
             result = stream.send(buffer) => Some(result)
         } {
             let (opaque, return_) = match result {

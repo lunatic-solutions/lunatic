@@ -383,7 +383,7 @@ fn send_receive_skip_search<T: ProcessState + ProcessCtx<T> + Send>(
             .or_trap("lunatic::message::send_receive_skip_search")?;
         process.send(Signal::Message(message));
         if let Some(message) = tokio::select! {
-            _ = async_std::task::sleep(Duration::from_millis(timeout as u64)), if timeout != 0 => None,
+            _ = tokio::time::sleep(Duration::from_millis(timeout as u64)), if timeout != 0 => None,
             message = caller.data_mut().mailbox().pop_skip_search(tags) => Some(message)
         } {
             // Put the message into the scratch area
@@ -440,7 +440,7 @@ fn receive<T: ProcessState + ProcessCtx<T> + Send>(
         };
 
         if let Some(message) = tokio::select! {
-            _ = async_std::task::sleep(Duration::from_millis(timeout as u64)), if timeout != 0 => None,
+            _ = tokio::time::sleep(Duration::from_millis(timeout as u64)), if timeout != 0 => None,
             message = caller.data_mut().mailbox().pop(tags.as_deref()) => Some(message)
         } {
             let result = match message {

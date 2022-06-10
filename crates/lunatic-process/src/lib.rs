@@ -12,8 +12,13 @@ use anyhow::{anyhow, Result};
 use env::Environment;
 use log::{debug, log_enabled, trace, warn, Level};
 
-use async_std::channel::{unbounded, Receiver, Sender};
-use async_std::task::JoinHandle;
+use tokio::{
+    sync::{
+        mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender},
+        Mutex,
+    },
+    task::JoinHandle,
+};
 
 use crate::{mailbox::MessageMailbox, message::Message};
 
@@ -100,12 +105,12 @@ pub enum Finished<T> {
 #[derive(Debug, Clone)]
 pub struct WasmProcess {
     id: u64,
-    signal_mailbox: Sender<Signal>,
+    signal_mailbox: UnboundedSender<Signal>,
 }
 
 impl WasmProcess {
     /// Create a new WasmProcess
-    pub fn new(id: u64, signal_mailbox: Sender<Signal>) -> Self {
+    pub fn new(id: u64, signal_mailbox: UnboundedSender<Signal>) -> Self {
         Self { id, signal_mailbox }
     }
 }
@@ -119,7 +124,7 @@ impl Process for WasmProcess {
         // lunatic can't guarantee that a message was successfully seen by the receiving side even
         // if this call succeeds. We deliberately don't expose this API, as it would not make sense
         // to relay on it and could signal wrong guarantees to users.
-        let _ = self.signal_mailbox.try_send(signal);
+        let _ = self.signal_mailbox.send(signal);
     }
 }
 
@@ -142,7 +147,7 @@ impl Process for WasmProcess {
 pub(crate) async fn new<F, S>(
     fut: F,
     id: u64,
-    signal_mailbox: Receiver<Signal>,
+    signal_mailbox: Arc<Mutex<UnboundedReceiver<Signal>>>,
     message_mailbox: MessageMailbox,
 ) -> Result<S>
 where
@@ -160,12 +165,13 @@ where
     // TODO: Maybe wrapping this in some kind of `std::panic::catch_unwind` wold be a good idea,
     //       to protect against panics in host function calls that unwind through Wasm code.
     //       Currently a panic would just kill the task, but not notify linked processes.
+    let mut signal_mailbox = signal_mailbox.lock().await;
     let result = loop {
         tokio::select! {
             biased;
             // Handle signals first
             signal = signal_mailbox.recv() => {
-                match signal {
+                match signal.ok_or(()) {
                     Ok(Signal::Message(message)) => message_mailbox.push(message),
                     Ok(Signal::DieWhenLinkDies(value)) => die_when_link_dies = value,
                     // Put process into list of linked processes
@@ -238,14 +244,14 @@ where
 #[derive(Clone, Debug)]
 pub struct NativeProcess {
     id: u64,
-    signal_mailbox: Sender<Signal>,
+    signal_mailbox: UnboundedSender<Signal>,
 }
 
 /// Spawns a process from a closure.
 ///
 /// ## Example:
 ///
-/// ```no_run
+/// ```ignore
 /// let _proc = lunatic_runtime::spawn(|_this, mailbox| async move {
 ///     // Wait on a message with the tag `27`.
 ///     mailbox.pop(Some(&[27])).await;
@@ -261,14 +267,15 @@ impl Environment {
         F: FnOnce(NativeProcess, MessageMailbox) -> K,
     {
         let id = self.get_next_process_id();
-        let (signal_sender, signal_mailbox) = unbounded::<Signal>();
+        let (signal_sender, signal_mailbox) = unbounded_channel::<Signal>();
         let message_mailbox = MessageMailbox::default();
         let process = NativeProcess {
             id,
             signal_mailbox: signal_sender,
         };
         let fut = func(process.clone(), message_mailbox.clone());
-        let join = async_std::task::spawn(new(fut, id, signal_mailbox, message_mailbox));
+        let signal_mailbox = Arc::new(Mutex::new(signal_mailbox));
+        let join = tokio::task::spawn(new(fut, id, signal_mailbox, message_mailbox));
         (join, process)
     }
 }
@@ -282,7 +289,7 @@ impl Process for NativeProcess {
         // lunatic can't guarantee that a message was successfully seen by the receiving side even
         // if this call succeeds. We deliberately don't expose this API, as it would not make sense
         // to relay on it and could signal wrong guarantees to users.
-        let _ = self.signal_mailbox.try_send(signal);
+        let _ = self.signal_mailbox.send(signal);
     }
 }
 

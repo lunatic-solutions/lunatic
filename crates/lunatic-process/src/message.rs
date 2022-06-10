@@ -10,7 +10,10 @@ use std::{
     sync::Arc,
 };
 
-use async_std::net::{TcpStream, UdpSocket};
+use tokio::{
+    net::{TcpStream, UdpSocket},
+    sync::Mutex,
+};
 
 use crate::Process;
 
@@ -66,7 +69,7 @@ impl DataMessage {
     }
 
     /// Adds a TCP stream to the message and returns the index of it inside of the message
-    pub fn add_tcp_stream(&mut self, tcp_stream: TcpStream) -> usize {
+    pub fn add_tcp_stream(&mut self, tcp_stream: Arc<Mutex<TcpStream>>) -> usize {
         self.resources.push(Resource::TcpStream(tcp_stream));
         self.resources.len() - 1
     }
@@ -101,7 +104,7 @@ impl DataMessage {
     ///
     /// If the index is out of bound or the resource is not a tcp stream the function will return
     /// None.
-    pub fn take_tcp_stream(&mut self, index: usize) -> Option<TcpStream> {
+    pub fn take_tcp_stream(&mut self, index: usize) -> Option<Arc<Mutex<TcpStream>>> {
         if let Some(resource_ref) = self.resources.get_mut(index) {
             let resource = std::mem::replace(resource_ref, Resource::None);
             match resource {
@@ -174,12 +177,12 @@ impl Read for DataMessage {
     }
 }
 
-/// A resource ([`WasmProcess`](crate::WasmProcess), [`TcpStream`](async_std::net::TcpStream),
+/// A resource ([`WasmProcess`](crate::WasmProcess), [`TcpStream`](tokio::net::TcpStream),
 /// ...) that is attached to a [`DataMessage`].
 pub enum Resource {
     None,
     Process(Arc<dyn Process>),
-    TcpStream(TcpStream),
+    TcpStream(Arc<Mutex<TcpStream>>),
     UdpSocket(Arc<UdpSocket>),
 }
 

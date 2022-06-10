@@ -164,7 +164,7 @@ mod tests {
 
     use super::{Message, MessageMailbox};
 
-    #[async_std::test]
+    #[tokio::test]
     async fn no_tags_signal_message() {
         let mailbox = MessageMailbox::default();
         let message = Message::LinkDied(None);
@@ -176,7 +176,7 @@ mod tests {
         }
     }
 
-    #[async_std::test]
+    #[tokio::test]
     async fn tag_signal_message() {
         let mailbox = MessageMailbox::default();
         let tag = 1337;
@@ -186,7 +186,7 @@ mod tests {
         assert_eq!(message.tag(), Some(tag));
     }
 
-    #[async_std::test]
+    #[tokio::test]
     async fn selective_receive_tag_signal_message() {
         let mailbox = MessageMailbox::default();
         let tag1 = 1;
@@ -212,7 +212,7 @@ mod tests {
         assert_eq!(message.tag(), Some(tag5));
     }
 
-    #[async_std::test]
+    #[tokio::test]
     async fn multiple_receive_tags_signal_message() {
         let mailbox = MessageMailbox::default();
         let tag1 = 1;

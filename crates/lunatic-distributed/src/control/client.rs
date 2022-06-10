@@ -6,8 +6,7 @@ use std::{
     sync::{atomic, atomic::AtomicU64, Arc},
     time::Duration,
 };
-
-use async_std::{net::TcpStream, task};
+use tokio::net::TcpStream;
 
 use crate::{
     connection::Connection,
@@ -40,7 +39,7 @@ impl Client {
             }),
         };
         // Spawn reader task before register
-        task::spawn(reader_task(client.clone()));
+        tokio::task::spawn(reader_task(client.clone()));
         let node_id: u64 = client.send_registration().await?;
         Ok((node_id, client))
     }
@@ -127,7 +126,7 @@ async fn connect(addr: SocketAddr, retry: u32) -> Result<Connection> {
         if let Ok(stream) = TcpStream::connect(addr).await {
             return Ok(Connection::new(stream));
         }
-        task::sleep(Duration::from_secs(2)).await;
+        tokio::time::sleep(Duration::from_secs(2)).await;
     }
     Err(anyhow!("Failed to connect to {addr}"))
 }
