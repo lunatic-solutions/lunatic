@@ -457,10 +457,6 @@ where
     T::Config: ProcessConfigCtx,
 {
     Box::new(async move {
-        // TODO
-        // let node_registry: ActorHandle<GetNodeIds> = caller.data().actor();
-        // let nodes = node_registry.call(GetNodeIds {}).await;
-
         if !caller.data().config().can_spawn_processes() {
             return Err(anyhow!("Process doesn't have permissions to spawn sub-processes").into());
         }

@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 pub enum Request {
     Register(Registration),
     ListNodes,
-    RegisterModule(Vec<u8>),
+    AddModule(Vec<u8>),
     GetModule(u64),
 }
 
@@ -16,6 +16,7 @@ pub enum Response {
     Nodes(Vec<(u64, Registration)>),
     RegisterModule(u64),
     Module(Option<Vec<u8>>),
+    ModuleId(u64),
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

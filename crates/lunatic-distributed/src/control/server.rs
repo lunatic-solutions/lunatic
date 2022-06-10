@@ -65,7 +65,7 @@ impl Server {
         )
     }
 
-    fn register_module(&self, bytes: Vec<u8>) -> Response {
+    fn add_module(&self, bytes: Vec<u8>) -> Response {
         let module_id = self.next_module_id();
         self.inner.modules.insert(module_id, bytes);
         Response::RegisterModule(module_id)
@@ -108,7 +108,7 @@ async fn handle_request(
     let response = match request {
         Register(reg) => server.register(reg),
         ListNodes => server.list_nodes(),
-        RegisterModule(bytes) => server.register_module(bytes),
+        AddModule(bytes) => server.add_module(bytes),
         GetModule(id) => server.get_module(id),
     };
     conn.send(msg_id, response).await

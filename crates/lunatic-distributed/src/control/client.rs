@@ -103,6 +103,22 @@ impl Client {
             vec![]
         }
     }
+
+    pub async fn get_module(&self, module_id: u64) -> Option<Vec<u8>> {
+        if let Ok(Response::Module(module)) = self.send(Request::GetModule(module_id)).await {
+            module
+        } else {
+            None
+        }
+    }
+
+    pub async fn add_module(&self, module: Vec<u8>) -> Result<u64> {
+        if let Response::ModuleId(id) = self.send(Request::AddModule(module)).await? {
+            Ok(id)
+        } else {
+            Err(anyhow::anyhow!("Invalid response type on add_module."))
+        }
+    }
 }
 
 async fn connect(addr: SocketAddr, retry: u32) -> Result<Connection> {
