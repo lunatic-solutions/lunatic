@@ -238,7 +238,7 @@ pub(crate) async fn test() -> Result<()> {
 
         let sender = sender.clone();
         tokio::task::spawn(async move {
-            let result = match task.await {
+            let result = match task.await.unwrap() {
                 Ok(_state) => {
                     // If we didn't expect a panic and didn't get one
                     if test_function.panic.is_none() {

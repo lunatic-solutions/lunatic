@@ -175,7 +175,7 @@ pub(crate) async fn execute() -> Result<()> {
                 path.to_string_lossy()
             ))?;
         // Wait on the main process to finish
-        task.await.unwrap().ok();
+        task.await.unwrap().unwrap();
     } else {
         // Block forever
         let (_sender, mut receiver) = channel(1);
