@@ -18,3 +18,4 @@ wasmtime = "^0.36"
 serde = "^1.0"
 hash-map-id = { version = "^0.9", path = "../hash-map-id" }
 dashmap = "5.2.0"
+lunatic-networking-api = { version = "^0.9", path = "../lunatic-networking-api" }

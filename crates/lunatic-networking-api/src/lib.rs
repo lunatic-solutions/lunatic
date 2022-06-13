@@ -11,6 +11,7 @@ use anyhow::Result;
 use dns::DnsIterator;
 use hash_map_id::HashMapId;
 use lunatic_error_api::ErrorCtx;
+use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::sync::Mutex;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -21,8 +22,23 @@ use wasmtime::{Memory, Trap};
 
 use lunatic_common_api::{get_memory, IntoTrap};
 
+pub struct TcpConnection {
+    pub reader: Mutex<OwnedReadHalf>,
+    pub writer: Mutex<OwnedWriteHalf>,
+}
+
+impl TcpConnection {
+    pub fn new(stream: TcpStream) -> Self {
+        let (read_half, write_half) = stream.into_split();
+        TcpConnection {
+            reader: Mutex::new(read_half),
+            writer: Mutex::new(write_half),
+        }
+    }
+}
+
 pub type TcpListenerResources = HashMapId<TcpListener>;
-pub type TcpStreamResources = HashMapId<Arc<Mutex<TcpStream>>>;
+pub type TcpStreamResources = HashMapId<Arc<TcpConnection>>;
 pub type UdpResources = HashMapId<Arc<UdpSocket>>;
 pub type DnsResources = HashMapId<DnsIterator>;
 
@@ -387,7 +403,7 @@ fn tcp_accept<T: NetworkingCtx + ErrorCtx + Send>(
                 let stream_id = caller
                     .data_mut()
                     .tcp_stream_resources_mut()
-                    .add(Arc::new(Mutex::new(stream)));
+                    .add(Arc::new(TcpConnection::new(stream)));
                 let dns_iter_id = caller
                     .data_mut()
                     .dns_resources_mut()
@@ -459,7 +475,7 @@ fn tcp_connect<T: NetworkingCtx + ErrorCtx + Send>(
                     caller
                         .data_mut()
                         .tcp_stream_resources_mut()
-                        .add(Arc::new(Mutex::new(stream))),
+                        .add(Arc::new(TcpConnection::new(stream))),
                     0,
                 ),
                 Err(error) => (caller.data_mut().error_resources_mut().add(error.into()), 1),
@@ -563,7 +579,7 @@ fn tcp_write_vectored<T: NetworkingCtx + ErrorCtx + Send>(
             .or_trap("lunatic::network::tcp_write_vectored")?
             .clone();
 
-        let mut stream = stream.lock().await;
+        let mut stream = stream.writer.lock().await;
 
         // Check for timeout
         if let Some(result) = tokio::select! {
@@ -612,7 +628,7 @@ fn tcp_read<T: NetworkingCtx + ErrorCtx + Send>(
             .get(stream_id)
             .or_trap("lunatic::network::tcp_read")?
             .clone();
-        let mut stream = stream.lock().await;
+        let mut stream = stream.reader.lock().await;
 
         let memory = get_memory(&mut caller)?;
         let buffer = memory
@@ -665,7 +681,7 @@ fn tcp_flush<T: NetworkingCtx + ErrorCtx + Send>(
             .or_trap("lunatic::network::tcp_flush")?
             .clone();
 
-        let mut stream = stream.lock().await;
+        let mut stream = stream.writer.lock().await;
 
         let (error_id, result) = match stream.flush().await {
             Ok(()) => (0, 0),

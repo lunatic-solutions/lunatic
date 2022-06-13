@@ -975,6 +975,7 @@ dependencies = [
  "dashmap",
  "hash-map-id",
  "log",
+ "lunatic-networking-api",
  "serde",
  "tokio",
  "wasmtime",

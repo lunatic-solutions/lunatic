@@ -8,7 +8,7 @@ use lunatic_distributed::DistributedProcessState;
 use lunatic_distributed_api::DistributedCtx;
 use lunatic_error_api::{ErrorCtx, ErrorResource};
 use lunatic_networking_api::dns::DnsIterator;
-use lunatic_networking_api::NetworkingCtx;
+use lunatic_networking_api::{NetworkingCtx, TcpConnection};
 use lunatic_process::config::ProcessConfig;
 use lunatic_process::env::Environment;
 use lunatic_process::runtimes::wasmtime::{WasmtimeCompiledModule, WasmtimeRuntime};
@@ -17,7 +17,7 @@ use lunatic_process::{mailbox::MessageMailbox, message::Message, Signal};
 use lunatic_process_api::ProcessCtx;
 use lunatic_stdout_capture::StdoutCapture;
 use lunatic_wasi_api::{build_wasi, LunaticWasiCtx};
-use tokio::net::{TcpListener, TcpStream, UdpSocket};
+use tokio::net::{TcpListener, UdpSocket};
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 use tokio::sync::Mutex;
 use wasmtime::{Linker, ResourceLimiter};
@@ -370,7 +370,7 @@ pub(crate) struct Resources {
     pub(crate) modules: HashMapId<WasmtimeCompiledModule<DefaultProcessState>>,
     pub(crate) dns_iterators: HashMapId<DnsIterator>,
     pub(crate) tcp_listeners: HashMapId<TcpListener>,
-    pub(crate) tcp_streams: HashMapId<Arc<Mutex<TcpStream>>>,
+    pub(crate) tcp_streams: HashMapId<Arc<TcpConnection>>,
     pub(crate) udp_sockets: HashMapId<Arc<UdpSocket>>,
     pub(crate) errors: HashMapId<anyhow::Error>,
 }
