@@ -10,8 +10,13 @@ use hash_map_id::HashMapId;
 use lunatic_common_api::{get_memory, IntoTrap};
 use lunatic_error_api::ErrorCtx;
 use lunatic_process::{
-    config::ProcessConfig, env::Environment, mailbox::MessageMailbox, message::Message,
-    runtimes::wasmtime::WasmtimeCompiledModule, state::ProcessState, Process, Signal, WasmProcess,
+    config::ProcessConfig,
+    env::Environment,
+    mailbox::MessageMailbox,
+    message::Message,
+    runtimes::{wasmtime::WasmtimeCompiledModule, RawWasm},
+    state::ProcessState,
+    Process, Signal, WasmProcess,
 };
 use lunatic_wasi_api::LunaticWasiCtx;
 use wasmtime::{Caller, Linker, ResourceLimiter, Trap, Val};
@@ -98,13 +103,12 @@ where
         config_set_can_spawn_processes,
     )?;
 
-    linker.func_wrap9_async("lunatic::process", "spawn", spawn)?;
+    linker.func_wrap8_async("lunatic::process", "spawn", spawn)?;
 
     linker.func_wrap1_async("lunatic::process", "sleep_ms", sleep_ms)?;
     linker.func_wrap("lunatic::process", "die_when_link_dies", die_when_link_dies)?;
 
     linker.func_wrap("lunatic::process", "process_id", process_id)?;
-    linker.func_wrap("lunatic::process", "node_id", node_id)?;
     linker.func_wrap("lunatic::process", "link", link)?;
     linker.func_wrap("lunatic::process", "unlink", unlink)?;
 
@@ -141,6 +145,7 @@ where
         .read(&caller, module_data_ptr as usize, module.as_mut_slice())
         .or_trap("lunatic::process::compile_module")?;
 
+    let module = RawWasm::new(None, module);
     let (mod_or_error_id, result) = match caller.data().runtime().compile_module(module) {
         Ok(module) => (caller.data_mut().module_resources_mut().add(module), 0),
         Err(error) => (caller.data_mut().error_resources_mut().add(error), 1),
@@ -441,7 +446,6 @@ where
 #[allow(clippy::too_many_arguments)]
 fn spawn<T>(
     mut caller: Caller<T>,
-    _node_id: u64,
     link: i64,
     config_id: i64,
     module_id: i64,
@@ -462,6 +466,7 @@ where
         }
 
         let state = caller.data();
+
         if !state.is_initialized() {
             return Err(anyhow!("Cannot spawn process during module initialization").into());
         }
@@ -601,11 +606,6 @@ fn process_id<T: ProcessState + ProcessCtx<T>>(caller: Caller<T>) -> u64 {
     caller.data().id()
 }
 
-// Returns ID of the node that the current process is running on
-fn node_id<T: ProcessState + ProcessCtx<T>>(caller: Caller<T>) -> u64 {
-    caller.data().node_id()
-}
-
 // Link current process to **process_id**. This is not an atomic operation, any of the 2 processes
 // could fail before processing the `Link` signal and may not notify the other.
 //
@@ -614,7 +614,6 @@ fn node_id<T: ProcessState + ProcessCtx<T>>(caller: Caller<T>) -> u64 {
 fn link<T: ProcessState + ProcessCtx<T>>(
     mut caller: Caller<T>,
     tag: i64,
-    _node_id: u64,
     process_id: u64,
 ) -> Result<(), Trap> {
     let tag = match tag {
@@ -651,7 +650,6 @@ fn link<T: ProcessState + ProcessCtx<T>>(
 // * If the process ID doesn't exist.
 fn unlink<T: ProcessState + ProcessCtx<T>>(
     mut caller: Caller<T>,
-    _node_id: u64,
     process_id: u64,
 ) -> Result<(), Trap> {
     // Create handle to itself

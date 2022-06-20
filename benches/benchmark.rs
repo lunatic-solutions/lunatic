@@ -18,7 +18,7 @@ fn criterion_benchmark(c: &mut Criterion) {
 
     let raw_module = wat::parse_file("./wat/hello.wat").unwrap();
     let module = runtime
-        .compile_module::<DefaultProcessState>(raw_module)
+        .compile_module::<DefaultProcessState>(raw_module.into())
         .unwrap();
 
     let env = Environment::new(0);

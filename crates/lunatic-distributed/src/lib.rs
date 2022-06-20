@@ -7,8 +7,8 @@ use std::net::SocketAddr;
 
 #[derive(Clone)]
 pub struct DistributedProcessState {
-    pub node_id: u64,
-    pub control_client: control::Client,
+    node_id: u64,
+    pub control: control::Client,
     pub distributed_client: distributed::Client,
 }
 
@@ -20,14 +20,13 @@ impl DistributedProcessState {
     ) -> Result<Self> {
         Ok(Self {
             node_id,
-            control_client,
+            control: control_client,
             distributed_client,
         })
     }
 
-    pub async fn get_nodes(&self) -> Vec<NodeInfo> {
-        // TODO cache the list?
-        self.control_client.get_nodes().await
+    pub fn node_id(&self) -> u64 {
+        self.node_id
     }
 }
 

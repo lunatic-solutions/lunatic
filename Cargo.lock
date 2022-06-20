@@ -1177,8 +1177,6 @@ dependencies = [
  "log",
  "lunatic-common-api",
  "lunatic-distributed",
- "lunatic-process",
- "lunatic-process-api",
  "serde",
  "wasmtime",
 ]
