@@ -1,9 +1,9 @@
+use std::net::SocketAddr;
+
 use anyhow::Result;
-use async_std::{
-    net::{SocketAddr, TcpListener},
-    task::spawn,
-};
+
 use lunatic_process::env::Environment;
+use tokio::net::TcpListener;
 
 use crate::{
     connection::Connection,
@@ -14,14 +14,14 @@ pub async fn node_server(env: Environment, socket: SocketAddr) -> Result<()> {
     let listener = TcpListener::bind(socket).await?;
     while let Ok((conn, _addr)) = listener.accept().await {
         log::info!("New connection {_addr}");
-        spawn(handle_connection(env.clone(), Connection::new(conn)));
+        tokio::task::spawn(handle_connection(env.clone(), Connection::new(conn)));
     }
     Ok(())
 }
 
 async fn handle_connection(env: Environment, conn: Connection) {
     while let Ok((msg_id, msg)) = conn.receive::<Request>().await {
-        spawn(handle_message(env.clone(), conn.clone(), msg_id, msg));
+        tokio::task::spawn(handle_message(env.clone(), conn.clone(), msg_id, msg));
     }
 }
 

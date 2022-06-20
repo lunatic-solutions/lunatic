@@ -2,15 +2,13 @@ use std::fmt::Debug;
 use std::sync::Arc;
 
 use anyhow::Result;
-use async_std::channel::{unbounded, Receiver, Sender};
-use async_std::net::{TcpListener, TcpStream, UdpSocket};
 use dashmap::DashMap;
 use hash_map_id::HashMapId;
 use lunatic_distributed::DistributedProcessState;
 use lunatic_distributed_api::DistributedCtx;
 use lunatic_error_api::{ErrorCtx, ErrorResource};
 use lunatic_networking_api::dns::DnsIterator;
-use lunatic_networking_api::NetworkingCtx;
+use lunatic_networking_api::{NetworkingCtx, TcpConnection};
 use lunatic_process::config::ProcessConfig;
 use lunatic_process::env::Environment;
 use lunatic_process::runtimes::wasmtime::{WasmtimeCompiledModule, WasmtimeRuntime};
@@ -19,6 +17,9 @@ use lunatic_process::{mailbox::MessageMailbox, message::Message, Signal};
 use lunatic_process_api::ProcessCtx;
 use lunatic_stdout_capture::StdoutCapture;
 use lunatic_wasi_api::{build_wasi, LunaticWasiCtx};
+use tokio::net::{TcpListener, UdpSocket};
+use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
+use tokio::sync::Mutex;
 use wasmtime::{Linker, ResourceLimiter};
 use wasmtime_wasi::WasiCtx;
 
@@ -42,7 +43,10 @@ pub struct DefaultProcessState {
     // `message` as a temp space to store messages across host calls.
     message: Option<Message>,
     // Signals sent to the mailbox
-    signal_mailbox: (Sender<Signal>, Receiver<Signal>),
+    signal_mailbox: (
+        UnboundedSender<Signal>,
+        Arc<Mutex<UnboundedReceiver<Signal>>>,
+    ),
     // Messages sent to the process
     message_mailbox: MessageMailbox,
     // Resources
@@ -68,7 +72,8 @@ impl DefaultProcessState {
         config: Arc<DefaultProcessConfig>,
         registry: Arc<DashMap<String, (u64, u64)>>,
     ) -> Result<Self> {
-        let signal_mailbox = unbounded::<Signal>();
+        let signal_mailbox = unbounded_channel();
+        let signal_mailbox = (signal_mailbox.0, Arc::new(Mutex::new(signal_mailbox.1)));
         let message_mailbox = MessageMailbox::default();
         let state = Self {
             id: environment.get_next_process_id(),
@@ -103,7 +108,8 @@ impl ProcessState for DefaultProcessState {
         module: WasmtimeCompiledModule<Self>,
         config: Arc<DefaultProcessConfig>,
     ) -> Result<Self> {
-        let signal_mailbox = unbounded::<Signal>();
+        let signal_mailbox = unbounded_channel();
+        let signal_mailbox = (signal_mailbox.0, Arc::new(Mutex::new(signal_mailbox.1)));
         let message_mailbox = MessageMailbox::default();
         let state = Self {
             id: self.environment.get_next_process_id(),
@@ -131,7 +137,8 @@ impl ProcessState for DefaultProcessState {
 
     fn state_for_instantiation() -> Self {
         let config = DefaultProcessConfig::default();
-        let signal_mailbox = unbounded();
+        let signal_mailbox = unbounded_channel();
+        let signal_mailbox = (signal_mailbox.0, Arc::new(Mutex::new(signal_mailbox.1)));
         let message_mailbox = MessageMailbox::default();
         Self {
             id: 1,
@@ -193,7 +200,12 @@ impl ProcessState for DefaultProcessState {
         self.id
     }
 
-    fn signal_mailbox(&self) -> &(Sender<Signal>, Receiver<Signal>) {
+    fn signal_mailbox(
+        &self,
+    ) -> &(
+        UnboundedSender<Signal>,
+        Arc<Mutex<UnboundedReceiver<Signal>>>,
+    ) {
         &self.signal_mailbox
     }
 
@@ -354,7 +366,7 @@ pub(crate) struct Resources {
     pub(crate) modules: HashMapId<WasmtimeCompiledModule<DefaultProcessState>>,
     pub(crate) dns_iterators: HashMapId<DnsIterator>,
     pub(crate) tcp_listeners: HashMapId<TcpListener>,
-    pub(crate) tcp_streams: HashMapId<TcpStream>,
+    pub(crate) tcp_streams: HashMapId<Arc<TcpConnection>>,
     pub(crate) udp_sockets: HashMapId<Arc<UdpSocket>>,
     pub(crate) errors: HashMapId<anyhow::Error>,
 }
@@ -377,7 +389,7 @@ impl DistributedCtx for DefaultProcessState {
 
 mod tests {
 
-    #[async_std::test]
+    #[tokio::test]
     async fn import_filter_signature_matches() {
         use crate::state::DefaultProcessState;
         use crate::DefaultProcessConfig;

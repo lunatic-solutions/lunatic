@@ -1,8 +1,8 @@
 use std::{env, fs, path::Path, sync::Arc};
 
 use anyhow::{Context, Result};
-use async_std::channel;
 use clap::{crate_version, Arg, Command};
+use tokio::sync::mpsc::channel;
 
 use lunatic_distributed::{
     control::{self, server::control_server},
@@ -83,7 +83,7 @@ pub(crate) async fn execute() -> Result<()> {
     if args.is_present("control_server") {
         if let Some(control_address) = args.value_of("control") {
             // TODO unwrap, better message
-            async_std::task::spawn(control_server(control_address.parse().unwrap()));
+            tokio::task::spawn(control_server(control_address.parse().unwrap()));
         }
     }
 
@@ -106,7 +106,7 @@ pub(crate) async fn execute() -> Result<()> {
         )
         .await?;
 
-        async_std::task::spawn(lunatic_distributed::distributed::server::node_server(
+        tokio::task::spawn(lunatic_distributed::distributed::server::node_server(
             env.clone(),
             node_address,
         ));
@@ -183,10 +183,10 @@ pub(crate) async fn execute() -> Result<()> {
                 path.to_string_lossy()
             ))?;
         // Wait on the main process to finish
-        task.await.unwrap();
+        task.await.unwrap().unwrap();
     } else {
         // Block forever
-        let (_sender, receiver) = channel::bounded(1);
+        let (_sender, mut receiver) = channel(1);
         let _: () = receiver.recv().await.unwrap();
     }
 

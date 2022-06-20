@@ -5,7 +5,7 @@ use mode::{cargo_test, execution};
 use anyhow::Result;
 use std::{env, path::PathBuf};
 
-#[async_std::main]
+#[tokio::main]
 async fn main() -> Result<()> {
     // Detect if `cargo test` is running
     // https://internals.rust-lang.org/t/cargo-config-tom-different-runner-for-tests/16342/

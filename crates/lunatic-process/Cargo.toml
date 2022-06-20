@@ -12,10 +12,10 @@ license = "Apache-2.0/MIT"
 
 [dependencies]
 anyhow = "^1.0"
-async-std = { version = "^1.0", features = ["attributes", "unstable"] }
 log = "^0.4"
-tokio = { version = "^1.14", features = ["macros"] }
+tokio = { version = "^1.14", features = ["macros", "rt-multi-thread", "sync", "net"] }
 wasmtime = "^0.36"
 serde = "^1.0"
 hash-map-id = { version = "^0.9", path = "../hash-map-id" }
 dashmap = "5.2.0"
+lunatic-networking-api = { version = "^0.9", path = "../lunatic-networking-api" }

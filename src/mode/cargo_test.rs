@@ -177,7 +177,7 @@ pub(crate) async fn test() -> Result<()> {
     let filtered_out = test_functions.len() - n;
     println!("\nrunning {} {}", n, if n == 1 { "test" } else { "tests" });
 
-    let (sender, receiver) = async_std::channel::unbounded();
+    let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
 
     let config = Arc::new(config);
 
@@ -195,7 +195,6 @@ pub(crate) async fn test() -> Result<()> {
                     status: TestStatus::Ignored,
                     stdout: StdoutCapture::new(),
                 })
-                .await
                 .unwrap();
             continue;
         }
@@ -238,8 +237,8 @@ pub(crate) async fn test() -> Result<()> {
             ))?;
 
         let sender = sender.clone();
-        async_std::task::spawn(async move {
-            let result = match task.await {
+        tokio::task::spawn(async move {
+            let result = match task.await.unwrap() {
                 Ok(_state) => {
                     // If we didn't expect a panic and didn't get one
                     if test_function.panic.is_none() {
@@ -330,7 +329,7 @@ pub(crate) async fn test() -> Result<()> {
                     }
                 }
             };
-            sender.send(result).await.unwrap();
+            sender.send(result).unwrap();
         });
     }
 

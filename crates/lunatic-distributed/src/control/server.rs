@@ -1,14 +1,15 @@
-use std::sync::{
-    atomic::{self, AtomicU64},
-    Arc,
+use std::{
+    net::SocketAddr,
+    sync::{
+        atomic::{self, AtomicU64},
+        Arc,
+    },
 };
 
 use anyhow::Result;
-use async_std::{
-    net::{SocketAddr, TcpListener},
-    task::spawn,
-};
+
 use dashmap::DashMap;
+use tokio::net::TcpListener;
 
 use crate::control::message::{Request, Response};
 use crate::{connection::Connection, control::message::Registration};
@@ -87,14 +88,14 @@ pub async fn control_server(socket: SocketAddr) -> Result<()> {
     let server = Server::new();
     while let Ok((conn, _addr)) = listener.accept().await {
         log::info!("New connection {_addr}");
-        spawn(handle_connection(server.clone(), Connection::new(conn)));
+        tokio::task::spawn(handle_connection(server.clone(), Connection::new(conn)));
     }
     Ok(())
 }
 
 async fn handle_connection(server: Server, conn: Connection) {
     while let Ok((msg_id, req)) = conn.receive::<Request>().await {
-        spawn(handle_request(server.clone(), conn.clone(), msg_id, req));
+        tokio::task::spawn(handle_request(server.clone(), conn.clone(), msg_id, req));
     }
 }
 

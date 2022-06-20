@@ -581,7 +581,7 @@ fn sleep_ms<T: ProcessState + ProcessCtx<T>>(
     millis: u64,
 ) -> Box<dyn Future<Output = ()> + Send + '_> {
     Box::new(async move {
-        async_std::task::sleep(Duration::from_millis(millis)).await;
+        tokio::time::sleep(Duration::from_millis(millis)).await;
     })
 }
 
@@ -597,7 +597,7 @@ fn die_when_link_dies<T: ProcessState + ProcessCtx<T>>(mut caller: Caller<T>, tr
         .data_mut()
         .signal_mailbox()
         .0
-        .try_send(Signal::DieWhenLinkDies(trap != 0))
+        .send(Signal::DieWhenLinkDies(trap != 0))
         .expect("The signal is sent to itself and the receiver must exist at this point");
 }
 
@@ -639,7 +639,7 @@ fn link<T: ProcessState + ProcessCtx<T>>(
         .data_mut()
         .signal_mailbox()
         .0
-        .try_send(Signal::Link(tag, process))
+        .send(Signal::Link(tag, process))
         .expect("The signal is sent to itself and the receiver must exist at this point");
     Ok(())
 }
@@ -671,7 +671,7 @@ fn unlink<T: ProcessState + ProcessCtx<T>>(
         .data_mut()
         .signal_mailbox()
         .0
-        .try_send(Signal::UnLink(process))
+        .send(Signal::UnLink(process))
         .expect("The signal is sent to itself and the receiver must exist at this point");
     Ok(())
 }

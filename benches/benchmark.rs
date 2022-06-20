@@ -46,7 +46,8 @@ fn criterion_benchmark(c: &mut Criterion) {
             .unwrap()
             .0
             .await
-            .unwrap();
+            .unwrap()
+            .ok();
         });
     });
 }

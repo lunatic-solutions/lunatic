@@ -1,9 +1,12 @@
 use std::sync::Arc;
 
 use anyhow::Result;
-use async_std::channel::{Receiver, Sender};
 use dashmap::DashMap;
 use hash_map_id::HashMapId;
+use tokio::sync::{
+    mpsc::{UnboundedReceiver, UnboundedSender},
+    Mutex,
+};
 use wasmtime::Linker;
 
 use crate::{
@@ -51,7 +54,12 @@ pub trait ProcessState: Sized {
     // Returns process ID
     fn id(&self) -> u64;
     // Returns signal mailbox
-    fn signal_mailbox(&self) -> &(Sender<Signal>, Receiver<Signal>);
+    fn signal_mailbox(
+        &self,
+    ) -> &(
+        UnboundedSender<Signal>,
+        Arc<Mutex<UnboundedReceiver<Signal>>>,
+    );
     // Returns message mailbox
     fn message_mailbox(&self) -> &MessageMailbox;
 

@@ -13,7 +13,7 @@ license = "Apache-2.0/MIT"
 [dependencies]
 anyhow = "^1.0"
 wasmtime = "^0.36"
-async-std = { version = "^1.0", features = ["attributes", "unstable"] }
+tokio = { version = "^1.14", features = ["macros", "time"] }
 hash-map-id = { version = "^0.9", path = "../hash-map-id" }
 lunatic-stdout-capture = { version = "^0.9", path = "../lunatic-stdout-capture" }
 lunatic-process = { version = "^0.9", path = "../lunatic-process" }
