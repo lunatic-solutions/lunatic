@@ -1,9 +1,10 @@
 use anyhow::{anyhow, Result};
 use async_cell::sync::AsyncCell;
 use dashmap::DashMap;
+use lunatic_process::runtimes::RawWasm;
 use std::{
     net::SocketAddr,
-    sync::{atomic, atomic::AtomicU64, Arc},
+    sync::{atomic, atomic::AtomicU64, Arc, RwLock},
     time::Duration,
 };
 use tokio::net::TcpStream;
@@ -25,6 +26,8 @@ pub struct InnerClient {
     control_addr: SocketAddr,
     connection: Connection,
     pending_requests: DashMap<u64, Arc<AsyncCell<Response>>>,
+    nodes: DashMap<u64, NodeInfo>,
+    node_ids: RwLock<Vec<u64>>,
 }
 
 impl Client {
@@ -36,10 +39,13 @@ impl Client {
                 node_addr,
                 connection: connect(control_addr, 5).await?,
                 pending_requests: DashMap::new(),
+                nodes: Default::default(),
+                node_ids: Default::default(),
             }),
         };
         // Spawn reader task before register
         tokio::task::spawn(reader_task(client.clone()));
+        tokio::task::spawn(refresh_nodes_task(client.clone()));
         let node_id: u64 = client.send_registration().await?;
         Ok((node_id, client))
     }
@@ -89,18 +95,38 @@ impl Client {
         };
     }
 
-    pub async fn get_nodes(&self) -> Vec<NodeInfo> {
-        if let Ok(Response::Nodes(nodes)) = self.send(Request::ListNodes).await {
-            nodes
-                .into_iter()
-                .map(|(id, reg)| NodeInfo {
-                    id,
-                    address: reg.node_address,
-                })
-                .collect()
-        } else {
-            vec![]
+    async fn refresh_nodes(&self) -> Result<()> {
+        if let Response::Nodes(nodes) = self.send(Request::ListNodes).await? {
+            let mut node_ids = vec![];
+            for (id, reg) in nodes {
+                node_ids.push(id);
+                if !self.inner.nodes.contains_key(&id) {
+                    self.inner.nodes.insert(
+                        id,
+                        NodeInfo {
+                            id,
+                            address: reg.node_address,
+                        },
+                    );
+                }
+            }
+            if let Ok(mut self_node_ids) = self.inner.node_ids.write() {
+                *self_node_ids = node_ids;
+            }
         }
+        Ok(())
+    }
+
+    pub fn node_info(&self, node_id: u64) -> Option<NodeInfo> {
+        self.inner.nodes.get(&node_id).map(|e| e.clone())
+    }
+
+    pub fn node_ids(&self) -> Vec<u64> {
+        self.inner.node_ids.read().unwrap().clone()
+    }
+
+    pub fn node_count(&self) -> usize {
+        self.inner.node_ids.read().unwrap().len()
     }
 
     pub async fn get_module(&self, module_id: u64) -> Option<Vec<u8>> {
@@ -111,9 +137,9 @@ impl Client {
         }
     }
 
-    pub async fn add_module(&self, module: Vec<u8>) -> Result<u64> {
-        if let Response::ModuleId(id) = self.send(Request::AddModule(module)).await? {
-            Ok(id)
+    pub async fn add_module(&self, module: Vec<u8>) -> Result<RawWasm> {
+        if let Response::ModuleId(id) = self.send(Request::AddModule(module.clone())).await? {
+            Ok(RawWasm::new(Some(id), module))
         } else {
             Err(anyhow::anyhow!("Invalid response type on add_module."))
         }
@@ -136,5 +162,12 @@ async fn reader_task(client: Client) -> Result<()> {
         if let Ok((id, resp)) = client.recv().await {
             client.process_response(id, resp);
         }
+    }
+}
+
+async fn refresh_nodes_task(client: Client) -> Result<()> {
+    loop {
+        client.refresh_nodes().await.ok();
+        tokio::time::sleep(Duration::from_secs(5)).await;
     }
 }

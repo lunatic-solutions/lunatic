@@ -101,7 +101,7 @@ pub(crate) async fn test() -> Result<()> {
     let path = args.value_of("wasm").unwrap();
     let path = Path::new(path);
     let module = fs::read(path)?;
-    let module = runtime.compile_module::<DefaultProcessState>(module)?;
+    let module = runtime.compile_module::<DefaultProcessState>(module.into())?;
 
     let filter = args.value_of("filter").unwrap_or_default();
 

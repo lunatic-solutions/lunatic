@@ -53,8 +53,6 @@ pub trait ProcessState: Sized {
 
     // Returns process ID
     fn id(&self) -> u64;
-    // Returns node ID
-    fn node_id(&self) -> u64;
     // Returns signal mailbox
     fn signal_mailbox(
         &self,

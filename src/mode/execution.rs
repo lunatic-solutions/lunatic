@@ -8,7 +8,10 @@ use lunatic_distributed::{
     control::{self, server::control_server},
     distributed,
 };
-use lunatic_process::{env::Environment, runtimes};
+use lunatic_process::{
+    env::Environment,
+    runtimes::{self, RawWasm},
+};
 use lunatic_process_api::ProcessConfigCtx;
 use lunatic_runtime::{DefaultProcessConfig, DefaultProcessState};
 
@@ -156,6 +159,11 @@ pub(crate) async fn execute() -> Result<()> {
 
         // Spawn main process
         let module = fs::read(path)?;
+        let module: RawWasm = if let Some(dist) = distributed_state.as_ref() {
+            dist.control.add_module(module).await?
+        } else {
+            module.into()
+        };
         let module = runtime.compile_module::<DefaultProcessState>(module)?;
         let state = DefaultProcessState::new(
             env.clone(),

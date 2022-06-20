@@ -24,36 +24,21 @@ pub struct Client {
 pub struct InnerClient {
     next_message_id: AtomicU64,
     node_connections: DashMap<u64, Connection>,
-    node_info: DashMap<u64, NodeInfo>,
     pending_requests: DashMap<u64, Arc<AsyncCell<Response>>>,
     control_client: control::Client,
 }
 
 impl Client {
-    pub async fn new(node_id: u64, control_client: control::Client) -> Result<Client> {
+    // TODO node_id?
+    pub async fn new(_node_id: u64, control_client: control::Client) -> Result<Client> {
         let client = Client {
             inner: Arc::new(InnerClient {
                 next_message_id: AtomicU64::new(1),
                 node_connections: DashMap::new(),
-                node_info: DashMap::new(),
                 pending_requests: DashMap::new(),
                 control_client,
             }),
         };
-
-        let nodes = client.inner.control_client.get_nodes().await;
-
-        log::info!("List nodes {nodes:?}");
-
-        for node in nodes {
-            let id = node.id;
-            client.inner.node_info.insert(node.id, node);
-
-            if id != node_id {
-                let resp = client.send(id, Request::Spawn).await;
-                log::info!("Response {resp:?}")
-            }
-        }
 
         Ok(client)
     }
@@ -67,7 +52,7 @@ impl Client {
     pub async fn connection(&self, node_id: u64) -> Option<Connection> {
         match self.inner.node_connections.get(&node_id).map(|e| e.clone()) {
             Some(c) => Some(c),
-            None => match self.inner.node_info.get(&node_id) {
+            None => match self.inner.control_client.node_info(node_id) {
                 Some(node) => {
                     if let Ok(conn) = connect(node.address, 2).await {
                         self.inner.node_connections.insert(node.id, conn.clone());

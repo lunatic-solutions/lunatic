@@ -8,7 +8,27 @@
 
 pub mod wasmtime;
 
-pub type RawWasm = Vec<u8>;
+pub struct RawWasm {
+    // Id returned by control and used when spawning modules on other nodes
+    pub id: Option<u64>,
+    pub bytes: Vec<u8>,
+}
+
+impl RawWasm {
+    pub fn new(id: Option<u64>, bytes: Vec<u8>) -> Self {
+        Self { id, bytes }
+    }
+
+    pub fn as_slice(&self) -> &[u8] {
+        self.bytes.as_slice()
+    }
+}
+
+impl From<Vec<u8>> for RawWasm {
+    fn from(bytes: Vec<u8>) -> Self {
+        Self::new(None, bytes)
+    }
+}
 
 /// A `WasmRuntime` is a compiler that can generate runnable code from raw .wasm files.
 ///

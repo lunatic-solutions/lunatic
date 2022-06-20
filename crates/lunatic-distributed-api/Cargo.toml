@@ -8,8 +8,6 @@ description = "A simple control server implementation"
 
 [dependencies]
 lunatic-common-api = { version = "0.9", path = "../lunatic-common-api" }
-lunatic-process = { version = "^0.9", path = "../lunatic-process" }
-lunatic-process-api = { version = "^0.9", path = "../lunatic-process-api" }
 lunatic-distributed = { version = "^0.9", path = "../lunatic-distributed" }
 wasmtime = "^0.36"
 anyhow = "^1.0"

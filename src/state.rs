@@ -200,10 +200,6 @@ impl ProcessState for DefaultProcessState {
         self.id
     }
 
-    fn node_id(&self) -> u64 {
-        0 // TODO
-    }
-
     fn signal_mailbox(
         &self,
     ) -> &(
@@ -376,8 +372,18 @@ pub(crate) struct Resources {
 }
 
 impl DistributedCtx for DefaultProcessState {
-    fn distributed(&mut self) -> &mut Option<DistributedProcessState> {
-        &mut self.distributed
+    fn distributed_mut(&mut self) -> Result<&mut DistributedProcessState> {
+        match self.distributed.as_mut() {
+            Some(d) => Ok(d),
+            None => Err(anyhow::anyhow!("Distributed is not initialized")),
+        }
+    }
+
+    fn distributed(&self) -> Result<&DistributedProcessState> {
+        match self.distributed.as_ref() {
+            Some(d) => Ok(d),
+            None => Err(anyhow::anyhow!("Distributed is not initialized")),
+        }
     }
 }
 
@@ -399,7 +405,7 @@ mod tests {
         let runtime = WasmtimeRuntime::new(&wasmtime_config).unwrap();
 
         let raw_module = wat::parse_file("./wat/all_imports.wat").unwrap();
-        let module = runtime.compile_module(raw_module).unwrap();
+        let module = runtime.compile_module(raw_module.into()).unwrap();
         let env = lunatic_process::env::Environment::new(0);
         let registry = Arc::new(dashmap::DashMap::new());
         let state = DefaultProcessState::new(
