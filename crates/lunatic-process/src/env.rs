@@ -44,3 +44,20 @@ impl Environment {
         self.environment_id
     }
 }
+
+#[derive(Clone, Default)]
+pub struct Environments {
+    envs: Arc<DashMap<u64, Environment>>,
+}
+
+impl Environments {
+    pub fn get_or_create(&mut self, id: u64) -> Environment {
+        if !self.envs.contains_key(&id) {
+            let env = Environment::new(id);
+            self.envs.insert(id, env.clone());
+            env
+        } else {
+            self.envs.get(&id).map(|e| e.clone()).unwrap()
+        }
+    }
+}

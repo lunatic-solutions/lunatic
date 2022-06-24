@@ -14,7 +14,6 @@ pub enum Request {
 pub enum Response {
     Register(u64),
     Nodes(Vec<(u64, Registration)>),
-    RegisterModule(u64),
     Module(Option<Vec<u8>>),
     ModuleId(u64),
 }

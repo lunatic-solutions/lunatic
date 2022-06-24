@@ -3,7 +3,27 @@ pub mod control;
 pub mod distributed;
 
 use anyhow::Result;
-use std::net::SocketAddr;
+use lunatic_process::{
+    env::Environment,
+    runtimes::wasmtime::{WasmtimeCompiledModule, WasmtimeRuntime},
+    state::ProcessState,
+};
+use std::{net::SocketAddr, sync::Arc};
+
+pub trait DistributedCtx: ProcessState + Sized {
+    fn new_dist_state(
+        environment: Environment,
+        distributed: DistributedProcessState,
+        runtime: WasmtimeRuntime,
+        module: WasmtimeCompiledModule<Self>,
+        config: Arc<Self::Config>,
+    ) -> Result<Self>;
+    fn distributed(&self) -> Result<&DistributedProcessState>;
+    fn distributed_mut(&mut self) -> Result<&mut DistributedProcessState>;
+    fn module_id(&self) -> u64;
+    fn environment_id(&self) -> u64;
+    fn can_spawn(&self) -> bool;
+}
 
 #[derive(Clone)]
 pub struct DistributedProcessState {

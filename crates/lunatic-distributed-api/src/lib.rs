@@ -1,12 +1,9 @@
-use anyhow::Result;
-use lunatic_common_api::{get_memory, IntoTrap};
-use lunatic_distributed::DistributedProcessState;
-use wasmtime::{Caller, Linker, ResourceLimiter, Trap};
+use std::future::Future;
 
-pub trait DistributedCtx {
-    fn distributed(&self) -> Result<&DistributedProcessState>;
-    fn distributed_mut(&mut self) -> Result<&mut DistributedProcessState>;
-}
+use anyhow::{anyhow, Result};
+use lunatic_common_api::{get_memory, IntoTrap};
+use lunatic_distributed::{distributed::message::Val, DistributedCtx};
+use wasmtime::{Caller, Linker, ResourceLimiter, Trap};
 
 // Register the process APIs to the linker
 pub fn register<T>(linker: &mut Linker<T>) -> Result<()>
@@ -17,7 +14,8 @@ where
     linker.func_wrap("lunatic::distributed", "nodes_count", nodes_count)?;
     linker.func_wrap("lunatic::distributed", "get_nodes", get_nodes)?;
     linker.func_wrap("lunatic::distributed", "node_id", node_id)?;
-    //linker.func_wrap7_async("lunatic::distributed", "spawn", spawn)?;
+    linker.func_wrap("lunatic::distributed", "module_id", module_id)?;
+    linker.func_wrap7_async("lunatic::distributed", "spawn", spawn)?;
     Ok(())
 }
 
@@ -53,6 +51,7 @@ fn get_nodes<T: DistributedCtx>(
     Ok(2)
 }
 
+// TODO docs!!
 // Spawns a new process using the passed in function inside a module as the entry point.
 //
 // If **link** is not 0, it will link the child and parent processes. The value of the **link**
@@ -81,26 +80,72 @@ fn get_nodes<T: DistributedCtx>(
 // * If the function string is not a valid utf8 string.
 // * If the params array is in a wrong format.
 // * If any memory outside the guest heap space is referenced.
-//#[allow(clippy::too_many_arguments)]
-//fn spawn<T>(
-//    mut caller: Caller<T>,
-//    node_id: u64,
-//    module_id: u64,
-//    func_str_ptr: u32,
-//    func_str_len: u32,
-//    params_ptr: u32,
-//    params_len: u32,
-//    id_ptr: u32,
-//) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_>
-//where
-//    T: DistributedCtx + ResourceLimiter + Send + 'static,
-//    for<'a> &'a T: Send,
-//{
-//    Box::new(async move {
-//        let state = caller.data_mut();
-//        unimplemented!()
-//    })
-//}
+#[allow(clippy::too_many_arguments)]
+fn spawn<T>(
+    mut caller: Caller<T>,
+    node_id: u64,
+    module_id: u64,
+    func_str_ptr: u32,
+    func_str_len: u32,
+    params_ptr: u32,
+    params_len: u32,
+    id_ptr: u32,
+) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_>
+where
+    T: DistributedCtx + ResourceLimiter + Send + 'static,
+    for<'a> &'a T: Send,
+{
+    Box::new(async move {
+        if !caller.data().can_spawn() {
+            return Err(anyhow!("Process doesn't have permissions to spawn sub-processes").into());
+        }
+
+        let memory = get_memory(&mut caller)?;
+        let func_str = memory
+            .data(&caller)
+            .get(func_str_ptr as usize..(func_str_ptr + func_str_len) as usize)
+            .or_trap("lunatic::distributed::spawn::func_str")?;
+        let function =
+            std::str::from_utf8(func_str).or_trap("lunatic::distributed::spawn::func_str_utf8")?;
+        let params = memory
+            .data(&caller)
+            .get(params_ptr as usize..(params_ptr + params_len) as usize)
+            .or_trap("lunatic::distributed::spawn::params")?;
+        let params = params
+            .chunks_exact(17)
+            .map(|chunk| {
+                let value = u128::from_le_bytes(chunk[1..].try_into()?);
+                let result = match chunk[0] {
+                    0x7F => Val::I32(value as i32),
+                    0x7E => Val::I64(value as i64),
+                    0x7B => Val::V128(value),
+                    _ => return Err(anyhow!("Unsupported type ID")),
+                };
+                Ok(result)
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        log::info!("Spawn on node {node_id}, mod {module_id}, fn {function}, params {params:?}");
+
+        let state = caller.data();
+
+        let (proc_id, ret) = match state
+            .distributed()?
+            .distributed_client
+            .spawn(state.environment_id(), node_id, module_id, function, params)
+            .await
+        {
+            Ok(id) => (id, 0),
+            Err(_) => (0, 1), // TODO errors
+        };
+
+        memory
+            .write(&mut caller, id_ptr as usize, &proc_id.to_le_bytes())
+            .or_trap("lunatic::distributed::spawn::write_id")?;
+
+        Ok(ret)
+    })
+}
 
 // Returns ID of the node that the current process is running on
 fn node_id<T: DistributedCtx>(caller: Caller<T>) -> u64 {
@@ -110,4 +155,9 @@ fn node_id<T: DistributedCtx>(caller: Caller<T>) -> u64 {
         .as_ref()
         .map(|d| d.node_id())
         .unwrap_or(0)
+}
+
+// Returns ID of the module that the current process is spawned from
+fn module_id<T: DistributedCtx>(caller: Caller<T>) -> u64 {
+    caller.data().module_id()
 }

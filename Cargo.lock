@@ -912,6 +912,7 @@ dependencies = [
  "lunatic-process",
  "serde",
  "tokio",
+ "wasmtime",
 ]
 
 [[package]]
@@ -925,6 +926,7 @@ dependencies = [
  "log",
  "lunatic-common-api",
  "lunatic-distributed",
+ "lunatic-process",
  "serde",
  "wasmtime",
 ]

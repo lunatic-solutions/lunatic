@@ -69,7 +69,7 @@ impl Server {
     fn add_module(&self, bytes: Vec<u8>) -> Response {
         let module_id = self.next_module_id();
         self.inner.modules.insert(module_id, bytes);
-        Response::RegisterModule(module_id)
+        Response::ModuleId(module_id)
     }
 
     fn get_module(&self, id: u64) -> Response {

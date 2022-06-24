@@ -6,11 +6,11 @@ use tokio::sync::mpsc::channel;
 
 use lunatic_distributed::{
     control::{self, server::control_server},
-    distributed,
+    distributed::{self, server::ServerCtx},
 };
 use lunatic_process::{
-    env::Environment,
-    runtimes::{self, RawWasm},
+    env::Environments,
+    runtimes::{self, Modules, RawWasm},
 };
 use lunatic_process_api::ProcessConfigCtx;
 use lunatic_runtime::{DefaultProcessConfig, DefaultProcessState};
@@ -87,7 +87,12 @@ pub(crate) async fn execute() -> Result<()> {
         }
     }
 
-    let env = Environment::new(1);
+    // Create wasmtime runtime
+    let wasmtime_config = runtimes::wasmtime::default_config();
+    let runtime = runtimes::wasmtime::WasmtimeRuntime::new(&wasmtime_config)?;
+    let mut envs = Environments::default();
+
+    let env = envs.get_or_create(1);
 
     let distributed_state = if let (Some(node_address), Some(control_address)) =
         (args.value_of("node"), args.value_of("control"))
@@ -101,13 +106,18 @@ pub(crate) async fn execute() -> Result<()> {
 
         let dist = lunatic_distributed::DistributedProcessState::new(
             node_id,
-            control_client,
+            control_client.clone(),
             distributed_client,
         )
         .await?;
 
         tokio::task::spawn(lunatic_distributed::distributed::server::node_server(
-            env.clone(),
+            ServerCtx {
+                envs,
+                modules: Modules::<DefaultProcessState>::default(),
+                distributed: dist.clone(),
+                runtime: runtime.clone(),
+            },
             node_address,
         ));
 
@@ -152,10 +162,6 @@ pub(crate) async fn execute() -> Result<()> {
                 config.preopen_dir(dir);
             }
         }
-
-        // Create wasmtime runtime
-        let wasmtime_config = runtimes::wasmtime::default_config();
-        let runtime = runtimes::wasmtime::WasmtimeRuntime::new(&wasmtime_config)?;
 
         // Spawn main process
         let module = fs::read(path)?;

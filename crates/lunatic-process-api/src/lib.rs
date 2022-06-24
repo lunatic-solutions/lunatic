@@ -109,6 +109,7 @@ where
     linker.func_wrap("lunatic::process", "die_when_link_dies", die_when_link_dies)?;
 
     linker.func_wrap("lunatic::process", "process_id", process_id)?;
+    linker.func_wrap("lunatic::process", "environment_id", environment_id)?;
     linker.func_wrap("lunatic::process", "link", link)?;
     linker.func_wrap("lunatic::process", "unlink", unlink)?;
 
@@ -604,6 +605,11 @@ fn die_when_link_dies<T: ProcessState + ProcessCtx<T>>(mut caller: Caller<T>, tr
 // Returns ID of the process currently running
 fn process_id<T: ProcessState + ProcessCtx<T>>(caller: Caller<T>) -> u64 {
     caller.data().id()
+}
+
+// Returns ID of the environment in which the process is currently running
+fn environment_id<T: ProcessState + ProcessCtx<T>>(caller: Caller<T>) -> u64 {
+    caller.data().environment().id()
 }
 
 // Link current process to **process_id**. This is not an atomic operation, any of the 2 processes

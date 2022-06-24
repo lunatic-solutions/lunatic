@@ -10,6 +10,7 @@ description = "Node to node communication"
 anyhow = "^1.0"
 tokio = { version = "^1.14", features = ["macros", "rt-multi-thread", "net", "time", "io-util"] }
 serde = { version = "^1.0", features = ["derive"] }
+wasmtime = "^0.36"
 dashmap = "5.2.0"
 bincode = "^1.3"
 log = "^0.4"

@@ -16,6 +16,8 @@ use crate::{
     NodeInfo,
 };
 
+use super::message::Val;
+
 #[derive(Clone)]
 pub struct Client {
     inner: Arc<InnerClient>,
@@ -94,11 +96,37 @@ impl Client {
             e.set(resp);
         };
     }
+
+    pub async fn spawn(
+        &self,
+        environment_id: u64,
+        node_id: u64,
+        module_id: u64,
+        function: &str,
+        params: Vec<Val>,
+    ) -> Result<u64> {
+        if let Response::Spawned(id) = self
+            .send(
+                node_id,
+                Request::Spawn {
+                    environment_id,
+                    module_id,
+                    function: function.into(),
+                    params,
+                },
+            )
+            .await?
+        {
+            Ok(id)
+        } else {
+            Err(anyhow!("Invalid response type for spawn"))
+        }
+    }
 }
 
 async fn connect(addr: SocketAddr, retry: u32) -> Result<Connection> {
     for _ in 0..retry {
-        log::info!("Connecting to control {addr}");
+        log::info!("Connecting to node on {addr}");
         if let Ok(stream) = TcpStream::connect(addr).await {
             return Ok(Connection::new(stream));
         }

@@ -4,8 +4,7 @@ use std::sync::Arc;
 use anyhow::Result;
 use dashmap::DashMap;
 use hash_map_id::HashMapId;
-use lunatic_distributed::DistributedProcessState;
-use lunatic_distributed_api::DistributedCtx;
+use lunatic_distributed::{DistributedCtx, DistributedProcessState};
 use lunatic_error_api::{ErrorCtx, ErrorResource};
 use lunatic_networking_api::dns::DnsIterator;
 use lunatic_networking_api::{NetworkingCtx, TcpConnection};
@@ -14,7 +13,7 @@ use lunatic_process::env::Environment;
 use lunatic_process::runtimes::wasmtime::{WasmtimeCompiledModule, WasmtimeRuntime};
 use lunatic_process::state::{ConfigResources, ProcessState};
 use lunatic_process::{mailbox::MessageMailbox, message::Message, Signal};
-use lunatic_process_api::ProcessCtx;
+use lunatic_process_api::{ProcessConfigCtx, ProcessCtx};
 use lunatic_stdout_capture::StdoutCapture;
 use lunatic_wasi_api::{build_wasi, LunaticWasiCtx};
 use tokio::net::{TcpListener, UdpSocket};
@@ -384,6 +383,55 @@ impl DistributedCtx for DefaultProcessState {
             Some(d) => Ok(d),
             None => Err(anyhow::anyhow!("Distributed is not initialized")),
         }
+    }
+
+    fn module_id(&self) -> u64 {
+        self.module
+            .as_ref()
+            .and_then(|m| m.source().id)
+            .unwrap_or(0)
+    }
+
+    fn environment_id(&self) -> u64 {
+        self.environment.id()
+    }
+
+    fn can_spawn(&self) -> bool {
+        self.config().can_spawn_processes()
+    }
+
+    fn new_dist_state(
+        environment: Environment,
+        distributed: DistributedProcessState,
+        runtime: WasmtimeRuntime,
+        module: WasmtimeCompiledModule<Self>,
+        config: Arc<Self::Config>,
+    ) -> Result<Self> {
+        let signal_mailbox = unbounded_channel();
+        let signal_mailbox = (signal_mailbox.0, Arc::new(Mutex::new(signal_mailbox.1)));
+        let message_mailbox = MessageMailbox::default();
+        let state = Self {
+            id: environment.get_next_process_id(),
+            environment,
+            distributed: Some(distributed),
+            runtime: Some(runtime),
+            module: Some(module),
+            config: config.clone(),
+            message: None,
+            signal_mailbox,
+            message_mailbox,
+            resources: Resources::default(),
+            wasi: build_wasi(
+                Some(config.command_line_arguments()),
+                Some(config.environment_variables()),
+                config.preopened_dirs(),
+            )?,
+            wasi_stdout: None,
+            wasi_stderr: None,
+            initialized: false,
+            registry: Default::default(), // TODO move registry into env?
+        };
+        Ok(state)
     }
 }
 
