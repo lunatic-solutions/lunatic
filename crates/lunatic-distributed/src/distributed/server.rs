@@ -4,8 +4,10 @@ use anyhow::{anyhow, Result};
 
 use lunatic_process::{
     env::Environments,
+    message::{DataMessage, Message},
     runtimes::{wasmtime::WasmtimeRuntime, Modules, RawWasm},
     state::ProcessState,
+    Signal,
 };
 use tokio::net::TcpListener;
 use wasmtime::ResourceLimiter;
@@ -15,6 +17,8 @@ use crate::{
     distributed::message::{Request, Response},
     DistributedCtx, DistributedProcessState,
 };
+
+use super::message::Val;
 
 pub struct ServerCtx<T> {
     pub envs: Environments,
@@ -56,7 +60,7 @@ where
 }
 
 async fn handle_message<T>(
-    mut ctx: ServerCtx<T>,
+    ctx: ServerCtx<T>,
     conn: Connection,
     msg_id: u64,
     msg: Request,
@@ -71,35 +75,73 @@ where
             function,
             params,
         } => {
-            let module = match ctx.modules.get(module_id) {
-                Some(module) => module,
-                None => {
-                    if let Some(bytes) = ctx.distributed.control.get_module(module_id).await {
-                        let wasm = RawWasm::new(Some(module_id), bytes);
-                        ctx.modules.compile(ctx.runtime.clone(), wasm).await??
-                    } else {
-                        return Err(anyhow!("Cannot get the module from control"));
-                    }
-                }
-            };
-
-            let env = ctx.envs.get_or_create(environment_id);
-            let distributed = ctx.distributed.clone();
-            let runtime = ctx.runtime.clone();
-            let state = T::new_dist_state(
-                env.clone(),
-                distributed,
-                runtime,
-                module.clone(),
-                Default::default(),
-            )?;
-            let params: Vec<wasmtime::Val> = params.into_iter().map(Into::into).collect();
-            let (_handle, proc) = env
-                .spawn_wasm(ctx.runtime, module, state, &function, params, None)
-                .await?;
-
-            conn.send(msg_id, Response::Spawned(proc.id())).await?;
+            let id = handle_spawn(ctx, environment_id, module_id, function, params).await?;
+            conn.send(msg_id, Response::Spawned(id)).await?;
         }
+        Request::Message {
+            environment_id,
+            process_id,
+            tag,
+            data,
+        } => handle_process_message(ctx, environment_id, process_id, tag, data).await?,
+    }
+    Ok(())
+}
+
+async fn handle_spawn<T>(
+    mut ctx: ServerCtx<T>,
+    environment_id: u64,
+    module_id: u64,
+    function: String,
+    params: Vec<Val>,
+) -> Result<u64>
+where
+    T: ProcessState + DistributedCtx + ResourceLimiter + Send + 'static,
+{
+    let module = match ctx.modules.get(module_id) {
+        Some(module) => module,
+        None => {
+            if let Some(bytes) = ctx.distributed.control.get_module(module_id).await {
+                let wasm = RawWasm::new(Some(module_id), bytes);
+                ctx.modules.compile(ctx.runtime.clone(), wasm).await??
+            } else {
+                return Err(anyhow!("Cannot get the module from control"));
+            }
+        }
+    };
+
+    let env = ctx.envs.get_or_create(environment_id);
+    let distributed = ctx.distributed.clone();
+    let runtime = ctx.runtime.clone();
+    let state = T::new_dist_state(
+        env.clone(),
+        distributed,
+        runtime,
+        module.clone(),
+        Default::default(),
+    )?;
+    let params: Vec<wasmtime::Val> = params.into_iter().map(Into::into).collect();
+    let (_handle, proc) = env
+        .spawn_wasm(ctx.runtime, module, state, &function, params, None)
+        .await?;
+    Ok(proc.id())
+}
+
+async fn handle_process_message<T>(
+    mut ctx: ServerCtx<T>,
+    environment_id: u64,
+    process_id: u64,
+    tag: Option<i64>,
+    data: Vec<u8>,
+) -> Result<()>
+where
+    T: ProcessState + DistributedCtx + ResourceLimiter + Send + 'static,
+{
+    let env = ctx.envs.get_or_create(environment_id);
+    if let Some(proc) = env.get_process(process_id) {
+        proc.send(Signal::Message(Message::Data(DataMessage::new_from_vec(
+            tag, data,
+        ))))
     }
     Ok(())
 }

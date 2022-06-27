@@ -60,6 +60,16 @@ impl DataMessage {
         }
     }
 
+    /// Create a new message from a vec
+    pub fn new_from_vec(tag: Option<i64>, buffer: Vec<u8>) -> Self {
+        Self {
+            tag,
+            read_ptr: 0,
+            buffer,
+            resources: Vec::new(),
+        }
+    }
+
     /// Adds a process to the message and returns the index of it inside of the message
     pub fn add_process(&mut self, process: Arc<dyn Process>) -> usize {
         self.resources.push(Resource::Process(process));

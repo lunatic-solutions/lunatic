@@ -30,7 +30,7 @@ pub fn register<T: ProcessState + ProcessCtx<T> + NetworkingCtx + Send + 'static
     linker.func_wrap("lunatic::message", "push_tcp_stream", push_tcp_stream)?;
     linker.func_wrap("lunatic::message", "take_tcp_stream", take_tcp_stream)?;
     linker.func_wrap("lunatic::message", "send", send)?;
-    linker.func_wrap3_async(
+    linker.func_wrap2_async(
         "lunatic::message",
         "send_receive_skip_search",
         send_receive_skip_search,
@@ -100,7 +100,7 @@ pub fn register<T: ProcessState + ProcessCtx<T> + NetworkingCtx + Send + 'static
 // different from 0, the function will only return messages that have the specific `tag`. Once
 // a message is received, we can read from its buffer or extract resources from it.
 //
-// This can be a bit confusing, because resources are just IDs (u64 values) themself. But we
+// This can be a bit confusing, because resources are just IDs (u64 values) themselves. But we
 // still need to serialize them into different u64 values. Resources are inherently bound to a
 // process and you can't access another resource just by guessing an ID from another process.
 // The process of sending them around needs to be explicit.
@@ -322,7 +322,6 @@ fn take_tcp_stream<T: ProcessState + ProcessCtx<T> + NetworkingCtx>(
 // * If it's called before creating the next message.
 fn send<T: ProcessState + ProcessCtx<T>>(
     mut caller: Caller<T>,
-    _node_id: u64,
     process_id: u64,
 ) -> Result<(), Trap> {
     let message = caller
@@ -359,7 +358,6 @@ fn send<T: ProcessState + ProcessCtx<T>>(
 // * If it's called with wrong data in the scratch area.
 fn send_receive_skip_search<T: ProcessState + ProcessCtx<T> + Send>(
     mut caller: Caller<T>,
-    _node_id: u64,
     process_id: u64,
     timeout: u32,
 ) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_> {

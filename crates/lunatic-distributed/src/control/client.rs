@@ -95,7 +95,7 @@ impl Client {
         };
     }
 
-    async fn refresh_nodes(&self) -> Result<()> {
+    pub async fn refresh_nodes(&self) -> Result<()> {
         if let Response::Nodes(nodes) = self.send(Request::ListNodes).await? {
             let mut node_ids = vec![];
             for (id, reg) in nodes {

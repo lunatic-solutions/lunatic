@@ -1,14 +1,16 @@
-use std::future::Future;
+use std::{future::Future, time::Duration};
 
 use anyhow::{anyhow, Result};
 use lunatic_common_api::{get_memory, IntoTrap};
 use lunatic_distributed::{distributed::message::Val, DistributedCtx};
+use lunatic_process::message::{DataMessage, Message};
+use lunatic_process_api::ProcessCtx;
 use wasmtime::{Caller, Linker, ResourceLimiter, Trap};
 
 // Register the process APIs to the linker
 pub fn register<T>(linker: &mut Linker<T>) -> Result<()>
 where
-    T: DistributedCtx + Send + ResourceLimiter + 'static,
+    T: DistributedCtx + ProcessCtx<T> + Send + ResourceLimiter + 'static,
     for<'a> &'a T: Send,
 {
     linker.func_wrap("lunatic::distributed", "nodes_count", nodes_count)?;
@@ -16,6 +18,12 @@ where
     linker.func_wrap("lunatic::distributed", "node_id", node_id)?;
     linker.func_wrap("lunatic::distributed", "module_id", module_id)?;
     linker.func_wrap7_async("lunatic::distributed", "spawn", spawn)?;
+    linker.func_wrap2_async("lunatic::distributed", "send", send)?;
+    linker.func_wrap3_async(
+        "lunatic::distributed",
+        "send_receive_skip_search",
+        send_receive_skip_search,
+    )?;
     Ok(())
 }
 
@@ -40,15 +48,16 @@ fn get_nodes<T: DistributedCtx>(
         .distributed()
         .map(|d| d.control.node_ids())
         .unwrap_or_else(|_| vec![]);
+    let copy_nodes_len = node_ids.len().min(nodes_len as usize);
     memory
         .data_mut(&mut caller)
         .get_mut(
             nodes_ptr as usize
-                ..(nodes_ptr as usize + std::mem::size_of::<u64>() * nodes_len as usize),
+                ..(nodes_ptr as usize + std::mem::size_of::<u64>() * copy_nodes_len as usize),
         )
         .or_trap("lunatic::distributed::get_nodes::memory")?
-        .copy_from_slice(unsafe { node_ids.align_to::<u8>().1 });
-    Ok(2)
+        .copy_from_slice(unsafe { node_ids[..copy_nodes_len].align_to::<u8>().1 });
+    Ok(copy_nodes_len as u32)
 }
 
 // TODO docs!!
@@ -99,7 +108,6 @@ where
         if !caller.data().can_spawn() {
             return Err(anyhow!("Process doesn't have permissions to spawn sub-processes").into());
         }
-
         let memory = get_memory(&mut caller)?;
         let func_str = memory
             .data(&caller)
@@ -125,7 +133,7 @@ where
             })
             .collect::<Result<Vec<_>>>()?;
 
-        log::info!("Spawn on node {node_id}, mod {module_id}, fn {function}, params {params:?}");
+        log::debug!("Spawn on node {node_id}, mod {module_id}, fn {function}, params {params:?}");
 
         let state = caller.data();
 
@@ -144,6 +152,86 @@ where
             .or_trap("lunatic::distributed::spawn::write_id")?;
 
         Ok(ret)
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn send<T>(
+    mut caller: Caller<T>,
+    node_id: u64,
+    process_id: u64,
+) -> Box<dyn Future<Output = Result<(), Trap>> + Send + '_>
+where
+    T: DistributedCtx + ProcessCtx<T> + Send + 'static,
+    for<'a> &'a T: Send,
+{
+    Box::new(async move {
+        let message = caller
+            .data_mut()
+            .message_scratch_area()
+            .take()
+            .or_trap("lunatic::message::send::no_message")?;
+        // TODO trap on non-empty resources
+        if let Message::Data(DataMessage { tag, buffer, .. }) = message {
+            let state = caller.data();
+            state
+                .distributed()?
+                .distributed_client
+                .message_process(node_id, state.environment_id(), process_id, tag, buffer)
+                .await?;
+        }
+        Ok(())
+    })
+}
+
+fn send_receive_skip_search<T>(
+    mut caller: Caller<T>,
+    node_id: u64,
+    process_id: u64,
+    timeout: u32,
+) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_>
+where
+    T: DistributedCtx + ProcessCtx<T> + Send + 'static,
+    for<'a> &'a T: Send,
+{
+    Box::new(async move {
+        let message = caller
+            .data_mut()
+            .message_scratch_area()
+            .take()
+            .or_trap("lunatic::message::send::no_message")?;
+
+        let mut _tags = [0; 1];
+        let tags = if let Some(tag) = message.tag() {
+            _tags = [tag];
+            Some(&_tags[..])
+        } else {
+            None
+        };
+
+        // TODO trap on non-empty resources
+        if let Message::Data(DataMessage { tag, buffer, .. }) = message {
+            let state = caller.data();
+            state
+                .distributed()?
+                .distributed_client
+                .message_process(node_id, state.environment_id(), process_id, tag, buffer)
+                .await?;
+
+            if let Some(message) = tokio::select! {
+                _ = tokio::time::sleep(Duration::from_millis(timeout as u64)), if timeout != 0 => None,
+                message = caller.data_mut().mailbox().pop_skip_search(tags) => Some(message)
+            } {
+                // Put the message into the scratch area
+                caller.data_mut().message_scratch_area().replace(message);
+                Ok(0)
+            } else {
+                Ok(9027)
+            }
+        } else {
+            // TODO err?
+            Ok(9027)
+        }
     })
 }
 

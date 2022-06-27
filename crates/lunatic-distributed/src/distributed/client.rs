@@ -54,18 +54,29 @@ impl Client {
     pub async fn connection(&self, node_id: u64) -> Option<Connection> {
         match self.inner.node_connections.get(&node_id).map(|e| e.clone()) {
             Some(c) => Some(c),
-            None => match self.inner.control_client.node_info(node_id) {
-                Some(node) => {
-                    if let Ok(conn) = connect(node.address, 2).await {
-                        self.inner.node_connections.insert(node.id, conn.clone());
-                        tokio::task::spawn(reader_task(self.clone(), conn.clone()));
-                        Some(conn)
-                    } else {
-                        None
+            None => {
+                let node_info = self.inner.control_client.node_info(node_id);
+
+                let node_info = if node_info.is_none() {
+                    self.inner.control_client.refresh_nodes().await.ok();
+                    self.inner.control_client.node_info(node_id)
+                } else {
+                    node_info
+                };
+
+                match node_info {
+                    Some(node) => {
+                        if let Ok(conn) = connect(node.address, 2).await {
+                            self.inner.node_connections.insert(node.id, conn.clone());
+                            tokio::task::spawn(reader_task(self.clone(), conn.clone()));
+                            Some(conn)
+                        } else {
+                            None
+                        }
                     }
+                    None => None,
                 }
-                None => None,
-            },
+            }
         }
     }
 
@@ -77,7 +88,7 @@ impl Client {
         }
     }
 
-    pub async fn send(&self, node_id: u64, req: Request) -> Result<Response> {
+    pub async fn request(&self, node_id: u64, req: Request) -> Result<Response> {
         let msg_id = self.next_message_id();
         self.connection(node_id)
             .await
@@ -89,6 +100,37 @@ impl Client {
         let response = cell.take().await;
         self.inner.pending_requests.remove(&msg_id);
         Ok(response)
+    }
+
+    pub async fn send(&self, node_id: u64, req: Request) -> Result<u64> {
+        let msg_id = self.next_message_id();
+        self.connection(node_id)
+            .await
+            .ok_or_else(|| anyhow!("No connection to node {node_id}"))?
+            .send(msg_id, req)
+            .await?;
+        Ok(msg_id)
+    }
+
+    pub async fn message_process(
+        &self,
+        node_id: u64,
+        environment_id: u64,
+        process_id: u64,
+        tag: Option<i64>,
+        data: Vec<u8>,
+    ) -> Result<()> {
+        self.send(
+            node_id,
+            Request::Message {
+                environment_id,
+                process_id,
+                tag,
+                data,
+            },
+        )
+        .await?;
+        Ok(())
     }
 
     fn process_response(&self, id: u64, resp: Response) {
@@ -106,7 +148,7 @@ impl Client {
         params: Vec<Val>,
     ) -> Result<u64> {
         if let Response::Spawned(id) = self
-            .send(
+            .request(
                 node_id,
                 Request::Spawn {
                     environment_id,

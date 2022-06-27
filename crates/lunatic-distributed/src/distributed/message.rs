@@ -8,6 +8,12 @@ pub enum Request {
         function: String,
         params: Vec<Val>,
     },
+    Message {
+        environment_id: u64,
+        process_id: u64,
+        tag: Option<i64>,
+        data: Vec<u8>,
+    },
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
