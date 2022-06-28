@@ -14,7 +14,7 @@ license = "Apache-2.0/MIT"
 anyhow = "^1.0"
 log = "^0.4"
 tokio = { version = "^1.14", features = ["macros", "rt-multi-thread", "sync", "net"] }
-wasmtime = "^0.36"
+wasmtime = "^0.37"
 serde = "^1.0"
 hash-map-id = { version = "^0.9", path = "../hash-map-id" }
 dashmap = "5.2.0"

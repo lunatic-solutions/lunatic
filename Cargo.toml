@@ -23,9 +23,9 @@ anyhow = "^1.0"
 clap = { version = "^3.0", features = ["cargo"] }
 lazy_static = "^1.4"
 tokio = { version = "^1.14", features = ["macros", "rt-multi-thread", "net", "time"] }
-wasmtime = "^0.36"
-wasmtime-wasi = "^0.36"
-wasi-common = "^0.36"
+wasmtime = "^0.37"
+wasmtime-wasi = "^0.37"
+wasi-common = "^0.37"
 wasmparser = "^0.81"
 env_logger = "^0.9"
 log = "^0.4"
@@ -41,6 +41,7 @@ lunatic-common-api = { version = "^0.9", path = "crates/lunatic-common-api" }
 lunatic-process-api = { version = "^0.9", path = "crates/lunatic-process-api" }
 lunatic-error-api = { version = "^0.9", path = "crates/lunatic-error-api" }
 lunatic-messaging-api = { version = "^0.9", path = "crates/lunatic-messaging-api" }
+lunatic-timer-api = { version = "^0.9", path = "crates/lunatic-timer-api" }
 lunatic-networking-api = { version = "^0.9", path = "crates/lunatic-networking-api" }
 lunatic-version-api = { version = "^0.9", path = "crates/lunatic-version-api" }
 lunatic-wasi-api = { version = "^0.9", path = "crates/lunatic-wasi-api" }
@@ -66,6 +67,7 @@ members = [
     "crates/lunatic-process-api",
     "crates/lunatic-error-api",
     "crates/lunatic-messaging-api",
+    "crates/lunatic-timer-api",
     "crates/lunatic-version-api",
     "crates/lunatic-wasi-api",
     "crates/lunatic-registry-api",

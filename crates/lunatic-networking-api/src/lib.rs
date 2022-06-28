@@ -754,15 +754,15 @@ fn udp_bind<T: NetworkingCtx + ErrorCtx + Send>(
 // Drops the UdpSocket resource.
 //
 // Traps:
-// * If the UDP listener ID doesn't exist.
+// * If the UDP socket ID doesn't exist.
 fn drop_udp_socket<T: NetworkingCtx>(
     mut caller: Caller<T>,
-    udp_listener_id: u64,
+    udp_socket_id: u64,
 ) -> Result<(), Trap> {
     caller
         .data_mut()
         .udp_resources_mut()
-        .remove(udp_listener_id)
+        .remove(udp_socket_id)
         .or_trap("lunatic::networking::drop_udp_socket")?;
     Ok(())
 }

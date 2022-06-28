@@ -19,6 +19,9 @@
     (import "lunatic::message" "send_receive_skip_search" (func (param i64 i32) (result i32)))
     (import "lunatic::message" "receive" (func (param i32 i32 i32) (result i32)))
 
+    (import "lunatic::timer" "send_after" (func (param i64 i64) (result i64)))
+    (import "lunatic::timer" "cancel_timer" (func (param i64) (result i32)))
+
     (import "lunatic::networking" "resolve" (func (param i32 i32 i32 i32) (result i32)))
     (import "lunatic::networking" "drop_dns_iterator" (func (param i64)))
     (import "lunatic::networking" "resolve_next" (func (param i64 i32 i32 i32 i32 i32) (result i32)))
@@ -66,6 +69,7 @@
     (import "lunatic::process" "process_id" (func (result i64)))
     (import "lunatic::process" "link" (func (param i64 i64)))
     (import "lunatic::process" "unlink" (func (param i64)))
+    (import "lunatic::process" "kill" (func (param i64)))
 
     (import "lunatic::version" "major" (func (result i32)))
     (import "lunatic::version" "minor" (func (result i32)))

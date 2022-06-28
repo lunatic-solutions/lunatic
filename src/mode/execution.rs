@@ -1,6 +1,6 @@
 use std::{env, fs, path::Path, sync::Arc};
 
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Ok, Result};
 use clap::{crate_version, Arg, Command};
 use tokio::sync::mpsc::channel;
 
@@ -189,12 +189,11 @@ pub(crate) async fn execute() -> Result<()> {
                 path.to_string_lossy()
             ))?;
         // Wait on the main process to finish
-        task.await.unwrap().unwrap();
+        task.await.map(|_| ()).map_err(|e| anyhow!(e.to_string()))
     } else {
         // Block forever
-        let (_sender, mut receiver) = channel(1);
-        let _: () = receiver.recv().await.unwrap();
+        let (_sender, mut receiver) = channel::<()>(1);
+        receiver.recv().await.unwrap();
+        Ok(())
     }
-
-    Ok(())
 }

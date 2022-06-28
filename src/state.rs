@@ -15,6 +15,7 @@ use lunatic_process::state::{ConfigResources, ProcessState};
 use lunatic_process::{mailbox::MessageMailbox, message::Message, Signal};
 use lunatic_process_api::{ProcessConfigCtx, ProcessCtx};
 use lunatic_stdout_capture::StdoutCapture;
+use lunatic_timer_api::{TimerCtx, TimerResources};
 use lunatic_wasi_api::{build_wasi, LunaticWasiCtx};
 use tokio::net::{TcpListener, UdpSocket};
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
@@ -167,6 +168,7 @@ impl ProcessState for DefaultProcessState {
         lunatic_error_api::register(linker)?;
         lunatic_process_api::register(linker)?;
         lunatic_messaging_api::register(linker)?;
+        lunatic_timer_api::register(linker)?;
         lunatic_networking_api::register(linker)?;
         lunatic_version_api::register(linker)?;
         lunatic_wasi_api::register(linker)?;
@@ -329,6 +331,16 @@ impl NetworkingCtx for DefaultProcessState {
     }
 }
 
+impl TimerCtx for DefaultProcessState {
+    fn timer_resources(&self) -> &TimerResources {
+        &self.resources.timers
+    }
+
+    fn timer_resources_mut(&mut self) -> &mut TimerResources {
+        &mut self.resources.timers
+    }
+}
+
 impl LunaticWasiCtx for DefaultProcessState {
     fn wasi(&self) -> &WasiCtx {
         &self.wasi
@@ -363,6 +375,7 @@ impl LunaticWasiCtx for DefaultProcessState {
 pub(crate) struct Resources {
     pub(crate) configs: HashMapId<DefaultProcessConfig>,
     pub(crate) modules: HashMapId<WasmtimeCompiledModule<DefaultProcessState>>,
+    pub(crate) timers: TimerResources,
     pub(crate) dns_iterators: HashMapId<DnsIterator>,
     pub(crate) tcp_listeners: HashMapId<TcpListener>,
     pub(crate) tcp_streams: HashMapId<Arc<TcpConnection>>,
