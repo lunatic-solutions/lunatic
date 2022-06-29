@@ -2,18 +2,22 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum Request {
-    Spawn {
-        environment_id: u64,
-        module_id: u64,
-        function: String,
-        params: Vec<Val>,
-    },
+    Spawn(Spawn),
     Message {
         environment_id: u64,
         process_id: u64,
         tag: Option<i64>,
         data: Vec<u8>,
     },
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Spawn {
+    pub environment_id: u64,
+    pub module_id: u64,
+    pub function: String,
+    pub params: Vec<Val>,
+    pub config: Vec<u8>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

@@ -1,4 +1,4 @@
-use std::net::SocketAddr;
+use std::{net::SocketAddr, sync::Arc};
 
 use anyhow::{anyhow, Result};
 
@@ -18,7 +18,7 @@ use crate::{
     DistributedCtx, DistributedProcessState,
 };
 
-use super::message::Val;
+use super::message::Spawn;
 
 pub struct ServerCtx<T> {
     pub envs: Environments,
@@ -69,13 +69,8 @@ where
     T: ProcessState + DistributedCtx + ResourceLimiter + Send + 'static,
 {
     match msg {
-        Request::Spawn {
-            environment_id,
-            module_id,
-            function,
-            params,
-        } => {
-            let id = handle_spawn(ctx, environment_id, module_id, function, params).await?;
+        Request::Spawn(spawn) => {
+            let id = handle_spawn(ctx, spawn).await?;
             conn.send(msg_id, Response::Spawned(id)).await?;
         }
         Request::Message {
@@ -88,16 +83,21 @@ where
     Ok(())
 }
 
-async fn handle_spawn<T>(
-    mut ctx: ServerCtx<T>,
-    environment_id: u64,
-    module_id: u64,
-    function: String,
-    params: Vec<Val>,
-) -> Result<u64>
+async fn handle_spawn<T>(mut ctx: ServerCtx<T>, spawn: Spawn) -> Result<u64>
 where
     T: ProcessState + DistributedCtx + ResourceLimiter + Send + 'static,
 {
+    let Spawn {
+        environment_id,
+        module_id,
+        function,
+        params,
+        config,
+    } = spawn;
+
+    let config: T::Config = bincode::deserialize(&config[..])?;
+    let config = Arc::new(config);
+
     let module = match ctx.modules.get(module_id) {
         Some(module) => module,
         None => {
@@ -113,13 +113,7 @@ where
     let env = ctx.envs.get_or_create(environment_id);
     let distributed = ctx.distributed.clone();
     let runtime = ctx.runtime.clone();
-    let state = T::new_dist_state(
-        env.clone(),
-        distributed,
-        runtime,
-        module.clone(),
-        Default::default(),
-    )?;
+    let state = T::new_dist_state(env.clone(), distributed, runtime, module.clone(), config)?;
     let params: Vec<wasmtime::Val> = params.into_iter().map(Into::into).collect();
     let (_handle, proc) = env
         .spawn_wasm(ctx.runtime, module, state, &function, params, None)

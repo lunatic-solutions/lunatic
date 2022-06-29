@@ -83,8 +83,13 @@
     (import "lunatic::registry" "get" (func (param i32 i32 i32 i32) (result i32)))
     (import "lunatic::registry" "remove" (func (param i32 i32)))
 
-    (import "lunatic::distributed" "get_nodes" (func (param i32 i32) (result i32)))
     (import "lunatic::distributed" "nodes_count" (func (result i32)))
+    (import "lunatic::distributed" "get_nodes" (func (param i32 i32) (result i32)))
+    (import "lunatic::distributed" "node_id" (func (result i64)))
+    (import "lunatic::distributed" "module_id" (func (result i64)))
+    (import "lunatic::distributed" "spawn" (func (param i64 i64 i64 i32 i32 i32 i32 i32) (result i32)))
+    (import "lunatic::distributed" "send" (func (param i64 i64)))
+    (import "lunatic::distributed" "send_receive_skip_search" (func (param i64 i64 i32) (result i32)))
 
     (func (export "hello") nop)
 )
