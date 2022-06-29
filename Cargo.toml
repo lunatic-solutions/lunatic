@@ -31,7 +31,7 @@ env_logger = "^0.9"
 log = "^0.4"
 serde = "^1.0"
 bincode = "^1.3"
-dashmap = "^5.2.0"
+dashmap = "^5.3.4"
 regex = "^1.5"
 hash-map-id = { version = "^0.9", path = "crates/hash-map-id" }
 lunatic-stdout-capture = { version = "^0.9", path = "crates/lunatic-stdout-capture" }

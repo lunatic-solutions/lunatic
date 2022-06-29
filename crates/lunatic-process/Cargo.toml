@@ -17,5 +17,5 @@ tokio = { version = "^1.14", features = ["macros", "rt-multi-thread", "sync", "n
 wasmtime = "^0.37"
 serde = "^1.0"
 hash-map-id = { version = "^0.9", path = "../hash-map-id" }
-dashmap = "5.2.0"
+dashmap = "5.3.4"
 lunatic-networking-api = { version = "^0.9", path = "../lunatic-networking-api" }
