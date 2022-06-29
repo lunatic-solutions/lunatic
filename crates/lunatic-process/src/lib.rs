@@ -147,6 +147,7 @@ impl Process for WasmProcess {
 pub(crate) async fn new<F, S>(
     fut: F,
     id: u64,
+    env: Environment,
     signal_mailbox: Arc<Mutex<UnboundedReceiver<Signal>>>,
     message_mailbox: MessageMailbox,
 ) -> Result<S>
@@ -201,6 +202,9 @@ where
             output = &mut fut => { break Finished::Normal(output); }
         }
     };
+
+    env.remove_process(id);
+
     match result {
         Finished::Normal(result) => {
             if let Some(failure) = result.failure() {
@@ -275,7 +279,7 @@ impl Environment {
         };
         let fut = func(process.clone(), message_mailbox.clone());
         let signal_mailbox = Arc::new(Mutex::new(signal_mailbox));
-        let join = tokio::task::spawn(new(fut, id, signal_mailbox, message_mailbox));
+        let join = tokio::task::spawn(new(fut, id, self.clone(), signal_mailbox, message_mailbox));
         (join, process)
     }
 }

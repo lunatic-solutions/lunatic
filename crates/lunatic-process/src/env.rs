@@ -30,6 +30,14 @@ impl Environment {
         self.processes.insert(id, proc);
     }
 
+    pub fn remove_process(&self, id: u64) {
+        self.processes.remove(&id);
+    }
+
+    pub fn process_count(&self) -> usize {
+        self.processes.len()
+    }
+
     pub fn send(&self, id: u64, signal: Signal) {
         if let Some(proc) = self.processes.get(&id) {
             proc.send(signal);
