@@ -139,14 +139,15 @@ impl Process for WasmProcess {
 /// In case of success, the process state `S` is returned. It's not possible to return the process
 /// state in case of failure because of limitations in the Wasmtime API:
 /// https://github.com/bytecodealliance/wasmtime/issues/2986
-pub(crate) async fn new<F, S>(
+pub(crate) async fn new<F, S, R>(
     fut: F,
     id: Uuid,
     signal_mailbox: Receiver<Signal>,
     message_mailbox: MessageMailbox,
 ) -> Result<S>
 where
-    F: Future<Output = ExecutionResult<S>> + Send + 'static,
+    R: Into<ExecutionResult<S>>,
+    F: Future<Output = R> + Send + 'static,
 {
     trace!("Process {} spawned", id);
     tokio::pin!(fut);
@@ -197,6 +198,7 @@ where
     };
     match result {
         Finished::Normal(result) => {
+            let result = result.into();
             if let Some(failure) = result.failure() {
                 warn!(
                     "Process {} failed, notifying: {} links {}",
@@ -246,16 +248,18 @@ pub struct NativeProcess {
 /// ## Example:
 ///
 /// ```no_run
-/// let _proc = lunatic_runtime::spawn(|_this, mailbox| async move {
+/// let _proc = lunatic_process::spawn(|_this, mailbox| async move {
 ///     // Wait on a message with the tag `27`.
 ///     mailbox.pop(Some(&[27])).await;
+///     // TODO: Needs to return ExecutionResult. Probably the `new` function will need to be adjusted
 ///     Ok(())
 /// });
 /// ```
-pub fn spawn<T, F, K>(func: F) -> (JoinHandle<Result<T>>, NativeProcess)
+pub fn spawn<T, F, K, R>(func: F) -> (JoinHandle<Result<T>>, NativeProcess)
 where
     T: Send + 'static,
-    K: Future<Output = ExecutionResult<T>> + Send + 'static,
+    R: Into<ExecutionResult<T>> + 'static,
+    K: Future<Output = R> + Send + 'static,
     F: FnOnce(NativeProcess, MessageMailbox) -> K,
 {
     // TODO: Switch to new_v1() for distributed Lunatic to assure uniqueness across nodes.
@@ -305,6 +309,25 @@ impl<T> ExecutionResult<T> {
     // Returns the process state
     pub fn state(self) -> T {
         self.state
+    }
+}
+
+// It's more convinient to return a `Result<T,E>` in a `NativeProcess`.
+impl<T> From<Result<T>> for ExecutionResult<T>
+where
+    T: Default,
+{
+    fn from(result: Result<T>) -> Self {
+        match result {
+            Ok(t) => ExecutionResult {
+                state: t,
+                result: ResultValue::Ok,
+            },
+            Err(e) => ExecutionResult {
+                state: T::default(),
+                result: ResultValue::Failed(e.to_string()),
+            },
+        }
     }
 }
 

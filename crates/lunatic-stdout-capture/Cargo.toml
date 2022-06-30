@@ -10,5 +10,5 @@ license = "Apache-2.0/MIT"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-wiggle = "^0.37"
-wasi-common = "^0.37"
+wiggle = "^0.38"
+wasi-common = "^0.38"
