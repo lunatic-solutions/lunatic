@@ -21,4 +21,5 @@ pub enum Response {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Registration {
     pub node_address: SocketAddr,
+    pub node_name: String,
 }

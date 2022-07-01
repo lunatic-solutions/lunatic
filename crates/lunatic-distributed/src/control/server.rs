@@ -9,9 +9,11 @@ use std::{
 use anyhow::Result;
 
 use dashmap::DashMap;
-use tokio::net::TcpListener;
 
-use crate::control::message::{Request, Response};
+use crate::{
+    connection::new_quic_server,
+    control::message::{Request, Response},
+};
 use crate::{connection::Connection, control::message::Registration};
 
 #[derive(Clone)]
@@ -83,19 +85,31 @@ impl Default for Server {
     }
 }
 
-pub async fn control_server(socket: SocketAddr) -> Result<()> {
-    let listener = TcpListener::bind(socket).await?;
+pub async fn control_server(socket: SocketAddr, cert: String, key: String) -> Result<()> {
+    let mut quic_server = new_quic_server(socket, cert, key)?;
     let server = Server::new();
-    while let Ok((conn, _addr)) = listener.accept().await {
-        log::info!("New connection {_addr}");
-        tokio::task::spawn(handle_connection(server.clone(), Connection::new(conn)));
+    while let Some(conn) = quic_server.accept().await {
+        let addr = conn.remote_addr().unwrap();
+        log::info!("New connection {addr}");
+        tokio::task::spawn(handle_quic_connection(server.clone(), conn));
     }
     Ok(())
 }
 
-async fn handle_connection(server: Server, conn: Connection) {
-    while let Ok((msg_id, req)) = conn.receive::<Request>().await {
-        tokio::task::spawn(handle_request(server.clone(), conn.clone(), msg_id, req));
+async fn handle_quic_connection(server: Server, mut conn: s2n_quic::Connection) {
+    while let Ok(Some(stream)) = conn.accept_bidirectional_stream().await {
+        tokio::spawn(handle_quic_stream(server.clone(), Connection::new(stream)));
+    }
+}
+
+async fn handle_quic_stream(server: Server, conn: Connection) {
+    while let Ok((msg_id, request)) = conn.receive::<Request>().await {
+        tokio::spawn(handle_request(
+            server.clone(),
+            conn.clone(),
+            msg_id,
+            request,
+        ));
     }
 }
 

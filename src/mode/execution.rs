@@ -5,6 +5,7 @@ use clap::{crate_version, Arg, Command};
 use tokio::sync::mpsc::channel;
 
 use lunatic_distributed::{
+    connection::new_quic_client,
     control::{self, server::control_server},
     distributed::{self, server::ServerCtx},
 };
@@ -38,11 +39,50 @@ pub(crate) async fn execute() -> Result<()> {
                 .takes_value(true),
         )
         .arg(
+            Arg::new("node_name")
+            .long("node_name")
+            .value_name("NODE_NAME")
+            .help("Name of the node under which it registers to the control node.")
+            .requires("control")
+            .takes_value(true)
+        )
+        .arg(
             Arg::new("control")
                 .long("control")
                 .value_name("CONTROL_ADDRESS")
                 .help("Address of a control node inside the cluster that will be used for bootstrapping.")
                 .takes_value(true)
+        )
+        .arg(
+            Arg::new("control_name")
+            .long("control_name")
+            .value_name("CONTROL_NAME")
+            .help("Name of a control node inside the cluster that will be used for bootstrapping.")
+            .takes_value(true)
+        )
+        .arg(
+            Arg::new("ca_cert")
+                .long("ca_cert")
+                .value_name("CA_CERT")
+                .help("Publicly trusted digital certificate used by QUIC client.")
+                .takes_value(true)
+                .requires("control")
+        )
+        .arg(
+            Arg::new("cert")
+                .long("cert")
+                .value_name("CERT")
+                .help("Signed digital certificate used by QUIC server.")
+                .takes_value(true)
+                .requires("control")
+        )
+        .arg(
+            Arg::new("key")
+                .long("key")
+                .value_name("KEY")
+                .help("Private key used by QUIC server.")
+                .takes_value(true)
+                .requires("control")
         )
         .arg(
             Arg::new("control_server")
@@ -83,7 +123,9 @@ pub(crate) async fn execute() -> Result<()> {
     if args.is_present("control_server") {
         if let Some(control_address) = args.value_of("control") {
             // TODO unwrap, better message
-            tokio::task::spawn(control_server(control_address.parse().unwrap()));
+            let cert = args.value_of("cert").unwrap().to_string();
+            let key = args.value_of("key").unwrap().to_string();
+            tokio::task::spawn(control_server(control_address.parse().unwrap(), cert, key));
         }
     }
 
@@ -94,15 +136,39 @@ pub(crate) async fn execute() -> Result<()> {
 
     let env = envs.get_or_create(1);
 
-    let distributed_state = if let (Some(node_address), Some(control_address)) =
-        (args.value_of("node"), args.value_of("control"))
-    {
+    let distributed_state = if let (
+        Some(node_address),
+        Some(node_name),
+        Some(control_address),
+        Some(control_name),
+        Some(ca_cert),
+        Some(cert),
+        Some(key),
+    ) = (
+        args.value_of("node"),
+        args.value_of("node_name"),
+        args.value_of("control"),
+        args.value_of("control_name"),
+        args.value_of("ca_cert"),
+        args.value_of("cert"),
+        args.value_of("key"),
+    ) {
         // TODO unwrap, better message
         let node_address = node_address.parse().unwrap();
         let control_address = control_address.parse().unwrap();
-        let (node_id, control_client) =
-            control::Client::register(node_address, control_address).await?;
-        let distributed_client = distributed::Client::new(node_id, control_client.clone()).await?;
+        let control_name = control_name.to_string();
+        let ca_cert = ca_cert.to_owned();
+        let quic_client = new_quic_client(node_address, ca_cert).unwrap();
+        let (node_id, control_client) = control::Client::register(
+            node_address,
+            node_name.to_string(),
+            control_address,
+            control_name,
+            quic_client.clone(),
+        )
+        .await?;
+        let distributed_client =
+            distributed::Client::new(node_id, control_client.clone(), quic_client.clone()).await?;
 
         let dist = lunatic_distributed::DistributedProcessState::new(
             node_id,
@@ -119,6 +185,8 @@ pub(crate) async fn execute() -> Result<()> {
                 runtime: runtime.clone(),
             },
             node_address,
+            cert.to_string(),
+            key.to_string(),
         ));
 
         log::info!("Registration successful, node id {}", node_id);

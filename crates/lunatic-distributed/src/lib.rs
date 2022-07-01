@@ -54,4 +54,5 @@ impl DistributedProcessState {
 pub struct NodeInfo {
     pub id: u64,
     pub address: SocketAddr,
+    pub name: String,
 }

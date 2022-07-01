@@ -9,11 +9,11 @@ use lunatic_process::{
     state::ProcessState,
     Signal,
 };
-use tokio::net::TcpListener;
+use s2n_quic::Connection as QuicConnection;
 use wasmtime::ResourceLimiter;
 
 use crate::{
-    connection::Connection,
+    connection::{new_quic_server, Connection},
     distributed::message::{Request, Response},
     DistributedCtx, DistributedProcessState,
 };
@@ -38,24 +38,39 @@ impl<T: 'static> Clone for ServerCtx<T> {
     }
 }
 
-pub async fn node_server<T>(ctx: ServerCtx<T>, socket: SocketAddr) -> Result<()>
+pub async fn node_server<T>(
+    ctx: ServerCtx<T>,
+    socket: SocketAddr,
+    cert: String,
+    key: String,
+) -> Result<()>
 where
     T: ProcessState + ResourceLimiter + DistributedCtx + Send + 'static,
 {
-    let listener = TcpListener::bind(socket).await?;
-    while let Ok((conn, _addr)) = listener.accept().await {
-        log::info!("New connection {_addr}");
-        tokio::task::spawn(handle_connection(ctx.clone(), Connection::new(conn)));
+    let mut quic_server = new_quic_server(socket, cert, key)?;
+    while let Some(connection) = quic_server.accept().await {
+        let addr = connection.remote_addr()?;
+        log::info!("New connection {addr}");
+        tokio::task::spawn(handle_quic_connection(ctx.clone(), connection));
     }
     Ok(())
 }
 
-async fn handle_connection<T>(ctx: ServerCtx<T>, conn: Connection)
+async fn handle_quic_connection<T>(ctx: ServerCtx<T>, mut conn: QuicConnection)
 where
     T: ProcessState + DistributedCtx + ResourceLimiter + Send + 'static,
 {
-    while let Ok((msg_id, msg)) = conn.receive::<Request>().await {
-        tokio::task::spawn(handle_message(ctx.clone(), conn.clone(), msg_id, msg));
+    while let Ok(Some(stream)) = conn.accept_bidirectional_stream().await {
+        tokio::spawn(handle_quic_stream(ctx.clone(), Connection::new(stream)));
+    }
+}
+
+async fn handle_quic_stream<T>(ctx: ServerCtx<T>, conn: Connection)
+where
+    T: ProcessState + ResourceLimiter + DistributedCtx + Send + 'static,
+{
+    while let Ok((msg_id, request)) = conn.receive::<Request>().await {
+        tokio::spawn(handle_message(ctx.clone(), conn.clone(), msg_id, request));
     }
 }
 

@@ -10,6 +10,7 @@ description = "Node to node communication"
 anyhow = "^1.0"
 tokio = { version = "^1.14", features = ["macros", "rt-multi-thread", "net", "time", "io-util"] }
 serde = { version = "^1.0", features = ["derive"] }
+s2n-quic = { version = "1",  default-features = false, features = ["provider-address-token-default", "provider-tls-rustls"] }
 wasmtime = "^0.37"
 dashmap = "5.2.0"
 bincode = "^1.3"

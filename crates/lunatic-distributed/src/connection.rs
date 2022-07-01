@@ -1,15 +1,15 @@
-use std::sync::Arc;
+use std::{net::SocketAddr, path::Path, sync::Arc};
 
 use anyhow::Result;
 
 use bincode::{deserialize, serialize};
+use s2n_quic::{
+    stream::{BidirectionalStream, ReceiveStream, SendStream},
+    Client, Server,
+};
 use serde::{de::DeserializeOwned, Serialize};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
-    net::{
-        tcp::{OwnedReadHalf, OwnedWriteHalf},
-        TcpStream,
-    },
     sync::Mutex,
 };
 
@@ -19,13 +19,13 @@ pub struct Connection {
 }
 
 pub struct InnerConnection {
-    reader: Mutex<OwnedReadHalf>,
-    writer: Mutex<OwnedWriteHalf>,
+    reader: Mutex<ReceiveStream>,
+    writer: Mutex<SendStream>,
 }
 
 impl Connection {
-    pub fn new(stream: TcpStream) -> Self {
-        let (read_half, write_half) = stream.into_split();
+    pub fn new(stream: BidirectionalStream) -> Self {
+        let (read_half, write_half) = stream.split();
         Connection {
             inner: Arc::new(InnerConnection {
                 reader: Mutex::new(read_half),
@@ -53,4 +53,20 @@ impl Connection {
         reader.read_exact(&mut buffer).await?;
         Ok(deserialize(&buffer)?)
     }
+}
+
+pub fn new_quic_client(addr: SocketAddr, ca_cert: String) -> Result<Client> {
+    Client::builder()
+        .with_tls(Path::new(&ca_cert))?
+        .with_io(addr)?
+        .start()
+        .map_err(|_| anyhow::anyhow!("Failed to start QUIC client."))
+}
+
+pub fn new_quic_server(addr: SocketAddr, cert: String, key: String) -> Result<Server> {
+    Server::builder()
+        .with_tls((Path::new(&cert), Path::new(&key)))?
+        .with_io(addr)?
+        .start()
+        .map_err(|_| anyhow::anyhow!("Failed to start QUIC server."))
 }

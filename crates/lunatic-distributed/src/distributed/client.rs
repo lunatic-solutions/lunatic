@@ -2,12 +2,12 @@ use anyhow::{anyhow, Result};
 use async_cell::sync::AsyncCell;
 use dashmap::DashMap;
 use log;
+use s2n_quic::{client::Connect, Client as QuicClient};
 use std::{
     net::SocketAddr,
     sync::{atomic, atomic::AtomicU64, Arc},
     time::Duration,
 };
-use tokio::net::TcpStream;
 
 use crate::{
     connection::Connection,
@@ -28,17 +28,23 @@ pub struct InnerClient {
     node_connections: DashMap<u64, Connection>,
     pending_requests: DashMap<u64, Arc<AsyncCell<Response>>>,
     control_client: control::Client,
+    quic_client: QuicClient,
 }
 
 impl Client {
     // TODO node_id?
-    pub async fn new(_node_id: u64, control_client: control::Client) -> Result<Client> {
+    pub async fn new(
+        _node_id: u64,
+        control_client: control::Client,
+        quic_client: QuicClient,
+    ) -> Result<Client> {
         let client = Client {
             inner: Arc::new(InnerClient {
                 next_message_id: AtomicU64::new(1),
                 node_connections: DashMap::new(),
                 pending_requests: DashMap::new(),
                 control_client,
+                quic_client,
             }),
         };
 
@@ -66,7 +72,10 @@ impl Client {
 
                 match node_info {
                     Some(node) => {
-                        if let Ok(conn) = connect(node.address, 2).await {
+                        if let Ok(conn) =
+                            connect(self.inner.quic_client.clone(), node.address, &node.name, 2)
+                                .await
+                        {
                             self.inner.node_connections.insert(node.id, conn.clone());
                             tokio::task::spawn(reader_task(self.clone(), conn.clone()));
                             Some(conn)
@@ -81,10 +90,10 @@ impl Client {
     }
 
     pub async fn connect(&self, node: &NodeInfo) {
-        if let Ok(stream) = TcpStream::connect(node.address).await {
-            self.inner
-                .node_connections
-                .insert(node.id, Connection::new(stream));
+        if let Ok(connection) =
+            connect(self.inner.quic_client.clone(), node.address, &node.name, 3).await
+        {
+            self.inner.node_connections.insert(node.id, connection);
         }
     }
 
@@ -166,10 +175,18 @@ impl Client {
     }
 }
 
-async fn connect(addr: SocketAddr, retry: u32) -> Result<Connection> {
+async fn connect(
+    quic_client: QuicClient,
+    addr: SocketAddr,
+    server_name: &str,
+    retry: u32,
+) -> Result<Connection> {
     for _ in 0..retry {
         log::info!("Connecting to node on {addr}");
-        if let Ok(stream) = TcpStream::connect(addr).await {
+        let connect = Connect::new(addr).with_server_name(server_name);
+        if let Ok(mut conn) = quic_client.connect(connect).await {
+            conn.keep_alive(true)?;
+            let stream = conn.open_bidirectional_stream().await?;
             return Ok(Connection::new(stream));
         }
         tokio::time::sleep(Duration::from_secs(2)).await;

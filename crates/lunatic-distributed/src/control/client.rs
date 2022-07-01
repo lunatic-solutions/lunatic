@@ -2,12 +2,12 @@ use anyhow::{anyhow, Result};
 use async_cell::sync::AsyncCell;
 use dashmap::DashMap;
 use lunatic_process::runtimes::RawWasm;
+use s2n_quic::{client::Connect, Client as QuicClient};
 use std::{
     net::SocketAddr,
     sync::{atomic, atomic::AtomicU64, Arc, RwLock},
     time::Duration,
 };
-use tokio::net::TcpStream;
 
 use crate::{
     connection::Connection,
@@ -23,6 +23,7 @@ pub struct Client {
 pub struct InnerClient {
     next_message_id: AtomicU64,
     node_addr: SocketAddr,
+    node_name: String,
     control_addr: SocketAddr,
     connection: Connection,
     pending_requests: DashMap<u64, Arc<AsyncCell<Response>>>,
@@ -31,13 +32,20 @@ pub struct InnerClient {
 }
 
 impl Client {
-    pub async fn register(node_addr: SocketAddr, control_addr: SocketAddr) -> Result<(u64, Self)> {
+    pub async fn register(
+        node_addr: SocketAddr,
+        node_name: String,
+        control_addr: SocketAddr,
+        control_name: String,
+        quic_client: QuicClient,
+    ) -> Result<(u64, Self)> {
         let client = Client {
             inner: Arc::new(InnerClient {
                 next_message_id: AtomicU64::new(1),
                 control_addr,
                 node_addr,
-                connection: connect(control_addr, 5).await?,
+                node_name,
+                connection: connect(quic_client.clone(), control_addr, &control_name, 5).await?,
                 pending_requests: DashMap::new(),
                 nodes: Default::default(),
                 node_ids: Default::default(),
@@ -81,6 +89,7 @@ impl Client {
     async fn send_registration(&self) -> Result<u64> {
         let reg = Registration {
             node_address: self.inner.node_addr,
+            node_name: self.inner.node_name.clone(),
         };
         let resp = self.send(Request::Register(reg)).await?;
         if let Response::Register(node_id) = resp {
@@ -106,6 +115,7 @@ impl Client {
                         NodeInfo {
                             id,
                             address: reg.node_address,
+                            name: reg.node_name,
                         },
                     );
                 }
@@ -146,10 +156,18 @@ impl Client {
     }
 }
 
-async fn connect(addr: SocketAddr, retry: u32) -> Result<Connection> {
+async fn connect(
+    quic_client: QuicClient,
+    addr: SocketAddr,
+    name: &str,
+    retry: u32,
+) -> Result<Connection> {
     for _ in 0..retry {
         log::info!("Connecting to control {addr}");
-        if let Ok(stream) = TcpStream::connect(addr).await {
+        let connect = Connect::new(addr).with_server_name(name);
+        if let Ok(mut conn) = quic_client.connect(connect).await {
+            conn.keep_alive(true)?;
+            let stream = conn.open_bidirectional_stream().await?;
             return Ok(Connection::new(stream));
         }
         tokio::time::sleep(Duration::from_secs(2)).await;
