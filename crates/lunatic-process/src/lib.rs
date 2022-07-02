@@ -36,14 +36,6 @@ impl Debug for dyn Process {
     }
 }
 
-impl PartialEq<dyn Process> for dyn Process {
-    fn eq(&self, other: &dyn Process) -> bool {
-        self.id() == other.id()
-    }
-}
-
-impl Eq for dyn Process {}
-
 impl Hash for dyn Process {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.id().hash(state);
@@ -64,10 +56,10 @@ pub enum Signal {
     // Request from a process to be unlinked
     UnLink(Arc<dyn Process>),
     // Sent to linked processes when the link dies. Contains the tag used when the link was
-    // established. Depending on the value of `die_when_link_dies` (default is `true`) this
-    // receiving process will turn this signal into a message or the process will immediately
-    // die as well.
-    LinkDied(Option<i64>),
+    // established. Depending on the value of `die_when_link_dies` (default is `true`) and
+    // the death reason, the receiving process will turn this signal into a message or the
+    // process will immediately die as well.
+    LinkDied(Uuid, Option<i64>, DeathReason),
 }
 
 impl Debug for Signal {
@@ -78,9 +70,17 @@ impl Debug for Signal {
             Self::DieWhenLinkDies(_) => write!(f, "DieWhenLinkDies"),
             Self::Link(_, _) => write!(f, "Link"),
             Self::UnLink(_) => write!(f, "UnLink"),
-            Self::LinkDied(_) => write!(f, "LinkDied"),
+            Self::LinkDied(_, _, reason) => write!(f, "LinkDied {:?}", reason),
         }
     }
+}
+
+// The reason of a process' death
+#[derive(Debug)]
+pub enum DeathReason {
+    // Process finished normaly.
+    Normal,
+    Failure,
 }
 
 /// The reason of a process finishing
@@ -170,23 +170,28 @@ where
                     Ok(Signal::Message(message)) => message_mailbox.push(message),
                     Ok(Signal::DieWhenLinkDies(value)) => die_when_link_dies = value,
                     // Put process into list of linked processes
-                    Ok(Signal::Link(tag, proc)) => { links.insert(proc, tag); },
+                    Ok(Signal::Link(tag, proc)) => { links.insert(proc.id(), (proc, tag)); },
                     // Remove process from list
-                    Ok(Signal::UnLink(proc)) => { links.remove(&proc); }
+                    Ok(Signal::UnLink(proc)) => { links.remove(&proc.id()); }
                     // Exit loop and don't poll anymore the future if Signal::Kill received.
                     Ok(Signal::Kill) => break Finished::KillSignal,
                     // Depending if `die_when_link_dies` is set, process will die or turn the
                     // signal into a message
-                    Ok(Signal::LinkDied(tag)) => {
-                        if die_when_link_dies {
-                            // Even this was not a **kill** signal it has the same effect on
-                            // this process and should be propagated as such.
-                            // TODO: Remove sender from our notify list, so we don't send back the
-                            //       same notification to an already dead process.
-                            break Finished::KillSignal
-                        } else {
-                            let message = Message::LinkDied(tag);
-                            message_mailbox.push(message);
+                    Ok(Signal::LinkDied(id, tag, reason)) => {
+                        links.remove(&id);
+                        match reason {
+                            DeathReason::Failure => {
+                                if die_when_link_dies {
+                                    // Even this was not a **kill** signal it has the same effect on
+                                    // this process and should be propagated as such.
+                                    break Finished::KillSignal
+                                } else {
+                                    let message = Message::LinkDied(tag);
+                                    message_mailbox.push(message);
+                                }
+                            },
+                            // In case a linked process finishes normally, don't do anything.
+                            DeathReason::Normal => {},
                         }
                     },
                     Err(_) => unreachable!("The process holds the sending side and is not closed")
@@ -213,11 +218,15 @@ where
                 );
                 debug!("{}", failure);
                 // Notify all links that we finished with an error
-                links.iter().for_each(|(proc, tag)| {
-                    proc.send(Signal::LinkDied(*tag));
+                links.iter().for_each(|(_, (proc, tag))| {
+                    proc.send(Signal::LinkDied(id, *tag, DeathReason::Failure));
                 });
                 Err(anyhow!(failure.to_string()))
             } else {
+                // Notify all links that we finished normally
+                links.iter().for_each(|(_, (proc, tag))| {
+                    proc.send(Signal::LinkDied(id, *tag, DeathReason::Normal));
+                });
                 Ok(result.state())
             }
         }
@@ -228,8 +237,8 @@ where
                 links.len()
             );
             // Notify all links that we finished because of a kill signal
-            links.iter().for_each(|(proc, tag)| {
-                proc.send(Signal::LinkDied(*tag));
+            links.iter().for_each(|(_, (proc, tag))| {
+                proc.send(Signal::LinkDied(id, *tag, DeathReason::Failure));
             });
             Err(anyhow!("Process received Kill signal"))
         }
