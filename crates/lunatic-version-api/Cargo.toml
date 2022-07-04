@@ -11,4 +11,4 @@ license = "Apache-2.0/MIT"
 
 [dependencies]
 anyhow = "^1.0"
-wasmtime = "^0.37"
+wasmtime = "^0.38"

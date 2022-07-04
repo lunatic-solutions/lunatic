@@ -49,7 +49,7 @@ jobs:
       # Rust builds can take some time, cache them.
       - uses: Swatinem/rust-cache@v1
       - name: "Run tests"
-        run: cargo test
+        run: cargo test --all
       - name: "Run clippy check"
         run: cargo clippy -- -D warnings
       - name: "Check formatting"

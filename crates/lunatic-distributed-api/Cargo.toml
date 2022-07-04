@@ -11,7 +11,7 @@ lunatic-common-api = { version = "0.9", path = "../lunatic-common-api" }
 lunatic-distributed = { version = "^0.9", path = "../lunatic-distributed" }
 lunatic-process = { version = "^0.9", path = "../lunatic-process" }
 lunatic-process-api = { version = "^0.9", path = "../lunatic-process-api" }
-wasmtime = "^0.37"
+wasmtime = "^0.38"
 tokio = { version = "^1.14", features = ["macros", "net", "time"] }
 anyhow = "^1.0"
 serde = { version = "^1.0", features = ["derive"] }
