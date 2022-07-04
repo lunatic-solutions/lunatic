@@ -102,12 +102,12 @@ pub(crate) async fn execute() -> Result<()> {
         let control_address = control_address.parse().unwrap();
         let (node_id, control_client) =
             control::Client::register(node_address, control_address).await?;
-        let distributed_client = distributed::Client::new(node_id, control_client.clone()).await?;
+        let node_client = distributed::Client::new(node_id, control_client.clone()).await?;
 
         let dist = lunatic_distributed::DistributedProcessState::new(
             node_id,
             control_client.clone(),
-            distributed_client,
+            node_client,
         )
         .await?;
 

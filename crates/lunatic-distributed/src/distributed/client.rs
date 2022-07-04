@@ -31,7 +31,6 @@ pub struct InnerClient {
 }
 
 impl Client {
-    // TODO node_id?
     pub async fn new(_node_id: u64, control_client: control::Client) -> Result<Client> {
         let client = Client {
             inner: Arc::new(InnerClient {

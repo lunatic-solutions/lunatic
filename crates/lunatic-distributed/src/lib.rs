@@ -29,19 +29,19 @@ pub trait DistributedCtx: ProcessState + Sized {
 pub struct DistributedProcessState {
     node_id: u64,
     pub control: control::Client,
-    pub distributed_client: distributed::Client,
+    pub node_client: distributed::Client,
 }
 
 impl DistributedProcessState {
     pub async fn new(
         node_id: u64,
         control_client: control::Client,
-        distributed_client: distributed::Client,
+        node_client: distributed::Client,
     ) -> Result<Self> {
         Ok(Self {
             node_id,
             control: control_client,
-            distributed_client,
+            node_client,
         })
     }
 

@@ -23,6 +23,7 @@ pub struct InnerConnection {
     writer: Mutex<OwnedWriteHalf>,
 }
 
+// Connection implements length-prefix framing and bincode serialization/deserialization of messages
 impl Connection {
     pub fn new(stream: TcpStream) -> Self {
         let (read_half, write_half) = stream.into_split();
