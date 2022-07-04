@@ -267,7 +267,8 @@ pub struct NativeProcess {
 /// ## Example:
 ///
 /// ```no_run
-/// let _proc = lunatic_process::spawn(|_this, mailbox| async move {
+/// let env = lunatic_process::env::Environment::new(1);
+/// let _proc = env.spawn(|_this, mailbox| async move {
 ///     // Wait on a message with the tag `27`.
 ///     mailbox.pop(Some(&[27])).await;
 ///     // TODO: Needs to return ExecutionResult. Probably the `new` function will need to be adjusted
