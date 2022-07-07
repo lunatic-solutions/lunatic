@@ -60,6 +60,30 @@ pub(crate) async fn test() -> Result<()> {
                 .takes_value(false),
         )
         .arg(
+            Arg::new("list")
+                .long("list")
+                .help("List all tests")
+                .required(false)
+                .takes_value(false)
+                .requires("format"),
+        )
+        .arg(
+            Arg::new("format")
+                .long("format")
+                .value_name("FORMAT")
+                .help("Configure formatting of output (only supported: terse)")
+                .required(false)
+                .takes_value(true)
+                .requires("list"),
+        )
+        .arg(
+            Arg::new("exact")
+                .long("exact")
+                .help("Exactly match filters rather than by substring")
+                .required(false)
+                .takes_value(false),
+        )
+        .arg(
             Arg::new("wasm_args")
                 .value_name("WASM_ARGS")
                 .help("Arguments passed to the guest")
@@ -104,6 +128,7 @@ pub(crate) async fn test() -> Result<()> {
     let module = runtime.compile_module::<DefaultProcessState>(module)?;
 
     let filter = args.value_of("filter").unwrap_or_default();
+    let exact = args.is_present("exact");
 
     // Find all function exports starting with `#lunatic_test_`.
     // Functions with a name that matches `#lunatic_test_#panic_Panic message#` are expected to
@@ -152,16 +177,26 @@ pub(crate) async fn test() -> Result<()> {
                     let panic_unescaped = panic.replace("\\#", "#");
                     let panic_prefix = format!("{}#", panic);
                     let function_name = name.strip_prefix(&panic_prefix).unwrap().to_string();
+                    let filtered = if exact {
+                        !function_name.eq(filter)
+                    } else {
+                        !function_name.contains(filter)
+                    };
                     Test {
-                        filtered: !function_name.contains(filter),
+                        filtered,
                         wasm_export_name: wasm_export_name.to_string(),
                         function_name,
                         panic: Some(panic_unescaped),
                         ignored,
                     }
                 } else {
+                    let filtered = if exact {
+                        !name.eq(filter)
+                    } else {
+                        !name.contains(filter)
+                    };
                     Test {
-                        filtered: !name.contains(filter),
+                        filtered,
                         wasm_export_name: wasm_export_name.to_string(),
                         function_name: name.to_string(),
                         panic: None,
@@ -171,6 +206,25 @@ pub(crate) async fn test() -> Result<()> {
                 test_functions.push(test);
             }
         }
+    }
+
+    // If --list is specified, ignore everything else and just print out the test names
+    if args.is_present("list") {
+        let format = args.value_of("format").unwrap_or_default();
+        if format != "terse" {
+            return Err(anyhow::anyhow!(
+                "error: argument for --format must be terse (was {})",
+                format
+            ));
+        }
+        for test_function in test_functions {
+            // Skip over filtered out functions
+            if test_function.filtered {
+                continue;
+            }
+            println!("{}: test", test_function.function_name);
+        }
+        return Ok(());
     }
 
     let n = test_functions.iter().filter(|test| !test.filtered).count();
@@ -193,7 +247,7 @@ pub(crate) async fn test() -> Result<()> {
                 .send(TestResult {
                     name: test_function.function_name,
                     status: TestStatus::Ignored,
-                    stdout: StdoutCapture::new(),
+                    stdout: StdoutCapture::new(false),
                 })
                 .await
                 .unwrap();
@@ -207,12 +261,10 @@ pub(crate) async fn test() -> Result<()> {
 
         // If --nocapture is not set, use in-memory stdout & stderr to hide output in case of
         // success
-        let stdout = StdoutCapture::new();
         let no_capture = args.is_present("nocapture");
-        if !no_capture {
-            state.set_stdout(stdout.clone());
-            state.set_stderr(stdout.clone());
-        }
+        let stdout = StdoutCapture::new(no_capture);
+        state.set_stdout(stdout.clone());
+        state.set_stderr(stdout.clone());
 
         let (task, _) = spawn_wasm(
             runtime.clone(),
