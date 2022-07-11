@@ -10,6 +10,17 @@ pub enum Request {
     GetModule(u64),
 }
 
+impl Request {
+    pub fn kind(&self) -> &'static str {
+        match self {
+            Request::Register(_) => "Register",
+            Request::ListNodes => "ListNodes",
+            Request::AddModule(_) => "AddModule",
+            Request::GetModule(_) => "GetModule",
+        }
+    }
+} 
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum Response {
     Register(u64),

@@ -119,6 +119,7 @@ async fn handle_request(
     msg_id: u64,
     request: Request,
 ) -> Result<u64> {
+    println!("HANDLE REQUEST {msg_id}: {}", request.kind());
     use crate::control::message::Request::*;
     let response = match request {
         Register(reg) => server.register(reg),

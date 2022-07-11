@@ -40,7 +40,7 @@ pub(crate) async fn execute() -> Result<()> {
         )
         .arg(
             Arg::new("node_name")
-            .long("node_name")
+            .long("node-name")
             .value_name("NODE_NAME")
             .help("Name of the node under which it registers to the control node.")
             .requires("control")
@@ -55,7 +55,7 @@ pub(crate) async fn execute() -> Result<()> {
         )
         .arg(
             Arg::new("control_name")
-            .long("control_name")
+            .long("control-name")
             .value_name("CONTROL_NAME")
             .help("Name of a control node inside the cluster that will be used for bootstrapping.")
             .takes_value(true)

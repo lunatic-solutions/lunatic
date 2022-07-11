@@ -74,6 +74,7 @@ impl Client {
 
     pub async fn send(&self, req: Request) -> Result<Response> {
         let msg_id = self.next_message_id();
+        println!("SEND MESSAGE {}", if let Request::AddModule(_) = req { "add_module" } else { "other" });
         self.inner.connection.send(msg_id, req).await?;
         let cell = AsyncCell::shared();
         self.inner.pending_requests.insert(msg_id, cell.clone());
