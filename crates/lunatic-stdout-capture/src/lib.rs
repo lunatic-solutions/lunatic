@@ -1,7 +1,7 @@
 use std::{
     any::Any,
     fmt::{Display, Formatter},
-    io::{Cursor, IoSlice, IoSliceMut, SeekFrom, Write},
+    io::{stdout, Cursor, IoSlice, IoSliceMut, Read, Seek, SeekFrom, Write},
     sync::{Arc, Mutex, RwLock},
 };
 
@@ -21,6 +21,9 @@ type StdOutVec = Arc<RwLock<Vec<Mutex<Cursor<Vec<u8>>>>>>;
 /// and all sub-processes. E.g. Hide output of sub-processes during testing.
 #[derive(Clone, Debug)]
 pub struct StdoutCapture {
+    // If true, all captured writes are echoed to stdout. This is used in testing scenarios with
+    // the flag `--nocapture` set, because we still need to capture the output to inspect panics.
+    echo: bool,
     writers: StdOutVec,
     // Index of the stdout currently in use by a process
     index: usize,
@@ -29,12 +32,6 @@ pub struct StdoutCapture {
 impl PartialEq for StdoutCapture {
     fn eq(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.writers, &other.writers) && self.index == other.index
-    }
-}
-
-impl Default for StdoutCapture {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
@@ -59,8 +56,9 @@ impl Display for StdoutCapture {
 
 impl StdoutCapture {
     // Create a new `StdoutCapture` with one stream inside.
-    pub fn new() -> Self {
+    pub fn new(echo: bool) -> Self {
         Self {
+            echo,
             writers: Arc::new(RwLock::new(vec![Mutex::new(Cursor::new(Vec::new()))])),
             index: 0,
         }
@@ -80,6 +78,7 @@ impl StdoutCapture {
             writers.len() - 1
         };
         Self {
+            echo: self.echo,
             writers: self.writers.clone(),
             index,
         }
@@ -164,6 +163,13 @@ impl WasiFile for StdoutCapture {
         let streams = RwLock::read(&self.writers).unwrap();
         let mut stream = streams[self.index].lock().unwrap();
         let n = stream.write_vectored(bufs)?;
+        // Echo the captured part to stdout
+        if self.echo {
+            stream.seek(SeekFrom::End(-(n as i64)))?;
+            let mut echo = vec![0; n];
+            stream.read_exact(&mut echo)?;
+            stdout().write_all(&echo)?;
+        }
         Ok(n.try_into()?)
     }
     async fn write_vectored_at<'a>(
