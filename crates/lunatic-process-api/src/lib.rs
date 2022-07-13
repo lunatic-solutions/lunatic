@@ -16,7 +16,7 @@ use lunatic_process::{
     message::Message,
     runtimes::{wasmtime::WasmtimeCompiledModule, RawWasm},
     state::ProcessState,
-    Process, Signal, WasmProcess,
+    DeathReason, Process, Signal, WasmProcess,
 };
 use lunatic_wasi_api::LunaticWasiCtx;
 use wasmtime::{Caller, Linker, ResourceLimiter, Trap, Val};
@@ -633,21 +633,29 @@ fn link<T: ProcessState + ProcessCtx<T>>(
     let this_process = WasmProcess::new(id, signal_mailbox.0);
 
     // Send link signal to other process
-    let process = caller
-        .data()
-        .environment()
-        .get_process(process_id)
-        .or_trap("lunatic::process::link")?
-        .clone();
-    process.send(Signal::Link(tag, Arc::new(this_process)));
+    let process = caller.data().environment().get_process(process_id);
 
-    // Send link signal to itself
-    caller
-        .data_mut()
-        .signal_mailbox()
-        .0
-        .send(Signal::Link(tag, process))
-        .expect("The signal is sent to itself and the receiver must exist at this point");
+    if let Some(process) = process {
+        process.send(Signal::Link(tag, Arc::new(this_process)));
+
+        // Send link signal to itself
+        caller
+            .data_mut()
+            .signal_mailbox()
+            .0
+            .send(Signal::Link(tag, process))
+            .expect("The Link signal is sent to itself and the receiver must exist at this point");
+    } else {
+        // Link died (currently death reason normal is sent)
+        caller
+            .data_mut()
+            .signal_mailbox()
+            .0
+            .send(Signal::LinkDied(process_id, tag, DeathReason::Normal))
+            .expect(
+                "The LinkDied signal is sent to itself and the receiver must exist at this point",
+            );
+    }
     Ok(())
 }
 
@@ -665,21 +673,19 @@ fn unlink<T: ProcessState + ProcessCtx<T>>(
     let this_process = WasmProcess::new(id, signal_mailbox.0);
 
     // Send unlink signal to other process
-    let process = caller
-        .data()
-        .environment()
-        .get_process(process_id)
-        .or_trap("lunatic::process::link")?
-        .clone();
-    process.send(Signal::UnLink(Arc::new(this_process)));
+    let process = caller.data().environment().get_process(process_id);
 
-    // Send unlink signal to itself
-    caller
-        .data_mut()
-        .signal_mailbox()
-        .0
-        .send(Signal::UnLink(process))
-        .expect("The signal is sent to itself and the receiver must exist at this point");
+    if let Some(process) = process {
+        process.send(Signal::UnLink(Arc::new(this_process)));
+
+        // Send unlink signal to itself
+        caller
+            .data_mut()
+            .signal_mailbox()
+            .0
+            .send(Signal::UnLink(process))
+            .expect("The signal is sent to itself and the receiver must exist at this point");
+    }
     Ok(())
 }
 
@@ -689,12 +695,8 @@ fn unlink<T: ProcessState + ProcessCtx<T>>(
 // * If the process ID doesn't exist.
 fn kill<T: ProcessState + ProcessCtx<T>>(caller: Caller<T>, process_id: u64) -> Result<(), Trap> {
     // Send kill signal to process
-    let process = caller
-        .data()
-        .environment()
-        .get_process(process_id)
-        .or_trap("lunatic::process::link")?
-        .clone();
-    process.send(Signal::Kill);
+    if let Some(process) = caller.data().environment().get_process(process_id) {
+        process.send(Signal::Kill);
+    }
     Ok(())
 }
