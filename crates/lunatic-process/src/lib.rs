@@ -73,8 +73,8 @@ impl Debug for Signal {
             Self::Message(_) => write!(f, "Message"),
             Self::Kill => write!(f, "Kill"),
             Self::DieWhenLinkDies(_) => write!(f, "DieWhenLinkDies"),
-            Self::Link(_, _) => write!(f, "Link"),
-            Self::UnLink { .. } => write!(f, "UnLink"),
+            Self::Link(_, p) => write!(f, "Link {}", p.id()),
+            Self::UnLink { process_id } => write!(f, "UnLink {process_id}"),
             Self::LinkDied(_, _, reason) => write!(f, "LinkDied {:?}", reason),
         }
     }
@@ -188,7 +188,7 @@ where
                     Ok(Signal::LinkDied(id, tag, reason)) => {
                         links.remove(&id);
                         match reason {
-                            DeathReason::Failure => {
+                            DeathReason::Failure | DeathReason::NoProcess => {
                                 if die_when_link_dies {
                                     // Even this was not a **kill** signal it has the same effect on
                                     // this process and should be propagated as such.
@@ -200,7 +200,6 @@ where
                             },
                             // In case a linked process finishes normally, don't do anything.
                             DeathReason::Normal => {},
-                            DeathReason::NoProcess => {},
                         }
                     },
                     Err(_) => unreachable!("The process holds the sending side and is not closed")

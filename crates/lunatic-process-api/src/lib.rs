@@ -670,7 +670,7 @@ fn unlink<T: ProcessState + ProcessCtx<T>>(
     let this_process_id = caller.data().id();
 
     // Send unlink signal to other process
-    let process = caller.data().environment().get_process(this_process_id);
+    let process = caller.data().environment().get_process(process_id);
 
     if let Some(process) = process {
         process.send(Signal::UnLink {
