@@ -646,12 +646,11 @@ fn link<T: ProcessState + ProcessCtx<T>>(
             .send(Signal::Link(tag, process))
             .expect("The Link signal is sent to itself and the receiver must exist at this point");
     } else {
-        // Link died (currently death reason normal is sent)
         caller
             .data_mut()
             .signal_mailbox()
             .0
-            .send(Signal::LinkDied(process_id, tag, DeathReason::Normal))
+            .send(Signal::LinkDied(process_id, tag, DeathReason::NoProcess))
             .expect(
                 "The LinkDied signal is sent to itself and the receiver must exist at this point",
             );
@@ -668,24 +667,25 @@ fn unlink<T: ProcessState + ProcessCtx<T>>(
     process_id: u64,
 ) -> Result<(), Trap> {
     // Create handle to itself
-    let id = caller.data().id();
-    let signal_mailbox = caller.data().signal_mailbox().clone();
-    let this_process = WasmProcess::new(id, signal_mailbox.0);
+    let this_process_id = caller.data().id();
 
     // Send unlink signal to other process
-    let process = caller.data().environment().get_process(process_id);
+    let process = caller.data().environment().get_process(this_process_id);
 
     if let Some(process) = process {
-        process.send(Signal::UnLink(Arc::new(this_process)));
-
-        // Send unlink signal to itself
-        caller
-            .data_mut()
-            .signal_mailbox()
-            .0
-            .send(Signal::UnLink(process))
-            .expect("The signal is sent to itself and the receiver must exist at this point");
+        process.send(Signal::UnLink {
+            process_id: this_process_id,
+        });
     }
+
+    // Send unlink signal to itself
+    caller
+        .data_mut()
+        .signal_mailbox()
+        .0
+        .send(Signal::UnLink { process_id })
+        .expect("The signal is sent to itself and the receiver must exist at this point");
+
     Ok(())
 }
 
