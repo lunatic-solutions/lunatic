@@ -961,7 +961,7 @@ checksum = "eabb4a44450da02c90444cf74558da904edde8fb4e9035a9a6a4e15445af0bd7"
 
 [[package]]
 name = "hash-map-id"
-version = "0.9.0"
+version = "0.10.0"
 
 [[package]]
 name = "hashbrown"
@@ -1169,7 +1169,7 @@ dependencies = [
 
 [[package]]
 name = "lunatic-common-api"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "anyhow",
  "paste",
@@ -1178,7 +1178,7 @@ dependencies = [
 
 [[package]]
 name = "lunatic-distributed"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "anyhow",
  "async_cell",
@@ -1193,7 +1193,7 @@ dependencies = [
 
 [[package]]
 name = "lunatic-distributed-api"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "anyhow",
  "async_cell",
@@ -1211,7 +1211,7 @@ dependencies = [
 
 [[package]]
 name = "lunatic-error-api"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "anyhow",
  "hash-map-id",
@@ -1221,7 +1221,7 @@ dependencies = [
 
 [[package]]
 name = "lunatic-messaging-api"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "anyhow",
  "hash-map-id",
@@ -1235,7 +1235,7 @@ dependencies = [
 
 [[package]]
 name = "lunatic-networking-api"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "anyhow",
  "hash-map-id",
@@ -1247,7 +1247,7 @@ dependencies = [
 
 [[package]]
 name = "lunatic-process"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "anyhow",
  "dashmap",
@@ -1261,7 +1261,7 @@ dependencies = [
 
 [[package]]
 name = "lunatic-process-api"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "anyhow",
  "hash-map-id",
@@ -1276,7 +1276,7 @@ dependencies = [
 
 [[package]]
 name = "lunatic-registry-api"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "anyhow",
  "hash-map-id",
@@ -1288,7 +1288,7 @@ dependencies = [
 
 [[package]]
 name = "lunatic-runtime"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "anyhow",
  "bincode",
@@ -1324,7 +1324,7 @@ dependencies = [
 
 [[package]]
 name = "lunatic-stdout-capture"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "wasi-common",
  "wiggle",
@@ -1332,7 +1332,7 @@ dependencies = [
 
 [[package]]
 name = "lunatic-timer-api"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "anyhow",
  "async-std",
@@ -1345,7 +1345,7 @@ dependencies = [
 
 [[package]]
 name = "lunatic-version-api"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "anyhow",
  "wasmtime",
@@ -1353,7 +1353,7 @@ dependencies = [
 
 [[package]]
 name = "lunatic-wasi-api"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "anyhow",
  "hash-map-id",
@@ -1997,10 +1997,11 @@ dependencies = [
 
 [[package]]
 name = "tokio"
-version = "1.19.2"
+version = "1.20.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c51a52ed6686dd62c320f9b89299e9dfb46f730c7a48e635c19f21d116cb1439"
+checksum = "57aec3cfa4c296db7255446efb4928a6be304b431a806216105542a67b6ca82e"
 dependencies = [
+ "autocfg",
  "bytes",
  "libc",
  "memchr",
