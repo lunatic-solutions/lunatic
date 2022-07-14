@@ -4,9 +4,9 @@ use anyhow::{Context, Result};
 use clap::{crate_version, Arg, Command};
 
 use dashmap::DashMap;
-use lunatic_process::{runtimes, state::ProcessState};
+use lunatic_process::{env::Environment, runtimes};
 use lunatic_process_api::ProcessConfigCtx;
-use lunatic_runtime::{spawn_wasm, DefaultProcessConfig, DefaultProcessState};
+use lunatic_runtime::{DefaultProcessConfig, DefaultProcessState};
 use lunatic_stdout_capture::StdoutCapture;
 use lunatic_wasi_api::LunaticWasiCtx;
 
@@ -125,7 +125,7 @@ pub(crate) async fn test() -> Result<()> {
     let path = args.value_of("wasm").unwrap();
     let path = Path::new(path);
     let module = fs::read(path)?;
-    let module = runtime.compile_module::<DefaultProcessState>(module)?;
+    let module = runtime.compile_module::<DefaultProcessState>(module.into())?;
 
     let filter = args.value_of("filter").unwrap_or_default();
     let exact = args.is_present("exact");
@@ -231,7 +231,7 @@ pub(crate) async fn test() -> Result<()> {
     let filtered_out = test_functions.len() - n;
     println!("\nrunning {} {}", n, if n == 1 { "test" } else { "tests" });
 
-    let (sender, receiver) = async_std::channel::unbounded();
+    let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
 
     let config = Arc::new(config);
 
@@ -249,15 +249,21 @@ pub(crate) async fn test() -> Result<()> {
                     status: TestStatus::Ignored,
                     stdout: StdoutCapture::new(false),
                 })
-                .await
                 .unwrap();
             continue;
         }
 
+        let env = Environment::new(0);
         let registry = Arc::new(DashMap::new());
-        let mut state =
-            DefaultProcessState::new(runtime.clone(), module.clone(), config.clone(), registry)
-                .unwrap();
+        let mut state = DefaultProcessState::new(
+            env.clone(),
+            None,
+            runtime.clone(),
+            module.clone(),
+            config.clone(),
+            registry,
+        )
+        .unwrap();
 
         // If --nocapture is not set, use in-memory stdout & stderr to hide output in case of
         // success
@@ -266,24 +272,25 @@ pub(crate) async fn test() -> Result<()> {
         state.set_stdout(stdout.clone());
         state.set_stderr(stdout.clone());
 
-        let (task, _) = spawn_wasm(
-            runtime.clone(),
-            module.clone(),
-            state,
-            &test_function.wasm_export_name,
-            Vec::new(),
-            None,
-        )
-        .await
-        .context(format!(
-            "Failed to spawn process from {}::{}",
-            path.to_string_lossy(),
-            test_function.function_name
-        ))?;
+        let (task, _) = env
+            .spawn_wasm(
+                runtime.clone(),
+                module.clone(),
+                state,
+                &test_function.wasm_export_name,
+                Vec::new(),
+                None,
+            )
+            .await
+            .context(format!(
+                "Failed to spawn process from {}::{}",
+                path.to_string_lossy(),
+                test_function.function_name
+            ))?;
 
         let sender = sender.clone();
-        async_std::task::spawn(async move {
-            let result = match task.await {
+        tokio::task::spawn(async move {
+            let result = match task.await.unwrap() {
                 Ok(_state) => {
                     // If we didn't expect a panic and didn't get one
                     if test_function.panic.is_none() {
@@ -374,7 +381,7 @@ pub(crate) async fn test() -> Result<()> {
                     }
                 }
             };
-            sender.send(result).await.unwrap();
+            sender.send(result).unwrap();
         });
     }
 

@@ -27,8 +27,6 @@ pub fn register<T: ProcessState + ProcessCtx<T> + NetworkingCtx + Send + 'static
     linker.func_wrap("lunatic::message", "seek_data", seek_data)?;
     linker.func_wrap("lunatic::message", "get_tag", get_tag)?;
     linker.func_wrap("lunatic::message", "data_size", data_size)?;
-    linker.func_wrap("lunatic::message", "push_process", push_process)?;
-    linker.func_wrap("lunatic::message", "take_process", take_process)?;
     linker.func_wrap("lunatic::message", "push_tcp_stream", push_tcp_stream)?;
     linker.func_wrap("lunatic::message", "take_tcp_stream", take_tcp_stream)?;
     linker.func_wrap("lunatic::message", "send", send)?;
@@ -102,7 +100,7 @@ pub fn register<T: ProcessState + ProcessCtx<T> + NetworkingCtx + Send + 'static
 // different from 0, the function will only return messages that have the specific `tag`. Once
 // a message is received, we can read from its buffer or extract resources from it.
 //
-// This can be a bit confusing, because resources are just IDs (u64 values) themself. But we
+// This can be a bit confusing, because resources are just IDs (u64 values) themselves. But we
 // still need to serialize them into different u64 values. Resources are inherently bound to a
 // process and you can't access another resource just by guessing an ID from another process.
 // The process of sending them around needs to be explicit.
@@ -260,63 +258,6 @@ fn data_size<T: ProcessState + ProcessCtx<T>>(mut caller: Caller<T>) -> Result<u
     Ok(bytes as u64)
 }
 
-// Adds a process resource to the message that is currently in the scratch area and returns
-// the location in the array the process was added to.
-//
-// This will remove the process handle from the current process' resources.
-//
-// Traps:
-// * If process ID doesn't exist
-// * If no data message is in the scratch area.
-fn push_process<T: ProcessState + ProcessCtx<T>>(
-    mut caller: Caller<T>,
-    process_id: u64,
-) -> Result<u64, Trap> {
-    let process = caller
-        .data_mut()
-        .process_resources_mut()
-        .remove(process_id)
-        .or_trap("lunatic::message::push_process")?;
-    let message = caller
-        .data_mut()
-        .message_scratch_area()
-        .as_mut()
-        .or_trap("lunatic::message::push_process")?;
-    let index = match message {
-        Message::Data(data) => data.add_process(process) as u64,
-        Message::LinkDied(_) => {
-            return Err(Trap::new("Unexpected `Message::LinkDied` in scratch area"))
-        }
-    };
-    Ok(index)
-}
-
-// Takes the process handle from the message that is currently in the scratch area by index, puts
-// it into the process' resources and returns the resource ID.
-//
-// Traps:
-// * If index ID doesn't exist or matches the wrong resource (not process).
-// * If no data message is in the scratch area.
-fn take_process<T: ProcessState + ProcessCtx<T>>(
-    mut caller: Caller<T>,
-    index: u64,
-) -> Result<u64, Trap> {
-    let message = caller
-        .data_mut()
-        .message_scratch_area()
-        .as_mut()
-        .or_trap("lunatic::message::take_process")?;
-    let process = match message {
-        Message::Data(data) => data
-            .take_process(index as usize)
-            .or_trap("lunatic::message::take_process")?,
-        Message::LinkDied(_) => {
-            return Err(Trap::new("Unexpected `Message::LinkDied` in scratch area"))
-        }
-    };
-    Ok(caller.data_mut().process_resources_mut().add(process))
-}
-
 // Adds a tcp stream resource to the message that is currently in the scratch area and returns
 // the new location of it. This will remove the tcp stream from  the current process' resources.
 //
@@ -387,13 +328,12 @@ fn send<T: ProcessState + ProcessCtx<T>>(
         .data_mut()
         .message_scratch_area()
         .take()
-        .or_trap("lunatic::message::send")?;
-    let process = caller
-        .data_mut()
-        .process_resources_mut()
-        .get(process_id)
-        .or_trap("lunatic::message::send")?;
-    process.send(Signal::Message(message));
+        .or_trap("lunatic::message::send::no_message")?;
+
+    if let Some(process) = caller.data_mut().environment().get_process(process_id) {
+        process.send(Signal::Message(message));
+    }
+
     Ok(())
 }
 
@@ -433,14 +373,14 @@ fn send_receive_skip_search<T: ProcessState + ProcessCtx<T> + Send>(
         } else {
             None
         };
-        let process = caller
-            .data_mut()
-            .process_resources_mut()
-            .get(process_id)
-            .or_trap("lunatic::message::send_receive_skip_search")?;
-        process.send(Signal::Message(message));
+
+        if let Some(process) = caller.data_mut().environment().get_process(process_id) {
+            process.send(Signal::Message(message));
+        }
+
         if let Some(message) = tokio::select! {
-            _ = async_std::task::sleep(Duration::from_millis(timeout as u64)), if timeout != 0 => None,
+            // Timeout will still happen after `timeout` milliseconds, even if the process doesn't exist
+            _ = tokio::time::sleep(Duration::from_millis(timeout as u64)), if timeout != 0 => None,
             message = caller.data_mut().mailbox().pop_skip_search(tags) => Some(message)
         } {
             // Put the message into the scratch area
@@ -497,7 +437,7 @@ fn receive<T: ProcessState + ProcessCtx<T> + Send>(
         };
 
         if let Some(message) = tokio::select! {
-            _ = async_std::task::sleep(Duration::from_millis(timeout as u64)), if timeout != 0 => None,
+            _ = tokio::time::sleep(Duration::from_millis(timeout as u64)), if timeout != 0 => None,
             message = caller.data_mut().mailbox().pop(tags.as_deref()) => Some(message)
         } {
             let result = match message {

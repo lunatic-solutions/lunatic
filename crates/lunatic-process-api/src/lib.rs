@@ -10,9 +10,13 @@ use hash_map_id::HashMapId;
 use lunatic_common_api::{get_memory, IntoTrap};
 use lunatic_error_api::ErrorCtx;
 use lunatic_process::{
-    config::ProcessConfig, mailbox::MessageMailbox, message::Message,
-    runtimes::wasmtime::WasmtimeCompiledModule, state::ProcessState, wasm::spawn_wasm, Process,
-    Signal, WasmProcess,
+    config::ProcessConfig,
+    env::Environment,
+    mailbox::MessageMailbox,
+    message::Message,
+    runtimes::{wasmtime::WasmtimeCompiledModule, RawWasm},
+    state::ProcessState,
+    DeathReason, Process, Signal, WasmProcess,
 };
 use lunatic_wasi_api::LunaticWasiCtx;
 use wasmtime::{Caller, Linker, ResourceLimiter, Trap, Val};
@@ -34,8 +38,7 @@ pub trait ProcessCtx<S: ProcessState> {
     fn message_scratch_area(&mut self) -> &mut Option<Message>;
     fn module_resources(&self) -> &ModuleResources<S>;
     fn module_resources_mut(&mut self) -> &mut ModuleResources<S>;
-    fn process_resources(&self) -> &ProcessResources;
-    fn process_resources_mut(&mut self) -> &mut ProcessResources;
+    fn environment(&self) -> &Environment;
 }
 
 // Register the process APIs to the linker
@@ -102,13 +105,11 @@ where
 
     linker.func_wrap8_async("lunatic::process", "spawn", spawn)?;
 
-    linker.func_wrap("lunatic::process", "drop_process", drop_process)?;
-    linker.func_wrap("lunatic::process", "clone_process", clone_process)?;
     linker.func_wrap1_async("lunatic::process", "sleep_ms", sleep_ms)?;
     linker.func_wrap("lunatic::process", "die_when_link_dies", die_when_link_dies)?;
-    linker.func_wrap("lunatic::process", "this", this)?;
 
-    linker.func_wrap("lunatic::process", "id", id)?;
+    linker.func_wrap("lunatic::process", "process_id", process_id)?;
+    linker.func_wrap("lunatic::process", "environment_id", environment_id)?;
     linker.func_wrap("lunatic::process", "link", link)?;
     linker.func_wrap("lunatic::process", "unlink", unlink)?;
     linker.func_wrap("lunatic::process", "kill", kill)?;
@@ -146,6 +147,7 @@ where
         .read(&caller, module_data_ptr as usize, module.as_mut_slice())
         .or_trap("lunatic::process::compile_module")?;
 
+    let module = RawWasm::new(None, module);
     let (mod_or_error_id, result) = match caller.data().runtime().compile_module(module) {
         Ok(module) => (caller.data_mut().module_resources_mut().add(module), 0),
         Err(error) => (caller.data_mut().error_resources_mut().add(error), 1),
@@ -466,6 +468,7 @@ where
         }
 
         let state = caller.data();
+
         if !state.is_initialized() {
             return Err(anyhow!("Cannot spawn process during module initialization").into());
         }
@@ -491,6 +494,8 @@ where
                 .or_trap("lunatic::process::spawn: Config ID doesn't exist")?
                 .clone(),
         };
+
+        let mut state = state.new_state(module.clone(), config)?;
 
         let memory = get_memory(&mut caller)?;
         let func_str = memory
@@ -527,8 +532,6 @@ where
         };
 
         let runtime = caller.data().runtime().clone();
-        let registry = caller.data().registry().clone();
-        let mut state = T::new(runtime.clone(), module.clone(), config, registry)?;
 
         // Inherit stdout and stderr streams if they are redirected by the parent.
         let stdout = if let Some(stdout) = caller.data().get_stdout() {
@@ -551,11 +554,16 @@ where
             }
         }
 
-        let (proc_or_error_id, result) =
-            match spawn_wasm(runtime, module, state, function, params, link).await {
-                Ok((_, process)) => (caller.data_mut().process_resources_mut().add(process), 0),
-                Err(error) => (caller.data_mut().error_resources_mut().add(error), 1),
-            };
+        // set state instead of config TODO
+        let env = caller.data().environment();
+        let (proc_or_error_id, result) = match env
+            .spawn_wasm(runtime, module, state, function, params, link)
+            .await
+        {
+            Ok((_, process)) => (process.id(), 0),
+            Err(error) => (caller.data_mut().error_resources_mut().add(error), 1),
+        };
+
         memory
             .write(
                 &mut caller,
@@ -567,41 +575,6 @@ where
     })
 }
 
-// Drops the process handle. This will not kill the process, it just removes the handle that
-// references the process and allows us to send messages and signals to it.
-//
-// Traps:
-// * If the process ID doesn't exist.
-fn drop_process<T: ProcessState + ProcessCtx<T>>(
-    mut caller: Caller<T>,
-    process_id: u64,
-) -> Result<(), Trap> {
-    caller
-        .data_mut()
-        .process_resources_mut()
-        .remove(process_id)
-        .or_trap("lunatic::process::drop_process")?;
-    Ok(())
-}
-
-// Clones a process returning the ID of the clone.
-//
-// Traps:
-// * If the process ID doesn't exist.
-fn clone_process<T: ProcessState + ProcessCtx<T>>(
-    mut caller: Caller<T>,
-    process_id: u64,
-) -> Result<u64, Trap> {
-    let process = caller
-        .data()
-        .process_resources()
-        .get(process_id)
-        .or_trap("lunatic::process::clone_process")?
-        .clone();
-    let id = caller.data_mut().process_resources_mut().add(process);
-    Ok(id)
-}
-
 // lunatic::process::sleep_ms(millis: u64)
 //
 // Suspend process for `millis`.
@@ -610,7 +583,7 @@ fn sleep_ms<T: ProcessState + ProcessCtx<T>>(
     millis: u64,
 ) -> Box<dyn Future<Output = ()> + Send + '_> {
     Box::new(async move {
-        async_std::task::sleep(Duration::from_millis(millis)).await;
+        tokio::time::sleep(Duration::from_millis(millis)).await;
     })
 }
 
@@ -626,43 +599,18 @@ fn die_when_link_dies<T: ProcessState + ProcessCtx<T>>(mut caller: Caller<T>, tr
         .data_mut()
         .signal_mailbox()
         .0
-        .try_send(Signal::DieWhenLinkDies(trap != 0))
+        .send(Signal::DieWhenLinkDies(trap != 0))
         .expect("The signal is sent to itself and the receiver must exist at this point");
 }
 
-// Create a process handle to itself and return resource ID.
-fn this<T: ProcessState + ProcessCtx<T>>(mut caller: Caller<T>) -> u64 {
-    let id = caller.data().id();
-    let signal_mailbox = caller.data().signal_mailbox().clone();
-    let process = WasmProcess::new(id, signal_mailbox.0);
-    caller
-        .data_mut()
-        .process_resources_mut()
-        .add(Arc::new(process))
+// Returns ID of the process currently running
+fn process_id<T: ProcessState + ProcessCtx<T>>(caller: Caller<T>) -> u64 {
+    caller.data().id()
 }
 
-// Returns UUID of a process as u128_ptr.
-//
-// Traps:
-// * If the process ID doesn't exist.
-// * If any memory outside the guest heap space is referenced.
-fn id<T: ProcessState + ProcessCtx<T>>(
-    mut caller: Caller<T>,
-    process_id: u64,
-    u128_ptr: u32,
-) -> Result<(), Trap> {
-    let id = caller
-        .data()
-        .process_resources()
-        .get(process_id)
-        .or_trap("lunatic::process::id")?
-        .id()
-        .as_u128();
-    let memory = get_memory(&mut caller)?;
-    memory
-        .write(&mut caller, u128_ptr as usize, &id.to_le_bytes())
-        .or_trap("lunatic::process::id")?;
-    Ok(())
+// Returns ID of the environment in which the process is currently running
+fn environment_id<T: ProcessState + ProcessCtx<T>>(caller: Caller<T>) -> u64 {
+    caller.data().environment().id()
 }
 
 // Link current process to **process_id**. This is not an atomic operation, any of the 2 processes
@@ -685,21 +633,28 @@ fn link<T: ProcessState + ProcessCtx<T>>(
     let this_process = WasmProcess::new(id, signal_mailbox.0);
 
     // Send link signal to other process
-    let process = caller
-        .data()
-        .process_resources()
-        .get(process_id)
-        .or_trap("lunatic::process::link")?
-        .clone();
-    process.send(Signal::Link(tag, Arc::new(this_process)));
+    let process = caller.data().environment().get_process(process_id);
 
-    // Send link signal to itself
-    caller
-        .data_mut()
-        .signal_mailbox()
-        .0
-        .try_send(Signal::Link(tag, process))
-        .expect("The signal is sent to itself and the receiver must exist at this point");
+    if let Some(process) = process {
+        process.send(Signal::Link(tag, Arc::new(this_process)));
+
+        // Send link signal to itself
+        caller
+            .data_mut()
+            .signal_mailbox()
+            .0
+            .send(Signal::Link(tag, process))
+            .expect("The Link signal is sent to itself and the receiver must exist at this point");
+    } else {
+        caller
+            .data_mut()
+            .signal_mailbox()
+            .0
+            .send(Signal::LinkDied(process_id, tag, DeathReason::NoProcess))
+            .expect(
+                "The LinkDied signal is sent to itself and the receiver must exist at this point",
+            );
+    }
     Ok(())
 }
 
@@ -712,26 +667,25 @@ fn unlink<T: ProcessState + ProcessCtx<T>>(
     process_id: u64,
 ) -> Result<(), Trap> {
     // Create handle to itself
-    let id = caller.data().id();
-    let signal_mailbox = caller.data().signal_mailbox().clone();
-    let this_process = WasmProcess::new(id, signal_mailbox.0);
+    let this_process_id = caller.data().id();
 
     // Send unlink signal to other process
-    let process = caller
-        .data()
-        .process_resources()
-        .get(process_id)
-        .or_trap("lunatic::process::link")?
-        .clone();
-    process.send(Signal::UnLink(Arc::new(this_process)));
+    let process = caller.data().environment().get_process(process_id);
+
+    if let Some(process) = process {
+        process.send(Signal::UnLink {
+            process_id: this_process_id,
+        });
+    }
 
     // Send unlink signal to itself
     caller
         .data_mut()
         .signal_mailbox()
         .0
-        .try_send(Signal::UnLink(process))
+        .send(Signal::UnLink { process_id })
         .expect("The signal is sent to itself and the receiver must exist at this point");
+
     Ok(())
 }
 
@@ -741,12 +695,8 @@ fn unlink<T: ProcessState + ProcessCtx<T>>(
 // * If the process ID doesn't exist.
 fn kill<T: ProcessState + ProcessCtx<T>>(caller: Caller<T>, process_id: u64) -> Result<(), Trap> {
     // Send kill signal to process
-    let process = caller
-        .data()
-        .process_resources()
-        .get(process_id)
-        .or_trap("lunatic::process::link")?
-        .clone();
-    process.send(Signal::Kill);
+    if let Some(process) = caller.data().environment().get_process(process_id) {
+        process.send(Signal::Kill);
+    }
     Ok(())
 }

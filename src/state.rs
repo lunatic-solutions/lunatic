@@ -2,22 +2,24 @@ use std::fmt::Debug;
 use std::sync::Arc;
 
 use anyhow::Result;
-use async_std::channel::{unbounded, Receiver, Sender};
-use async_std::net::{TcpListener, TcpStream, UdpSocket};
 use dashmap::DashMap;
 use hash_map_id::HashMapId;
+use lunatic_distributed::{DistributedCtx, DistributedProcessState};
 use lunatic_error_api::{ErrorCtx, ErrorResource};
 use lunatic_networking_api::dns::DnsIterator;
-use lunatic_networking_api::NetworkingCtx;
+use lunatic_networking_api::{NetworkingCtx, TcpConnection};
 use lunatic_process::config::ProcessConfig;
+use lunatic_process::env::Environment;
 use lunatic_process::runtimes::wasmtime::{WasmtimeCompiledModule, WasmtimeRuntime};
 use lunatic_process::state::{ConfigResources, ProcessState};
-use lunatic_process::{mailbox::MessageMailbox, message::Message, Process, Signal};
-use lunatic_process_api::ProcessCtx;
+use lunatic_process::{mailbox::MessageMailbox, message::Message, Signal};
+use lunatic_process_api::{ProcessConfigCtx, ProcessCtx};
 use lunatic_stdout_capture::StdoutCapture;
 use lunatic_timer_api::{TimerCtx, TimerResources};
 use lunatic_wasi_api::{build_wasi, LunaticWasiCtx};
-use uuid::Uuid;
+use tokio::net::{TcpListener, UdpSocket};
+use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
+use tokio::sync::Mutex;
 use wasmtime::{Linker, ResourceLimiter};
 use wasmtime_wasi::WasiCtx;
 
@@ -25,7 +27,9 @@ use crate::DefaultProcessConfig;
 
 pub struct DefaultProcessState {
     // Process id
-    id: Uuid,
+    pub(crate) id: u64,
+    pub(crate) environment: Environment,
+    pub(crate) distributed: Option<DistributedProcessState>,
     // The WebAssembly runtime
     runtime: Option<WasmtimeRuntime>,
     // The module that this process was spawned from
@@ -39,7 +43,10 @@ pub struct DefaultProcessState {
     // `message` as a temp space to store messages across host calls.
     message: Option<Message>,
     // Signals sent to the mailbox
-    signal_mailbox: (Sender<Signal>, Receiver<Signal>),
+    signal_mailbox: (
+        UnboundedSender<Signal>,
+        Arc<Mutex<UnboundedReceiver<Signal>>>,
+    ),
     // Messages sent to the process
     message_mailbox: MessageMailbox,
     // Resources
@@ -53,24 +60,25 @@ pub struct DefaultProcessState {
     // Set to true if the WASM module has been instantiated
     initialized: bool,
     // Shared process registry
-    registry: Arc<DashMap<String, Arc<dyn Process>>>,
+    registry: Arc<DashMap<String, (u64, u64)>>,
 }
 
-impl ProcessState for DefaultProcessState {
-    type Config = DefaultProcessConfig;
-
-    fn new(
+impl DefaultProcessState {
+    pub fn new(
+        environment: Environment,
+        distributed: Option<DistributedProcessState>,
         runtime: WasmtimeRuntime,
         module: WasmtimeCompiledModule<Self>,
         config: Arc<DefaultProcessConfig>,
-        registry: Arc<DashMap<String, Arc<dyn Process>>>,
+        registry: Arc<DashMap<String, (u64, u64)>>,
     ) -> Result<Self> {
-        // TODO: Switch to new_v1() for distributed Lunatic to assure uniqueness across nodes.
-        let id = Uuid::new_v4();
-        let signal_mailbox = unbounded::<Signal>();
+        let signal_mailbox = unbounded_channel();
+        let signal_mailbox = (signal_mailbox.0, Arc::new(Mutex::new(signal_mailbox.1)));
         let message_mailbox = MessageMailbox::default();
         let state = Self {
-            id,
+            id: environment.get_next_process_id(),
+            environment,
+            distributed,
             runtime: Some(runtime),
             module: Some(module),
             config: config.clone(),
@@ -90,6 +98,71 @@ impl ProcessState for DefaultProcessState {
         };
         Ok(state)
     }
+}
+
+impl ProcessState for DefaultProcessState {
+    type Config = DefaultProcessConfig;
+
+    fn new_state(
+        &self,
+        module: WasmtimeCompiledModule<Self>,
+        config: Arc<DefaultProcessConfig>,
+    ) -> Result<Self> {
+        let signal_mailbox = unbounded_channel();
+        let signal_mailbox = (signal_mailbox.0, Arc::new(Mutex::new(signal_mailbox.1)));
+        let message_mailbox = MessageMailbox::default();
+        let state = Self {
+            id: self.environment.get_next_process_id(),
+            environment: self.environment.clone(),
+            distributed: self.distributed.clone(),
+            runtime: self.runtime.clone(),
+            module: Some(module),
+            config: config.clone(),
+            message: None,
+            signal_mailbox,
+            message_mailbox,
+            resources: Resources::default(),
+            wasi: build_wasi(
+                Some(config.command_line_arguments()),
+                Some(config.environment_variables()),
+                config.preopened_dirs(),
+            )?,
+            wasi_stdout: None,
+            wasi_stderr: None,
+            initialized: false,
+            registry: self.registry.clone(),
+        };
+        Ok(state)
+    }
+
+    fn state_for_instantiation() -> Self {
+        let config = DefaultProcessConfig::default();
+        let signal_mailbox = unbounded_channel();
+        let signal_mailbox = (signal_mailbox.0, Arc::new(Mutex::new(signal_mailbox.1)));
+        let message_mailbox = MessageMailbox::default();
+        Self {
+            id: 1,
+            environment: Environment::new(0),
+            distributed: None,
+            runtime: None,
+            module: None,
+            registry: Default::default(),
+            config: Arc::new(config.clone()),
+            message: None,
+            signal_mailbox,
+            message_mailbox,
+            resources: Resources::default(),
+            wasi: build_wasi(
+                Some(config.command_line_arguments()),
+                Some(config.environment_variables()),
+                config.preopened_dirs(),
+            )
+            .unwrap(),
+            wasi_stdout: None,
+            wasi_stderr: None,
+            initialized: false,
+        }
+    }
 
     fn register(linker: &mut Linker<Self>) -> Result<()> {
         lunatic_error_api::register(linker)?;
@@ -100,6 +173,7 @@ impl ProcessState for DefaultProcessState {
         lunatic_version_api::register(linker)?;
         lunatic_wasi_api::register(linker)?;
         lunatic_registry_api::register(linker)?;
+        lunatic_distributed_api::register(linker)?;
         Ok(())
     }
 
@@ -123,11 +197,16 @@ impl ProcessState for DefaultProcessState {
         self.module.as_ref().unwrap()
     }
 
-    fn id(&self) -> Uuid {
+    fn id(&self) -> u64 {
         self.id
     }
 
-    fn signal_mailbox(&self) -> &(Sender<Signal>, Receiver<Signal>) {
+    fn signal_mailbox(
+        &self,
+    ) -> &(
+        UnboundedSender<Signal>,
+        Arc<Mutex<UnboundedReceiver<Signal>>>,
+    ) {
         &self.signal_mailbox
     }
 
@@ -145,36 +224,8 @@ impl ProcessState for DefaultProcessState {
         &mut self.resources.configs
     }
 
-    fn registry(&self) -> &Arc<DashMap<String, Arc<dyn Process>>> {
+    fn registry(&self) -> &Arc<DashMap<String, (u64, u64)>> {
         &self.registry
-    }
-}
-
-impl Default for DefaultProcessState {
-    fn default() -> Self {
-        let config = DefaultProcessConfig::default();
-        let signal_mailbox = unbounded::<Signal>();
-        let message_mailbox = MessageMailbox::default();
-        Self {
-            id: Uuid::new_v4(),
-            runtime: None,
-            module: None,
-            config: Arc::new(config.clone()),
-            message: None,
-            signal_mailbox,
-            message_mailbox,
-            resources: Resources::default(),
-            wasi: build_wasi(
-                Some(config.command_line_arguments()),
-                Some(config.environment_variables()),
-                config.preopened_dirs(),
-            )
-            .unwrap(),
-            wasi_stdout: None,
-            wasi_stderr: None,
-            initialized: false,
-            registry: Arc::new(DashMap::new()),
-        }
     }
 }
 
@@ -241,12 +292,8 @@ impl ProcessCtx<DefaultProcessState> for DefaultProcessState {
         &mut self.resources.modules
     }
 
-    fn process_resources(&self) -> &lunatic_process_api::ProcessResources {
-        &self.resources.processes
-    }
-
-    fn process_resources_mut(&mut self) -> &mut lunatic_process_api::ProcessResources {
-        &mut self.resources.processes
+    fn environment(&self) -> &lunatic_process::env::Environment {
+        &self.environment
     }
 }
 
@@ -328,23 +375,86 @@ impl LunaticWasiCtx for DefaultProcessState {
 pub(crate) struct Resources {
     pub(crate) configs: HashMapId<DefaultProcessConfig>,
     pub(crate) modules: HashMapId<WasmtimeCompiledModule<DefaultProcessState>>,
-    pub(crate) processes: HashMapId<Arc<dyn Process>>,
     pub(crate) timers: TimerResources,
     pub(crate) dns_iterators: HashMapId<DnsIterator>,
     pub(crate) tcp_listeners: HashMapId<TcpListener>,
-    pub(crate) tcp_streams: HashMapId<TcpStream>,
+    pub(crate) tcp_streams: HashMapId<Arc<TcpConnection>>,
     pub(crate) udp_sockets: HashMapId<Arc<UdpSocket>>,
     pub(crate) errors: HashMapId<anyhow::Error>,
 }
 
+impl DistributedCtx for DefaultProcessState {
+    fn distributed_mut(&mut self) -> Result<&mut DistributedProcessState> {
+        match self.distributed.as_mut() {
+            Some(d) => Ok(d),
+            None => Err(anyhow::anyhow!("Distributed is not initialized")),
+        }
+    }
+
+    fn distributed(&self) -> Result<&DistributedProcessState> {
+        match self.distributed.as_ref() {
+            Some(d) => Ok(d),
+            None => Err(anyhow::anyhow!("Distributed is not initialized")),
+        }
+    }
+
+    fn module_id(&self) -> u64 {
+        self.module
+            .as_ref()
+            .and_then(|m| m.source().id)
+            .unwrap_or(0)
+    }
+
+    fn environment_id(&self) -> u64 {
+        self.environment.id()
+    }
+
+    fn can_spawn(&self) -> bool {
+        self.config().can_spawn_processes()
+    }
+
+    fn new_dist_state(
+        environment: Environment,
+        distributed: DistributedProcessState,
+        runtime: WasmtimeRuntime,
+        module: WasmtimeCompiledModule<Self>,
+        config: Arc<Self::Config>,
+    ) -> Result<Self> {
+        let signal_mailbox = unbounded_channel();
+        let signal_mailbox = (signal_mailbox.0, Arc::new(Mutex::new(signal_mailbox.1)));
+        let message_mailbox = MessageMailbox::default();
+        let state = Self {
+            id: environment.get_next_process_id(),
+            environment,
+            distributed: Some(distributed),
+            runtime: Some(runtime),
+            module: Some(module),
+            config: config.clone(),
+            message: None,
+            signal_mailbox,
+            message_mailbox,
+            resources: Resources::default(),
+            wasi: build_wasi(
+                Some(config.command_line_arguments()),
+                Some(config.environment_variables()),
+                config.preopened_dirs(),
+            )?,
+            wasi_stdout: None,
+            wasi_stderr: None,
+            initialized: false,
+            registry: Default::default(), // TODO move registry into env?
+        };
+        Ok(state)
+    }
+}
+
 mod tests {
-    #[async_std::test]
+
+    #[tokio::test]
     async fn import_filter_signature_matches() {
         use crate::state::DefaultProcessState;
         use crate::DefaultProcessConfig;
         use lunatic_process::runtimes::wasmtime::WasmtimeRuntime;
-        use lunatic_process::state::ProcessState;
-        use lunatic_process::wasm::spawn_wasm;
         use std::sync::Arc;
 
         // The default configuration includes both, the "lunatic::*" and "wasi_*" namespaces.
@@ -356,13 +466,20 @@ mod tests {
         let runtime = WasmtimeRuntime::new(&wasmtime_config).unwrap();
 
         let raw_module = wat::parse_file("./wat/all_imports.wat").unwrap();
-        let module = runtime.compile_module(raw_module).unwrap();
+        let module = runtime.compile_module(raw_module.into()).unwrap();
+        let env = lunatic_process::env::Environment::new(0);
         let registry = Arc::new(dashmap::DashMap::new());
-        let state =
-            DefaultProcessState::new(runtime.clone(), module.clone(), Arc::new(config), registry)
-                .unwrap();
+        let state = DefaultProcessState::new(
+            env.clone(),
+            None,
+            runtime.clone(),
+            module.clone(),
+            Arc::new(config),
+            registry,
+        )
+        .unwrap();
 
-        spawn_wasm(runtime, module, state, "hello", Vec::new(), None)
+        env.spawn_wasm(runtime, module, state, "hello", Vec::new(), None)
             .await
             .unwrap();
     }

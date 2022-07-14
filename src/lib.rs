@@ -31,8 +31,8 @@ TODO
 */
 
 mod config;
-mod state;
+pub mod state;
 
 pub use config::DefaultProcessConfig;
-pub use lunatic_process::{spawn, wasm::spawn_wasm, Finished, Process, Signal, WasmProcess};
+pub use lunatic_process::{Finished, Process, Signal, WasmProcess};
 pub use state::DefaultProcessState;

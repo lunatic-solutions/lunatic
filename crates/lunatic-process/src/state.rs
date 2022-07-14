@@ -1,17 +1,19 @@
 use std::sync::Arc;
 
 use anyhow::Result;
-use async_std::channel::{Receiver, Sender};
 use dashmap::DashMap;
 use hash_map_id::HashMapId;
-use uuid::Uuid;
+use tokio::sync::{
+    mpsc::{UnboundedReceiver, UnboundedSender},
+    Mutex,
+};
 use wasmtime::Linker;
 
 use crate::{
     config::ProcessConfig,
     mailbox::MessageMailbox,
     runtimes::wasmtime::{WasmtimeCompiledModule, WasmtimeRuntime},
-    Process, Signal,
+    Signal,
 };
 
 pub type ConfigResources<T> = HashMapId<T>;
@@ -21,16 +23,19 @@ pub type ConfigResources<T> = HashMapId<T>;
 /// The `ProcessState` has two main roles:
 /// - It holds onto all vm resources (file descriptors, tcp streams, channels, ...)
 /// - Registers all host functions working on those resources to the `Linker`
-pub trait ProcessState: Sized + Default {
+pub trait ProcessState: Sized {
     type Config: ProcessConfig + Default + Send + Sync;
 
-    // Create a new `ProcessState`
-    fn new(
-        runtime: WasmtimeRuntime,
+    // Create a new `ProcessState` using the parent's state (self) to inherit environment and
+    // other parts of the state.
+    // This is used in the guest function `spawn` which uses this trait and not the concrete state.
+    fn new_state(
+        &self,
         module: WasmtimeCompiledModule<Self>,
         config: Arc<Self::Config>,
-        registry: Arc<DashMap<String, Arc<dyn Process>>>,
     ) -> Result<Self>;
+
+    fn state_for_instantiation() -> Self;
 
     /// Register all host functions to the linker.
     fn register(linker: &mut Linker<Self>) -> Result<()>;
@@ -46,10 +51,15 @@ pub trait ProcessState: Sized + Default {
     /// Returns the process configuration
     fn config(&self) -> &Arc<Self::Config>;
 
-    // Returns ID
-    fn id(&self) -> Uuid;
+    // Returns process ID
+    fn id(&self) -> u64;
     // Returns signal mailbox
-    fn signal_mailbox(&self) -> &(Sender<Signal>, Receiver<Signal>);
+    fn signal_mailbox(
+        &self,
+    ) -> &(
+        UnboundedSender<Signal>,
+        Arc<Mutex<UnboundedReceiver<Signal>>>,
+    );
     // Returns message mailbox
     fn message_mailbox(&self) -> &MessageMailbox;
 
@@ -58,5 +68,5 @@ pub trait ProcessState: Sized + Default {
     fn config_resources_mut(&mut self) -> &mut ConfigResources<Self::Config>;
 
     // Registry
-    fn registry(&self) -> &Arc<DashMap<String, Arc<dyn Process>>>;
+    fn registry(&self) -> &Arc<DashMap<String, (u64, u64)>>;
 }

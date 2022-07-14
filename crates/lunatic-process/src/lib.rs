@@ -1,4 +1,5 @@
 pub mod config;
+pub mod env;
 pub mod mailbox;
 pub mod message;
 pub mod runtimes;
@@ -8,12 +9,16 @@ pub mod wasm;
 use std::{collections::HashMap, fmt::Debug, future::Future, hash::Hash, sync::Arc};
 
 use anyhow::{anyhow, Result};
+use env::Environment;
 use log::{debug, log_enabled, trace, warn, Level};
 
-use async_std::channel::{unbounded, Receiver, Sender};
-use async_std::task::JoinHandle;
-
-use uuid::Uuid;
+use tokio::{
+    sync::{
+        mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender},
+        Mutex,
+    },
+    task::JoinHandle,
+};
 
 use crate::{mailbox::MessageMailbox, message::Message};
 
@@ -26,7 +31,7 @@ use crate::{mailbox::MessageMailbox, message::Message};
 /// shapes (message, kill, link, ...). Most signals have well defined meanings, but others such as
 /// a [`Message`] are opaque and left to the receiver for interpretation.
 pub trait Process: Send + Sync {
-    fn id(&self) -> Uuid;
+    fn id(&self) -> u64;
     fn send(&self, signal: Signal);
 }
 
@@ -54,12 +59,12 @@ pub enum Signal {
     // to the sender in form of a `LinkDied` signal.
     Link(Option<i64>, Arc<dyn Process>),
     // Request from a process to be unlinked
-    UnLink(Arc<dyn Process>),
+    UnLink { process_id: u64 },
     // Sent to linked processes when the link dies. Contains the tag used when the link was
     // established. Depending on the value of `die_when_link_dies` (default is `true`) and
     // the death reason, the receiving process will turn this signal into a message or the
     // process will immediately die as well.
-    LinkDied(Uuid, Option<i64>, DeathReason),
+    LinkDied(u64, Option<i64>, DeathReason),
 }
 
 impl Debug for Signal {
@@ -68,8 +73,8 @@ impl Debug for Signal {
             Self::Message(_) => write!(f, "Message"),
             Self::Kill => write!(f, "Kill"),
             Self::DieWhenLinkDies(_) => write!(f, "DieWhenLinkDies"),
-            Self::Link(_, _) => write!(f, "Link"),
-            Self::UnLink(_) => write!(f, "UnLink"),
+            Self::Link(_, p) => write!(f, "Link {}", p.id()),
+            Self::UnLink { process_id } => write!(f, "UnLink {process_id}"),
             Self::LinkDied(_, _, reason) => write!(f, "LinkDied {:?}", reason),
         }
     }
@@ -81,6 +86,7 @@ pub enum DeathReason {
     // Process finished normaly.
     Normal,
     Failure,
+    NoProcess,
 }
 
 /// The reason of a process finishing
@@ -99,19 +105,19 @@ pub enum Finished<T> {
 /// running in the background and can't be observed directly.
 #[derive(Debug, Clone)]
 pub struct WasmProcess {
-    id: Uuid,
-    signal_mailbox: Sender<Signal>,
+    id: u64,
+    signal_mailbox: UnboundedSender<Signal>,
 }
 
 impl WasmProcess {
     /// Create a new WasmProcess
-    pub fn new(id: Uuid, signal_mailbox: Sender<Signal>) -> Self {
+    pub fn new(id: u64, signal_mailbox: UnboundedSender<Signal>) -> Self {
         Self { id, signal_mailbox }
     }
 }
 
 impl Process for WasmProcess {
-    fn id(&self) -> Uuid {
+    fn id(&self) -> u64 {
         self.id
     }
     fn send(&self, signal: Signal) {
@@ -119,7 +125,7 @@ impl Process for WasmProcess {
         // lunatic can't guarantee that a message was successfully seen by the receiving side even
         // if this call succeeds. We deliberately don't expose this API, as it would not make sense
         // to relay on it and could signal wrong guarantees to users.
-        let _ = self.signal_mailbox.try_send(signal);
+        let _ = self.signal_mailbox.send(signal);
     }
 }
 
@@ -141,8 +147,9 @@ impl Process for WasmProcess {
 /// https://github.com/bytecodealliance/wasmtime/issues/2986
 pub(crate) async fn new<F, S, R>(
     fut: F,
-    id: Uuid,
-    signal_mailbox: Receiver<Signal>,
+    id: u64,
+    env: Environment,
+    signal_mailbox: Arc<Mutex<UnboundedReceiver<Signal>>>,
     message_mailbox: MessageMailbox,
 ) -> Result<S>
 where
@@ -161,18 +168,19 @@ where
     // TODO: Maybe wrapping this in some kind of `std::panic::catch_unwind` wold be a good idea,
     //       to protect against panics in host function calls that unwind through Wasm code.
     //       Currently a panic would just kill the task, but not notify linked processes.
+    let mut signal_mailbox = signal_mailbox.lock().await;
     let result = loop {
         tokio::select! {
             biased;
             // Handle signals first
             signal = signal_mailbox.recv() => {
-                match signal {
+                match signal.ok_or(()) {
                     Ok(Signal::Message(message)) => message_mailbox.push(message),
                     Ok(Signal::DieWhenLinkDies(value)) => die_when_link_dies = value,
                     // Put process into list of linked processes
                     Ok(Signal::Link(tag, proc)) => { links.insert(proc.id(), (proc, tag)); },
                     // Remove process from list
-                    Ok(Signal::UnLink(proc)) => { links.remove(&proc.id()); }
+                    Ok(Signal::UnLink { process_id }) => { links.remove(&process_id); }
                     // Exit loop and don't poll anymore the future if Signal::Kill received.
                     Ok(Signal::Kill) => break Finished::KillSignal,
                     // Depending if `die_when_link_dies` is set, process will die or turn the
@@ -180,7 +188,7 @@ where
                     Ok(Signal::LinkDied(id, tag, reason)) => {
                         links.remove(&id);
                         match reason {
-                            DeathReason::Failure => {
+                            DeathReason::Failure | DeathReason::NoProcess => {
                                 if die_when_link_dies {
                                     // Even this was not a **kill** signal it has the same effect on
                                     // this process and should be propagated as such.
@@ -201,6 +209,9 @@ where
             output = &mut fut => { break Finished::Normal(output); }
         }
     };
+
+    env.remove_process(id);
+
     match result {
         Finished::Normal(result) => {
             let result = result.into();
@@ -248,8 +259,8 @@ where
 /// A process spawned from a native Rust closure.
 #[derive(Clone, Debug)]
 pub struct NativeProcess {
-    id: Uuid,
-    signal_mailbox: Sender<Signal>,
+    id: u64,
+    signal_mailbox: UnboundedSender<Signal>,
 }
 
 /// Spawns a process from a closure.
@@ -257,35 +268,39 @@ pub struct NativeProcess {
 /// ## Example:
 ///
 /// ```no_run
-/// let _proc = lunatic_process::spawn(|_this, mailbox| async move {
+/// let env = lunatic_process::env::Environment::new(1);
+/// let _proc = env.spawn(|_this, mailbox| async move {
 ///     // Wait on a message with the tag `27`.
 ///     mailbox.pop(Some(&[27])).await;
 ///     // TODO: Needs to return ExecutionResult. Probably the `new` function will need to be adjusted
 ///     Ok(())
 /// });
 /// ```
-pub fn spawn<T, F, K, R>(func: F) -> (JoinHandle<Result<T>>, NativeProcess)
-where
-    T: Send + 'static,
-    R: Into<ExecutionResult<T>> + 'static,
-    K: Future<Output = R> + Send + 'static,
-    F: FnOnce(NativeProcess, MessageMailbox) -> K,
-{
-    // TODO: Switch to new_v1() for distributed Lunatic to assure uniqueness across nodes.
-    let id = Uuid::new_v4();
-    let (signal_sender, signal_mailbox) = unbounded::<Signal>();
-    let message_mailbox = MessageMailbox::default();
-    let process = NativeProcess {
-        id,
-        signal_mailbox: signal_sender,
-    };
-    let fut = func(process.clone(), message_mailbox.clone());
-    let join = async_std::task::spawn(new(fut, id, signal_mailbox, message_mailbox));
-    (join, process)
+
+impl Environment {
+    pub fn spawn<T, F, K, R>(&self, func: F) -> (JoinHandle<Result<T>>, NativeProcess)
+    where
+        T: Send + 'static,
+        R: Into<ExecutionResult<T>> + 'static,
+        K: Future<Output = R> + Send + 'static,
+        F: FnOnce(NativeProcess, MessageMailbox) -> K,
+    {
+        let id = self.get_next_process_id();
+        let (signal_sender, signal_mailbox) = unbounded_channel::<Signal>();
+        let message_mailbox = MessageMailbox::default();
+        let process = NativeProcess {
+            id,
+            signal_mailbox: signal_sender,
+        };
+        let fut = func(process.clone(), message_mailbox.clone());
+        let signal_mailbox = Arc::new(Mutex::new(signal_mailbox));
+        let join = tokio::task::spawn(new(fut, id, self.clone(), signal_mailbox, message_mailbox));
+        (join, process)
+    }
 }
 
 impl Process for NativeProcess {
-    fn id(&self) -> Uuid {
+    fn id(&self) -> u64 {
         self.id
     }
     fn send(&self, signal: Signal) {
@@ -293,7 +308,7 @@ impl Process for NativeProcess {
         // lunatic can't guarantee that a message was successfully seen by the receiving side even
         // if this call succeeds. We deliberately don't expose this API, as it would not make sense
         // to relay on it and could signal wrong guarantees to users.
-        let _ = self.signal_mailbox.try_send(signal);
+        let _ = self.signal_mailbox.send(signal);
     }
 }
 

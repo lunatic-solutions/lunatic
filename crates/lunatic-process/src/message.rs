@@ -10,7 +10,8 @@ use std::{
     sync::Arc,
 };
 
-use async_std::net::{TcpStream, UdpSocket};
+use lunatic_networking_api::TcpConnection;
+use tokio::net::UdpSocket;
 
 use crate::Process;
 
@@ -59,6 +60,16 @@ impl DataMessage {
         }
     }
 
+    /// Create a new message from a vec
+    pub fn new_from_vec(tag: Option<i64>, buffer: Vec<u8>) -> Self {
+        Self {
+            tag,
+            read_ptr: 0,
+            buffer,
+            resources: Vec::new(),
+        }
+    }
+
     /// Adds a process to the message and returns the index of it inside of the message
     pub fn add_process(&mut self, process: Arc<dyn Process>) -> usize {
         self.resources.push(Resource::Process(process));
@@ -66,7 +77,7 @@ impl DataMessage {
     }
 
     /// Adds a TCP stream to the message and returns the index of it inside of the message
-    pub fn add_tcp_stream(&mut self, tcp_stream: TcpStream) -> usize {
+    pub fn add_tcp_stream(&mut self, tcp_stream: Arc<TcpConnection>) -> usize {
         self.resources.push(Resource::TcpStream(tcp_stream));
         self.resources.len() - 1
     }
@@ -101,7 +112,7 @@ impl DataMessage {
     ///
     /// If the index is out of bound or the resource is not a tcp stream the function will return
     /// None.
-    pub fn take_tcp_stream(&mut self, index: usize) -> Option<TcpStream> {
+    pub fn take_tcp_stream(&mut self, index: usize) -> Option<Arc<TcpConnection>> {
         if let Some(resource_ref) = self.resources.get_mut(index) {
             let resource = std::mem::replace(resource_ref, Resource::None);
             match resource {
@@ -174,12 +185,12 @@ impl Read for DataMessage {
     }
 }
 
-/// A resource ([`WasmProcess`](crate::WasmProcess), [`TcpStream`](async_std::net::TcpStream),
+/// A resource ([`WasmProcess`](crate::WasmProcess), [`TcpStream`](tokio::net::TcpStream),
 /// ...) that is attached to a [`DataMessage`].
 pub enum Resource {
     None,
     Process(Arc<dyn Process>),
-    TcpStream(TcpStream),
+    TcpStream(Arc<TcpConnection>),
     UdpSocket(Arc<UdpSocket>),
 }
 

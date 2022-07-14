@@ -4,10 +4,10 @@ use criterion::{criterion_group, criterion_main, Criterion};
 use dashmap::DashMap;
 // TODO: Re-export this under lunatic_runtime
 use lunatic_process::{
+    env::Environment,
     runtimes::wasmtime::{default_config, WasmtimeRuntime},
-    state::ProcessState,
 };
-use lunatic_runtime::{spawn_wasm, DefaultProcessConfig, DefaultProcessState};
+use lunatic_runtime::{state::DefaultProcessState, DefaultProcessConfig};
 
 fn criterion_benchmark(c: &mut Criterion) {
     let rt = tokio::runtime::Runtime::new().unwrap();
@@ -18,16 +18,23 @@ fn criterion_benchmark(c: &mut Criterion) {
 
     let raw_module = wat::parse_file("./wat/hello.wat").unwrap();
     let module = runtime
-        .compile_module::<DefaultProcessState>(raw_module)
+        .compile_module::<DefaultProcessState>(raw_module.into())
         .unwrap();
 
+    let env = Environment::new(0);
     c.bench_function("spawn process", |b| {
         b.to_async(&rt).iter(|| async {
             let registry = Arc::new(DashMap::new());
-            let state =
-                DefaultProcessState::new(runtime.clone(), module.clone(), config.clone(), registry)
-                    .unwrap();
-            spawn_wasm(
+            let state = DefaultProcessState::new(
+                env.clone(),
+                None,
+                runtime.clone(),
+                module.clone(),
+                config.clone(),
+                registry,
+            )
+            .unwrap();
+            env.spawn_wasm(
                 runtime.clone(),
                 module.clone(),
                 state,
@@ -39,7 +46,8 @@ fn criterion_benchmark(c: &mut Criterion) {
             .unwrap()
             .0
             .await
-            .unwrap();
+            .unwrap()
+            .ok();
         });
     });
 }

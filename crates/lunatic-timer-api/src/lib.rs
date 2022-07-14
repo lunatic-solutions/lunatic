@@ -109,12 +109,8 @@ fn send_after<T: ProcessState + ProcessCtx<T> + TimerCtx>(
         .message_scratch_area()
         .take()
         .or_trap("lunatic::message::send_after")?;
-    let process = caller
-        .data_mut()
-        .process_resources_mut()
-        .get(process_id)
-        .or_trap("lunatic::message::send_after")?
-        .clone();
+
+    let process = caller.data_mut().environment().get_process(process_id);
 
     let target_time = Instant::now() + Duration::from_millis(delay);
     let timer_handle = async_std::task::spawn(async move {
@@ -122,7 +118,9 @@ fn send_after<T: ProcessState + ProcessCtx<T> + TimerCtx>(
         if duration_remaining != Duration::ZERO {
             async_std::task::sleep(duration_remaining).await;
         }
-        process.send(Signal::Message(message));
+        if let Some(process) = process {
+            process.send(Signal::Message(message));
+        }
     });
 
     let id = caller

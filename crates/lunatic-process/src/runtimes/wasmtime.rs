@@ -36,7 +36,7 @@ impl WasmtimeRuntime {
         // the `instantiate` function.
         // See: https://docs.rs/wasmtime/latest/wasmtime/struct.Linker.html#method.instantiate_pre
         // `default_state` should never be accessed and it's safe to use a "fake" state here.
-        let default_state = T::default();
+        let default_state = T::state_for_instantiation();
         let mut store = wasmtime::Store::new(&self.engine, default_state);
         let instance_pre = linker.instantiate_pre(&mut store, &module)?;
         let compiled_module = WasmtimeCompiledModule::new(data, module, instance_pre);
