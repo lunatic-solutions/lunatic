@@ -58,10 +58,10 @@ impl Connection {
     }
 }
 
-pub fn new_quic_client(addr: SocketAddr, ca_cert: String) -> Result<Client> {
+pub fn new_quic_client(_addr: SocketAddr, ca_cert: String) -> Result<Client> {
     Client::builder()
         .with_tls(Path::new(&ca_cert))?
-        .with_io(addr)?
+        .with_io("0.0.0.0:0")?
         .start()
         .map_err(|_| anyhow::anyhow!("Failed to start QUIC client."))
 }
