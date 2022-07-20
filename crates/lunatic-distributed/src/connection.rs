@@ -73,3 +73,12 @@ pub fn new_quic_server(addr: SocketAddr, cert: String, key: String) -> Result<Se
         .start()
         .map_err(|_| anyhow::anyhow!("Failed to start QUIC server."))
 }
+
+pub async fn receive_message<T: DeserializeOwned>(recv: &mut ReceiveStream) -> Result<(u64, T)> {
+    let mut size = [0u8; 4];
+    recv.read_exact(&mut size).await?;
+    let size = u32::from_le_bytes(size);
+    let mut buffer = vec![0u8; size as usize];
+    recv.read_exact(&mut buffer).await?;
+    Ok(deserialize(&buffer)?)
+}

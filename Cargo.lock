@@ -1412,6 +1412,7 @@ dependencies = [
  "anyhow",
  "async_cell",
  "bincode",
+ "bytes",
  "dashmap",
  "log",
  "lunatic-process",

@@ -87,6 +87,7 @@ impl Default for Server {
 
 pub async fn control_server(socket: SocketAddr, cert: String, key: String) -> Result<()> {
     let mut quic_server = new_quic_server(socket, cert, key)?;
+    log::info!("Control server listening on {socket}");
     let server = Server::new();
     while let Some(conn) = quic_server.accept().await {
         let addr = conn.remote_addr().unwrap();

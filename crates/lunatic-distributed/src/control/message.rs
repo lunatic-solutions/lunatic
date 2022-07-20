@@ -19,7 +19,7 @@ impl Request {
             Request::GetModule(_) => "GetModule",
         }
     }
-} 
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum Response {

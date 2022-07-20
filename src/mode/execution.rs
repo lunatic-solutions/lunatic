@@ -159,6 +159,7 @@ pub(crate) async fn execute() -> Result<()> {
         let control_name = control_name.to_string();
         let ca_cert = ca_cert.to_owned();
         let quic_client = new_quic_client(node_address, ca_cert).unwrap();
+        println!("REGISTER");
         let (node_id, control_client) = control::Client::register(
             node_address,
             node_name.to_string(),
@@ -234,10 +235,12 @@ pub(crate) async fn execute() -> Result<()> {
         // Spawn main process
         let module = fs::read(path)?;
         let module: RawWasm = if let Some(dist) = distributed_state.as_ref() {
+            println!("==================== ADD MODULE");
             dist.control.add_module(module).await?
         } else {
             module.into()
         };
+        println!("=================== ADDED MODULE");
         let module = runtime.compile_module::<DefaultProcessState>(module)?;
         let state = DefaultProcessState::new(
             env.clone(),
