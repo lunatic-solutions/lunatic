@@ -9,6 +9,7 @@ use lunatic_process::{
     state::ProcessState,
     Signal,
 };
+use rcgen::*;
 use s2n_quic::Connection as QuicConnection;
 use wasmtime::ResourceLimiter;
 
@@ -38,6 +39,25 @@ impl<T: 'static> Clone for ServerCtx<T> {
     }
 }
 
+pub fn root_cert(test_ca: bool, ca_cert: Option<&str>) -> Result<String> {
+    if test_ca {
+        Ok(crate::control::server::ROOT_CERT.to_string())
+    } else {
+        let cert = std::fs::read(ca_cert.unwrap())?;
+        Ok(std::str::from_utf8(&cert)?.to_string())
+    }
+}
+
+pub fn gen_node_cert(node_name: &str) -> Result<Certificate> {
+    let mut params = CertificateParams::new(vec![node_name.to_string()]);
+    params
+        .distinguished_name
+        .push(DnType::OrganizationName, "Lunatic Inc.");
+    params.distinguished_name.push(DnType::CommonName, "Node");
+    Certificate::from_params(params)
+        .map_err(|_| anyhow!("Error while generating node certificate."))
+}
+
 pub async fn node_server<T>(
     ctx: ServerCtx<T>,
     socket: SocketAddr,
@@ -47,7 +67,7 @@ pub async fn node_server<T>(
 where
     T: ProcessState + ResourceLimiter + DistributedCtx + Send + 'static,
 {
-    let mut quic_server = new_quic_server(socket, cert, key)?;
+    let mut quic_server = new_quic_server(socket, &cert, &key)?;
     while let Some(connection) = quic_server.accept().await {
         let addr = connection.remote_addr()?;
         log::info!("New connection {addr}");

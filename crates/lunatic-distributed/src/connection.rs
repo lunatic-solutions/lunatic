@@ -1,4 +1,4 @@
-use std::{net::SocketAddr, path::Path, sync::Arc};
+use std::{net::SocketAddr, sync::Arc};
 
 use anyhow::Result;
 
@@ -58,17 +58,17 @@ impl Connection {
     }
 }
 
-pub fn new_quic_client(_addr: SocketAddr, ca_cert: String) -> Result<Client> {
+pub fn new_quic_client(ca_cert: &str) -> Result<Client> {
     Client::builder()
-        .with_tls(Path::new(&ca_cert))?
+        .with_tls(ca_cert)?
         .with_io("0.0.0.0:0")?
         .start()
         .map_err(|_| anyhow::anyhow!("Failed to start QUIC client."))
 }
 
-pub fn new_quic_server(addr: SocketAddr, cert: String, key: String) -> Result<Server> {
+pub fn new_quic_server(addr: SocketAddr, cert: &str, key: &str) -> Result<Server> {
     Server::builder()
-        .with_tls((Path::new(&cert), Path::new(&key)))?
+        .with_tls((cert, key))?
         .with_io(addr)?
         .start()
         .map_err(|_| anyhow::anyhow!("Failed to start QUIC server."))

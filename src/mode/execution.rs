@@ -15,6 +15,7 @@ use lunatic_process::{
 };
 use lunatic_process_api::ProcessConfigCtx;
 use lunatic_runtime::{DefaultProcessConfig, DefaultProcessState};
+use uuid::Uuid;
 
 pub(crate) async fn execute() -> Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).init();
@@ -39,50 +40,11 @@ pub(crate) async fn execute() -> Result<()> {
                 .takes_value(true),
         )
         .arg(
-            Arg::new("node_name")
-            .long("node-name")
-            .value_name("NODE_NAME")
-            .help("Name of the node under which it registers to the control node.")
-            .requires("control")
-            .takes_value(true)
-        )
-        .arg(
             Arg::new("control")
                 .long("control")
                 .value_name("CONTROL_ADDRESS")
                 .help("Address of a control node inside the cluster that will be used for bootstrapping.")
                 .takes_value(true)
-        )
-        .arg(
-            Arg::new("control_name")
-            .long("control-name")
-            .value_name("CONTROL_NAME")
-            .help("Name of a control node inside the cluster that will be used for bootstrapping.")
-            .takes_value(true)
-        )
-        .arg(
-            Arg::new("ca_cert")
-                .long("ca_cert")
-                .value_name("CA_CERT")
-                .help("Publicly trusted digital certificate used by QUIC client.")
-                .takes_value(true)
-                .requires("control")
-        )
-        .arg(
-            Arg::new("cert")
-                .long("cert")
-                .value_name("CERT")
-                .help("Signed digital certificate used by QUIC server.")
-                .takes_value(true)
-                .requires("control")
-        )
-        .arg(
-            Arg::new("key")
-                .long("key")
-                .value_name("KEY")
-                .help("Private key used by QUIC server.")
-                .takes_value(true)
-                .requires("control")
         )
         .arg(
             Arg::new("control_server")
@@ -91,10 +53,32 @@ pub(crate) async fn execute() -> Result<()> {
                 .requires("control"),
         )
         .arg(
+            Arg::new("test_ca")
+                .long("test-ca")
+                .help("Use test Certificate Authority for bootstrapping QUIC connections.")
+                .requires("control")
+        )
+        .arg(
+            Arg::new("ca_cert")
+                .long("ca-cert")
+                .help("Certificate Authority public certificate used for boostraping QUIC connections.")
+                .requires("control")
+                .conflicts_with("test_ca")
+                .takes_value(true)
+        )
+        .arg(
+            Arg::new("ca_key")
+                .long("ca-key")
+                .help("Certificate Authority private key used for signing node certificate requests")
+                .requires("control_server")
+                .conflicts_with("test_ca")
+                .takes_value(true)
+        )
+        .arg(
             Arg::new("no_entry")
                 .long("no-entry")
                 .help("If provided will join other nodes, but not require a .wasm entry file")
-                .requires("node"),
+                .required_unless_present("wasm")
         ).arg(
             Arg::new("bench")
                 .long("bench")
@@ -104,7 +88,6 @@ pub(crate) async fn execute() -> Result<()> {
             Arg::new("wasm")
                 .value_name("WASM")
                 .help("Entry .wasm file")
-                .required_unless_present("no_entry")
                 .conflicts_with("no_entry")
                 .index(1),
         )
@@ -119,13 +102,20 @@ pub(crate) async fn execute() -> Result<()> {
         )
         .get_matches();
 
+    if args.is_present("test_ca") {
+        log::warn!("Do not use test Certificate Authority in production!")
+    }
     // Run control server
     if args.is_present("control_server") {
         if let Some(control_address) = args.value_of("control") {
             // TODO unwrap, better message
-            let cert = args.value_of("cert").unwrap().to_string();
-            let key = args.value_of("key").unwrap().to_string();
-            tokio::task::spawn(control_server(control_address.parse().unwrap(), cert, key));
+            let ca_cert = lunatic_distributed::control::server::root_cert(
+                args.is_present("test_ca"),
+                args.value_of("ca_cert"),
+                args.value_of("ca_key"),
+            )
+            .unwrap();
+            tokio::task::spawn(control_server(control_address.parse().unwrap(), ca_cert));
         }
     }
 
@@ -136,35 +126,27 @@ pub(crate) async fn execute() -> Result<()> {
 
     let env = envs.get_or_create(1);
 
-    let distributed_state = if let (
-        Some(node_address),
-        Some(node_name),
-        Some(control_address),
-        Some(control_name),
-        Some(ca_cert),
-        Some(cert),
-        Some(key),
-    ) = (
-        args.value_of("node"),
-        args.value_of("node_name"),
-        args.value_of("control"),
-        args.value_of("control_name"),
-        args.value_of("ca_cert"),
-        args.value_of("cert"),
-        args.value_of("key"),
-    ) {
+    let distributed_state = if let (Some(node_address), Some(control_address)) =
+        (args.value_of("node"), args.value_of("control"))
+    {
         // TODO unwrap, better message
         let node_address = node_address.parse().unwrap();
+        let node_name = Uuid::new_v4().to_string();
         let control_address = control_address.parse().unwrap();
-        let control_name = control_name.to_string();
-        let ca_cert = ca_cert.to_owned();
-        let quic_client = new_quic_client(node_address, ca_cert).unwrap();
-        let (node_id, control_client) = control::Client::register(
+        let ca_cert = lunatic_distributed::distributed::server::root_cert(
+            args.is_present("test_ca"),
+            args.value_of("ca_cert"),
+        )
+        .unwrap();
+        let node_cert =
+            lunatic_distributed::distributed::server::gen_node_cert(&node_name).unwrap();
+        let quic_client = new_quic_client(&ca_cert).unwrap();
+        let (node_id, control_client, signed_cert_pem) = control::Client::register(
             node_address,
             node_name.to_string(),
             control_address,
-            control_name,
             quic_client.clone(),
+            node_cert.serialize_request_pem().unwrap(),
         )
         .await?;
         let distributed_client =
@@ -185,8 +167,8 @@ pub(crate) async fn execute() -> Result<()> {
                 runtime: runtime.clone(),
             },
             node_address,
-            cert.to_string(),
-            key.to_string(),
+            signed_cert_pem,
+            node_cert.serialize_private_key_pem(),
         ));
 
         log::info!("Registration successful, node id {}", node_id);

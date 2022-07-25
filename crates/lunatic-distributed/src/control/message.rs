@@ -19,11 +19,11 @@ impl Request {
             Request::GetModule(_) => "GetModule",
         }
     }
-} 
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum Response {
-    Register(u64),
+    Register((u64, String)),
     Nodes(Vec<(u64, Registration)>),
     Module(Option<Vec<u8>>),
     ModuleId(u64),
@@ -33,4 +33,5 @@ pub enum Response {
 pub struct Registration {
     pub node_address: SocketAddr,
     pub node_name: String,
+    pub signing_request: String,
 }

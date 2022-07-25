@@ -1,5 +1,6 @@
 use std::{
     net::SocketAddr,
+    path::Path,
     sync::{
         atomic::{self, AtomicU64},
         Arc,
@@ -7,8 +8,8 @@ use std::{
 };
 
 use anyhow::Result;
-
 use dashmap::DashMap;
+use rcgen::*;
 
 use crate::{
     connection::new_quic_server,
@@ -26,16 +27,18 @@ struct InnerServer {
     nodes: DashMap<u64, Registration>,
     next_module_id: AtomicU64,
     modules: DashMap<u64, Vec<u8>>,
+    ca_cert: Certificate,
 }
 
 impl Server {
-    pub fn new() -> Self {
+    pub fn new(ca_cert: Certificate) -> Self {
         Self {
             inner: Arc::new(InnerServer {
                 next_node_id: AtomicU64::new(1),
                 next_module_id: AtomicU64::new(1),
                 nodes: DashMap::new(),
                 modules: DashMap::new(),
+                ca_cert,
             }),
         }
     }
@@ -54,8 +57,10 @@ impl Server {
 
     fn register(&self, reg: Registration) -> Response {
         let node_id = self.next_node_id();
+        let sign_request = CertificateSigningRequest::from_pem(&reg.signing_request).unwrap();
+        let signed_cert = sign_node_cert(&self.inner.ca_cert, sign_request).unwrap();
         self.inner.nodes.insert(node_id, reg);
-        Response::Register(node_id)
+        Response::Register((node_id, signed_cert))
     }
 
     fn list_nodes(&self) -> Response {
@@ -79,15 +84,59 @@ impl Server {
     }
 }
 
-impl Default for Server {
-    fn default() -> Self {
-        Self::new()
+pub static CTRL_SERVER_NAME: &'static str = "ctrl.lunatic.cloud";
+pub static ROOT_CERT: &'static str = include_str!("../../certs/root.pem");
+static ROOT_KEYS: &'static str = include_str!("../../certs/root.keys.pem");
+
+pub fn root_cert(
+    test_ca: bool,
+    ca_cert: Option<&str>,
+    ca_keys: Option<&str>,
+) -> Result<Certificate> {
+    if test_ca {
+        let key_pair = KeyPair::from_pem(ROOT_KEYS)?;
+        let root_params = CertificateParams::from_ca_cert_pem(ROOT_CERT, key_pair)?;
+        let root_cert = Certificate::from_params(root_params)?;
+        Ok(root_cert)
+    } else {
+        let ca_cert_pem = std::fs::read(Path::new(ca_cert.unwrap()))?;
+        let ca_keys_pem = std::fs::read(Path::new(ca_keys.unwrap()))?;
+        let key_pair = KeyPair::from_pem(std::str::from_utf8(&ca_keys_pem)?)?;
+        let root_params =
+            CertificateParams::from_ca_cert_pem(std::str::from_utf8(&ca_cert_pem)?, key_pair)?;
+        let root_cert = Certificate::from_params(root_params)?;
+        Ok(root_cert)
     }
 }
 
-pub async fn control_server(socket: SocketAddr, cert: String, key: String) -> Result<()> {
-    let mut quic_server = new_quic_server(socket, cert, key)?;
-    let server = Server::new();
+fn sign_node_cert(ca: &Certificate, sign_request: CertificateSigningRequest) -> Result<String> {
+    sign_request
+        .serialize_pem_with_signer(ca)
+        .map_err(|_| anyhow::anyhow!("Error while signing node certificate."))
+}
+
+fn ctrl_cert() -> Result<Certificate> {
+    let mut ctrl_params = CertificateParams::new(vec![CTRL_SERVER_NAME.into()]);
+    ctrl_params
+        .distinguished_name
+        .push(DnType::OrganizationName, "Lunatic Inc.");
+    ctrl_params
+        .distinguished_name
+        .push(DnType::CommonName, "Control CA");
+    Ok(Certificate::from_params(ctrl_params)?)
+}
+
+fn default_server_certificates(root_cert: &Certificate) -> Result<(String, String)> {
+    let ctrl_cert = ctrl_cert()?;
+    let cert_pem = ctrl_cert.serialize_pem_with_signer(&root_cert)?;
+    let key_pem = ctrl_cert.serialize_private_key_pem();
+    Ok((cert_pem, key_pem))
+}
+
+pub async fn control_server(socket: SocketAddr, ca_cert: Certificate) -> Result<()> {
+    let (cert_pem, key_pem) = default_server_certificates(&ca_cert)?;
+    let mut quic_server = new_quic_server(socket, &cert_pem, &key_pem)?;
+    let server = Server::new(ca_cert);
     while let Some(conn) = quic_server.accept().await {
         let addr = conn.remote_addr().unwrap();
         log::info!("New connection {addr}");

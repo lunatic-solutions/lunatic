@@ -153,7 +153,7 @@ impl Client {
         environment_id: u64,
         node_id: u64,
         module_id: u64,
-        function: &str,
+        function: String,
         params: Vec<Val>,
     ) -> Result<u64> {
         if let Response::Spawned(id) = self
@@ -162,7 +162,7 @@ impl Client {
                 Request::Spawn {
                     environment_id,
                     module_id,
-                    function: function.into(),
+                    function: function,
                     params,
                 },
             )

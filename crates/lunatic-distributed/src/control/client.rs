@@ -11,7 +11,10 @@ use std::{
 
 use crate::{
     connection::Connection,
-    control::message::{Registration, Request, Response},
+    control::{
+        message::{Registration, Request, Response},
+        server::CTRL_SERVER_NAME,
+    },
     NodeInfo,
 };
 
@@ -36,16 +39,16 @@ impl Client {
         node_addr: SocketAddr,
         node_name: String,
         control_addr: SocketAddr,
-        control_name: String,
         quic_client: QuicClient,
-    ) -> Result<(u64, Self)> {
+        signing_request: String,
+    ) -> Result<(u64, Self, String)> {
         let client = Client {
             inner: Arc::new(InnerClient {
                 next_message_id: AtomicU64::new(1),
                 control_addr,
                 node_addr,
                 node_name,
-                connection: connect(quic_client.clone(), control_addr, &control_name, 5).await?,
+                connection: connect(quic_client.clone(), control_addr, 5).await?,
                 pending_requests: DashMap::new(),
                 nodes: Default::default(),
                 node_ids: Default::default(),
@@ -54,8 +57,8 @@ impl Client {
         // Spawn reader task before register
         tokio::task::spawn(reader_task(client.clone()));
         tokio::task::spawn(refresh_nodes_task(client.clone()));
-        let node_id: u64 = client.send_registration().await?;
-        Ok((node_id, client))
+        let (node_id, cert) = client.send_registration(signing_request).await?;
+        Ok((node_id, client, cert))
     }
 
     pub fn next_message_id(&self) -> u64 {
@@ -74,7 +77,14 @@ impl Client {
 
     pub async fn send(&self, req: Request) -> Result<Response> {
         let msg_id = self.next_message_id();
-        println!("SEND MESSAGE {}", if let Request::AddModule(_) = req { "add_module" } else { "other" });
+        println!(
+            "SEND MESSAGE {}",
+            if let Request::AddModule(_) = req {
+                "add_module"
+            } else {
+                "other"
+            }
+        );
         self.inner.connection.send(msg_id, req).await?;
         let cell = AsyncCell::shared();
         self.inner.pending_requests.insert(msg_id, cell.clone());
@@ -87,14 +97,15 @@ impl Client {
         self.inner.connection.receive().await
     }
 
-    async fn send_registration(&self) -> Result<u64> {
+    async fn send_registration(&self, signing_request: String) -> Result<(u64, String)> {
         let reg = Registration {
             node_address: self.inner.node_addr,
             node_name: self.inner.node_name.clone(),
+            signing_request,
         };
         let resp = self.send(Request::Register(reg)).await?;
-        if let Response::Register(node_id) = resp {
-            return Ok(node_id);
+        if let Response::Register(data) = resp {
+            return Ok(data);
         }
         Err(anyhow!("Registration failed."))
     }
@@ -157,15 +168,10 @@ impl Client {
     }
 }
 
-async fn connect(
-    quic_client: QuicClient,
-    addr: SocketAddr,
-    name: &str,
-    retry: u32,
-) -> Result<Connection> {
+async fn connect(quic_client: QuicClient, addr: SocketAddr, retry: u32) -> Result<Connection> {
     for _ in 0..retry {
         log::info!("Connecting to control {addr}");
-        let connect = Connect::new(addr).with_server_name(name);
+        let connect = Connect::new(addr).with_server_name(CTRL_SERVER_NAME);
         if let Ok(mut conn) = quic_client.connect(connect).await {
             conn.keep_alive(true)?;
             let stream = conn.open_bidirectional_stream().await?;
