@@ -2,13 +2,13 @@ use std::{
     convert::TryInto,
     future::Future,
     io::{Read, Write},
-    time::Duration,
 };
 
 use anyhow::Result;
 use lunatic_common_api::{get_memory, IntoTrap};
 use lunatic_networking_api::NetworkingCtx;
 use lunatic_process_api::ProcessCtx;
+use tokio::time::{timeout, Duration};
 use wasmtime::{Caller, Linker, Trap};
 
 use lunatic_process::{
@@ -345,7 +345,7 @@ fn send<T: ProcessState + ProcessCtx<T>>(
 // This operation needs to be an atomic host function, if we jumped back into the guest we could
 // miss out on the incoming message before `receive` is called.
 //
-// If timeout is specified (value different from 0), the function will return on timeout
+// If timeout is specified (value different from `u64::MAX`), the function will return on timeout
 // expiration with value 9027.
 //
 // Returns:
@@ -358,7 +358,7 @@ fn send<T: ProcessState + ProcessCtx<T>>(
 fn send_receive_skip_search<T: ProcessState + ProcessCtx<T> + Send>(
     mut caller: Caller<T>,
     process_id: u64,
-    timeout: u32,
+    timeout_duration: u64,
 ) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_> {
     Box::new(async move {
         let message = caller
@@ -378,10 +378,12 @@ fn send_receive_skip_search<T: ProcessState + ProcessCtx<T> + Send>(
             process.send(Signal::Message(message));
         }
 
-        if let Some(message) = tokio::select! {
-            // Timeout will still happen after `timeout` milliseconds, even if the process doesn't exist
-            _ = tokio::time::sleep(Duration::from_millis(timeout as u64)), if timeout != 0 => None,
-            message = caller.data_mut().mailbox().pop_skip_search(tags) => Some(message)
+        let pop_skip_search_tag = caller.data_mut().mailbox().pop_skip_search(tags);
+        if let Ok(message) = match timeout_duration {
+            // Without timeout
+            u64::MAX => Ok(pop_skip_search_tag.await),
+            // With timeout
+            t => timeout(Duration::from_millis(t), pop_skip_search_tag).await,
         } {
             // Put the message into the scratch area
             caller.data_mut().message_scratch_area().replace(message);
@@ -399,7 +401,7 @@ fn send_receive_skip_search<T: ProcessState + ProcessCtx<T> + Send>(
 // of the supplied tags. **tag_ptr** points to an array containing i64 value encoded as little
 // endian values.
 //
-// If timeout is specified (value different from 0), the function will return on timeout
+// If timeout is specified (value different from `u64::MAX`), the function will return on timeout
 // expiration with value 9027.
 //
 // Once the message is received, functions like `lunatic::message::read_data()` can be used to
@@ -416,7 +418,7 @@ fn receive<T: ProcessState + ProcessCtx<T> + Send>(
     mut caller: Caller<T>,
     tag_ptr: u32,
     tag_len: u32,
-    timeout: u32,
+    timeout_duration: u64,
 ) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_> {
     Box::new(async move {
         let tags = if tag_len > 0 {
@@ -436,9 +438,12 @@ fn receive<T: ProcessState + ProcessCtx<T> + Send>(
             None
         };
 
-        if let Some(message) = tokio::select! {
-            _ = tokio::time::sleep(Duration::from_millis(timeout as u64)), if timeout != 0 => None,
-            message = caller.data_mut().mailbox().pop(tags.as_deref()) => Some(message)
+        let pop = caller.data_mut().mailbox().pop(tags.as_deref());
+        if let Ok(message) = match timeout_duration {
+            // Without timeout
+            u64::MAX => Ok(pop.await),
+            // With timeout
+            t => timeout(Duration::from_millis(t), pop).await,
         } {
             let result = match message {
                 Message::Data(_) => 0,
