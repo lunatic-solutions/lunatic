@@ -5,7 +5,7 @@ use lunatic_process_api::ProcessCtx;
 use wasmtime::Trap;
 use wasmtime::{Caller, Linker};
 
-// Register the error APIs to the linker
+// Register the registry APIs to the linker
 pub fn register<T: ProcessState + ProcessCtx<T> + 'static>(linker: &mut Linker<T>) -> Result<()> {
     linker.func_wrap("lunatic::registry", "put", put)?;
     linker.func_wrap("lunatic::registry", "get", get)?;
