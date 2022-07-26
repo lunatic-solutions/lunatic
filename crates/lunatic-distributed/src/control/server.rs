@@ -15,7 +15,10 @@ use crate::{
     connection::new_quic_server,
     control::message::{Request, Response},
 };
-use crate::{connection::Connection, control::message::Registration};
+use crate::{
+    connection::Connection,
+    control::message::{Registered, Registration},
+};
 
 #[derive(Clone)]
 pub struct Server {
@@ -57,10 +60,18 @@ impl Server {
 
     fn register(&self, reg: Registration) -> Response {
         let node_id = self.next_node_id();
-        let sign_request = CertificateSigningRequest::from_pem(&reg.signing_request).unwrap();
-        let signed_cert = sign_node_cert(&self.inner.ca_cert, sign_request).unwrap();
-        self.inner.nodes.insert(node_id, reg);
-        Response::Register((node_id, signed_cert))
+        let signed_cert = CertificateSigningRequest::from_pem(&reg.signing_request)
+            .and_then(|sign_request| sign_request.serialize_pem_with_signer(&self.inner.ca_cert));
+        match signed_cert {
+            Ok(signed_cert) => {
+                self.inner.nodes.insert(node_id, reg);
+                Response::Register(Registered {
+                    node_id,
+                    signed_cert,
+                })
+            }
+            Err(rcgen_err) => Response::Error(rcgen_err.to_string()),
+        }
     }
 
     fn list_nodes(&self) -> Response {
@@ -85,8 +96,8 @@ impl Server {
 }
 
 pub static CTRL_SERVER_NAME: &'static str = "ctrl.lunatic.cloud";
-pub static ROOT_CERT: &'static str = include_str!("../../certs/root.pem");
-static ROOT_KEYS: &'static str = include_str!("../../certs/root.keys.pem");
+pub static TEST_ROOT_CERT: &'static str = include_str!("../../certs/root.pem");
+static TEST_ROOT_KEYS: &'static str = include_str!("../../certs/root.keys.pem");
 
 pub fn root_cert(
     test_ca: bool,
@@ -94,25 +105,24 @@ pub fn root_cert(
     ca_keys: Option<&str>,
 ) -> Result<Certificate> {
     if test_ca {
-        let key_pair = KeyPair::from_pem(ROOT_KEYS)?;
-        let root_params = CertificateParams::from_ca_cert_pem(ROOT_CERT, key_pair)?;
+        let key_pair = KeyPair::from_pem(TEST_ROOT_KEYS)?;
+        let root_params = CertificateParams::from_ca_cert_pem(TEST_ROOT_CERT, key_pair)?;
         let root_cert = Certificate::from_params(root_params)?;
         Ok(root_cert)
     } else {
-        let ca_cert_pem = std::fs::read(Path::new(ca_cert.unwrap()))?;
-        let ca_keys_pem = std::fs::read(Path::new(ca_keys.unwrap()))?;
+        let ca_cert_pem = std::fs::read(Path::new(
+            ca_cert.ok_or_else(|| anyhow::anyhow!("Missing public root certificate."))?,
+        ))?;
+        let ca_keys_pem =
+            std::fs::read(Path::new(ca_keys.ok_or_else(|| {
+                anyhow::anyhow!("Missing public root certificate keys.")
+            })?))?;
         let key_pair = KeyPair::from_pem(std::str::from_utf8(&ca_keys_pem)?)?;
         let root_params =
             CertificateParams::from_ca_cert_pem(std::str::from_utf8(&ca_cert_pem)?, key_pair)?;
         let root_cert = Certificate::from_params(root_params)?;
         Ok(root_cert)
     }
-}
-
-fn sign_node_cert(ca: &Certificate, sign_request: CertificateSigningRequest) -> Result<String> {
-    sign_request
-        .serialize_pem_with_signer(ca)
-        .map_err(|_| anyhow::anyhow!("Error while signing node certificate."))
 }
 
 fn ctrl_cert() -> Result<Certificate> {

@@ -41,9 +41,11 @@ impl<T: 'static> Clone for ServerCtx<T> {
 
 pub fn root_cert(test_ca: bool, ca_cert: Option<&str>) -> Result<String> {
     if test_ca {
-        Ok(crate::control::server::ROOT_CERT.to_string())
+        Ok(crate::control::server::TEST_ROOT_CERT.to_string())
     } else {
-        let cert = std::fs::read(ca_cert.unwrap())?;
+        let cert = std::fs::read(
+            ca_cert.ok_or_else(|| anyhow::anyhow!("Missing public root certificate."))?,
+        )?;
         Ok(std::str::from_utf8(&cert)?.to_string())
     }
 }

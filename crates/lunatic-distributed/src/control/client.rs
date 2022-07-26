@@ -12,7 +12,7 @@ use std::{
 use crate::{
     connection::Connection,
     control::{
-        message::{Registration, Request, Response},
+        message::{Registered, Registration, Request, Response},
         server::CTRL_SERVER_NAME,
     },
     NodeInfo,
@@ -57,8 +57,11 @@ impl Client {
         // Spawn reader task before register
         tokio::task::spawn(reader_task(client.clone()));
         tokio::task::spawn(refresh_nodes_task(client.clone()));
-        let (node_id, cert) = client.send_registration(signing_request).await?;
-        Ok((node_id, client, cert))
+        let Registered {
+            node_id,
+            signed_cert,
+        } = client.send_registration(signing_request).await?;
+        Ok((node_id, client, signed_cert))
     }
 
     pub fn next_message_id(&self) -> u64 {
@@ -97,17 +100,18 @@ impl Client {
         self.inner.connection.receive().await
     }
 
-    async fn send_registration(&self, signing_request: String) -> Result<(u64, String)> {
+    async fn send_registration(&self, signing_request: String) -> Result<Registered> {
         let reg = Registration {
             node_address: self.inner.node_addr,
             node_name: self.inner.node_name.clone(),
             signing_request,
         };
         let resp = self.send(Request::Register(reg)).await?;
-        if let Response::Register(data) = resp {
-            return Ok(data);
+        match resp {
+            Response::Register(data) => Ok(data),
+            Response::Error(e) => Err(anyhow!("Registration failed. {e}")),
+            _ => Err(anyhow!("Registration failed.")),
         }
-        Err(anyhow!("Registration failed."))
     }
 
     fn process_response(&self, id: u64, resp: Response) {

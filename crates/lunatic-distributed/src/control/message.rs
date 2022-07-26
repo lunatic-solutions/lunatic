@@ -23,10 +23,11 @@ impl Request {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum Response {
-    Register((u64, String)),
+    Register(Registered),
     Nodes(Vec<(u64, Registration)>),
     Module(Option<Vec<u8>>),
     ModuleId(u64),
+    Error(String),
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -34,4 +35,10 @@ pub struct Registration {
     pub node_address: SocketAddr,
     pub node_name: String,
     pub signing_request: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Registered {
+    pub node_id: u64,
+    pub signed_cert: String,
 }
