@@ -329,12 +329,11 @@ fn send<T: ProcessState + ProcessCtx<T>>(
         .message_scratch_area()
         .take()
         .or_trap("lunatic::message::send::no_message")?;
-    let process = caller
-        .data_mut()
-        .environment()
-        .get_process(process_id)
-        .or_trap("lunatic::message::send::no_process")?;
-    process.send(Signal::Message(message));
+
+    if let Some(process) = caller.data_mut().environment().get_process(process_id) {
+        process.send(Signal::Message(message));
+    }
+
     Ok(())
 }
 
@@ -374,13 +373,13 @@ fn send_receive_skip_search<T: ProcessState + ProcessCtx<T> + Send>(
         } else {
             None
         };
-        let process = caller
-            .data_mut()
-            .environment()
-            .get_process(process_id)
-            .or_trap("lunatic::message::send_receive_skip_search")?;
-        process.send(Signal::Message(message));
+
+        if let Some(process) = caller.data_mut().environment().get_process(process_id) {
+            process.send(Signal::Message(message));
+        }
+
         if let Some(message) = tokio::select! {
+            // Timeout will still happen after `timeout` milliseconds, even if the process doesn't exist
             _ = tokio::time::sleep(Duration::from_millis(timeout as u64)), if timeout != 0 => None,
             message = caller.data_mut().mailbox().pop_skip_search(tags) => Some(message)
         } {

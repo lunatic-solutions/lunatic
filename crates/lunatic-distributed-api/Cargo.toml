@@ -1,21 +1,21 @@
 [package]
 name = "lunatic-distributed-api"
-version = "0.9.0"
+version = "0.10.0"
 edition = "2021"
 description = "A simple control server implementation"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-lunatic-common-api = { version = "0.9", path = "../lunatic-common-api" }
-lunatic-distributed = { version = "^0.9", path = "../lunatic-distributed" }
-lunatic-process = { version = "^0.9", path = "../lunatic-process" }
-lunatic-process-api = { version = "^0.9", path = "../lunatic-process-api" }
-wasmtime = "^0.37"
-tokio = { version = "^1.14", features = ["macros", "net", "time"] }
+lunatic-common-api = { version = "^0.10", path = "../lunatic-common-api" }
+lunatic-distributed = { version = "^0.10", path = "../lunatic-distributed" }
+lunatic-process = { version = "^0.10", path = "../lunatic-process" }
+lunatic-process-api = { version = "^0.10", path = "../lunatic-process-api" }
+wasmtime = "^0.38"
+tokio = { version = "^1.20", features = ["macros", "net", "time"] }
 anyhow = "^1.0"
 serde = { version = "^1.0", features = ["derive"] }
-dashmap = "5.2.0"
+dashmap = "5.3.4"
 bincode = "^1.3"
 log = "^0.4"
 async_cell = "0.2.1"

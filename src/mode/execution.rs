@@ -15,6 +15,7 @@ use lunatic_process::{
 };
 use lunatic_process_api::ProcessConfigCtx;
 use lunatic_runtime::{DefaultProcessConfig, DefaultProcessState};
+
 use uuid::Uuid;
 
 pub(crate) async fn execute() -> Result<()> {
@@ -151,7 +152,6 @@ pub(crate) async fn execute() -> Result<()> {
         .await?;
         let distributed_client =
             distributed::Client::new(node_id, control_client.clone(), quic_client.clone()).await?;
-
         let dist = lunatic_distributed::DistributedProcessState::new(
             node_id,
             control_client.clone(),

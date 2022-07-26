@@ -1,6 +1,6 @@
 [package]
 name = "lunatic-registry-api"
-version = "0.9.0"
+version = "0.10.0"
 edition = "2021"
 description = "Lunatic host functions for registering named processes."
 homepage = "https://lunatic.solutions"
@@ -12,8 +12,8 @@ license = "Apache-2.0/MIT"
 
 [dependencies]
 anyhow = "^1.0"
-wasmtime = "^0.37"
-hash-map-id = { version = "^0.9", path = "../hash-map-id" }
-lunatic-process = { version = "^0.9", path = "../lunatic-process" }
-lunatic-process-api = { version = "^0.9", path = "../lunatic-process-api" }
-lunatic-common-api = { version = "^0.9", path = "../lunatic-common-api" }
+wasmtime = "^0.38"
+hash-map-id = { version = "^0.10", path = "../hash-map-id" }
+lunatic-process = { version = "^0.10", path = "../lunatic-process" }
+lunatic-process-api = { version = "^0.10", path = "../lunatic-process-api" }
+lunatic-common-api = { version = "^0.10", path = "../lunatic-common-api" }

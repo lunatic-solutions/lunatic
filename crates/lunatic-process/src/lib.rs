@@ -41,14 +41,6 @@ impl Debug for dyn Process {
     }
 }
 
-impl PartialEq<dyn Process> for dyn Process {
-    fn eq(&self, other: &dyn Process) -> bool {
-        self.id() == other.id()
-    }
-}
-
-impl Eq for dyn Process {}
-
 impl Hash for dyn Process {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.id().hash(state);
@@ -67,12 +59,12 @@ pub enum Signal {
     // to the sender in form of a `LinkDied` signal.
     Link(Option<i64>, Arc<dyn Process>),
     // Request from a process to be unlinked
-    UnLink(Arc<dyn Process>),
+    UnLink { process_id: u64 },
     // Sent to linked processes when the link dies. Contains the tag used when the link was
-    // established. Depending on the value of `die_when_link_dies` (default is `true`) this
-    // receiving process will turn this signal into a message or the process will immediately
-    // die as well.
-    LinkDied(Option<i64>),
+    // established. Depending on the value of `die_when_link_dies` (default is `true`) and
+    // the death reason, the receiving process will turn this signal into a message or the
+    // process will immediately die as well.
+    LinkDied(u64, Option<i64>, DeathReason),
 }
 
 impl Debug for Signal {
@@ -81,11 +73,20 @@ impl Debug for Signal {
             Self::Message(_) => write!(f, "Message"),
             Self::Kill => write!(f, "Kill"),
             Self::DieWhenLinkDies(_) => write!(f, "DieWhenLinkDies"),
-            Self::Link(_, _) => write!(f, "Link"),
-            Self::UnLink(_) => write!(f, "UnLink"),
-            Self::LinkDied(_) => write!(f, "LinkDied"),
+            Self::Link(_, p) => write!(f, "Link {}", p.id()),
+            Self::UnLink { process_id } => write!(f, "UnLink {process_id}"),
+            Self::LinkDied(_, _, reason) => write!(f, "LinkDied {:?}", reason),
         }
     }
+}
+
+// The reason of a process' death
+#[derive(Debug)]
+pub enum DeathReason {
+    // Process finished normaly.
+    Normal,
+    Failure,
+    NoProcess,
 }
 
 /// The reason of a process finishing
@@ -144,14 +145,16 @@ impl Process for WasmProcess {
 /// In case of success, the process state `S` is returned. It's not possible to return the process
 /// state in case of failure because of limitations in the Wasmtime API:
 /// https://github.com/bytecodealliance/wasmtime/issues/2986
-pub(crate) async fn new<F, S>(
+pub(crate) async fn new<F, S, R>(
     fut: F,
     id: u64,
+    env: Environment,
     signal_mailbox: Arc<Mutex<UnboundedReceiver<Signal>>>,
     message_mailbox: MessageMailbox,
 ) -> Result<S>
 where
-    F: Future<Output = ExecutionResult<S>> + Send + 'static,
+    R: Into<ExecutionResult<S>>,
+    F: Future<Output = R> + Send + 'static,
 {
     trace!("Process {} spawned", id);
     tokio::pin!(fut);
@@ -175,23 +178,28 @@ where
                     Ok(Signal::Message(message)) => message_mailbox.push(message),
                     Ok(Signal::DieWhenLinkDies(value)) => die_when_link_dies = value,
                     // Put process into list of linked processes
-                    Ok(Signal::Link(tag, proc)) => { links.insert(proc, tag); },
+                    Ok(Signal::Link(tag, proc)) => { links.insert(proc.id(), (proc, tag)); },
                     // Remove process from list
-                    Ok(Signal::UnLink(proc)) => { links.remove(&proc); }
+                    Ok(Signal::UnLink { process_id }) => { links.remove(&process_id); }
                     // Exit loop and don't poll anymore the future if Signal::Kill received.
                     Ok(Signal::Kill) => break Finished::KillSignal,
                     // Depending if `die_when_link_dies` is set, process will die or turn the
                     // signal into a message
-                    Ok(Signal::LinkDied(tag)) => {
-                        if die_when_link_dies {
-                            // Even this was not a **kill** signal it has the same effect on
-                            // this process and should be propagated as such.
-                            // TODO: Remove sender from our notify list, so we don't send back the
-                            //       same notification to an already dead process.
-                            break Finished::KillSignal
-                        } else {
-                            let message = Message::LinkDied(tag);
-                            message_mailbox.push(message);
+                    Ok(Signal::LinkDied(id, tag, reason)) => {
+                        links.remove(&id);
+                        match reason {
+                            DeathReason::Failure | DeathReason::NoProcess => {
+                                if die_when_link_dies {
+                                    // Even this was not a **kill** signal it has the same effect on
+                                    // this process and should be propagated as such.
+                                    break Finished::KillSignal
+                                } else {
+                                    let message = Message::LinkDied(tag);
+                                    message_mailbox.push(message);
+                                }
+                            },
+                            // In case a linked process finishes normally, don't do anything.
+                            DeathReason::Normal => {},
                         }
                     },
                     Err(_) => unreachable!("The process holds the sending side and is not closed")
@@ -201,8 +209,12 @@ where
             output = &mut fut => { break Finished::Normal(output); }
         }
     };
+
+    env.remove_process(id);
+
     match result {
         Finished::Normal(result) => {
+            let result = result.into();
             if let Some(failure) = result.failure() {
                 warn!(
                     "Process {} failed, notifying: {} links {}",
@@ -217,11 +229,15 @@ where
                 );
                 debug!("{}", failure);
                 // Notify all links that we finished with an error
-                links.iter().for_each(|(proc, tag)| {
-                    proc.send(Signal::LinkDied(*tag));
+                links.iter().for_each(|(_, (proc, tag))| {
+                    proc.send(Signal::LinkDied(id, *tag, DeathReason::Failure));
                 });
                 Err(anyhow!(failure.to_string()))
             } else {
+                // Notify all links that we finished normally
+                links.iter().for_each(|(_, (proc, tag))| {
+                    proc.send(Signal::LinkDied(id, *tag, DeathReason::Normal));
+                });
                 Ok(result.state())
             }
         }
@@ -232,8 +248,8 @@ where
                 links.len()
             );
             // Notify all links that we finished because of a kill signal
-            links.iter().for_each(|(proc, tag)| {
-                proc.send(Signal::LinkDied(*tag));
+            links.iter().for_each(|(_, (proc, tag))| {
+                proc.send(Signal::LinkDied(id, *tag, DeathReason::Failure));
             });
             Err(anyhow!("Process received Kill signal"))
         }
@@ -251,19 +267,22 @@ pub struct NativeProcess {
 ///
 /// ## Example:
 ///
-/// ```ignore
-/// let _proc = lunatic_runtime::spawn(|_this, mailbox| async move {
+/// ```no_run
+/// let env = lunatic_process::env::Environment::new(1);
+/// let _proc = env.spawn(|_this, mailbox| async move {
 ///     // Wait on a message with the tag `27`.
 ///     mailbox.pop(Some(&[27])).await;
+///     // TODO: Needs to return ExecutionResult. Probably the `new` function will need to be adjusted
 ///     Ok(())
 /// });
 /// ```
 
 impl Environment {
-    pub fn spawn<T, F, K>(&self, func: F) -> (JoinHandle<Result<T>>, NativeProcess)
+    pub fn spawn<T, F, K, R>(&self, func: F) -> (JoinHandle<Result<T>>, NativeProcess)
     where
         T: Send + 'static,
-        K: Future<Output = ExecutionResult<T>> + Send + 'static,
+        R: Into<ExecutionResult<T>> + 'static,
+        K: Future<Output = R> + Send + 'static,
         F: FnOnce(NativeProcess, MessageMailbox) -> K,
     {
         let id = self.get_next_process_id();
@@ -275,7 +294,7 @@ impl Environment {
         };
         let fut = func(process.clone(), message_mailbox.clone());
         let signal_mailbox = Arc::new(Mutex::new(signal_mailbox));
-        let join = tokio::task::spawn(new(fut, id, signal_mailbox, message_mailbox));
+        let join = tokio::task::spawn(new(fut, id, self.clone(), signal_mailbox, message_mailbox));
         (join, process)
     }
 }
@@ -314,6 +333,25 @@ impl<T> ExecutionResult<T> {
     // Returns the process state
     pub fn state(self) -> T {
         self.state
+    }
+}
+
+// It's more convinient to return a `Result<T,E>` in a `NativeProcess`.
+impl<T> From<Result<T>> for ExecutionResult<T>
+where
+    T: Default,
+{
+    fn from(result: Result<T>) -> Self {
+        match result {
+            Ok(t) => ExecutionResult {
+                state: t,
+                result: ResultValue::Ok,
+            },
+            Err(e) => ExecutionResult {
+                state: T::default(),
+                result: ResultValue::Failed(e.to_string()),
+            },
+        }
     }
 }
 

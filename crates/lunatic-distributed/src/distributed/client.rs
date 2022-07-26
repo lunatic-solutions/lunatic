@@ -16,7 +16,7 @@ use crate::{
     NodeInfo,
 };
 
-use super::message::Val;
+use super::message::Spawn;
 
 #[derive(Clone)]
 pub struct Client {
@@ -148,26 +148,8 @@ impl Client {
         };
     }
 
-    pub async fn spawn(
-        &self,
-        environment_id: u64,
-        node_id: u64,
-        module_id: u64,
-        function: String,
-        params: Vec<Val>,
-    ) -> Result<u64> {
-        if let Response::Spawned(id) = self
-            .request(
-                node_id,
-                Request::Spawn {
-                    environment_id,
-                    module_id,
-                    function: function,
-                    params,
-                },
-            )
-            .await?
-        {
+    pub async fn spawn(&self, node_id: u64, spawn: Spawn) -> Result<u64> {
+        if let Response::Spawned(id) = self.request(node_id, Request::Spawn(spawn)).await? {
             Ok(id)
         } else {
             Err(anyhow!("Invalid response type for spawn"))

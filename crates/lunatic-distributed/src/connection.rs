@@ -38,12 +38,9 @@ impl Connection {
         let message = serialize(&(msg_id, msg))?;
         // Prefix message with size as little-endian u32 value.
         let size = (message.len() as u32).to_le_bytes();
-        println!("Message {}", message.len());
         let mut writer = self.inner.writer.lock().await;
-        println!("Message got writer {}", message.len());
         writer.write_all(&size).await?;
         writer.write_all(&message).await?;
-        println!("Message written {}", message.len());
         Ok(msg_id)
     }
 

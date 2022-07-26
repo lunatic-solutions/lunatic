@@ -95,9 +95,9 @@ impl Server {
     }
 }
 
-pub static CTRL_SERVER_NAME: &'static str = "ctrl.lunatic.cloud";
-pub static TEST_ROOT_CERT: &'static str = include_str!("../../certs/root.pem");
-static TEST_ROOT_KEYS: &'static str = include_str!("../../certs/root.keys.pem");
+pub static CTRL_SERVER_NAME: &str = "ctrl.lunatic.cloud";
+pub static TEST_ROOT_CERT: &str = include_str!("../../certs/root.pem");
+static TEST_ROOT_KEYS: &str = include_str!("../../certs/root.keys.pem");
 
 pub fn root_cert(
     test_ca: bool,
@@ -138,7 +138,7 @@ fn ctrl_cert() -> Result<Certificate> {
 
 fn default_server_certificates(root_cert: &Certificate) -> Result<(String, String)> {
     let ctrl_cert = ctrl_cert()?;
-    let cert_pem = ctrl_cert.serialize_pem_with_signer(&root_cert)?;
+    let cert_pem = ctrl_cert.serialize_pem_with_signer(root_cert)?;
     let key_pem = ctrl_cert.serialize_private_key_pem();
     Ok((cert_pem, key_pem))
 }

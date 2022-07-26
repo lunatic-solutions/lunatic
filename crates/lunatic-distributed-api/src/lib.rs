@@ -1,13 +1,16 @@
-use std::{future::Future, time::Duration};
+use std::{future::Future, sync::Arc, time::Duration};
 
 use anyhow::{anyhow, Result};
 use lunatic_common_api::{get_memory, IntoTrap};
-use lunatic_distributed::{distributed::message::Val, DistributedCtx};
+use lunatic_distributed::{
+    distributed::message::{Spawn, Val},
+    DistributedCtx,
+};
 use lunatic_process::message::{DataMessage, Message};
 use lunatic_process_api::ProcessCtx;
 use wasmtime::{Caller, Linker, ResourceLimiter, Trap};
 
-// Register the process APIs to the linker
+// Register the lunatic distributed APIs to the linker
 pub fn register<T>(linker: &mut Linker<T>) -> Result<()>
 where
     T: DistributedCtx + ProcessCtx<T> + Send + ResourceLimiter + 'static,
@@ -17,7 +20,7 @@ where
     linker.func_wrap("lunatic::distributed", "get_nodes", get_nodes)?;
     linker.func_wrap("lunatic::distributed", "node_id", node_id)?;
     linker.func_wrap("lunatic::distributed", "module_id", module_id)?;
-    linker.func_wrap7_async("lunatic::distributed", "spawn", spawn)?;
+    linker.func_wrap8_async("lunatic::distributed", "spawn", spawn)?;
     linker.func_wrap2_async("lunatic::distributed", "send", send)?;
     linker.func_wrap3_async(
         "lunatic::distributed",
@@ -27,7 +30,7 @@ where
     Ok(())
 }
 
-// Returns count of registered nodes
+// Returns the number of registered nodes
 fn nodes_count<T: DistributedCtx>(caller: Caller<T>) -> u32 {
     caller
         .data()
@@ -36,7 +39,10 @@ fn nodes_count<T: DistributedCtx>(caller: Caller<T>) -> u32 {
         .unwrap_or(0) as u32
 }
 
-// Copy node ids to memory TODO doc
+// Copy node ids into guest memory. Returns the number of nodes copied.
+//
+// Traps:
+// * If any memory outside the guest heap space is referenced.
 fn get_nodes<T: DistributedCtx>(
     mut caller: Caller<T>,
     nodes_ptr: u32,
@@ -60,15 +66,10 @@ fn get_nodes<T: DistributedCtx>(
     Ok(copy_nodes_len as u32)
 }
 
-// TODO docs!!
-// Spawns a new process using the passed in function inside a module as the entry point.
+// Similar to a local spawn, it spawns a new process using the passed in function inside a module
+// as the entry point. The process is spawned on a node with id `node_id`.
 //
-// If **link** is not 0, it will link the child and parent processes. The value of the **link**
-// argument will be used as the link-tag for the child. This means, if the child traps the parent
-// is going to get a signal back with the value used as the tag.
-//
-// If *config_id* or *module_id* have the value 0, the same module/config is used as in the
-// process calling this function.
+// If `config_id` is 0, the same config is used as in the process calling this function.
 //
 // The function arguments are passed as an array with the following structure:
 // [0 byte = type ID; 1..17 bytes = value as u128, ...]
@@ -78,11 +79,9 @@ fn get_nodes<T: DistributedCtx>(
 //  - 0x7B => v128
 // If any other value is used as type ID, this function will trap.
 //
-// TODO add link and config support
-//
 // Returns:
-// * 0 on success - The ID of the newly created process is written to **id_ptr**
-// * 1 on error   - The error ID is written to **id_ptr**
+// * 0 on success - The ID of the newly created process is written to `id_ptr`
+// * 1 on error   - The error ID is written to `id_ptr`
 //
 // Traps:
 // * If the module ID doesn't exist.
@@ -93,6 +92,7 @@ fn get_nodes<T: DistributedCtx>(
 fn spawn<T>(
     mut caller: Caller<T>,
     node_id: u64,
+    config_id: i64,
     module_id: u64,
     func_str_ptr: u32,
     func_str_len: u32,
@@ -113,8 +113,10 @@ where
             .data(&caller)
             .get(func_str_ptr as usize..(func_str_ptr + func_str_len) as usize)
             .or_trap("lunatic::distributed::spawn::func_str")?;
+
         let function =
             std::str::from_utf8(func_str).or_trap("lunatic::distributed::spawn::func_str_utf8")?;
+
         let params = memory
             .data(&caller)
             .get(params_ptr as usize..(params_ptr + params_len) as usize)
@@ -133,14 +135,37 @@ where
             })
             .collect::<Result<Vec<_>>>()?;
 
-        log::debug!("Spawn on node {node_id}, mod {module_id}, fn {function}, params {params:?}");
-
         let state = caller.data();
+
+        let config = match config_id {
+            -1 => state.config().clone(),
+            config_id => Arc::new(
+                caller
+                    .data()
+                    .config_resources()
+                    .get(config_id as u64)
+                    .or_trap("lunatic::process::spawn: Config ID doesn't exist")?
+                    .clone(),
+            ),
+        };
+        let config: Vec<u8> =
+            bincode::serialize(config.as_ref()).map_err(|_| anyhow!("Error serializing config"))?;
+
+        log::debug!("Spawn on node {node_id}, mod {module_id}, fn {function}, params {params:?}");
 
         let (proc_id, ret) = match state
             .distributed()?
-            .distributed_client
-            .spawn(state.environment_id(), node_id, module_id, function, params)
+            .node_client
+            .spawn(
+                node_id,
+                Spawn {
+                    environment_id: state.environment_id(),
+                    function: function.to_string(),
+                    module_id,
+                    params,
+                    config,
+                },
+            )
             .await
         {
             Ok(id) => (id, 0),
@@ -155,7 +180,13 @@ where
     })
 }
 
-#[allow(clippy::too_many_arguments)]
+// Sends the message in scratch area to a process running on a node with id `node_id`.
+//
+// There are no guarantees that the message will be received.
+//
+// Traps:
+// * If it's called before creating the next message.
+// * If the message contains resources
 fn send<T>(
     mut caller: Caller<T>,
     node_id: u64,
@@ -171,12 +202,22 @@ where
             .message_scratch_area()
             .take()
             .or_trap("lunatic::message::send::no_message")?;
-        // TODO trap on non-empty resources
-        if let Message::Data(DataMessage { tag, buffer, .. }) = message {
+
+        if let Message::Data(DataMessage {
+            tag,
+            buffer,
+            resources,
+            ..
+        }) = message
+        {
+            if !resources.is_empty() {
+                return Err(Trap::new("Cannot send resources to remote nodes."));
+            }
+
             let state = caller.data();
             state
                 .distributed()?
-                .distributed_client
+                .node_client
                 .message_process(node_id, state.environment_id(), process_id, tag, buffer)
                 .await?;
         }
@@ -184,6 +225,25 @@ where
     })
 }
 
+// Sends the message to a process on a node with id `node_id` and waits for a reply,
+// but doesn't look through existing messages in the mailbox queue while waiting.
+// This is an optimization that only makes sense with tagged messages.
+// In a request/reply scenario we can tag the request message with an
+// unique tag and just wait on it specifically.
+//
+// This operation needs to be an atomic host function, if we jumped back into the guest we could
+// miss out on the incoming message before `receive` is called.
+//
+// If timeout is specified (value different from 0), the function will return on timeout
+// expiration with value 9027.
+//
+// Returns:
+// * 0    if message arrived.
+// * 9027 if call timed out.
+//
+// Traps:
+// * If it's called with wrong data in the scratch area.
+// * If the message contains resources
 fn send_receive_skip_search<T>(
     mut caller: Caller<T>,
     node_id: u64,
@@ -209,12 +269,21 @@ where
             None
         };
 
-        // TODO trap on non-empty resources
-        if let Message::Data(DataMessage { tag, buffer, .. }) = message {
+        if let Message::Data(DataMessage {
+            tag,
+            buffer,
+            resources,
+            ..
+        }) = message
+        {
+            if !resources.is_empty() {
+                return Err(Trap::new("Cannot send resources to remote nodes."));
+            }
+
             let state = caller.data();
             state
                 .distributed()?
-                .distributed_client
+                .node_client
                 .message_process(node_id, state.environment_id(), process_id, tag, buffer)
                 .await?;
 
@@ -235,7 +304,7 @@ where
     })
 }
 
-// Returns ID of the node that the current process is running on
+// Returns the id of the node that the current process is running on
 fn node_id<T: DistributedCtx>(caller: Caller<T>) -> u64 {
     caller
         .data()
@@ -245,7 +314,7 @@ fn node_id<T: DistributedCtx>(caller: Caller<T>) -> u64 {
         .unwrap_or(0)
 }
 
-// Returns ID of the module that the current process is spawned from
+// Returns id of the module that the current process is spawned from
 fn module_id<T: DistributedCtx>(caller: Caller<T>) -> u64 {
     caller.data().module_id()
 }
