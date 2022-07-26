@@ -23,9 +23,9 @@ anyhow = "^1.0"
 clap = { version = "^3.0", features = ["cargo"] }
 lazy_static = "^1.4"
 tokio = { version = "^1.20", features = ["macros", "rt-multi-thread", "net", "time"] }
-wasmtime = "^0.38"
-wasmtime-wasi = "^0.38"
-wasi-common = "^0.38"
+wasmtime = "^0.39"
+wasmtime-wasi = "^0.39"
+wasi-common = "^0.39"
 wasmparser = "^0.81"
 env_logger = "^0.9"
 log = "^0.4"

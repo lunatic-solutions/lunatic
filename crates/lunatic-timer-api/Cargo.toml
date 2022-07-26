@@ -12,7 +12,7 @@ license = "Apache-2.0/MIT"
 
 [dependencies]
 anyhow = "^1.0"
-wasmtime = "^0.38"
+wasmtime = "^0.39"
 async-std = { version = "^1.0", features = ["attributes", "unstable"] }
 hash-map-id = { version = "^0.10", path = "../hash-map-id" }
 lunatic-process = { version = "^0.10", path = "../lunatic-process" }

@@ -15,7 +15,7 @@ anyhow = "^1.0"
 log = "^0.4"
 dashmap = "5.3.4"
 tokio = { version = "^1.20", features = ["macros", "rt-multi-thread", "sync", "net"] }
-wasmtime = "^0.38"
+wasmtime = "^0.39"
 serde = "^1.0"
 hash-map-id = { version = "^0.10", path = "../hash-map-id" }
 lunatic-networking-api = { version = "^0.10", path = "../lunatic-networking-api" }
