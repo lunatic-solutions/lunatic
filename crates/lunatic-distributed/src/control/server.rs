@@ -11,14 +11,8 @@ use anyhow::Result;
 use dashmap::DashMap;
 use rcgen::*;
 
-use crate::{
-    connection::new_quic_server,
-    control::message::{Request, Response},
-};
-use crate::{
-    connection::Connection,
-    control::message::{Registered, Registration},
-};
+use crate::control::message::{Registered, Registration};
+use crate::{control::message::Response, quic::Connection};
 
 #[derive(Clone)]
 pub struct Server {
@@ -58,7 +52,7 @@ impl Server {
             .fetch_add(1, atomic::Ordering::Relaxed)
     }
 
-    fn register(&self, reg: Registration) -> Response {
+    pub fn register(&self, reg: Registration) -> Response {
         let node_id = self.next_node_id();
         let signed_cert = CertificateSigningRequest::from_pem(&reg.signing_request)
             .and_then(|sign_request| sign_request.serialize_pem_with_signer(&self.inner.ca_cert));
@@ -74,7 +68,7 @@ impl Server {
         }
     }
 
-    fn list_nodes(&self) -> Response {
+    pub fn list_nodes(&self) -> Response {
         Response::Nodes(
             self.inner
                 .nodes
@@ -84,13 +78,13 @@ impl Server {
         )
     }
 
-    fn add_module(&self, bytes: Vec<u8>) -> Response {
+    pub fn add_module(&self, bytes: Vec<u8>) -> Response {
         let module_id = self.next_module_id();
         self.inner.modules.insert(module_id, bytes);
         Response::ModuleId(module_id)
     }
 
-    fn get_module(&self, id: u64) -> Response {
+    pub fn get_module(&self, id: u64) -> Response {
         Response::Module(self.inner.modules.get(&id).map(|e| e.clone()))
     }
 }
@@ -162,40 +156,18 @@ fn default_server_certificates(root_cert: &Certificate) -> Result<(String, Strin
 
 pub async fn control_server(socket: SocketAddr, ca_cert: Certificate) -> Result<()> {
     let (cert_pem, key_pem) = default_server_certificates(&ca_cert)?;
-    let mut quic_server = new_quic_server(socket, &cert_pem, &key_pem)?;
+    let mut quic_server = crate::quic::new_quic_server(socket, &cert_pem, &key_pem)?;
     let server = Server::new(ca_cert);
-    while let Some(conn) = quic_server.accept().await {
-        let addr = conn.remote_addr().unwrap();
-        log::info!("New connection {addr}");
-        tokio::task::spawn(handle_quic_connection(server.clone(), conn));
-    }
+    crate::quic::handle_accept_control(&mut quic_server, server.clone()).await?;
     Ok(())
 }
 
-async fn handle_quic_connection(server: Server, mut conn: s2n_quic::Connection) {
-    while let Ok(Some(stream)) = conn.accept_bidirectional_stream().await {
-        tokio::spawn(handle_quic_stream(server.clone(), Connection::new(stream)));
-    }
-}
-
-async fn handle_quic_stream(server: Server, conn: Connection) {
-    while let Ok((msg_id, request)) = conn.receive::<Request>().await {
-        tokio::spawn(handle_request(
-            server.clone(),
-            conn.clone(),
-            msg_id,
-            request,
-        ));
-    }
-}
-
-async fn handle_request(
+pub async fn handle_request(
     server: Server,
     conn: Connection,
     msg_id: u64,
-    request: Request,
+    request: crate::control::message::Request,
 ) -> Result<u64> {
-    println!("HANDLE REQUEST {msg_id}: {}", request.kind());
     use crate::control::message::Request::*;
     let response = match request {
         Register(reg) => server.register(reg),

@@ -10,13 +10,11 @@ use lunatic_process::{
     Signal,
 };
 use rcgen::*;
-use s2n_quic::Connection as QuicConnection;
 use wasmtime::ResourceLimiter;
 
 use crate::{
-    connection::{new_quic_server, Connection},
     distributed::message::{Request, Response},
-    DistributedCtx, DistributedProcessState,
+    quic, DistributedCtx, DistributedProcessState,
 };
 
 use super::message::Spawn;
@@ -69,36 +67,14 @@ pub async fn node_server<T>(
 where
     T: ProcessState + ResourceLimiter + DistributedCtx + Send + 'static,
 {
-    let mut quic_server = new_quic_server(socket, &cert, &key)?;
-    while let Some(connection) = quic_server.accept().await {
-        let addr = connection.remote_addr()?;
-        log::info!("New connection {addr}");
-        tokio::task::spawn(handle_quic_connection(ctx.clone(), connection));
-    }
+    let mut quic_server = quic::new_quic_server(socket, &cert, &key)?;
+    quic::handle_node_server(&mut quic_server, ctx.clone()).await?;
     Ok(())
 }
 
-async fn handle_quic_connection<T>(ctx: ServerCtx<T>, mut conn: QuicConnection)
-where
-    T: ProcessState + DistributedCtx + ResourceLimiter + Send + 'static,
-{
-    while let Ok(Some(stream)) = conn.accept_bidirectional_stream().await {
-        tokio::spawn(handle_quic_stream(ctx.clone(), Connection::new(stream)));
-    }
-}
-
-async fn handle_quic_stream<T>(ctx: ServerCtx<T>, conn: Connection)
-where
-    T: ProcessState + ResourceLimiter + DistributedCtx + Send + 'static,
-{
-    while let Ok((msg_id, request)) = conn.receive::<Request>().await {
-        tokio::spawn(handle_message(ctx.clone(), conn.clone(), msg_id, request));
-    }
-}
-
-async fn handle_message<T>(
+pub async fn handle_message<T>(
     ctx: ServerCtx<T>,
-    conn: Connection,
+    conn: quic::Connection,
     msg_id: u64,
     msg: Request,
 ) -> Result<()>

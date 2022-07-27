@@ -18,6 +18,11 @@ path = "src/lib.rs"
 name = "lunatic"
 path = "src/main.rs"
 
+[features]
+default = ["distributed-s2n"]
+distributed-s2n = ["lunatic-distributed/quic-s2n"]
+distributed-quinn = ["lunatic-distributed/quic-quinn"]
+
 [dependencies]
 anyhow = "^1.0"
 clap = { version = "^3.0", features = ["cargo"] }

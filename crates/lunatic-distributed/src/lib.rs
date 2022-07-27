@@ -1,6 +1,6 @@
-pub mod connection;
 pub mod control;
 pub mod distributed;
+pub mod quic;
 
 use anyhow::Result;
 use lunatic_process::{

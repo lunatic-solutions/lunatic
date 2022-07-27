@@ -5,9 +5,9 @@ use clap::{crate_version, Arg, Command};
 use tokio::sync::mpsc::channel;
 
 use lunatic_distributed::{
-    connection::new_quic_client,
     control::{self, server::control_server},
     distributed::{self, server::ServerCtx},
+    quic,
 };
 use lunatic_process::{
     env::Environments,
@@ -141,7 +141,7 @@ pub(crate) async fn execute() -> Result<()> {
         .unwrap();
         let node_cert =
             lunatic_distributed::distributed::server::gen_node_cert(&node_name).unwrap();
-        let quic_client = new_quic_client(&ca_cert).unwrap();
+        let quic_client = quic::new_quic_client(&ca_cert).unwrap();
         let (node_id, control_client, signed_cert_pem) = control::Client::register(
             node_address,
             node_name.to_string(),

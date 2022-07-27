@@ -2,7 +2,6 @@ use anyhow::{anyhow, Result};
 use async_cell::sync::AsyncCell;
 use dashmap::DashMap;
 use lunatic_process::runtimes::RawWasm;
-use s2n_quic::{client::Connect, Client as QuicClient};
 use std::{
     net::SocketAddr,
     sync::{atomic, atomic::AtomicU64, Arc, RwLock},
@@ -10,13 +9,12 @@ use std::{
 };
 
 use crate::{
-    connection::Connection,
-    control::{
-        message::{Registered, Registration, Request, Response},
-        server::CTRL_SERVER_NAME,
-    },
+    control::message::{Registered, Registration, Request, Response},
+    quic::{self, Connection},
     NodeInfo,
 };
+
+use super::server::CTRL_SERVER_NAME;
 
 #[derive(Clone)]
 pub struct Client {
@@ -39,7 +37,7 @@ impl Client {
         node_addr: SocketAddr,
         node_name: String,
         control_addr: SocketAddr,
-        quic_client: QuicClient,
+        quic_client: quic::Client,
         signing_request: String,
     ) -> Result<(u64, Self, String)> {
         let client = Client {
@@ -48,7 +46,9 @@ impl Client {
                 control_addr,
                 node_addr,
                 node_name,
-                connection: connect(quic_client.clone(), control_addr, 5).await?,
+                connection: quic_client
+                    .connect(control_addr, CTRL_SERVER_NAME, 5)
+                    .await?,
                 pending_requests: DashMap::new(),
                 nodes: Default::default(),
                 node_ids: Default::default(),
@@ -162,20 +162,6 @@ impl Client {
             Err(anyhow::anyhow!("Invalid response type on add_module."))
         }
     }
-}
-
-async fn connect(quic_client: QuicClient, addr: SocketAddr, retry: u32) -> Result<Connection> {
-    for _ in 0..retry {
-        log::info!("Connecting to control {addr}");
-        let connect = Connect::new(addr).with_server_name(CTRL_SERVER_NAME);
-        if let Ok(mut conn) = quic_client.connect(connect).await {
-            conn.keep_alive(true)?;
-            let stream = conn.open_bidirectional_stream().await?;
-            return Ok(Connection::new(stream));
-        }
-        tokio::time::sleep(Duration::from_secs(2)).await;
-    }
-    Err(anyhow!("Failed to connect to {addr}"))
 }
 
 async fn reader_task(client: Client) -> Result<()> {
