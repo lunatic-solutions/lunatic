@@ -7,6 +7,7 @@ description = "Node to node communication"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
+tcp = []
 quic-s2n = ["dep:s2n-quic"]
 quic-quinn = ["dep:quinn", "dep:rustls", "dep:rustls-pemfile", "dep:futures-util"]
 
