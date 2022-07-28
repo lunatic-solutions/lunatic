@@ -8,6 +8,7 @@ use lunatic_distributed::{
 };
 use lunatic_process::message::{DataMessage, Message};
 use lunatic_process_api::ProcessCtx;
+use tokio::time::timeout;
 use wasmtime::{Caller, Linker, ResourceLimiter, Trap};
 
 // Register the lunatic distributed APIs to the linker
@@ -234,7 +235,7 @@ where
 // This operation needs to be an atomic host function, if we jumped back into the guest we could
 // miss out on the incoming message before `receive` is called.
 //
-// If timeout is specified (value different from 0), the function will return on timeout
+// If timeout is specified (value different from u64::MAX), the function will return on timeout
 // expiration with value 9027.
 //
 // Returns:
@@ -248,7 +249,7 @@ fn send_receive_skip_search<T>(
     mut caller: Caller<T>,
     node_id: u64,
     process_id: u64,
-    timeout: u32,
+    timeout_duration: u64,
 ) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_>
 where
     T: DistributedCtx + ProcessCtx<T> + Send + 'static,
@@ -287,9 +288,12 @@ where
                 .message_process(node_id, state.environment_id(), process_id, tag, buffer)
                 .await?;
 
-            if let Some(message) = tokio::select! {
-                _ = tokio::time::sleep(Duration::from_millis(timeout as u64)), if timeout != 0 => None,
-                message = caller.data_mut().mailbox().pop_skip_search(tags) => Some(message)
+            let pop_skip_search = caller.data_mut().mailbox().pop_skip_search(tags);
+            if let Ok(message) = match timeout_duration {
+                // Without timeout
+                u64::MAX => Ok(pop_skip_search.await),
+                // With timeout
+                t => timeout(Duration::from_millis(t), pop_skip_search).await,
             } {
                 // Put the message into the scratch area
                 caller.data_mut().message_scratch_area().replace(message);

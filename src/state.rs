@@ -6,7 +6,7 @@ use dashmap::DashMap;
 use hash_map_id::HashMapId;
 use lunatic_distributed::{DistributedCtx, DistributedProcessState};
 use lunatic_error_api::{ErrorCtx, ErrorResource};
-use lunatic_networking_api::dns::DnsIterator;
+use lunatic_networking_api::DnsIterator;
 use lunatic_networking_api::{NetworkingCtx, TcpConnection};
 use lunatic_process::config::ProcessConfig;
 use lunatic_process::env::Environment;

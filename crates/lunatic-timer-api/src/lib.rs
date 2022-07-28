@@ -6,11 +6,11 @@ use std::{
 };
 
 use anyhow::Result;
-use async_std::task::JoinHandle;
 use hash_map_id::HashMapId;
 use lunatic_common_api::IntoTrap;
 use lunatic_process::{state::ProcessState, Signal};
 use lunatic_process_api::ProcessCtx;
+use tokio::task::JoinHandle;
 use wasmtime::{Caller, Linker, Trap};
 
 #[derive(Debug)]
@@ -113,10 +113,10 @@ fn send_after<T: ProcessState + ProcessCtx<T> + TimerCtx>(
     let process = caller.data_mut().environment().get_process(process_id);
 
     let target_time = Instant::now() + Duration::from_millis(delay);
-    let timer_handle = async_std::task::spawn(async move {
+    let timer_handle = tokio::task::spawn(async move {
         let duration_remaining = target_time - Instant::now();
         if duration_remaining != Duration::ZERO {
-            async_std::task::sleep(duration_remaining).await;
+            tokio::time::sleep(duration_remaining).await;
         }
         if let Some(process) = process {
             process.send(Signal::Message(message));
@@ -146,7 +146,7 @@ fn cancel_timer<T: ProcessState + TimerCtx + Send>(
         let timer_handle = caller.data_mut().timer_resources_mut().remove(timer_id);
         match timer_handle {
             Some(timer_handle) => {
-                timer_handle.cancel().await;
+                timer_handle.abort();
                 Ok(1)
             }
             None => Ok(0),
