@@ -5,6 +5,9 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum Request {
     Register(Registration),
+    // Currently a node will send it's own id. We need to refactor this part: the control server
+    // should always handle registration first and later know which node is sending requests.
+    Deregister(u64),
     ListNodes,
     AddModule(Vec<u8>),
     GetModule(u64),
@@ -14,6 +17,7 @@ impl Request {
     pub fn kind(&self) -> &'static str {
         match self {
             Request::Register(_) => "Register",
+            Request::Deregister(_) => "Deregister",
             Request::ListNodes => "ListNodes",
             Request::AddModule(_) => "AddModule",
             Request::GetModule(_) => "GetModule",
@@ -28,6 +32,7 @@ pub enum Response {
     Module(Option<Vec<u8>>),
     ModuleId(u64),
     Error(String),
+    None,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

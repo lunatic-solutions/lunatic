@@ -22,6 +22,7 @@ pub struct Server {
 struct InnerServer {
     next_node_id: AtomicU64,
     nodes: DashMap<u64, Registration>,
+    addr_to_node: DashMap<SocketAddr, u64>,
     next_module_id: AtomicU64,
     modules: DashMap<u64, Vec<u8>>,
     ca_cert: Certificate,
@@ -34,6 +35,7 @@ impl Server {
                 next_node_id: AtomicU64::new(1),
                 next_module_id: AtomicU64::new(1),
                 nodes: DashMap::new(),
+                addr_to_node: DashMap::new(),
                 modules: DashMap::new(),
                 ca_cert,
             }),
@@ -58,7 +60,15 @@ impl Server {
             .and_then(|sign_request| sign_request.serialize_pem_with_signer(&self.inner.ca_cert));
         match signed_cert {
             Ok(signed_cert) => {
+                // Remove another node using the same address. This is temporarily until we define
+                // details of connection status & reconnecting/registering.
+                if let Some(proc_id) = self.inner.addr_to_node.get(&reg.node_address) {
+                    self.inner.nodes.remove(&proc_id);
+                }
+
+                self.inner.addr_to_node.insert(reg.node_address, node_id);
                 self.inner.nodes.insert(node_id, reg);
+
                 Response::Register(Registered {
                     node_id,
                     signed_cert,
@@ -66,6 +76,11 @@ impl Server {
             }
             Err(rcgen_err) => Response::Error(rcgen_err.to_string()),
         }
+    }
+
+    pub fn deregister(&self, node_id: u64) -> Response {
+        self.inner.nodes.remove(&node_id);
+        Response::None
     }
 
     pub fn list_nodes(&self) -> Response {
@@ -170,6 +185,7 @@ pub async fn handle_request(
     use crate::control::message::Request::*;
     let response = match request {
         Register(reg) => server.register(reg),
+        Deregister(node_id) => server.deregister(node_id),
         ListNodes => server.list_nodes(),
         AddModule(bytes) => server.add_module(bytes),
         GetModule(id) => server.get_module(id),

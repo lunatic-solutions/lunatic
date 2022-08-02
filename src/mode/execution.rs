@@ -128,60 +128,62 @@ pub(crate) async fn execute() -> Result<()> {
 
     let env = envs.get_or_create(1);
 
-    let distributed_state = if let (Some(node_address), Some(control_address)) =
-        (args.value_of("node"), args.value_of("control"))
-    {
-        // TODO unwrap, better message
-        let node_address = node_address.parse().unwrap();
-        let node_name = Uuid::new_v4().to_string();
-        let control_address = control_address.parse().unwrap();
-        let ca_cert = lunatic_distributed::distributed::server::root_cert(
-            args.is_present("test_ca"),
-            args.value_of("ca_cert"),
-        )
-        .unwrap();
-        let node_cert =
-            lunatic_distributed::distributed::server::gen_node_cert(&node_name).unwrap();
+    let (distributed_state, control_client, node_id) =
+        if let (Some(node_address), Some(control_address)) =
+            (args.value_of("node"), args.value_of("control"))
+        {
+            // TODO unwrap, better message
+            let node_address = node_address.parse().unwrap();
+            let node_name = Uuid::new_v4().to_string();
+            let control_address = control_address.parse().unwrap();
+            let ca_cert = lunatic_distributed::distributed::server::root_cert(
+                args.is_present("test_ca"),
+                args.value_of("ca_cert"),
+            )
+            .unwrap();
+            let node_cert =
+                lunatic_distributed::distributed::server::gen_node_cert(&node_name).unwrap();
 
-        let quic_client = quic::new_quic_client(&ca_cert).unwrap();
+            let quic_client = quic::new_quic_client(&ca_cert).unwrap();
 
-        let (node_id, control_client, signed_cert_pem) = control::Client::register(
-            node_address,
-            node_name.to_string(),
-            control_address,
-            quic_client.clone(),
-            node_cert.serialize_request_pem().unwrap(),
-        )
-        .await?;
+            let (node_id, control_client, signed_cert_pem) = control::Client::register(
+                node_address,
+                node_name.to_string(),
+                control_address,
+                quic_client.clone(),
+                node_cert.serialize_request_pem().unwrap(),
+            )
+            .await?;
 
-        let distributed_client =
-            distributed::Client::new(node_id, control_client.clone(), quic_client.clone()).await?;
+            let distributed_client =
+                distributed::Client::new(node_id, control_client.clone(), quic_client.clone())
+                    .await?;
 
-        let dist = lunatic_distributed::DistributedProcessState::new(
-            node_id,
-            control_client.clone(),
-            distributed_client,
-        )
-        .await?;
+            let dist = lunatic_distributed::DistributedProcessState::new(
+                node_id,
+                control_client.clone(),
+                distributed_client,
+            )
+            .await?;
 
-        tokio::task::spawn(lunatic_distributed::distributed::server::node_server(
-            ServerCtx {
-                envs,
-                modules: Modules::<DefaultProcessState>::default(),
-                distributed: dist.clone(),
-                runtime: runtime.clone(),
-            },
-            node_address,
-            signed_cert_pem,
-            node_cert.serialize_private_key_pem(),
-        ));
+            tokio::task::spawn(lunatic_distributed::distributed::server::node_server(
+                ServerCtx {
+                    envs,
+                    modules: Modules::<DefaultProcessState>::default(),
+                    distributed: dist.clone(),
+                    runtime: runtime.clone(),
+                },
+                node_address,
+                signed_cert_pem,
+                node_cert.serialize_private_key_pem(),
+            ));
 
-        log::info!("Registration successful, node id {}", node_id);
+            log::info!("Registration successful, node id {}", node_id);
 
-        Some(dist)
-    } else {
-        None
-    };
+            (Some(dist), Some(control_client), Some(node_id))
+        } else {
+            (None, None, None)
+        };
 
     let mut config = DefaultProcessConfig::default();
     // Allow initial process to compile modules, create configurations and spawn sub-processes
@@ -244,7 +246,14 @@ pub(crate) async fn execute() -> Result<()> {
                 path.to_string_lossy()
             ))?;
         // Wait on the main process to finish
-        task.await.map(|_| ()).map_err(|e| anyhow!(e.to_string()))
+        let result = task.await.map(|_| ()).map_err(|e| anyhow!(e.to_string()));
+
+        // Until we refactor registration and reconnect authentication, send node id explicitly
+        if let (Some(ctrl), Some(node_id)) = (control_client, node_id) {
+            ctrl.deregister(node_id).await;
+        }
+
+        result
     } else {
         // Block forever
         let (_sender, mut receiver) = channel::<()>(1);

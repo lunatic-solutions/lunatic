@@ -61,6 +61,7 @@ impl Client {
             node_id,
             signed_cert,
         } = client.send_registration(signing_request).await?;
+
         Ok((node_id, client, signed_cert))
     }
 
@@ -133,6 +134,10 @@ impl Client {
             }
         }
         Ok(())
+    }
+
+    pub async fn deregister(&self, node_id: u64) {
+        self.send(Request::Deregister(node_id)).await.ok();
     }
 
     pub fn node_info(&self, node_id: u64) -> Option<NodeInfo> {
