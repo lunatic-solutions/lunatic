@@ -122,12 +122,11 @@ pub fn root_cert(
         Ok(root_cert)
     } else {
         let ca_cert_pem = std::fs::read(Path::new(
-            ca_cert.ok_or_else(|| anyhow::anyhow!("Missing public root certificate."))?,
+            ca_cert.ok_or_else(|| anyhow::anyhow!("Missing CA certificate."))?,
         ))?;
-        let ca_keys_pem =
-            std::fs::read(Path::new(ca_keys.ok_or_else(|| {
-                anyhow::anyhow!("Missing public root certificate keys.")
-            })?))?;
+        let ca_keys_pem = std::fs::read(Path::new(
+            ca_keys.ok_or_else(|| anyhow::anyhow!("Missing CA keys."))?,
+        ))?;
         let key_pair = KeyPair::from_pem(std::str::from_utf8(&ca_keys_pem)?)?;
         let root_params =
             CertificateParams::from_ca_cert_pem(std::str::from_utf8(&ca_cert_pem)?, key_pair)?;

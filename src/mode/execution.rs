@@ -106,6 +106,7 @@ pub(crate) async fn execute() -> Result<()> {
     if args.is_present("test_ca") {
         log::warn!("Do not use test Certificate Authority in production!")
     }
+
     // Run control server
     if args.is_present("control_server") {
         if let Some(control_address) = args.value_of("control") {
@@ -141,7 +142,9 @@ pub(crate) async fn execute() -> Result<()> {
         .unwrap();
         let node_cert =
             lunatic_distributed::distributed::server::gen_node_cert(&node_name).unwrap();
+
         let quic_client = quic::new_quic_client(&ca_cert).unwrap();
+
         let (node_id, control_client, signed_cert_pem) = control::Client::register(
             node_address,
             node_name.to_string(),
@@ -150,8 +153,10 @@ pub(crate) async fn execute() -> Result<()> {
             node_cert.serialize_request_pem().unwrap(),
         )
         .await?;
+
         let distributed_client =
             distributed::Client::new(node_id, control_client.clone(), quic_client.clone()).await?;
+
         let dist = lunatic_distributed::DistributedProcessState::new(
             node_id,
             control_client.clone(),
