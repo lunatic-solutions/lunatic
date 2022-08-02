@@ -72,7 +72,16 @@ where
     Ok(())
 }
 
-pub async fn handle_message<T>(
+pub async fn handle_message<T>(ctx: ServerCtx<T>, conn: quic::Connection, msg_id: u64, msg: Request)
+where
+    T: ProcessState + DistributedCtx + ResourceLimiter + Send + 'static,
+{
+    if let Err(e) = handle_message_err(ctx, conn, msg_id, msg).await {
+        log::error!("Error handling message: {e}");
+    }
+}
+
+async fn handle_message_err<T>(
     ctx: ServerCtx<T>,
     conn: quic::Connection,
     msg_id: u64,

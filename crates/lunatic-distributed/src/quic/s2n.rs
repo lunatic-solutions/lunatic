@@ -169,11 +169,11 @@ where
     T: ProcessState + ResourceLimiter + DistributedCtx + Send + 'static,
 {
     while let Ok((msg_id, request)) = conn.receive().await {
-        tokio::spawn(distributed::server::handle_message(
+        distributed::server::handle_message(
             ctx.clone(),
             conn.clone(),
             msg_id,
             request,
-        ));
+        ).await;
     }
 }
