@@ -139,12 +139,7 @@ where
     T: ProcessState + ResourceLimiter + DistributedCtx + Send + 'static,
 {
     while let Ok((msg_id, request)) = conn.receive().await {
-        distributed::server::handle_message(
-            ctx.clone(),
-            conn.clone(),
-            msg_id,
-            request,
-        ).await;
+        distributed::server::handle_message(ctx.clone(), conn.clone(), msg_id, request).await;
     }
     Ok(())
 }
