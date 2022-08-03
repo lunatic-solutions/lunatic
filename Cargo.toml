@@ -26,13 +26,13 @@ distributed-quinn = ["lunatic-distributed/quic-quinn"]
 
 [dependencies]
 anyhow = "^1.0"
-clap = { version = "^3.0", features = ["cargo"] }
+clap = { version = "^3.2", features = ["cargo"] }
 lazy_static = "^1.4"
 tokio = { version = "^1.20", features = ["macros", "rt-multi-thread", "net", "time"] }
 wasmtime = "^0.39"
 wasmtime-wasi = "^0.39"
 wasi-common = "^0.39"
-wasmparser = "^0.81"
+wasmparser = "^0.88"
 env_logger = "^0.9"
 log = "^0.4"
 serde = "^1.0"
