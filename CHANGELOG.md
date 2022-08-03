@@ -9,8 +9,8 @@ Released 2022-07-04.
 - Distributed lunatic based on QUIC ([@withtypes](https://github.com/withtypes) &
   [@kosticmarin](https://github.com/kosticmarin))
 - Switched from async_std to tokio ([@kosticmarin](https://github.com/kosticmarin))
-- `kill` host function added ([@zhamlin] https://github.com/zhamlin)
-- `send_after` & `cancel_timer` host functions added ([@zhamlin] https://github.com/zhamlin)
+- `kill` host function added ([@zhamlin](https://github.com/zhamlin))
+- `send_after` & `cancel_timer` host functions added ([@zhamlin](https://github.com/zhamlin))
 - timeout type in host functions switched from `u32` to `u64`
 
 ## v0.9.0
