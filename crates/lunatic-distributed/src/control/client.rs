@@ -7,13 +7,14 @@ use std::{
     sync::{atomic, atomic::AtomicU64, Arc, RwLock},
     time::Duration,
 };
-use tokio::net::TcpStream;
 
 use crate::{
-    connection::Connection,
-    control::message::{Registration, Request, Response},
+    control::message::{Registered, Registration, Request, Response},
+    quic::{self, Connection},
     NodeInfo,
 };
+
+use super::server::CTRL_SERVER_NAME;
 
 #[derive(Clone)]
 pub struct Client {
@@ -23,6 +24,7 @@ pub struct Client {
 pub struct InnerClient {
     next_message_id: AtomicU64,
     node_addr: SocketAddr,
+    node_name: String,
     control_addr: SocketAddr,
     connection: Connection,
     pending_requests: DashMap<u64, Arc<AsyncCell<Response>>>,
@@ -31,13 +33,22 @@ pub struct InnerClient {
 }
 
 impl Client {
-    pub async fn register(node_addr: SocketAddr, control_addr: SocketAddr) -> Result<(u64, Self)> {
+    pub async fn register(
+        node_addr: SocketAddr,
+        node_name: String,
+        control_addr: SocketAddr,
+        quic_client: quic::Client,
+        signing_request: String,
+    ) -> Result<(u64, Self, String)> {
         let client = Client {
             inner: Arc::new(InnerClient {
                 next_message_id: AtomicU64::new(1),
                 control_addr,
                 node_addr,
-                connection: connect(control_addr, 5).await?,
+                node_name,
+                connection: quic_client
+                    .connect(control_addr, CTRL_SERVER_NAME, 5)
+                    .await?,
                 pending_requests: DashMap::new(),
                 nodes: Default::default(),
                 node_ids: Default::default(),
@@ -46,8 +57,12 @@ impl Client {
         // Spawn reader task before register
         tokio::task::spawn(reader_task(client.clone()));
         tokio::task::spawn(refresh_nodes_task(client.clone()));
-        let node_id: u64 = client.send_registration().await?;
-        Ok((node_id, client))
+        let Registered {
+            node_id,
+            signed_cert,
+        } = client.send_registration(signing_request).await?;
+
+        Ok((node_id, client, signed_cert))
     }
 
     pub fn next_message_id(&self) -> u64 {
@@ -78,15 +93,18 @@ impl Client {
         self.inner.connection.receive().await
     }
 
-    async fn send_registration(&self) -> Result<u64> {
+    async fn send_registration(&self, signing_request: String) -> Result<Registered> {
         let reg = Registration {
             node_address: self.inner.node_addr,
+            node_name: self.inner.node_name.clone(),
+            signing_request,
         };
         let resp = self.send(Request::Register(reg)).await?;
-        if let Response::Register(node_id) = resp {
-            return Ok(node_id);
+        match resp {
+            Response::Register(data) => Ok(data),
+            Response::Error(e) => Err(anyhow!("Registration failed. {e}")),
+            _ => Err(anyhow!("Registration failed.")),
         }
-        Err(anyhow!("Registration failed."))
     }
 
     fn process_response(&self, id: u64, resp: Response) {
@@ -106,6 +124,7 @@ impl Client {
                         NodeInfo {
                             id,
                             address: reg.node_address,
+                            name: reg.node_name,
                         },
                     );
                 }
@@ -115,6 +134,10 @@ impl Client {
             }
         }
         Ok(())
+    }
+
+    pub async fn deregister(&self, node_id: u64) {
+        self.send(Request::Deregister(node_id)).await.ok();
     }
 
     pub fn node_info(&self, node_id: u64) -> Option<NodeInfo> {
@@ -144,17 +167,6 @@ impl Client {
             Err(anyhow::anyhow!("Invalid response type on add_module."))
         }
     }
-}
-
-async fn connect(addr: SocketAddr, retry: u32) -> Result<Connection> {
-    for _ in 0..retry {
-        log::info!("Connecting to control {addr}");
-        if let Ok(stream) = TcpStream::connect(addr).await {
-            return Ok(Connection::new(stream));
-        }
-        tokio::time::sleep(Duration::from_secs(2)).await;
-    }
-    Err(anyhow!("Failed to connect to {addr}"))
 }
 
 async fn reader_task(client: Client) -> Result<()> {

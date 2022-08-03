@@ -9,13 +9,12 @@ use lunatic_process::{
     state::ProcessState,
     Signal,
 };
-use tokio::net::TcpListener;
+use rcgen::*;
 use wasmtime::ResourceLimiter;
 
 use crate::{
-    connection::Connection,
     distributed::message::{Request, Response},
-    DistributedCtx, DistributedProcessState,
+    quic, DistributedCtx, DistributedProcessState,
 };
 
 use super::message::Spawn;
@@ -38,30 +37,53 @@ impl<T: 'static> Clone for ServerCtx<T> {
     }
 }
 
-pub async fn node_server<T>(ctx: ServerCtx<T>, socket: SocketAddr) -> Result<()>
+pub fn root_cert(test_ca: bool, ca_cert: Option<&str>) -> Result<String> {
+    if test_ca {
+        Ok(crate::control::server::TEST_ROOT_CERT.to_string())
+    } else {
+        let cert = std::fs::read(
+            ca_cert.ok_or_else(|| anyhow::anyhow!("Missing public root certificate."))?,
+        )?;
+        Ok(std::str::from_utf8(&cert)?.to_string())
+    }
+}
+
+pub fn gen_node_cert(node_name: &str) -> Result<Certificate> {
+    let mut params = CertificateParams::new(vec![node_name.to_string()]);
+    params
+        .distinguished_name
+        .push(DnType::OrganizationName, "Lunatic Inc.");
+    params.distinguished_name.push(DnType::CommonName, "Node");
+    Certificate::from_params(params)
+        .map_err(|_| anyhow!("Error while generating node certificate."))
+}
+
+pub async fn node_server<T>(
+    ctx: ServerCtx<T>,
+    socket: SocketAddr,
+    cert: String,
+    key: String,
+) -> Result<()>
 where
     T: ProcessState + ResourceLimiter + DistributedCtx + Send + 'static,
 {
-    let listener = TcpListener::bind(socket).await?;
-    while let Ok((conn, _addr)) = listener.accept().await {
-        log::info!("New connection {_addr}");
-        tokio::task::spawn(handle_connection(ctx.clone(), Connection::new(conn)));
-    }
+    let mut quic_server = quic::new_quic_server(socket, &cert, &key)?;
+    quic::handle_node_server(&mut quic_server, ctx.clone()).await?;
     Ok(())
 }
 
-async fn handle_connection<T>(ctx: ServerCtx<T>, conn: Connection)
+pub async fn handle_message<T>(ctx: ServerCtx<T>, conn: quic::Connection, msg_id: u64, msg: Request)
 where
     T: ProcessState + DistributedCtx + ResourceLimiter + Send + 'static,
 {
-    while let Ok((msg_id, msg)) = conn.receive::<Request>().await {
-        tokio::task::spawn(handle_message(ctx.clone(), conn.clone(), msg_id, msg));
+    if let Err(e) = handle_message_err(ctx, conn, msg_id, msg).await {
+        log::error!("Error handling message: {e}");
     }
 }
 
-async fn handle_message<T>(
+async fn handle_message_err<T>(
     ctx: ServerCtx<T>,
-    conn: Connection,
+    conn: quic::Connection,
     msg_id: u64,
     msg: Request,
 ) -> Result<()>

@@ -1,6 +1,6 @@
-pub mod connection;
 pub mod control;
 pub mod distributed;
+pub mod quic;
 
 use anyhow::Result;
 use lunatic_process::{
@@ -54,4 +54,5 @@ impl DistributedProcessState {
 pub struct NodeInfo {
     pub id: u64,
     pub address: SocketAddr,
+    pub name: String,
 }

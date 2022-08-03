@@ -7,6 +7,7 @@ use tokio::sync::mpsc::channel;
 use lunatic_distributed::{
     control::{self, server::control_server},
     distributed::{self, server::ServerCtx},
+    quic,
 };
 use lunatic_process::{
     env::Environments,
@@ -14,6 +15,8 @@ use lunatic_process::{
 };
 use lunatic_process_api::ProcessConfigCtx;
 use lunatic_runtime::{DefaultProcessConfig, DefaultProcessState};
+
+use uuid::Uuid;
 
 pub(crate) async fn execute() -> Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).init();
@@ -51,10 +54,32 @@ pub(crate) async fn execute() -> Result<()> {
                 .requires("control"),
         )
         .arg(
+            Arg::new("test_ca")
+                .long("test-ca")
+                .help("Use test Certificate Authority for bootstrapping QUIC connections.")
+                .requires("control")
+        )
+        .arg(
+            Arg::new("ca_cert")
+                .long("ca-cert")
+                .help("Certificate Authority public certificate used for boostraping QUIC connections.")
+                .requires("control")
+                .conflicts_with("test_ca")
+                .takes_value(true)
+        )
+        .arg(
+            Arg::new("ca_key")
+                .long("ca-key")
+                .help("Certificate Authority private key used for signing node certificate requests")
+                .requires("control_server")
+                .conflicts_with("test_ca")
+                .takes_value(true)
+        )
+        .arg(
             Arg::new("no_entry")
                 .long("no-entry")
                 .help("If provided will join other nodes, but not require a .wasm entry file")
-                .requires("node"),
+                .required_unless_present("wasm")
         ).arg(
             Arg::new("bench")
                 .long("bench")
@@ -64,7 +89,6 @@ pub(crate) async fn execute() -> Result<()> {
             Arg::new("wasm")
                 .value_name("WASM")
                 .help("Entry .wasm file")
-                .required_unless_present("no_entry")
                 .conflicts_with("no_entry")
                 .index(1),
         )
@@ -79,11 +103,21 @@ pub(crate) async fn execute() -> Result<()> {
         )
         .get_matches();
 
+    if args.is_present("test_ca") {
+        log::warn!("Do not use test Certificate Authority in production!")
+    }
+
     // Run control server
     if args.is_present("control_server") {
         if let Some(control_address) = args.value_of("control") {
             // TODO unwrap, better message
-            tokio::task::spawn(control_server(control_address.parse().unwrap()));
+            let ca_cert = lunatic_distributed::control::server::root_cert(
+                args.is_present("test_ca"),
+                args.value_of("ca_cert"),
+                args.value_of("ca_key"),
+            )
+            .unwrap();
+            tokio::task::spawn(control_server(control_address.parse().unwrap(), ca_cert));
         }
     }
 
@@ -94,39 +128,62 @@ pub(crate) async fn execute() -> Result<()> {
 
     let env = envs.get_or_create(1);
 
-    let distributed_state = if let (Some(node_address), Some(control_address)) =
-        (args.value_of("node"), args.value_of("control"))
-    {
-        // TODO unwrap, better message
-        let node_address = node_address.parse().unwrap();
-        let control_address = control_address.parse().unwrap();
-        let (node_id, control_client) =
-            control::Client::register(node_address, control_address).await?;
-        let node_client = distributed::Client::new(node_id, control_client.clone()).await?;
+    let (distributed_state, control_client, node_id) =
+        if let (Some(node_address), Some(control_address)) =
+            (args.value_of("node"), args.value_of("control"))
+        {
+            // TODO unwrap, better message
+            let node_address = node_address.parse().unwrap();
+            let node_name = Uuid::new_v4().to_string();
+            let control_address = control_address.parse().unwrap();
+            let ca_cert = lunatic_distributed::distributed::server::root_cert(
+                args.is_present("test_ca"),
+                args.value_of("ca_cert"),
+            )
+            .unwrap();
+            let node_cert =
+                lunatic_distributed::distributed::server::gen_node_cert(&node_name).unwrap();
 
-        let dist = lunatic_distributed::DistributedProcessState::new(
-            node_id,
-            control_client.clone(),
-            node_client,
-        )
-        .await?;
+            let quic_client = quic::new_quic_client(&ca_cert).unwrap();
 
-        tokio::task::spawn(lunatic_distributed::distributed::server::node_server(
-            ServerCtx {
-                envs,
-                modules: Modules::<DefaultProcessState>::default(),
-                distributed: dist.clone(),
-                runtime: runtime.clone(),
-            },
-            node_address,
-        ));
+            let (node_id, control_client, signed_cert_pem) = control::Client::register(
+                node_address,
+                node_name.to_string(),
+                control_address,
+                quic_client.clone(),
+                node_cert.serialize_request_pem().unwrap(),
+            )
+            .await?;
 
-        log::info!("Registration successful, node id {}", node_id);
+            let distributed_client =
+                distributed::Client::new(node_id, control_client.clone(), quic_client.clone())
+                    .await?;
 
-        Some(dist)
-    } else {
-        None
-    };
+            let dist = lunatic_distributed::DistributedProcessState::new(
+                node_id,
+                control_client.clone(),
+                distributed_client,
+            )
+            .await?;
+
+            tokio::task::spawn(lunatic_distributed::distributed::server::node_server(
+                ServerCtx {
+                    envs,
+                    modules: Modules::<DefaultProcessState>::default(),
+                    distributed: dist.clone(),
+                    runtime: runtime.clone(),
+                },
+                node_address,
+                signed_cert_pem,
+                node_cert.serialize_private_key_pem(),
+            ));
+
+            log::info!("Registration successful, node id {}", node_id);
+
+            (Some(dist), Some(control_client), Some(node_id))
+        } else {
+            (None, None, None)
+        };
 
     let mut config = DefaultProcessConfig::default();
     // Allow initial process to compile modules, create configurations and spawn sub-processes
@@ -189,7 +246,14 @@ pub(crate) async fn execute() -> Result<()> {
                 path.to_string_lossy()
             ))?;
         // Wait on the main process to finish
-        task.await.map(|_| ()).map_err(|e| anyhow!(e.to_string()))
+        let result = task.await.map(|_| ()).map_err(|e| anyhow!(e.to_string()));
+
+        // Until we refactor registration and reconnect authentication, send node id explicitly
+        if let (Some(ctrl), Some(node_id)) = (control_client, node_id) {
+            ctrl.deregister(node_id).await;
+        }
+
+        result
     } else {
         // Block forever
         let (_sender, mut receiver) = channel::<()>(1);

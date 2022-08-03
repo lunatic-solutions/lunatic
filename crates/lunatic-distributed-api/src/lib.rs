@@ -122,7 +122,6 @@ where
             .data(&caller)
             .get(params_ptr as usize..(params_ptr + params_len) as usize)
             .or_trap("lunatic::distributed::spawn::params")?;
-
         let params = params
             .chunks_exact(17)
             .map(|chunk| {
