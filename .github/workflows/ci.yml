@@ -86,6 +86,6 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ steps.getReleaseName.outputs.RELEASE_NAME }}
-          name: Release ${{ steps.getReleaseName.outputs.RELEASE_NAME }}
+          name: Lunatic ${{ steps.getReleaseName.outputs.RELEASE_NAME }}
           draft: true
           files: ${{ matrix.asset_name }}
