@@ -3,6 +3,9 @@ name = "lunatic-distributed"
 version = "0.10.0"
 edition = "2021"
 description = "Node to node communication"
+homepage = "https://lunatic.solutions"
+repository = "https://github.com/lunatic-solutions/lunatic/tree/main/crates"
+license = "Apache-2.0/MIT"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
