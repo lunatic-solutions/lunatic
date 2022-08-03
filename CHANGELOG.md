@@ -12,6 +12,7 @@ Released 2022-07-04.
 - `kill` host function added ([@zhamlin](https://github.com/zhamlin))
 - `send_after` & `cancel_timer` host functions added ([@zhamlin](https://github.com/zhamlin))
 - timeout type in host functions switched from `u32` to `u64`
+- timeout parameters are removed for networking read/write calls
 
 ## v0.9.0
 
