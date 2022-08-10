@@ -56,12 +56,12 @@ impl Client {
         };
         // Spawn reader task before register
         tokio::task::spawn(reader_task(client.clone()));
+        tokio::task::spawn(refresh_nodes_task(client.clone()));
         let Registered {
             node_id,
             signed_cert,
         } = client.send_registration(signing_request).await?;
-        // Refresh nodes after registration
-        tokio::task::spawn(refresh_nodes_task(client.clone()));
+        client.refresh_nodes().await?;
 
         Ok((node_id, client, signed_cert))
     }
