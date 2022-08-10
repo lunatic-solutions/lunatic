@@ -61,6 +61,7 @@ impl Client {
             node_id,
             signed_cert,
         } = client.send_registration(signing_request).await?;
+        client.refresh_nodes().await?;
 
         Ok((node_id, client, signed_cert))
     }
