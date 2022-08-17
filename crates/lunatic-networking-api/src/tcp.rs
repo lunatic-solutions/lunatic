@@ -39,7 +39,13 @@ pub fn register<T: NetworkingCtx + ErrorCtx + Send + 'static>(
         "tcp_write_vectored",
         tcp_write_vectored,
     )?;
+    linker.func_wrap5_async(
+        "lunatic::networking",
+        "tcp_write_vectored_timeout",
+        tcp_write_vectored_timeout,
+    )?;
     linker.func_wrap4_async("lunatic::networking", "tcp_read", tcp_read)?;
+    linker.func_wrap5_async("lunatic::networking", "tcp_read_timeout", tcp_read_timeout)?;
     linker.func_wrap2_async("lunatic::networking", "tcp_flush", tcp_flush)?;
     Ok(())
 }
@@ -378,6 +384,80 @@ fn tcp_write_vectored<T: NetworkingCtx + ErrorCtx + Send>(
     })
 }
 
+// Gathers data from the vector buffers and writes them to the stream. **ciovec_array_ptr** points
+// to an array of (ciovec_ptr, ciovec_len) pairs where each pair represents a buffer to be written.
+//
+// Returns:
+// * 0 on success - The number of bytes written is written to **opaque_ptr**
+// * 1 on error   - The error ID is written to **opaque_ptr**
+//
+// Traps:
+// * If the stream ID doesn't exist.
+// * If any memory outside the guest heap space is referenced.
+fn tcp_write_vectored_timeout<T: NetworkingCtx + ErrorCtx + Send>(
+    mut caller: Caller<T>,
+    stream_id: u64,
+    ciovec_array_ptr: u32,
+    ciovec_array_len: u32,
+    opaque_ptr: u32,
+    timeout_duration: u64,
+) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_> {
+    Box::new(async move {
+        let memory = get_memory(&mut caller)?;
+        let buffer = memory
+            .data(&caller)
+            .get(ciovec_array_ptr as usize..(ciovec_array_ptr + ciovec_array_len * 8) as usize)
+            .or_trap("lunatic::networking::tcp_write_vectored")?;
+
+        // Ciovecs consist of 32bit ptr + 32bit len = 8 bytes.
+        let vec_slices: Result<Vec<_>> = buffer
+            .chunks_exact(8)
+            .map(|ciovec| {
+                let ciovec_ptr =
+                    u32::from_le_bytes(ciovec[0..4].try_into().expect("works")) as usize;
+                let ciovec_len =
+                    u32::from_le_bytes(ciovec[4..8].try_into().expect("works")) as usize;
+                let slice = memory
+                    .data(&caller)
+                    .get(ciovec_ptr..(ciovec_ptr + ciovec_len))
+                    .or_trap("lunatic::networking::tcp_write_vectored")?;
+                Ok(IoSlice::new(slice))
+            })
+            .collect();
+        let vec_slices = vec_slices?;
+
+        let stream = caller
+            .data()
+            .tcp_stream_resources()
+            .get(stream_id)
+            .or_trap("lunatic::network::tcp_write_vectored")?
+            .clone();
+
+        let mut stream = stream.writer.lock().await;
+
+        if let Ok(timeout_result) = timeout(
+            Duration::from_millis(timeout_duration),
+            stream.write_vectored(vec_slices.as_slice()),
+        )
+        .await
+        {
+            let (opaque, return_) = match timeout_result {
+                Ok(bytes) => (bytes as u64, 0),
+                Err(error) => (caller.data_mut().error_resources_mut().add(error.into()), 1),
+            };
+
+            let memory = get_memory(&mut caller)?;
+            memory
+                .write(&mut caller, opaque_ptr as usize, &opaque.to_le_bytes())
+                .or_trap("lunatic::networking::tcp_write_vectored")?;
+            Ok(return_)
+        } else {
+            // Call timed out
+            Ok(9027)
+        }
+    })
+}
+
 // Reads data from TCP stream and writes it to the buffer.
 //
 // Returns:
@@ -419,6 +499,58 @@ fn tcp_read<T: NetworkingCtx + ErrorCtx + Send>(
             .write(&mut caller, opaque_ptr as usize, &opaque.to_le_bytes())
             .or_trap("lunatic::networking::tcp_read")?;
         Ok(return_)
+    })
+}
+
+// Reads data from TCP stream and writes it to the buffer.
+//
+// Returns:
+// * 0 on success - The number of bytes read is written to **opaque_ptr**
+// * 1 on error   - The error ID is written to **opaque_ptr**
+//
+// Traps:
+// * If the stream ID doesn't exist.
+// * If any memory outside the guest heap space is referenced.
+fn tcp_read_timeout<T: NetworkingCtx + ErrorCtx + Send>(
+    mut caller: Caller<T>,
+    stream_id: u64,
+    buffer_ptr: u32,
+    buffer_len: u32,
+    opaque_ptr: u32,
+    timeout_duration: u64,
+) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_> {
+    Box::new(async move {
+        let stream = caller
+            .data()
+            .tcp_stream_resources()
+            .get(stream_id)
+            .or_trap("lunatic::network::tcp_read")?
+            .clone();
+        let mut stream = stream.reader.lock().await;
+
+        let memory = get_memory(&mut caller)?;
+        let buffer = memory
+            .data_mut(&mut caller)
+            .get_mut(buffer_ptr as usize..(buffer_ptr + buffer_len) as usize)
+            .or_trap("lunatic::networking::tcp_read")?;
+
+        if let Ok(timeout_result) =
+            timeout(Duration::from_millis(timeout_duration), stream.read(buffer)).await
+        {
+            let (opaque, return_) = match timeout_result {
+                Ok(bytes) => (bytes as u64, 0),
+                Err(error) => (caller.data_mut().error_resources_mut().add(error.into()), 1),
+            };
+
+            let memory = get_memory(&mut caller)?;
+            memory
+                .write(&mut caller, opaque_ptr as usize, &opaque.to_le_bytes())
+                .or_trap("lunatic::networking::tcp_read")?;
+            Ok(return_)
+        } else {
+            // Call timed out
+            Ok(9027)
+        }
     })
 }
 

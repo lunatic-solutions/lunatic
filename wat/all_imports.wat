@@ -34,6 +34,7 @@
     (import "lunatic::networking" "clone_tcp_stream" (func (param i64) (result i64)))
     (import "lunatic::networking" "tcp_write_vectored" (func (param i64 i32 i32 i32) (result i32)))
     (import "lunatic::networking" "tcp_read" (func (param i64 i32 i32 i32) (result i32)))
+    (import "lunatic::networking" "tcp_read_timeout" (func (param i64 i32 i32 i32 i64) (result i32)))
     (import "lunatic::networking" "tcp_flush" (func (param i64 i32) (result i32)))
     (import "lunatic::networking" "udp_bind" (func (param i32 i32 i32 i32 i32 i32) (result i32)))
     (import "lunatic::networking" "drop_udp_socket" (func (param i64)))
