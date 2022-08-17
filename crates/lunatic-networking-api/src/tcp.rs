@@ -384,6 +384,8 @@ fn tcp_write_vectored<T: NetworkingCtx + ErrorCtx + Send>(
     })
 }
 
+// If no data was written within the specified timeout duration the value 9027 is returned
+//
 // Gathers data from the vector buffers and writes them to the stream. **ciovec_array_ptr** points
 // to an array of (ciovec_ptr, ciovec_len) pairs where each pair represents a buffer to be written.
 //
@@ -407,7 +409,7 @@ fn tcp_write_vectored_timeout<T: NetworkingCtx + ErrorCtx + Send>(
         let buffer = memory
             .data(&caller)
             .get(ciovec_array_ptr as usize..(ciovec_array_ptr + ciovec_array_len * 8) as usize)
-            .or_trap("lunatic::networking::tcp_write_vectored")?;
+            .or_trap("lunatic::networking::tcp_write_vectored_timeout")?;
 
         // Ciovecs consist of 32bit ptr + 32bit len = 8 bytes.
         let vec_slices: Result<Vec<_>> = buffer
@@ -420,7 +422,7 @@ fn tcp_write_vectored_timeout<T: NetworkingCtx + ErrorCtx + Send>(
                 let slice = memory
                     .data(&caller)
                     .get(ciovec_ptr..(ciovec_ptr + ciovec_len))
-                    .or_trap("lunatic::networking::tcp_write_vectored")?;
+                    .or_trap("lunatic::networking::tcp_write_vectored_timeout")?;
                 Ok(IoSlice::new(slice))
             })
             .collect();
@@ -430,7 +432,7 @@ fn tcp_write_vectored_timeout<T: NetworkingCtx + ErrorCtx + Send>(
             .data()
             .tcp_stream_resources()
             .get(stream_id)
-            .or_trap("lunatic::network::tcp_write_vectored")?
+            .or_trap("lunatic::network::tcp_write_vectored_timeout")?
             .clone();
 
         let mut stream = stream.writer.lock().await;
@@ -449,7 +451,7 @@ fn tcp_write_vectored_timeout<T: NetworkingCtx + ErrorCtx + Send>(
             let memory = get_memory(&mut caller)?;
             memory
                 .write(&mut caller, opaque_ptr as usize, &opaque.to_le_bytes())
-                .or_trap("lunatic::networking::tcp_write_vectored")?;
+                .or_trap("lunatic::networking::tcp_write_vectored_timeout")?;
             Ok(return_)
         } else {
             // Call timed out
@@ -502,6 +504,8 @@ fn tcp_read<T: NetworkingCtx + ErrorCtx + Send>(
     })
 }
 
+// If no data was read within the specified timeout duration the value 9027 is returned
+//
 // Reads data from TCP stream and writes it to the buffer.
 //
 // Returns:
@@ -524,7 +528,7 @@ fn tcp_read_timeout<T: NetworkingCtx + ErrorCtx + Send>(
             .data()
             .tcp_stream_resources()
             .get(stream_id)
-            .or_trap("lunatic::network::tcp_read")?
+            .or_trap("lunatic::network::tcp_read_timeout")?
             .clone();
         let mut stream = stream.reader.lock().await;
 
@@ -532,7 +536,7 @@ fn tcp_read_timeout<T: NetworkingCtx + ErrorCtx + Send>(
         let buffer = memory
             .data_mut(&mut caller)
             .get_mut(buffer_ptr as usize..(buffer_ptr + buffer_len) as usize)
-            .or_trap("lunatic::networking::tcp_read")?;
+            .or_trap("lunatic::networking::tcp_read_timeout")?;
 
         if let Ok(timeout_result) =
             timeout(Duration::from_millis(timeout_duration), stream.read(buffer)).await
@@ -545,7 +549,7 @@ fn tcp_read_timeout<T: NetworkingCtx + ErrorCtx + Send>(
             let memory = get_memory(&mut caller)?;
             memory
                 .write(&mut caller, opaque_ptr as usize, &opaque.to_le_bytes())
-                .or_trap("lunatic::networking::tcp_read")?;
+                .or_trap("lunatic::networking::tcp_read_timeout")?;
             Ok(return_)
         } else {
             // Call timed out
