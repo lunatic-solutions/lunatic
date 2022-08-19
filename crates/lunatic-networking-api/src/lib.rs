@@ -5,6 +5,7 @@ mod udp;
 use std::convert::TryInto;
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::Result;
 use hash_map_id::HashMapId;
@@ -23,6 +24,9 @@ pub use dns::DnsIterator;
 pub struct TcpConnection {
     pub reader: Mutex<OwnedReadHalf>,
     pub writer: Mutex<OwnedWriteHalf>,
+    pub read_timeout: Mutex<Option<Duration>>,
+    pub write_timeout: Mutex<Option<Duration>>,
+    pub peek_timeout: Mutex<Option<Duration>>,
 }
 
 impl TcpConnection {
@@ -31,6 +35,9 @@ impl TcpConnection {
         TcpConnection {
             reader: Mutex::new(read_half),
             writer: Mutex::new(write_half),
+            read_timeout: Mutex::new(None),
+            write_timeout: Mutex::new(None),
+            peek_timeout: Mutex::new(None),
         }
     }
 }
