@@ -41,13 +41,13 @@ pub fn register<T: NetworkingCtx + ErrorCtx + Send + 'static>(
     )?;
     linker.func_wrap4_async("lunatic::networking", "tcp_peek", tcp_peek)?;
     linker.func_wrap4_async("lunatic::networking", "tcp_read", tcp_read)?;
-    linker.func_wrap2_async("lunatic::networking", "tcp_read_timeout", set_read_timeout)?;
+    linker.func_wrap2_async("lunatic::networking", "set_read_timeout", set_read_timeout)?;
     linker.func_wrap2_async(
         "lunatic::networking",
-        "tcp_write_timeout",
+        "set_write_timeout",
         set_write_timeout,
     )?;
-    linker.func_wrap2_async("lunatic::networking", "tcp_peek_timeout", set_peek_timeout)?;
+    linker.func_wrap2_async("lunatic::networking", "set_peek_timeout", set_peek_timeout)?;
     linker.func_wrap1_async("lunatic::networking", "get_read_timeout", get_read_timeout)?;
     linker.func_wrap1_async(
         "lunatic::networking",
