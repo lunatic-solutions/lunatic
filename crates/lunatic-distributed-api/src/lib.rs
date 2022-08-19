@@ -14,7 +14,7 @@ use wasmtime::{Caller, Linker, ResourceLimiter, Trap};
 // Register the lunatic distributed APIs to the linker
 pub fn register<T>(linker: &mut Linker<T>) -> Result<()>
 where
-    T: DistributedCtx + ProcessCtx<T> + Send + ResourceLimiter + 'static,
+    T: DistributedCtx + ProcessCtx + Send + ResourceLimiter + 'static,
     for<'a> &'a T: Send,
 {
     linker.func_wrap("lunatic::distributed", "nodes_count", nodes_count)?;
@@ -194,7 +194,7 @@ fn send<T>(
     process_id: u64,
 ) -> Box<dyn Future<Output = Result<(), Trap>> + Send + '_>
 where
-    T: DistributedCtx + ProcessCtx<T> + Send + 'static,
+    T: DistributedCtx + ProcessCtx + Send + 'static,
     for<'a> &'a T: Send,
 {
     Box::new(async move {
@@ -252,7 +252,7 @@ fn send_receive_skip_search<T>(
     timeout_duration: u64,
 ) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_>
 where
-    T: DistributedCtx + ProcessCtx<T> + Send + 'static,
+    T: DistributedCtx + ProcessCtx + Send + 'static,
     for<'a> &'a T: Send,
 {
     Box::new(async move {

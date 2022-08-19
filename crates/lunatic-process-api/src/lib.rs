@@ -22,7 +22,7 @@ use lunatic_wasi_api::LunaticWasiCtx;
 use wasmtime::{Caller, Linker, ResourceLimiter, Trap, Val};
 
 pub type ProcessResources = HashMapId<Arc<dyn Process>>;
-pub type ModuleResources<T> = HashMapId<WasmtimeCompiledModule<T>>;
+pub type ModuleResources = HashMapId<Arc<WasmtimeCompiledModule>>;
 
 pub trait ProcessConfigCtx {
     fn can_compile_modules(&self) -> bool;
@@ -33,18 +33,18 @@ pub trait ProcessConfigCtx {
     fn set_can_spawn_processes(&mut self, can: bool);
 }
 
-pub trait ProcessCtx<S: ProcessState> {
+pub trait ProcessCtx {
     fn mailbox(&mut self) -> &mut MessageMailbox;
     fn message_scratch_area(&mut self) -> &mut Option<Message>;
-    fn module_resources(&self) -> &ModuleResources<S>;
-    fn module_resources_mut(&mut self) -> &mut ModuleResources<S>;
+    fn module_resources(&self) -> &ModuleResources;
+    fn module_resources_mut(&mut self) -> &mut ModuleResources;
     fn environment(&self) -> &Environment;
 }
 
 // Register the process APIs to the linker
 pub fn register<T>(linker: &mut Linker<T>) -> Result<()>
 where
-    T: ProcessState + ProcessCtx<T> + ErrorCtx + LunaticWasiCtx + Send + ResourceLimiter + 'static,
+    T: ProcessState + ProcessCtx + ErrorCtx + LunaticWasiCtx + Send + ResourceLimiter + 'static,
     for<'a> &'a T: Send,
     T::Config: ProcessConfigCtx,
 {
@@ -133,7 +133,7 @@ fn compile_module<T>(
     id_ptr: u32,
 ) -> Result<i32, Trap>
 where
-    T: ProcessState + ProcessCtx<T> + ErrorCtx,
+    T: ProcessState + ProcessCtx + ErrorCtx,
     T::Config: ProcessConfigCtx,
 {
     // TODO: Module compilation is CPU intensive and should be done on the blocking task thread pool.
@@ -149,7 +149,14 @@ where
 
     let module = RawWasm::new(None, module);
     let (mod_or_error_id, result) = match caller.data().runtime().compile_module(module) {
-        Ok(module) => (caller.data_mut().module_resources_mut().add(module), 0),
+        Ok(module) => {
+            let module_id = caller
+                .data_mut()
+                .module_resources_mut()
+                .add(Arc::new(module));
+            println!("pushing module id {module_id}");
+            (module_id, 0)
+        }
         Err(error) => (caller.data_mut().error_resources_mut().add(error), 1),
     };
 
@@ -163,7 +170,7 @@ where
 //
 // Traps:
 // * If the module ID doesn't exist.
-fn drop_module<T: ProcessState + ProcessCtx<T>>(
+fn drop_module<T: ProcessState + ProcessCtx>(
     mut caller: Caller<T>,
     module_id: u64,
 ) -> Result<(), Trap> {
@@ -184,7 +191,7 @@ fn drop_module<T: ProcessState + ProcessCtx<T>>(
 // * -1 in case the process doesn't have permission to create new configurations
 fn create_config<T>(mut caller: Caller<T>) -> i64
 where
-    T: ProcessState + ProcessCtx<T>,
+    T: ProcessState + ProcessCtx,
     T::Config: ProcessConfigCtx,
 {
     if !caller.data().config().can_create_configs() {
@@ -198,7 +205,7 @@ where
 //
 // Traps:
 // * If the config ID doesn't exist.
-fn drop_config<T: ProcessState + ProcessCtx<T>>(
+fn drop_config<T: ProcessState + ProcessCtx>(
     mut caller: Caller<T>,
     config_id: u64,
 ) -> Result<(), Trap> {
@@ -215,7 +222,7 @@ fn drop_config<T: ProcessState + ProcessCtx<T>>(
 // Traps:
 // * If max_memory is bigger than the platform maximum.
 // * If the config ID doesn't exist.
-fn config_set_max_memory<T: ProcessState + ProcessCtx<T>>(
+fn config_set_max_memory<T: ProcessState + ProcessCtx>(
     mut caller: Caller<T>,
     config_id: u64,
     max_memory: u64,
@@ -235,7 +242,7 @@ fn config_set_max_memory<T: ProcessState + ProcessCtx<T>>(
 //
 // Traps:
 // * If the config ID doesn't exist.
-fn config_get_max_memory<T: ProcessState + ProcessCtx<T>>(
+fn config_get_max_memory<T: ProcessState + ProcessCtx>(
     caller: Caller<T>,
     config_id: u64,
 ) -> Result<u64, Trap> {
@@ -254,7 +261,7 @@ fn config_get_max_memory<T: ProcessState + ProcessCtx<T>>(
 //
 // Traps:
 // * If the config ID doesn't exist.
-fn config_set_max_fuel<T: ProcessState + ProcessCtx<T>>(
+fn config_set_max_fuel<T: ProcessState + ProcessCtx>(
     mut caller: Caller<T>,
     config_id: u64,
     max_fuel: u64,
@@ -279,7 +286,7 @@ fn config_set_max_fuel<T: ProcessState + ProcessCtx<T>>(
 //
 // Traps:
 // * If the config ID doesn't exist.
-fn config_get_max_fuel<T: ProcessState + ProcessCtx<T>>(
+fn config_get_max_fuel<T: ProcessState + ProcessCtx>(
     caller: Caller<T>,
     config_id: u64,
 ) -> Result<u64, Trap> {
@@ -301,7 +308,7 @@ fn config_get_max_fuel<T: ProcessState + ProcessCtx<T>>(
 // * If the config ID doesn't exist.
 fn config_can_compile_modules<T>(caller: Caller<T>, config_id: u64) -> Result<u32, Trap>
 where
-    T: ProcessState + ProcessCtx<T>,
+    T: ProcessState + ProcessCtx,
     T::Config: ProcessConfigCtx,
 {
     let can = caller
@@ -324,7 +331,7 @@ fn config_set_can_compile_modules<T>(
     can: u32,
 ) -> Result<(), Trap>
 where
-    T: ProcessState + ProcessCtx<T>,
+    T: ProcessState + ProcessCtx,
     T::Config: ProcessConfigCtx,
 {
     caller
@@ -343,7 +350,7 @@ where
 // * If the config ID doesn't exist.
 fn config_can_create_configs<T>(caller: Caller<T>, config_id: u64) -> Result<u32, Trap>
 where
-    T: ProcessState + ProcessCtx<T>,
+    T: ProcessState + ProcessCtx,
     T::Config: ProcessConfigCtx,
 {
     let can = caller
@@ -366,7 +373,7 @@ fn config_set_can_create_configs<T>(
     can: u32,
 ) -> Result<(), Trap>
 where
-    T: ProcessState + ProcessCtx<T>,
+    T: ProcessState + ProcessCtx,
     T::Config: ProcessConfigCtx,
 {
     caller
@@ -384,7 +391,7 @@ where
 // * If the config ID doesn't exist.
 fn config_can_spawn_processes<T>(caller: Caller<T>, config_id: u64) -> Result<u32, Trap>
 where
-    T: ProcessState + ProcessCtx<T>,
+    T: ProcessState + ProcessCtx,
     T::Config: ProcessConfigCtx,
 {
     let can = caller
@@ -407,7 +414,7 @@ fn config_set_can_spawn_processes<T>(
     can: u32,
 ) -> Result<(), Trap>
 where
-    T: ProcessState + ProcessCtx<T>,
+    T: ProcessState + ProcessCtx,
     T::Config: ProcessConfigCtx,
 {
     caller
@@ -458,7 +465,7 @@ fn spawn<T>(
     id_ptr: u32,
 ) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_>
 where
-    T: ProcessState + ProcessCtx<T> + ErrorCtx + LunaticWasiCtx + ResourceLimiter + Send + 'static,
+    T: ProcessState + ProcessCtx + ErrorCtx + LunaticWasiCtx + ResourceLimiter + Send + 'static,
     for<'a> &'a T: Send,
     T::Config: ProcessConfigCtx,
 {
@@ -495,7 +502,7 @@ where
                 .clone(),
         };
 
-        let mut state = state.new_state(module.clone(), config)?;
+        let mut state = state.new_state(Arc::clone(&module), config)?;
 
         let memory = get_memory(&mut caller)?;
         let func_str = memory
@@ -557,7 +564,7 @@ where
         // set state instead of config TODO
         let env = caller.data().environment();
         let (proc_or_error_id, result) = match env
-            .spawn_wasm(runtime, module, state, function, params, link)
+            .spawn_wasm(runtime, &module, state, function, params, link)
             .await
         {
             Ok((_, process)) => (process.id(), 0),
@@ -578,7 +585,7 @@ where
 // lunatic::process::sleep_ms(millis: u64)
 //
 // Suspend process for `millis`.
-fn sleep_ms<T: ProcessState + ProcessCtx<T>>(
+fn sleep_ms<T: ProcessState + ProcessCtx>(
     _: Caller<T>,
     millis: u64,
 ) -> Box<dyn Future<Output = ()> + Send + '_> {
@@ -594,7 +601,7 @@ fn sleep_ms<T: ProcessState + ProcessCtx<T>>(
 // 2. `trap != 0` the process will die and notify all linked processes of its death.
 //
 // The default behaviour for a newly spawned process is 2.
-fn die_when_link_dies<T: ProcessState + ProcessCtx<T>>(mut caller: Caller<T>, trap: u32) {
+fn die_when_link_dies<T: ProcessState + ProcessCtx>(mut caller: Caller<T>, trap: u32) {
     caller
         .data_mut()
         .signal_mailbox()
@@ -604,12 +611,12 @@ fn die_when_link_dies<T: ProcessState + ProcessCtx<T>>(mut caller: Caller<T>, tr
 }
 
 // Returns ID of the process currently running
-fn process_id<T: ProcessState + ProcessCtx<T>>(caller: Caller<T>) -> u64 {
+fn process_id<T: ProcessState + ProcessCtx>(caller: Caller<T>) -> u64 {
     caller.data().id()
 }
 
 // Returns ID of the environment in which the process is currently running
-fn environment_id<T: ProcessState + ProcessCtx<T>>(caller: Caller<T>) -> u64 {
+fn environment_id<T: ProcessState + ProcessCtx>(caller: Caller<T>) -> u64 {
     caller.data().environment().id()
 }
 
@@ -618,7 +625,7 @@ fn environment_id<T: ProcessState + ProcessCtx<T>>(caller: Caller<T>) -> u64 {
 //
 // Traps:
 // * If the process ID doesn't exist.
-fn link<T: ProcessState + ProcessCtx<T>>(
+fn link<T: ProcessState + ProcessCtx>(
     mut caller: Caller<T>,
     tag: i64,
     process_id: u64,
@@ -662,7 +669,7 @@ fn link<T: ProcessState + ProcessCtx<T>>(
 //
 // Traps:
 // * If the process ID doesn't exist.
-fn unlink<T: ProcessState + ProcessCtx<T>>(
+fn unlink<T: ProcessState + ProcessCtx>(
     mut caller: Caller<T>,
     process_id: u64,
 ) -> Result<(), Trap> {
@@ -693,7 +700,7 @@ fn unlink<T: ProcessState + ProcessCtx<T>>(
 //
 // Traps:
 // * If the process ID doesn't exist.
-fn kill<T: ProcessState + ProcessCtx<T>>(caller: Caller<T>, process_id: u64) -> Result<(), Trap> {
+fn kill<T: ProcessState + ProcessCtx>(caller: Caller<T>, process_id: u64) -> Result<(), Trap> {
     // Send kill signal to process
     if let Some(process) = caller.data().environment().get_process(process_id) {
         process.send(Signal::Kill);

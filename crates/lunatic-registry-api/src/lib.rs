@@ -6,7 +6,7 @@ use wasmtime::Trap;
 use wasmtime::{Caller, Linker};
 
 // Register the registry APIs to the linker
-pub fn register<T: ProcessState + ProcessCtx<T> + 'static>(linker: &mut Linker<T>) -> Result<()> {
+pub fn register<T: ProcessState + ProcessCtx + 'static>(linker: &mut Linker<T>) -> Result<()> {
     linker.func_wrap("lunatic::registry", "put", put)?;
     linker.func_wrap("lunatic::registry", "get", get)?;
     linker.func_wrap("lunatic::registry", "remove", remove)?;
@@ -18,7 +18,7 @@ pub fn register<T: ProcessState + ProcessCtx<T> + 'static>(linker: &mut Linker<T
 // Traps:
 // * If the process ID doesn't exist.
 // * If any memory outside the guest heap space is referenced.
-fn put<T: ProcessState + ProcessCtx<T>>(
+fn put<T: ProcessState + ProcessCtx>(
     mut caller: Caller<T>,
     name_str_ptr: u32,
     name_str_len: u32,
@@ -43,7 +43,7 @@ fn put<T: ProcessState + ProcessCtx<T>>(
 //
 // Traps:
 // * If any memory outside the guest heap space is referenced.
-fn get<T: ProcessState + ProcessCtx<T>>(
+fn get<T: ProcessState + ProcessCtx>(
     mut caller: Caller<T>,
     name_str_ptr: u32,
     name_str_len: u32,
@@ -81,7 +81,7 @@ fn get<T: ProcessState + ProcessCtx<T>>(
 //
 // Traps:
 // * If any memory outside the guest heap space is referenced.
-fn remove<T: ProcessState + ProcessCtx<T>>(
+fn remove<T: ProcessState + ProcessCtx>(
     mut caller: Caller<T>,
     name_str_ptr: u32,
     name_str_len: u32,

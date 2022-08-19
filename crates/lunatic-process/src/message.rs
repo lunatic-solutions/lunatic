@@ -13,7 +13,7 @@ use std::{
 use lunatic_networking_api::TcpConnection;
 use tokio::net::UdpSocket;
 
-use crate::Process;
+use crate::{runtimes::wasmtime::WasmtimeCompiledModule, Process};
 
 /// Can be sent between processes by being embedded into a  [`Signal::Message`][0]
 ///
@@ -76,6 +76,12 @@ impl DataMessage {
         self.resources.len() - 1
     }
 
+    /// Adds a module to the message and returns the index of it inside of the message
+    pub fn add_module(&mut self, module: Arc<WasmtimeCompiledModule>) -> usize {
+        self.resources.push(Resource::Module(module));
+        self.resources.len() - 1
+    }
+
     /// Adds a TCP stream to the message and returns the index of it inside of the message
     pub fn add_tcp_stream(&mut self, tcp_stream: Arc<TcpConnection>) -> usize {
         self.resources.push(Resource::TcpStream(tcp_stream));
@@ -101,6 +107,26 @@ impl DataMessage {
                 }
                 other => {
                     // Put the resource back if it's not a process and drop empty.
+                    let _ = std::mem::replace(resource_ref, other);
+                }
+            }
+        }
+        None
+    }
+
+    /// Takes a module from the message, but preserves the indexes of all others.
+    ///
+    /// If the index is out of bound or the resource is not a module the function will return
+    /// None.
+    pub fn take_module(&mut self, index: usize) -> Option<Arc<WasmtimeCompiledModule>> {
+        if let Some(resource_ref) = self.resources.get_mut(index) {
+            let resource = std::mem::replace(resource_ref, Resource::None);
+            match resource {
+                Resource::Module(module) => {
+                    return Some(module);
+                }
+                other => {
+                    // Put the resource back if it's not a tcp stream and drop empty.
                     let _ = std::mem::replace(resource_ref, other);
                 }
             }
@@ -190,6 +216,7 @@ impl Read for DataMessage {
 pub enum Resource {
     None,
     Process(Arc<dyn Process>),
+    Module(Arc<WasmtimeCompiledModule>),
     TcpStream(Arc<TcpConnection>),
     UdpSocket(Arc<UdpSocket>),
 }
@@ -199,6 +226,7 @@ impl Debug for Resource {
         match self {
             Self::None => write!(f, "None"),
             Self::Process(_) => write!(f, "Process"),
+            Self::Module(_) => write!(f, "Module"),
             Self::TcpStream(_) => write!(f, "TcpStream"),
             Self::UdpSocket(_) => write!(f, "UdpSocket"),
         }

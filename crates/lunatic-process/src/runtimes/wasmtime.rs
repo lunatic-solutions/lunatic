@@ -23,34 +23,24 @@ impl WasmtimeRuntime {
     }
 
     /// Compiles a wasm module to machine code and performs type-checking on host functions.
-    pub fn compile_module<T>(&self, data: RawWasm) -> Result<WasmtimeCompiledModule<T>>
-    where
-        T: ProcessState,
-    {
+    pub fn compile_module(&self, data: RawWasm) -> Result<WasmtimeCompiledModule> {
         let module = wasmtime::Module::new(&self.engine, data.as_slice())?;
-        let mut linker = wasmtime::Linker::new(&self.engine);
-        // Register host functions to linker.
-        <T as ProcessState>::register(&mut linker)?;
-        // The `default_state` and `store` are just used for resolving host functions that are not
-        // owned by any particular `Store`. The "real" instance state and store are created inside
-        // the `instantiate` function.
-        // See: https://docs.rs/wasmtime/latest/wasmtime/struct.Linker.html#method.instantiate_pre
-        // `default_state` should never be accessed and it's safe to use a "fake" state here.
-        let default_state = T::state_for_instantiation();
-        let mut store = wasmtime::Store::new(&self.engine, default_state);
-        let instance_pre = linker.instantiate_pre(&mut store, &module)?;
-        let compiled_module = WasmtimeCompiledModule::new(data, module, instance_pre);
+        let compiled_module = WasmtimeCompiledModule::new(data, module);
         Ok(compiled_module)
     }
 
     pub async fn instantiate<T>(
         &self,
-        compiled_module: &WasmtimeCompiledModule<T>,
+        compiled_module: &WasmtimeCompiledModule,
         state: T,
     ) -> Result<WasmtimeInstance<T>>
     where
         T: ProcessState + Send + ResourceLimiter,
     {
+        let mut linker = wasmtime::Linker::new(&self.engine);
+        // Register host functions to linker.
+        <T as ProcessState>::register(&mut linker)?;
+
         let max_fuel = state.config().get_max_fuel();
         let mut store = wasmtime::Store::new(&self.engine, state);
         // Set limits of the store
@@ -65,10 +55,10 @@ impl WasmtimeRuntime {
             // If no limit is specified use maximum
             None => store.out_of_fuel_async_yield(u64::MAX, UNIT_OF_COMPUTE_IN_INSTRUCTIONS),
         };
+
         // Create instance
-        let instance = compiled_module
-            .instantiator()
-            .instantiate_async(&mut store)
+        let instance = linker
+            .instantiate_async(&mut store, compiled_module.module())
             .await?;
         // Mark state as initialized
         store.data_mut().initialize();
@@ -76,28 +66,23 @@ impl WasmtimeRuntime {
     }
 }
 
-pub struct WasmtimeCompiledModule<T> {
-    inner: Arc<WasmtimeCompiledModuleInner<T>>,
+pub struct WasmtimeCompiledModule {
+    inner: Arc<WasmtimeCompiledModuleInner>,
 }
 
-pub struct WasmtimeCompiledModuleInner<T> {
+pub struct WasmtimeCompiledModuleInner {
     source: RawWasm,
     module: wasmtime::Module,
-    instance_pre: wasmtime::InstancePre<T>,
 }
 
-impl<T> WasmtimeCompiledModule<T> {
-    pub fn new(
-        source: RawWasm,
-        module: wasmtime::Module,
-        instance_pre: wasmtime::InstancePre<T>,
-    ) -> WasmtimeCompiledModule<T> {
-        let inner = Arc::new(WasmtimeCompiledModuleInner {
-            source,
-            module,
-            instance_pre,
-        });
+impl WasmtimeCompiledModule {
+    pub fn new(source: RawWasm, module: wasmtime::Module) -> WasmtimeCompiledModule {
+        let inner = Arc::new(WasmtimeCompiledModuleInner { source, module });
         Self { inner }
+    }
+
+    pub fn module(&self) -> &wasmtime::Module {
+        &self.inner.module
     }
 
     pub fn exports(&self) -> impl ExactSizeIterator<Item = wasmtime::ExportType<'_>> {
@@ -107,13 +92,9 @@ impl<T> WasmtimeCompiledModule<T> {
     pub fn source(&self) -> &RawWasm {
         &self.inner.source
     }
-
-    pub fn instantiator(&self) -> &wasmtime::InstancePre<T> {
-        &self.inner.instance_pre
-    }
 }
 
-impl<T> Clone for WasmtimeCompiledModule<T> {
+impl Clone for WasmtimeCompiledModule {
     fn clone(&self) -> Self {
         Self {
             inner: self.inner.clone(),

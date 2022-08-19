@@ -162,19 +162,19 @@ async fn handle_quic_connection(connection: Connection, control_server: control:
 
 pub async fn handle_node_server<T>(
     quic_server: &mut (Endpoint, Incoming),
-    ctx: distributed::server::ServerCtx<T>,
+    ctx: distributed::server::ServerCtx,
 ) -> Result<()>
 where
     T: ProcessState + ResourceLimiter + DistributedCtx + Send + 'static,
 {
     while let Some(conn) = quic_server.1.next().await {
-        tokio::spawn(handle_quic_connection_node(ctx.clone(), conn));
+        tokio::spawn(handle_quic_connection_node::<T>(ctx.clone(), conn));
     }
     Ok(())
 }
 
 async fn handle_quic_connection_node<T>(
-    ctx: distributed::server::ServerCtx<T>,
+    ctx: distributed::server::ServerCtx,
     conn: Connecting,
 ) -> Result<()>
 where
@@ -183,16 +183,16 @@ where
     let NewConnection { mut bi_streams, .. } = conn.await?;
     while let Some(stream) = bi_streams.next().await {
         let connection = Connection::new(stream?);
-        tokio::spawn(handle_quic_stream_node(ctx.clone(), connection));
+        tokio::spawn(handle_quic_stream_node::<T>(ctx.clone(), connection));
     }
     Ok(())
 }
 
-async fn handle_quic_stream_node<T>(ctx: distributed::server::ServerCtx<T>, conn: Connection)
+async fn handle_quic_stream_node<T>(ctx: distributed::server::ServerCtx, conn: Connection)
 where
     T: ProcessState + ResourceLimiter + DistributedCtx + Send + 'static,
 {
     while let Ok((msg_id, request)) = conn.receive().await {
-        distributed::server::handle_message(ctx.clone(), conn.clone(), msg_id, request).await;
+        distributed::server::handle_message::<T>(ctx.clone(), conn.clone(), msg_id, request).await;
     }
 }

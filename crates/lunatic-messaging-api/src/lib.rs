@@ -18,7 +18,7 @@ use lunatic_process::{
 };
 
 // Register the mailbox APIs to the linker
-pub fn register<T: ProcessState + ProcessCtx<T> + NetworkingCtx + Send + 'static>(
+pub fn register<T: ProcessState + ProcessCtx + NetworkingCtx + Send + 'static>(
     linker: &mut Linker<T>,
 ) -> Result<()> {
     linker.func_wrap("lunatic::message", "create_data", create_data)?;
@@ -27,6 +27,8 @@ pub fn register<T: ProcessState + ProcessCtx<T> + NetworkingCtx + Send + 'static
     linker.func_wrap("lunatic::message", "seek_data", seek_data)?;
     linker.func_wrap("lunatic::message", "get_tag", get_tag)?;
     linker.func_wrap("lunatic::message", "data_size", data_size)?;
+    linker.func_wrap("lunatic::message", "push_module", push_module)?;
+    linker.func_wrap("lunatic::message", "take_module", take_module)?;
     linker.func_wrap("lunatic::message", "push_tcp_stream", push_tcp_stream)?;
     linker.func_wrap("lunatic::message", "take_tcp_stream", take_tcp_stream)?;
     linker.func_wrap("lunatic::message", "send", send)?;
@@ -118,7 +120,7 @@ pub fn register<T: ProcessState + ProcessCtx<T> + NetworkingCtx + Send + 'static
 // Arguments:
 // * tag - An identifier that can be used for selective receives. If value is 0, no tag is used.
 // * buffer_capacity - A hint to the message to pre-allocate a large enough buffer for writes.
-fn create_data<T: ProcessState + ProcessCtx<T>>(
+fn create_data<T: ProcessState + ProcessCtx>(
     mut caller: Caller<T>,
     tag: i64,
     buffer_capacity: u64,
@@ -139,7 +141,7 @@ fn create_data<T: ProcessState + ProcessCtx<T>>(
 // Traps:
 // * If any memory outside the guest heap space is referenced.
 // * If it's called without a data message being inside of the scratch area.
-fn write_data<T: ProcessState + ProcessCtx<T>>(
+fn write_data<T: ProcessState + ProcessCtx>(
     mut caller: Caller<T>,
     data_ptr: u32,
     data_len: u32,
@@ -171,7 +173,7 @@ fn write_data<T: ProcessState + ProcessCtx<T>>(
 // Traps:
 // * If any memory outside the guest heap space is referenced.
 // * If it's called without a data message being inside of the scratch area.
-fn read_data<T: ProcessState + ProcessCtx<T>>(
+fn read_data<T: ProcessState + ProcessCtx>(
     mut caller: Caller<T>,
     data_ptr: u32,
     data_len: u32,
@@ -204,10 +206,7 @@ fn read_data<T: ProcessState + ProcessCtx<T>>(
 //
 // Traps:
 // * If it's called without a data message being inside of the scratch area.
-fn seek_data<T: ProcessState + ProcessCtx<T>>(
-    mut caller: Caller<T>,
-    index: u64,
-) -> Result<(), Trap> {
+fn seek_data<T: ProcessState + ProcessCtx>(mut caller: Caller<T>, index: u64) -> Result<(), Trap> {
     let mut message = caller
         .data_mut()
         .message_scratch_area()
@@ -226,7 +225,7 @@ fn seek_data<T: ProcessState + ProcessCtx<T>>(
 //
 // Traps:
 // * If it's called without a message being inside of the scratch area.
-fn get_tag<T: ProcessState + ProcessCtx<T>>(mut caller: Caller<T>) -> Result<i64, Trap> {
+fn get_tag<T: ProcessState + ProcessCtx>(mut caller: Caller<T>) -> Result<i64, Trap> {
     let message = caller
         .data_mut()
         .message_scratch_area()
@@ -242,7 +241,7 @@ fn get_tag<T: ProcessState + ProcessCtx<T>>(mut caller: Caller<T>) -> Result<i64
 //
 // Traps:
 // * If it's called without a data message being inside of the scratch area.
-fn data_size<T: ProcessState + ProcessCtx<T>>(mut caller: Caller<T>) -> Result<u64, Trap> {
+fn data_size<T: ProcessState + ProcessCtx>(mut caller: Caller<T>) -> Result<u64, Trap> {
     let message = caller
         .data_mut()
         .message_scratch_area()
@@ -258,13 +257,69 @@ fn data_size<T: ProcessState + ProcessCtx<T>>(mut caller: Caller<T>) -> Result<u
     Ok(bytes as u64)
 }
 
+// Adds a module resource to the message that is currently in the scratch area and returns
+// the new location of it.
+//
+// Traps:
+// * If module ID doesn't exist
+// * If no data message is in the scratch area.
+fn push_module<T: ProcessState + ProcessCtx + NetworkingCtx>(
+    mut caller: Caller<T>,
+    module_id: u64,
+) -> Result<u64, Trap> {
+    let module = caller
+        .data()
+        .module_resources()
+        .get(module_id)
+        .or_trap("lunatic::message::push_module")?
+        .clone();
+    let message = caller
+        .data_mut()
+        .message_scratch_area()
+        .as_mut()
+        .or_trap("lunatic::message::push_module")?;
+    let index = match message {
+        Message::Data(data) => data.add_module(module) as u64,
+        Message::LinkDied(_) => {
+            return Err(Trap::new("Unexpected `Message::LinkDied` in scratch area"))
+        }
+    };
+    Ok(index)
+}
+
+// Takes the module from the message that is currently in the scratch area by index, puts
+// it into the process' resources and returns the resource ID.
+//
+// Traps:
+// * If index ID doesn't exist or matches the wrong resource (not a module).
+// * If no data message is in the scratch area.
+fn take_module<T: ProcessState + ProcessCtx + NetworkingCtx>(
+    mut caller: Caller<T>,
+    index: u64,
+) -> Result<u64, Trap> {
+    let message = caller
+        .data_mut()
+        .message_scratch_area()
+        .as_mut()
+        .or_trap("lunatic::message::take_module")?;
+    let module = match message {
+        Message::Data(data) => data
+            .take_module(index as usize)
+            .or_trap("lunatic::message::take_module")?,
+        Message::LinkDied(_) => {
+            return Err(Trap::new("Unexpected `Message::LinkDied` in scratch area"))
+        }
+    };
+    Ok(caller.data_mut().module_resources_mut().add(module))
+}
+
 // Adds a tcp stream resource to the message that is currently in the scratch area and returns
-// the new location of it. This will remove the tcp stream from  the current process' resources.
+// the new location of it. This will remove the tcp stream from the current process' resources.
 //
 // Traps:
 // * If TCP stream ID doesn't exist
 // * If no data message is in the scratch area.
-fn push_tcp_stream<T: ProcessState + ProcessCtx<T> + NetworkingCtx>(
+fn push_tcp_stream<T: ProcessState + ProcessCtx + NetworkingCtx>(
     mut caller: Caller<T>,
     stream_id: u64,
 ) -> Result<u64, Trap> {
@@ -293,7 +348,7 @@ fn push_tcp_stream<T: ProcessState + ProcessCtx<T> + NetworkingCtx>(
 // Traps:
 // * If index ID doesn't exist or matches the wrong resource (not a tcp stream).
 // * If no data message is in the scratch area.
-fn take_tcp_stream<T: ProcessState + ProcessCtx<T> + NetworkingCtx>(
+fn take_tcp_stream<T: ProcessState + ProcessCtx + NetworkingCtx>(
     mut caller: Caller<T>,
     index: u64,
 ) -> Result<u64, Trap> {
@@ -320,10 +375,7 @@ fn take_tcp_stream<T: ProcessState + ProcessCtx<T> + NetworkingCtx>(
 // Traps:
 // * If the process ID doesn't exist.
 // * If it's called before creating the next message.
-fn send<T: ProcessState + ProcessCtx<T>>(
-    mut caller: Caller<T>,
-    process_id: u64,
-) -> Result<(), Trap> {
+fn send<T: ProcessState + ProcessCtx>(mut caller: Caller<T>, process_id: u64) -> Result<(), Trap> {
     let message = caller
         .data_mut()
         .message_scratch_area()
@@ -355,7 +407,7 @@ fn send<T: ProcessState + ProcessCtx<T>>(
 // Traps:
 // * If the process ID doesn't exist.
 // * If it's called with wrong data in the scratch area.
-fn send_receive_skip_search<T: ProcessState + ProcessCtx<T> + Send>(
+fn send_receive_skip_search<T: ProcessState + ProcessCtx + Send>(
     mut caller: Caller<T>,
     process_id: u64,
     timeout_duration: u64,
@@ -414,7 +466,7 @@ fn send_receive_skip_search<T: ProcessState + ProcessCtx<T> + Send>(
 //
 // Traps:
 // * If **tag_ptr + (ciovec_array_len * 8) is outside the memory
-fn receive<T: ProcessState + ProcessCtx<T> + Send>(
+fn receive<T: ProcessState + ProcessCtx + Send>(
     mut caller: Caller<T>,
     tag_ptr: u32,
     tag_len: u32,
@@ -464,7 +516,7 @@ fn receive<T: ProcessState + ProcessCtx<T> + Send>(
 // Traps:
 // * If UDP socket ID doesn't exist
 // * If no data message is in the scratch area.
-fn push_udp_socket<T: ProcessState + ProcessCtx<T> + NetworkingCtx>(
+fn push_udp_socket<T: ProcessState + ProcessCtx + NetworkingCtx>(
     mut caller: Caller<T>,
     socket_id: u64,
 ) -> Result<u64, Trap> {
@@ -492,7 +544,7 @@ fn push_udp_socket<T: ProcessState + ProcessCtx<T> + NetworkingCtx>(
 // Traps:
 // * If index ID doesn't exist or matches the wrong resource (not a udp socket).
 // * If no data message is in the scratch area.
-fn take_udp_socket<T: ProcessState + ProcessCtx<T> + NetworkingCtx>(
+fn take_udp_socket<T: ProcessState + ProcessCtx + NetworkingCtx>(
     mut caller: Caller<T>,
     index: u64,
 ) -> Result<u64, Trap> {

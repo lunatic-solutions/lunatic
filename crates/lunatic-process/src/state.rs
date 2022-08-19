@@ -31,11 +31,9 @@ pub trait ProcessState: Sized {
     // This is used in the guest function `spawn` which uses this trait and not the concrete state.
     fn new_state(
         &self,
-        module: WasmtimeCompiledModule<Self>,
+        module: Arc<WasmtimeCompiledModule>,
         config: Arc<Self::Config>,
     ) -> Result<Self>;
-
-    fn state_for_instantiation() -> Self;
 
     /// Register all host functions to the linker.
     fn register(linker: &mut Linker<Self>) -> Result<()>;
@@ -47,7 +45,7 @@ pub trait ProcessState: Sized {
     /// Returns the WebAssembly runtime
     fn runtime(&self) -> &WasmtimeRuntime;
     // Returns the WebAssembly module
-    fn module(&self) -> &WasmtimeCompiledModule<Self>;
+    fn module(&self) -> &Arc<WasmtimeCompiledModule>;
     /// Returns the process configuration
     fn config(&self) -> &Arc<Self::Config>;
 

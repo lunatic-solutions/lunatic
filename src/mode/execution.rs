@@ -166,10 +166,12 @@ pub(crate) async fn execute() -> Result<()> {
             )
             .await?;
 
-            tokio::task::spawn(lunatic_distributed::distributed::server::node_server(
+            tokio::task::spawn(lunatic_distributed::distributed::server::node_server::<
+                DefaultProcessState,
+            >(
                 ServerCtx {
                     envs,
-                    modules: Modules::<DefaultProcessState>::default(),
+                    modules: Modules::default(),
                     distributed: dist.clone(),
                     runtime: runtime.clone(),
                 },
@@ -227,7 +229,7 @@ pub(crate) async fn execute() -> Result<()> {
         } else {
             module.into()
         };
-        let module = runtime.compile_module::<DefaultProcessState>(module)?;
+        let module = Arc::new(runtime.compile_module(module)?);
         let state = DefaultProcessState::new(
             env.clone(),
             distributed_state,
@@ -239,7 +241,7 @@ pub(crate) async fn execute() -> Result<()> {
         .unwrap();
 
         let (task, _) = env
-            .spawn_wasm(runtime, module, state, "_start", Vec::new(), None)
+            .spawn_wasm(runtime, &module, state, "_start", Vec::new(), None)
             .await
             .context(format!(
                 "Failed to spawn process from {}::_start()",
