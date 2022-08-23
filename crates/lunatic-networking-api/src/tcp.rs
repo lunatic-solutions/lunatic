@@ -39,7 +39,22 @@ pub fn register<T: NetworkingCtx + ErrorCtx + Send + 'static>(
         "tcp_write_vectored",
         tcp_write_vectored,
     )?;
+    linker.func_wrap4_async("lunatic::networking", "tcp_peek", tcp_peek)?;
     linker.func_wrap4_async("lunatic::networking", "tcp_read", tcp_read)?;
+    linker.func_wrap2_async("lunatic::networking", "set_read_timeout", set_read_timeout)?;
+    linker.func_wrap2_async(
+        "lunatic::networking",
+        "set_write_timeout",
+        set_write_timeout,
+    )?;
+    linker.func_wrap2_async("lunatic::networking", "set_peek_timeout", set_peek_timeout)?;
+    linker.func_wrap1_async("lunatic::networking", "get_read_timeout", get_read_timeout)?;
+    linker.func_wrap1_async(
+        "lunatic::networking",
+        "get_write_timeout",
+        get_write_timeout,
+    )?;
+    linker.func_wrap1_async("lunatic::networking", "get_peek_timeout", get_peek_timeout)?;
     linker.func_wrap2_async("lunatic::networking", "tcp_flush", tcp_flush)?;
     Ok(())
 }
@@ -363,22 +378,197 @@ fn tcp_write_vectored<T: NetworkingCtx + ErrorCtx + Send>(
             .or_trap("lunatic::network::tcp_write_vectored")?
             .clone();
 
+        let write_timeout = stream.write_timeout.lock().await;
         let mut stream = stream.writer.lock().await;
 
-        let (opaque, return_) = match stream.write_vectored(vec_slices.as_slice()).await {
-            Ok(bytes) => (bytes as u64, 0),
-            Err(error) => (caller.data_mut().error_resources_mut().add(error.into()), 1),
-        };
+        if let Ok(write_result) = match *write_timeout {
+            Some(write_timeout) => {
+                timeout(write_timeout, stream.write_vectored(vec_slices.as_slice())).await
+            }
+            None => Ok(stream.write_vectored(vec_slices.as_slice()).await),
+        } {
+            let (opaque, return_) = match write_result {
+                Ok(bytes) => (bytes as u64, 0),
+                Err(error) => (caller.data_mut().error_resources_mut().add(error.into()), 1),
+            };
 
-        let memory = get_memory(&mut caller)?;
-        memory
-            .write(&mut caller, opaque_ptr as usize, &opaque.to_le_bytes())
-            .or_trap("lunatic::networking::tcp_write_vectored")?;
-        Ok(return_)
+            let memory = get_memory(&mut caller)?;
+            memory
+                .write(&mut caller, opaque_ptr as usize, &opaque.to_le_bytes())
+                .or_trap("lunatic::networking::tcp_write_vectored")?;
+            Ok(return_)
+        } else {
+            // Call timed out
+            Ok(9027)
+        }
+    })
+}
+
+// Sets the new value for write timeout for the **TcpStream**
+//
+// Returns:
+// * 0 on success
+//
+// Traps:
+// * If the stream ID doesn't exist.
+fn set_write_timeout<T: NetworkingCtx + ErrorCtx + Send>(
+    mut caller: Caller<T>,
+    stream_id: u64,
+    duration: u64,
+) -> Box<dyn Future<Output = Result<(), Trap>> + Send + '_> {
+    Box::new(async move {
+        let stream = caller
+            .data_mut()
+            .tcp_stream_resources_mut()
+            .get_mut(stream_id)
+            .or_trap("lunatic::network::set_write_timeout")?
+            .clone();
+        let mut timeout = stream.write_timeout.lock().await;
+        // a way to disable the timeout
+        if duration == u64::MAX {
+            *timeout = None;
+        } else {
+            *timeout = Some(Duration::from_millis(duration));
+        }
+        Ok(())
+    })
+}
+
+// Gets the value for write timeout for the **TcpStream**
+//
+// Returns:
+// * value of write timeout duration in milliseconds
+//
+// Traps:
+// * If the stream ID doesn't exist.
+fn get_write_timeout<T: NetworkingCtx + ErrorCtx + Send>(
+    caller: Caller<T>,
+    stream_id: u64,
+) -> Box<dyn Future<Output = Result<u64, Trap>> + Send + '_> {
+    Box::new(async move {
+        let stream = caller
+            .data()
+            .tcp_stream_resources()
+            .get(stream_id)
+            .or_trap("lunatic::network::get_write_timeout")?
+            .clone();
+        let timeout = stream.write_timeout.lock().await;
+        // a way to disable the timeout
+        Ok(timeout.map_or(u64::MAX, |t| t.as_millis() as u64))
+    })
+}
+
+// Sets the new value for write timeout for the **TcpStream**
+//
+// Returns:
+// * 0 on success
+//
+// Traps:
+// * If the stream ID doesn't exist.
+pub fn set_read_timeout<T: NetworkingCtx + ErrorCtx + Send>(
+    mut caller: Caller<T>,
+    stream_id: u64,
+    duration: u64,
+) -> Box<dyn Future<Output = Result<(), Trap>> + Send + '_> {
+    Box::new(async move {
+        let stream = caller
+            .data_mut()
+            .tcp_stream_resources_mut()
+            .get_mut(stream_id)
+            .or_trap("lunatic::network::set_read_timeout")?
+            .clone();
+        let mut timeout = stream.read_timeout.lock().await;
+        // a way to disable the timeout
+        if duration == u64::MAX {
+            *timeout = None;
+        } else {
+            *timeout = Some(Duration::from_millis(duration));
+        }
+        Ok(())
+    })
+}
+
+// Gets the value for read timeout for the **TcpStream**
+//
+// Returns:
+// * value of write timeout duration in milliseconds
+//
+// Traps:
+// * If the stream ID doesn't exist.
+fn get_read_timeout<T: NetworkingCtx + ErrorCtx + Send>(
+    caller: Caller<T>,
+    stream_id: u64,
+) -> Box<dyn Future<Output = Result<u64, Trap>> + Send + '_> {
+    Box::new(async move {
+        let stream = caller
+            .data()
+            .tcp_stream_resources()
+            .get(stream_id)
+            .or_trap("lunatic::network::get_read_timeout")?
+            .clone();
+        let timeout = stream.read_timeout.lock().await;
+        // a way to disable the timeout
+        Ok(timeout.map_or(u64::MAX, |t| t.as_millis() as u64))
+    })
+}
+
+// Sets the new value for write timeout for the **TcpStream**
+//
+// Returns:
+// * 0 on success
+//
+// Traps:
+// * If the stream ID doesn't exist.
+pub fn set_peek_timeout<T: NetworkingCtx + ErrorCtx + Send>(
+    mut caller: Caller<T>,
+    stream_id: u64,
+    duration: u64,
+) -> Box<dyn Future<Output = Result<(), Trap>> + Send + '_> {
+    Box::new(async move {
+        let stream = caller
+            .data_mut()
+            .tcp_stream_resources_mut()
+            .get_mut(stream_id)
+            .or_trap("lunatic::network::set_peek_timeout")?
+            .clone();
+        let mut timeout = stream.peek_timeout.lock().await;
+        // a way to disable the timeout
+        if duration == u64::MAX {
+            *timeout = None;
+        } else {
+            *timeout = Some(Duration::from_millis(duration));
+        }
+        Ok(())
+    })
+}
+
+// Gets the value for peek timeout for the **TcpStream**
+//
+// Returns:
+// * value of peek timeout duration in milliseconds
+//
+// Traps:
+// * If the stream ID doesn't exist.
+fn get_peek_timeout<T: NetworkingCtx + ErrorCtx + Send>(
+    caller: Caller<T>,
+    stream_id: u64,
+) -> Box<dyn Future<Output = Result<u64, Trap>> + Send + '_> {
+    Box::new(async move {
+        let stream = caller
+            .data()
+            .tcp_stream_resources()
+            .get(stream_id)
+            .or_trap("lunatic::network::get_peek_timeout")?
+            .clone();
+        let timeout = stream.peek_timeout.lock().await;
+        // a way to disable the timeout
+        Ok(timeout.map_or(u64::MAX, |t| t.as_millis() as u64))
     })
 }
 
 // Reads data from TCP stream and writes it to the buffer.
+//
+// If no data was read within the specified timeout duration the value 9027 is returned
 //
 // Returns:
 // * 0 on success - The number of bytes read is written to **opaque_ptr**
@@ -401,6 +591,7 @@ fn tcp_read<T: NetworkingCtx + ErrorCtx + Send>(
             .get(stream_id)
             .or_trap("lunatic::network::tcp_read")?
             .clone();
+        let read_timeout = stream.read_timeout.lock().await;
         let mut stream = stream.reader.lock().await;
 
         let memory = get_memory(&mut caller)?;
@@ -409,16 +600,80 @@ fn tcp_read<T: NetworkingCtx + ErrorCtx + Send>(
             .get_mut(buffer_ptr as usize..(buffer_ptr + buffer_len) as usize)
             .or_trap("lunatic::networking::tcp_read")?;
 
-        let (opaque, return_) = match stream.read(buffer).await {
-            Ok(bytes) => (bytes as u64, 0),
-            Err(error) => (caller.data_mut().error_resources_mut().add(error.into()), 1),
-        };
+        if let Ok(read_result) = match *read_timeout {
+            Some(read_timeout) => timeout(read_timeout, stream.read(buffer)).await,
+            None => Ok(stream.read(buffer).await),
+        } {
+            let (opaque, return_) = match read_result {
+                Ok(bytes) => (bytes as u64, 0),
+                Err(error) => (caller.data_mut().error_resources_mut().add(error.into()), 1),
+            };
+
+            let memory = get_memory(&mut caller)?;
+            memory
+                .write(&mut caller, opaque_ptr as usize, &opaque.to_le_bytes())
+                .or_trap("lunatic::networking::tcp_read")?;
+            Ok(return_)
+        } else {
+            // Call timed out
+            Ok(9027)
+        }
+    })
+}
+
+// Reads data from TCP stream and writes it to the buffer, however does not remove it from the
+// internal buffer and therefore will be readable again on the next `peek()` or `read()`
+//
+// If no data was read within the specified timeout duration the value 9027 is returned
+//
+// Returns:
+// * 0 on success - The number of bytes read is written to **opaque_ptr**
+// * 1 on error   - The error ID is written to **opaque_ptr**
+//
+// Traps:
+// * If the stream ID doesn't exist.
+// * If any memory outside the guest heap space is referenced.
+fn tcp_peek<T: NetworkingCtx + ErrorCtx + Send>(
+    mut caller: Caller<T>,
+    stream_id: u64,
+    buffer_ptr: u32,
+    buffer_len: u32,
+    opaque_ptr: u32,
+) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_> {
+    Box::new(async move {
+        let stream = caller
+            .data()
+            .tcp_stream_resources()
+            .get(stream_id)
+            .or_trap("lunatic::network::tcp_peek")?
+            .clone();
+        let peek_timeout = stream.peek_timeout.lock().await;
+        let mut stream = stream.reader.lock().await;
 
         let memory = get_memory(&mut caller)?;
-        memory
-            .write(&mut caller, opaque_ptr as usize, &opaque.to_le_bytes())
-            .or_trap("lunatic::networking::tcp_read")?;
-        Ok(return_)
+        let buffer = memory
+            .data_mut(&mut caller)
+            .get_mut(buffer_ptr as usize..(buffer_ptr + buffer_len) as usize)
+            .or_trap("lunatic::networking::tcp_peek")?;
+
+        if let Ok(read_result) = match *peek_timeout {
+            Some(peek_timeout) => timeout(peek_timeout, stream.peek(buffer)).await,
+            None => Ok(stream.read(buffer).await),
+        } {
+            let (opaque, return_) = match read_result {
+                Ok(bytes) => (bytes as u64, 0),
+                Err(error) => (caller.data_mut().error_resources_mut().add(error.into()), 1),
+            };
+
+            let memory = get_memory(&mut caller)?;
+            memory
+                .write(&mut caller, opaque_ptr as usize, &opaque.to_le_bytes())
+                .or_trap("lunatic::networking::tcp_peek")?;
+            Ok(return_)
+        } else {
+            // Call timed out
+            Ok(9027)
+        }
     })
 }
 
