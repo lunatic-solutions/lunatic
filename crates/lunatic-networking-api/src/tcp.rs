@@ -382,8 +382,8 @@ fn tcp_write_vectored<T: NetworkingCtx + ErrorCtx + Send>(
         let mut stream = stream.writer.lock().await;
 
         if let Ok(write_result) = match *write_timeout {
-            Some(read_timeout) => {
-                timeout(read_timeout, stream.write_vectored(vec_slices.as_slice())).await
+            Some(write_timeout) => {
+                timeout(write_timeout, stream.write_vectored(vec_slices.as_slice())).await
             }
             None => Ok(stream.write_vectored(vec_slices.as_slice()).await),
         } {
@@ -415,7 +415,7 @@ fn set_write_timeout<T: NetworkingCtx + ErrorCtx + Send>(
     mut caller: Caller<T>,
     stream_id: u64,
     duration: u64,
-) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_> {
+) -> Box<dyn Future<Output = Result<(), Trap>> + Send + '_> {
     Box::new(async move {
         let stream = caller
             .data_mut()
@@ -430,7 +430,7 @@ fn set_write_timeout<T: NetworkingCtx + ErrorCtx + Send>(
         } else {
             *timeout = Some(Duration::from_millis(duration));
         }
-        Ok(0)
+        Ok(())
     })
 }
 
@@ -469,7 +469,7 @@ pub fn set_read_timeout<T: NetworkingCtx + ErrorCtx + Send>(
     mut caller: Caller<T>,
     stream_id: u64,
     duration: u64,
-) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_> {
+) -> Box<dyn Future<Output = Result<(), Trap>> + Send + '_> {
     Box::new(async move {
         let stream = caller
             .data_mut()
@@ -484,7 +484,7 @@ pub fn set_read_timeout<T: NetworkingCtx + ErrorCtx + Send>(
         } else {
             *timeout = Some(Duration::from_millis(duration));
         }
-        Ok(0)
+        Ok(())
     })
 }
 
@@ -523,7 +523,7 @@ pub fn set_peek_timeout<T: NetworkingCtx + ErrorCtx + Send>(
     mut caller: Caller<T>,
     stream_id: u64,
     duration: u64,
-) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_> {
+) -> Box<dyn Future<Output = Result<(), Trap>> + Send + '_> {
     Box::new(async move {
         let stream = caller
             .data_mut()
@@ -538,7 +538,7 @@ pub fn set_peek_timeout<T: NetworkingCtx + ErrorCtx + Send>(
         } else {
             *timeout = Some(Duration::from_millis(duration));
         }
-        Ok(0)
+        Ok(())
     })
 }
 
@@ -647,7 +647,7 @@ fn tcp_peek<T: NetworkingCtx + ErrorCtx + Send>(
             .get(stream_id)
             .or_trap("lunatic::network::tcp_peek")?
             .clone();
-        let read_timeout = stream.read_timeout.lock().await;
+        let peek_timeout = stream.peek_timeout.lock().await;
         let mut stream = stream.reader.lock().await;
 
         let memory = get_memory(&mut caller)?;
@@ -656,8 +656,8 @@ fn tcp_peek<T: NetworkingCtx + ErrorCtx + Send>(
             .get_mut(buffer_ptr as usize..(buffer_ptr + buffer_len) as usize)
             .or_trap("lunatic::networking::tcp_peek")?;
 
-        if let Ok(read_result) = match *read_timeout {
-            Some(read_timeout) => timeout(read_timeout, stream.peek(buffer)).await,
+        if let Ok(read_result) = match *peek_timeout {
+            Some(peek_timeout) => timeout(peek_timeout, stream.peek(buffer)).await,
             None => Ok(stream.read(buffer).await),
         } {
             let (opaque, return_) = match read_result {
