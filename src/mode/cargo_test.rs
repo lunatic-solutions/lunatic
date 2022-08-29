@@ -125,7 +125,7 @@ pub(crate) async fn test() -> Result<()> {
     let path = args.value_of("wasm").unwrap();
     let path = Path::new(path);
     let module = fs::read(path)?;
-    let module = runtime.compile_module::<DefaultProcessState>(module.into())?;
+    let module = Arc::new(runtime.compile_module::<DefaultProcessState>(module.into())?);
 
     let filter = args.value_of("filter").unwrap_or_default();
     let exact = args.is_present("exact");
@@ -275,7 +275,7 @@ pub(crate) async fn test() -> Result<()> {
         let (task, _) = env
             .spawn_wasm(
                 runtime.clone(),
-                module.clone(),
+                &module,
                 state,
                 &test_function.wasm_export_name,
                 Vec::new(),

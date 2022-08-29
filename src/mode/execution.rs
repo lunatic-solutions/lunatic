@@ -227,7 +227,7 @@ pub(crate) async fn execute() -> Result<()> {
         } else {
             module.into()
         };
-        let module = runtime.compile_module::<DefaultProcessState>(module)?;
+        let module = Arc::new(runtime.compile_module::<DefaultProcessState>(module)?);
         let state = DefaultProcessState::new(
             env.clone(),
             distributed_state,
@@ -239,7 +239,7 @@ pub(crate) async fn execute() -> Result<()> {
         .unwrap();
 
         let (task, _) = env
-            .spawn_wasm(runtime, module, state, "_start", Vec::new(), None)
+            .spawn_wasm(runtime, &module, state, "_start", Vec::new(), None)
             .await
             .context(format!(
                 "Failed to spawn process from {}::_start()",

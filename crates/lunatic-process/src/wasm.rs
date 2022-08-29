@@ -26,7 +26,7 @@ where
     pub async fn spawn_wasm(
         &self,
         runtime: WasmtimeRuntime,
-        module: WasmtimeCompiledModule<T>,
+        module: &WasmtimeCompiledModule<T>,
         state: T,
         function: &str,
         params: Vec<Val>,
@@ -37,7 +37,7 @@ where
         let signal_mailbox = state.signal_mailbox().clone();
         let message_mailbox = state.message_mailbox().clone();
 
-        let instance = runtime.instantiate(&module, state).await?;
+        let instance = runtime.instantiate(module, state).await?;
         let function = function.to_string();
         let fut = async move { instance.call(&function, params).await };
         let child_process = crate::new(fut, id, self.clone(), signal_mailbox.1, message_mailbox);

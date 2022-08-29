@@ -27,6 +27,8 @@ pub fn register<T: ProcessState + ProcessCtx<T> + NetworkingCtx + Send + 'static
     linker.func_wrap("lunatic::message", "seek_data", seek_data)?;
     linker.func_wrap("lunatic::message", "get_tag", get_tag)?;
     linker.func_wrap("lunatic::message", "data_size", data_size)?;
+    linker.func_wrap("lunatic::message", "push_module", push_module)?;
+    linker.func_wrap("lunatic::message", "take_module", take_module)?;
     linker.func_wrap("lunatic::message", "push_tcp_stream", push_tcp_stream)?;
     linker.func_wrap("lunatic::message", "take_tcp_stream", take_tcp_stream)?;
     linker.func_wrap("lunatic::message", "send", send)?;
@@ -256,6 +258,62 @@ fn data_size<T: ProcessState + ProcessCtx<T>>(mut caller: Caller<T>) -> Result<u
     };
 
     Ok(bytes as u64)
+}
+
+// Adds a module resource to the message that is currently in the scratch area and returns
+// the new location of it.
+//
+// Traps:
+// * If module ID doesn't exist
+// * If no data message is in the scratch area.
+fn push_module<T: ProcessState + ProcessCtx<T> + NetworkingCtx>(
+    mut caller: Caller<T>,
+    module_id: u64,
+) -> Result<u64, Trap> {
+    let module = caller
+        .data()
+        .module_resources()
+        .get(module_id)
+        .or_trap("lunatic::message::push_module")?
+        .clone();
+    let message = caller
+        .data_mut()
+        .message_scratch_area()
+        .as_mut()
+        .or_trap("lunatic::message::push_module")?;
+    let index = match message {
+        Message::Data(data) => data.add_module(module) as u64,
+        Message::LinkDied(_) => {
+            return Err(Trap::new("Unexpected `Message::LinkDied` in scratch area"))
+        }
+    };
+    Ok(index)
+}
+
+// Takes the module from the message that is currently in the scratch area by index, puts
+// it into the process' resources and returns the resource ID.
+//
+// Traps:
+// * If index ID doesn't exist or matches the wrong resource (not a module).
+// * If no data message is in the scratch area.
+fn take_module<T: ProcessState + ProcessCtx<T> + NetworkingCtx>(
+    mut caller: Caller<T>,
+    index: u64,
+) -> Result<u64, Trap> {
+    let message = caller
+        .data_mut()
+        .message_scratch_area()
+        .as_mut()
+        .or_trap("lunatic::message::take_module")?;
+    let module = match message {
+        Message::Data(data) => data
+            .take_module(index as usize)
+            .or_trap("lunatic::message::take_module")?,
+        Message::LinkDied(_) => {
+            return Err(Trap::new("Unexpected `Message::LinkDied` in scratch area"))
+        }
+    };
+    Ok(caller.data_mut().module_resources_mut().add(module))
 }
 
 // Adds a tcp stream resource to the message that is currently in the scratch area and returns

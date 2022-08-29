@@ -76,6 +76,12 @@ impl<T> DataMessage<T> {
         self.resources.len() - 1
     }
 
+    /// Adds a module to the message and returns the index of it inside of the message
+    pub fn add_module(&mut self, module: Arc<WasmtimeCompiledModule<T>>) -> usize {
+        self.resources.push(Resource::Module(module));
+        self.resources.len() - 1
+    }
+
     /// Adds a TCP stream to the message and returns the index of it inside of the message
     pub fn add_tcp_stream(&mut self, tcp_stream: Arc<TcpConnection>) -> usize {
         self.resources.push(Resource::TcpStream(tcp_stream));
@@ -101,6 +107,26 @@ impl<T> DataMessage<T> {
                 }
                 other => {
                     // Put the resource back if it's not a process and drop empty.
+                    let _ = std::mem::replace(resource_ref, other);
+                }
+            }
+        }
+        None
+    }
+
+    /// Takes a module from the message, but preserves the indexes of all others.
+    ///
+    /// If the index is out of bound or the resource is not a module the function will return
+    /// None.
+    pub fn take_module(&mut self, index: usize) -> Option<Arc<WasmtimeCompiledModule<T>>> {
+        if let Some(resource_ref) = self.resources.get_mut(index) {
+            let resource = std::mem::replace(resource_ref, Resource::None);
+            match resource {
+                Resource::Module(module) => {
+                    return Some(module);
+                }
+                other => {
+                    // Put the resource back if it's not a tcp stream and drop empty.
                     let _ = std::mem::replace(resource_ref, other);
                 }
             }

@@ -31,7 +31,7 @@ pub trait ProcessState: Sized {
     // This is used in the guest function `spawn` which uses this trait and not the concrete state.
     fn new_state(
         &self,
-        module: WasmtimeCompiledModule<Self>,
+        module: Arc<WasmtimeCompiledModule<Self>>,
         config: Arc<Self::Config>,
     ) -> Result<Self>;
 
@@ -47,7 +47,7 @@ pub trait ProcessState: Sized {
     /// Returns the WebAssembly runtime
     fn runtime(&self) -> &WasmtimeRuntime;
     // Returns the WebAssembly module
-    fn module(&self) -> &WasmtimeCompiledModule<Self>;
+    fn module(&self) -> &Arc<WasmtimeCompiledModule<Self>>;
     /// Returns the process configuration
     fn config(&self) -> &Arc<Self::Config>;
 
