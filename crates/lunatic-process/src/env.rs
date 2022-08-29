@@ -6,14 +6,13 @@ use std::sync::{
 
 use crate::{Process, Signal};
 
-#[derive(Clone)]
-pub struct Environment {
+pub struct Environment<T> {
     environment_id: u64,
     next_process_id: Arc<AtomicU64>,
-    processes: Arc<DashMap<u64, Arc<dyn Process>>>,
+    processes: Arc<DashMap<u64, Arc<dyn Process<T>>>>,
 }
 
-impl Environment {
+impl<T> Environment<T> {
     pub fn new(id: u64) -> Self {
         Self {
             environment_id: id,
@@ -22,11 +21,11 @@ impl Environment {
         }
     }
 
-    pub fn get_process(&self, id: u64) -> Option<Arc<dyn Process>> {
+    pub fn get_process(&self, id: u64) -> Option<Arc<dyn Process<T>>> {
         self.processes.get(&id).map(|x| x.clone())
     }
 
-    pub fn add_process(&self, id: u64, proc: Arc<dyn Process>) {
+    pub fn add_process(&self, id: u64, proc: Arc<dyn Process<T>>) {
         self.processes.insert(id, proc);
     }
 
@@ -38,7 +37,7 @@ impl Environment {
         self.processes.len()
     }
 
-    pub fn send(&self, id: u64, signal: Signal) {
+    pub fn send(&self, id: u64, signal: Signal<T>) {
         if let Some(proc) = self.processes.get(&id) {
             proc.send(signal);
         }
@@ -53,19 +52,44 @@ impl Environment {
     }
 }
 
-#[derive(Clone, Default)]
-pub struct Environments {
-    envs: Arc<DashMap<u64, Environment>>,
+impl<T> Clone for Environment<T> {
+    fn clone(&self) -> Self {
+        Self {
+            environment_id: self.environment_id,
+            next_process_id: self.next_process_id.clone(),
+            processes: self.processes.clone(),
+        }
+    }
 }
 
-impl Environments {
-    pub fn get_or_create(&mut self, id: u64) -> Environment {
+pub struct Environments<T> {
+    envs: Arc<DashMap<u64, Environment<T>>>,
+}
+
+impl<T> Environments<T> {
+    pub fn get_or_create(&mut self, id: u64) -> Environment<T> {
         if !self.envs.contains_key(&id) {
             let env = Environment::new(id);
             self.envs.insert(id, env.clone());
             env
         } else {
             self.envs.get(&id).map(|e| e.clone()).unwrap()
+        }
+    }
+}
+
+impl<T> Clone for Environments<T> {
+    fn clone(&self) -> Self {
+        Self {
+            envs: self.envs.clone(),
+        }
+    }
+}
+
+impl<T> Default for Environments<T> {
+    fn default() -> Self {
+        Self {
+            envs: Default::default(),
         }
     }
 }

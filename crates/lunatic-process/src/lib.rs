@@ -30,34 +30,34 @@ use crate::{mailbox::MessageMailbox, message::Message};
 /// The only way of interacting with them is through signals. These signals can come in different
 /// shapes (message, kill, link, ...). Most signals have well defined meanings, but others such as
 /// a [`Message`] are opaque and left to the receiver for interpretation.
-pub trait Process: Send + Sync {
+pub trait Process<T>: Send + Sync {
     fn id(&self) -> u64;
-    fn send(&self, signal: Signal);
+    fn send(&self, signal: Signal<T>);
 }
 
-impl Debug for dyn Process {
+impl<T> Debug for dyn Process<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Point").field("id", &self.id()).finish()
     }
 }
 
-impl Hash for dyn Process {
+impl<T> Hash for dyn Process<T> {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.id().hash(state);
     }
 }
 
 /// Signals can be sent to processes to interact with them.
-pub enum Signal {
+pub enum Signal<T> {
     // Messages can contain opaque data.
-    Message(Message),
+    Message(Message<T>),
     // When received, the process should stop immediately.
     Kill,
     // Change behaviour of what happens if a linked process dies.
     DieWhenLinkDies(bool),
     // Sent from a process that wants to be linked. In case of a death the tag will be returned
     // to the sender in form of a `LinkDied` signal.
-    Link(Option<i64>, Arc<dyn Process>),
+    Link(Option<i64>, Arc<dyn Process<T>>),
     // Request from a process to be unlinked
     UnLink { process_id: u64 },
     // Sent to linked processes when the link dies. Contains the tag used when the link was
@@ -67,7 +67,7 @@ pub enum Signal {
     LinkDied(u64, Option<i64>, DeathReason),
 }
 
-impl Debug for Signal {
+impl<T> Debug for Signal<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Message(_) => write!(f, "Message"),
@@ -104,23 +104,23 @@ pub enum Finished<T> {
 /// They can be created with [`spawn_wasm`](crate::wasm::spawn_wasm), and once spawned they will be
 /// running in the background and can't be observed directly.
 #[derive(Debug, Clone)]
-pub struct WasmProcess {
+pub struct WasmProcess<T> {
     id: u64,
-    signal_mailbox: UnboundedSender<Signal>,
+    signal_mailbox: UnboundedSender<Signal<T>>,
 }
 
-impl WasmProcess {
+impl<T> WasmProcess<T> {
     /// Create a new WasmProcess
-    pub fn new(id: u64, signal_mailbox: UnboundedSender<Signal>) -> Self {
+    pub fn new(id: u64, signal_mailbox: UnboundedSender<Signal<T>>) -> Self {
         Self { id, signal_mailbox }
     }
 }
 
-impl Process for WasmProcess {
+impl<T> Process<T> for WasmProcess<T> {
     fn id(&self) -> u64 {
         self.id
     }
-    fn send(&self, signal: Signal) {
+    fn send(&self, signal: Signal<T>) {
         // If the receiver doesn't exist or is closed, just ignore it and drop the `signal`.
         // lunatic can't guarantee that a message was successfully seen by the receiving side even
         // if this call succeeds. We deliberately don't expose this API, as it would not make sense
@@ -145,12 +145,12 @@ impl Process for WasmProcess {
 /// In case of success, the process state `S` is returned. It's not possible to return the process
 /// state in case of failure because of limitations in the Wasmtime API:
 /// https://github.com/bytecodealliance/wasmtime/issues/2986
-pub(crate) async fn new<F, S, R>(
+pub(crate) async fn new<F, S, R, T>(
     fut: F,
     id: u64,
-    env: Environment,
-    signal_mailbox: Arc<Mutex<UnboundedReceiver<Signal>>>,
-    message_mailbox: MessageMailbox,
+    env: Environment<T>,
+    signal_mailbox: Arc<Mutex<UnboundedReceiver<Signal<T>>>>,
+    message_mailbox: MessageMailbox<T>,
 ) -> Result<S>
 where
     R: Into<ExecutionResult<S>>,
@@ -257,10 +257,19 @@ where
 }
 
 /// A process spawned from a native Rust closure.
-#[derive(Clone, Debug)]
-pub struct NativeProcess {
+#[derive(Debug)]
+pub struct NativeProcess<T> {
     id: u64,
-    signal_mailbox: UnboundedSender<Signal>,
+    signal_mailbox: UnboundedSender<Signal<T>>,
+}
+
+impl<T> Clone for NativeProcess<T> {
+    fn clone(&self) -> Self {
+        Self {
+            id: self.id,
+            signal_mailbox: self.signal_mailbox.clone(),
+        }
+    }
 }
 
 /// Spawns a process from a closure.
@@ -277,16 +286,19 @@ pub struct NativeProcess {
 /// });
 /// ```
 
-impl Environment {
-    pub fn spawn<T, F, K, R>(&self, func: F) -> (JoinHandle<Result<T>>, NativeProcess)
+impl<S> Environment<S>
+where
+    S: 'static,
+{
+    pub fn spawn<T, F, K, R>(&self, func: F) -> (JoinHandle<Result<T>>, NativeProcess<S>)
     where
         T: Send + 'static,
         R: Into<ExecutionResult<T>> + 'static,
         K: Future<Output = R> + Send + 'static,
-        F: FnOnce(NativeProcess, MessageMailbox) -> K,
+        F: FnOnce(NativeProcess<S>, MessageMailbox<S>) -> K,
     {
         let id = self.get_next_process_id();
-        let (signal_sender, signal_mailbox) = unbounded_channel::<Signal>();
+        let (signal_sender, signal_mailbox) = unbounded_channel::<Signal<S>>();
         let message_mailbox = MessageMailbox::default();
         let process = NativeProcess {
             id,
@@ -299,11 +311,11 @@ impl Environment {
     }
 }
 
-impl Process for NativeProcess {
+impl<T> Process<T> for NativeProcess<T> {
     fn id(&self) -> u64 {
         self.id
     }
-    fn send(&self, signal: Signal) {
+    fn send(&self, signal: Signal<T>) {
         // If the receiver doesn't exist or is closed, just ignore it and drop the `signal`.
         // lunatic can't guarantee that a message was successfully seen by the receiving side even
         // if this call succeeds. We deliberately don't expose this API, as it would not make sense

@@ -19,20 +19,19 @@ use crate::{Process, Signal, WasmProcess};
 /// After it's spawned the process will keep running in the background. A process can be killed
 /// with `Signal::Kill` signal. If you would like to block until the process is finished you can
 /// `.await` on the returned `JoinHandle<()>`.
-impl Environment {
-    pub async fn spawn_wasm<S>(
+impl<T> Environment<T>
+where
+    T: ProcessState + Send + ResourceLimiter + 'static,
+{
+    pub async fn spawn_wasm(
         &self,
         runtime: WasmtimeRuntime,
-        module: WasmtimeCompiledModule<S>,
-        state: S,
+        module: WasmtimeCompiledModule<T>,
+        state: T,
         function: &str,
         params: Vec<Val>,
-        link: Option<(Option<i64>, Arc<dyn Process>)>,
-        //) -> Result<(JoinHandle<anyhow::Error>, Arc<dyn Process>)>
-    ) -> Result<(JoinHandle<Result<S>>, Arc<dyn Process>)>
-    where
-        S: ProcessState + Send + ResourceLimiter + 'static,
-    {
+        link: Option<(Option<i64>, Arc<dyn Process<T>>)>,
+    ) -> Result<(JoinHandle<Result<T>>, Arc<dyn Process<T>>)> {
         let id = state.id();
         trace!("Spawning process: {}", id);
         let signal_mailbox = state.signal_mailbox().clone();

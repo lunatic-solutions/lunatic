@@ -21,7 +21,7 @@ use lunatic_process::{
 use lunatic_wasi_api::LunaticWasiCtx;
 use wasmtime::{Caller, Linker, ResourceLimiter, Trap, Val};
 
-pub type ProcessResources = HashMapId<Arc<dyn Process>>;
+pub type ProcessResources<T> = HashMapId<Arc<dyn Process<T>>>;
 pub type ModuleResources<T> = HashMapId<WasmtimeCompiledModule<T>>;
 
 pub trait ProcessConfigCtx {
@@ -34,11 +34,11 @@ pub trait ProcessConfigCtx {
 }
 
 pub trait ProcessCtx<S: ProcessState> {
-    fn mailbox(&mut self) -> &mut MessageMailbox;
-    fn message_scratch_area(&mut self) -> &mut Option<Message>;
+    fn mailbox(&mut self) -> &mut MessageMailbox<S>;
+    fn message_scratch_area(&mut self) -> &mut Option<Message<S>>;
     fn module_resources(&self) -> &ModuleResources<S>;
     fn module_resources_mut(&mut self) -> &mut ModuleResources<S>;
-    fn environment(&self) -> &Environment;
+    fn environment(&self) -> &Environment<S>;
 }
 
 // Register the process APIs to the linker
@@ -521,7 +521,7 @@ where
             })
             .collect::<Result<Vec<_>>>()?;
         // Should processes be linked together?
-        let link: Option<(Option<i64>, Arc<dyn Process>)> = match link {
+        let link: Option<(Option<i64>, Arc<dyn Process<T>>)> = match link {
             0 => None,
             tag => {
                 let id = caller.data().id();
@@ -618,7 +618,7 @@ fn environment_id<T: ProcessState + ProcessCtx<T>>(caller: Caller<T>) -> u64 {
 //
 // Traps:
 // * If the process ID doesn't exist.
-fn link<T: ProcessState + ProcessCtx<T>>(
+fn link<T: ProcessState + ProcessCtx<T> + 'static>(
     mut caller: Caller<T>,
     tag: i64,
     process_id: u64,

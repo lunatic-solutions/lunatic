@@ -57,11 +57,11 @@ pub trait ProcessState: Sized {
     fn signal_mailbox(
         &self,
     ) -> &(
-        UnboundedSender<Signal>,
-        Arc<Mutex<UnboundedReceiver<Signal>>>,
+        UnboundedSender<Signal<Self>>,
+        Arc<Mutex<UnboundedReceiver<Signal<Self>>>>,
     );
     // Returns message mailbox
-    fn message_mailbox(&self) -> &MessageMailbox;
+    fn message_mailbox(&self) -> &MessageMailbox<Self>;
 
     // Config resources
     fn config_resources(&self) -> &ConfigResources<Self::Config>;

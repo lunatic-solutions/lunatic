@@ -13,7 +13,7 @@ use std::{
 use lunatic_networking_api::TcpConnection;
 use tokio::net::UdpSocket;
 
-use crate::Process;
+use crate::{runtimes::wasmtime::WasmtimeCompiledModule, Process};
 
 /// Can be sent between processes by being embedded into a  [`Signal::Message`][0]
 ///
@@ -23,12 +23,12 @@ use crate::Process;
 ///
 /// [0]: crate::Signal
 #[derive(Debug)]
-pub enum Message {
-    Data(DataMessage),
+pub enum Message<T> {
+    Data(DataMessage<T>),
     LinkDied(Option<i64>),
 }
 
-impl Message {
+impl<T> Message<T> {
     pub fn tag(&self) -> Option<i64> {
         match self {
             Message::Data(message) => message.tag,
@@ -41,15 +41,15 @@ impl Message {
 ///
 /// It implements the [`Read`](std::io::Read) and [`Write`](std::io::Write) traits.
 #[derive(Debug, Default)]
-pub struct DataMessage {
+pub struct DataMessage<T> {
     // TODO: Only the Node implementation depends on these fields being public.
     pub tag: Option<i64>,
     pub read_ptr: usize,
     pub buffer: Vec<u8>,
-    pub resources: Vec<Resource>,
+    pub resources: Vec<Resource<T>>,
 }
 
-impl DataMessage {
+impl<T> DataMessage<T> {
     /// Create a new message.
     pub fn new(tag: Option<i64>, buffer_capacity: usize) -> Self {
         Self {
@@ -71,7 +71,7 @@ impl DataMessage {
     }
 
     /// Adds a process to the message and returns the index of it inside of the message
-    pub fn add_process(&mut self, process: Arc<dyn Process>) -> usize {
+    pub fn add_process(&mut self, process: Arc<dyn Process<T>>) -> usize {
         self.resources.push(Resource::Process(process));
         self.resources.len() - 1
     }
@@ -92,7 +92,7 @@ impl DataMessage {
     ///
     /// If the index is out of bound or the resource is not a process the function will return
     /// None.
-    pub fn take_process(&mut self, index: usize) -> Option<Arc<dyn Process>> {
+    pub fn take_process(&mut self, index: usize) -> Option<Arc<dyn Process<T>>> {
         if let Some(resource_ref) = self.resources.get_mut(index) {
             let resource = std::mem::replace(resource_ref, Resource::None);
             match resource {
@@ -158,7 +158,7 @@ impl DataMessage {
     }
 }
 
-impl Write for DataMessage {
+impl<T> Write for DataMessage<T> {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         self.buffer.extend(buf);
         Ok(buf.len())
@@ -169,7 +169,7 @@ impl Write for DataMessage {
     }
 }
 
-impl Read for DataMessage {
+impl<T> Read for DataMessage<T> {
     fn read(&mut self, mut buf: &mut [u8]) -> std::io::Result<usize> {
         let slice = if let Some(slice) = self.buffer.get(self.read_ptr..) {
             slice
@@ -187,18 +187,20 @@ impl Read for DataMessage {
 
 /// A resource ([`WasmProcess`](crate::WasmProcess), [`TcpStream`](tokio::net::TcpStream),
 /// ...) that is attached to a [`DataMessage`].
-pub enum Resource {
+pub enum Resource<T> {
     None,
-    Process(Arc<dyn Process>),
+    Process(Arc<dyn Process<T>>),
+    Module(Arc<WasmtimeCompiledModule<T>>),
     TcpStream(Arc<TcpConnection>),
     UdpSocket(Arc<UdpSocket>),
 }
 
-impl Debug for Resource {
+impl<T> Debug for Resource<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::None => write!(f, "None"),
             Self::Process(_) => write!(f, "Process"),
+            Self::Module(_) => write!(f, "Module"),
             Self::TcpStream(_) => write!(f, "TcpStream"),
             Self::UdpSocket(_) => write!(f, "UdpSocket"),
         }

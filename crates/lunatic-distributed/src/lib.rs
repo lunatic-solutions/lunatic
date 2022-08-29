@@ -12,7 +12,7 @@ use std::{net::SocketAddr, sync::Arc};
 
 pub trait DistributedCtx: ProcessState + Sized {
     fn new_dist_state(
-        environment: Environment,
+        environment: Environment<Self>,
         distributed: DistributedProcessState,
         runtime: WasmtimeRuntime,
         module: WasmtimeCompiledModule<Self>,

@@ -20,13 +20,13 @@ use crate::{
 use super::message::Spawn;
 
 pub struct ServerCtx<T> {
-    pub envs: Environments,
+    pub envs: Environments<T>,
     pub modules: Modules<T>,
     pub distributed: DistributedProcessState,
     pub runtime: WasmtimeRuntime,
 }
 
-impl<T: 'static> Clone for ServerCtx<T> {
+impl<T> Clone for ServerCtx<T> {
     fn clone(&self) -> Self {
         Self {
             envs: self.envs.clone(),
