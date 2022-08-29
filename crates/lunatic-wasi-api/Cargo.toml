@@ -12,8 +12,8 @@ license = "Apache-2.0/MIT"
 
 [dependencies]
 anyhow = "^1.0"
-wasmtime = "^0.39"
-wasmtime-wasi = "^0.39"
+wasmtime = "^0.40"
+wasmtime-wasi = "^0.40"
 tokio = { version = "^1.20", features = ["macros"] }
 hash-map-id = { version = "^0.10", path = "../hash-map-id" }
 lunatic-common-api = { version = "^0.10", path = "../lunatic-common-api" }
