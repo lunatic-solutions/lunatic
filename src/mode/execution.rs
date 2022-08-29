@@ -1,4 +1,4 @@
-use std::{env, fs, path::Path, sync::Arc};
+use std::{collections::HashMap, env, error::Error, fs, path::Path, sync::Arc};
 
 use anyhow::{anyhow, Context, Ok, Result};
 use clap::{crate_version, Arg, Command};
@@ -17,6 +17,22 @@ use lunatic_process_api::ProcessConfigCtx;
 use lunatic_runtime::{DefaultProcessConfig, DefaultProcessState};
 
 use uuid::Uuid;
+
+/// Parse a single key-value pair
+fn parse_key_val<K, V>(s: &str) -> Result<(K, V)>
+where
+    K: std::str::FromStr,
+    K::Err: Error + Send + Sync + 'static,
+    V: std::str::FromStr,
+    V::Err: Error + Send + Sync + 'static,
+{
+    let pos = s
+        .find('=')
+        .ok_or_else(|| anyhow!("invalid KEY=value: no `=` found in `{}`", s))?;
+    let k = s[..pos].parse()?;
+    let v = s[pos + 1..].parse()?;
+    Ok((k, v))
+}
 
 pub(crate) async fn execute() -> Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).init();
@@ -62,7 +78,7 @@ pub(crate) async fn execute() -> Result<()> {
         .arg(
             Arg::new("ca_cert")
                 .long("ca-cert")
-                .help("Certificate Authority public certificate used for boostraping QUIC connections.")
+                .help("Certificate Authority public certificate used for bootstrapping QUIC connections.")
                 .requires("control")
                 .conflicts_with("test_ca")
                 .takes_value(true)
@@ -74,6 +90,13 @@ pub(crate) async fn execute() -> Result<()> {
                 .requires("control_server")
                 .conflicts_with("test_ca")
                 .takes_value(true)
+        )
+        .arg(
+            Arg::new("tag")
+                .long("tag")
+                .help("Define key=value variable to store as node information")
+                .value_parser(parse_key_val::<String, String>)
+                .action(clap::ArgAction::Append)
         )
         .arg(
             Arg::new("no_entry")
@@ -135,6 +158,10 @@ pub(crate) async fn execute() -> Result<()> {
             // TODO unwrap, better message
             let node_address = node_address.parse().unwrap();
             let node_name = Uuid::new_v4().to_string();
+            let node_metadata: HashMap<String, String> = args
+                .get_many::<(String, String)>("tag")
+                .map(|vals| vals.cloned().collect())
+                .unwrap_or_default();
             let control_address = control_address.parse().unwrap();
             let ca_cert = lunatic_distributed::distributed::server::root_cert(
                 args.is_present("test_ca"),
@@ -149,6 +176,7 @@ pub(crate) async fn execute() -> Result<()> {
             let (node_id, control_client, signed_cert_pem) = control::Client::register(
                 node_address,
                 node_name.to_string(),
+                node_metadata,
                 control_address,
                 quic_client.clone(),
                 node_cert.serialize_request_pem().unwrap(),

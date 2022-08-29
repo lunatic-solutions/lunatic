@@ -3,6 +3,7 @@ use async_cell::sync::AsyncCell;
 use dashmap::DashMap;
 use lunatic_process::runtimes::RawWasm;
 use std::{
+    collections::HashMap,
     net::SocketAddr,
     sync::{atomic, atomic::AtomicU64, Arc, RwLock},
     time::Duration,
@@ -30,12 +31,14 @@ pub struct InnerClient {
     pending_requests: DashMap<u64, Arc<AsyncCell<Response>>>,
     nodes: DashMap<u64, NodeInfo>,
     node_ids: RwLock<Vec<u64>>,
+    node_metadata: HashMap<String, String>,
 }
 
 impl Client {
     pub async fn register(
         node_addr: SocketAddr,
         node_name: String,
+        node_metadata: HashMap<String, String>,
         control_addr: SocketAddr,
         quic_client: quic::Client,
         signing_request: String,
@@ -52,6 +55,7 @@ impl Client {
                 pending_requests: DashMap::new(),
                 nodes: Default::default(),
                 node_ids: Default::default(),
+                node_metadata,
             }),
         };
         // Spawn reader task before register
@@ -98,6 +102,7 @@ impl Client {
         let reg = Registration {
             node_address: self.inner.node_addr,
             node_name: self.inner.node_name.clone(),
+            node_metadata: self.inner.node_metadata.clone(),
             signing_request,
         };
         let resp = self.send(Request::Register(reg)).await?;

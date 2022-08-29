@@ -1,4 +1,4 @@
-use std::net::SocketAddr;
+use std::{collections::HashMap, net::SocketAddr};
 
 use serde::{Deserialize, Serialize};
 
@@ -40,6 +40,7 @@ pub struct Registration {
     pub node_address: SocketAddr,
     pub node_name: String,
     pub signing_request: String,
+    pub node_metadata: HashMap<String, String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
