@@ -491,7 +491,7 @@ where
                 .data()
                 .module_resources()
                 .get(module_id as u64)
-                .or_trap("lunatic::process::spawn: Config ID doesn't exist")?
+                .or_trap("lunatic::process::spawn: Module ID doesn't exist")?
                 .clone(),
         };
 
