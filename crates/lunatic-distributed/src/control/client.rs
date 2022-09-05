@@ -24,11 +24,13 @@ pub struct Client {
 
 pub struct InnerClient {
     next_message_id: AtomicU64,
+    next_query_id: AtomicU64,
     node_addr: SocketAddr,
     node_name: String,
     control_addr: SocketAddr,
     connection: Connection,
     pending_requests: DashMap<u64, Arc<AsyncCell<Response>>>,
+    pending_queries: DashMap<u64, Vec<u64>>,
     nodes: DashMap<u64, NodeInfo>,
     node_ids: RwLock<Vec<u64>>,
     node_metadata: HashMap<String, String>,
@@ -53,6 +55,8 @@ impl Client {
                     .connect(control_addr, CTRL_SERVER_NAME, 5)
                     .await?,
                 pending_requests: DashMap::new(),
+                pending_queries: DashMap::new(),
+                next_query_id: AtomicU64::new(1),
                 nodes: Default::default(),
                 node_ids: Default::default(),
                 node_metadata,
@@ -73,6 +77,12 @@ impl Client {
     pub fn next_message_id(&self) -> u64 {
         self.inner
             .next_message_id
+            .fetch_add(1, atomic::Ordering::Relaxed)
+    }
+
+    pub fn next_query_id(&self) -> u64 {
+        self.inner
+            .next_query_id
             .fetch_add(1, atomic::Ordering::Relaxed)
     }
 
@@ -152,6 +162,23 @@ impl Client {
 
     pub fn node_ids(&self) -> Vec<u64> {
         self.inner.node_ids.read().unwrap().clone()
+    }
+
+    pub async fn lookup_nodes(&self, query: &str) -> Option<(u64, usize)> {
+        if let Ok(Response::Nodes(nodes)) = self.send(Request::LookupNodes(query.to_string())).await
+        {
+            let nodes: Vec<u64> = nodes.into_iter().map(move |v| v.0).collect();
+            let nodes_count = nodes.len();
+            let query_id = self.next_query_id();
+            self.inner.pending_queries.insert(query_id, nodes);
+            Some((query_id, nodes_count))
+        } else {
+            None
+        }
+    }
+
+    pub fn query_result(&self, query_id: &u64) -> Option<(u64, Vec<u64>)> {
+        self.inner.pending_queries.remove(query_id)
     }
 
     pub fn node_count(&self) -> usize {

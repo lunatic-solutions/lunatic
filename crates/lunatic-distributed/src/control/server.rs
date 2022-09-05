@@ -14,6 +14,8 @@ use rcgen::*;
 use crate::control::message::{Registered, Registration};
 use crate::{control::message::Response, quic::Connection};
 
+use super::parser::Parser;
+
 #[derive(Clone)]
 pub struct Server {
     inner: Arc<InnerServer>,
@@ -91,6 +93,22 @@ impl Server {
                 .map(|e| (*e.key(), e.value().clone()))
                 .collect(),
         )
+    }
+
+    pub fn lookup_nodes(&self, query: String) -> Response {
+        let parser = Parser::new(query);
+        if let Ok(filter) = parser.parse() {
+            Response::Nodes(
+                self.inner
+                    .nodes
+                    .iter()
+                    .filter(|e| filter.apply(e))
+                    .map(|e| (*e.key(), e.value().clone()))
+                    .collect(),
+            )
+        } else {
+            Response::Nodes(Vec::new())
+        }
     }
 
     pub fn add_module(&self, bytes: Vec<u8>) -> Response {
@@ -189,6 +207,7 @@ pub async fn handle_request(
         ListNodes => server.list_nodes(),
         AddModule(bytes) => server.add_module(bytes),
         GetModule(id) => server.get_module(id),
+        LookupNodes(query) => server.lookup_nodes(query),
     };
     conn.send(msg_id, response).await
 }

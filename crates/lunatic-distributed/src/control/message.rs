@@ -9,6 +9,7 @@ pub enum Request {
     // should always handle registration first and later know which node is sending requests.
     Deregister(u64),
     ListNodes,
+    LookupNodes(String),
     AddModule(Vec<u8>),
     GetModule(u64),
 }
@@ -19,6 +20,7 @@ impl Request {
             Request::Register(_) => "Register",
             Request::Deregister(_) => "Deregister",
             Request::ListNodes => "ListNodes",
+            Request::LookupNodes(_) => "LookupNodes",
             Request::AddModule(_) => "AddModule",
             Request::GetModule(_) => "GetModule",
         }
