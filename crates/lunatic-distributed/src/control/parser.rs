@@ -3,10 +3,9 @@ use dashmap::mapref::multiple::RefMulti;
 
 use super::message::Registration;
 
-// Small query language parser for node lookup based on tag metadata.
-//
-// Supports:
-// * key=value
+/// Query parser for node lookup based on tag metadata.
+///
+/// Syntax is like URL Query string, e.g. name=node01&group=workers
 pub struct Parser {
     query: String,
 }
@@ -15,7 +14,7 @@ pub trait Filter {
     fn apply(&self, e: &RefMulti<'_, u64, Registration>) -> bool;
 }
 
-pub struct EmptyFilter;
+struct EmptyFilter;
 
 impl Filter for EmptyFilter {
     fn apply(&self, _: &RefMulti<'_, u64, Registration>) -> bool {
@@ -23,7 +22,7 @@ impl Filter for EmptyFilter {
     }
 }
 
-pub struct KeyValueFilter {
+struct KeyValueFilter {
     key: String,
     value: String,
 }
@@ -36,7 +35,7 @@ impl Filter for KeyValueFilter {
     }
 }
 
-pub struct AndFilter {
+struct AndFilter {
     key_value_filters: Vec<KeyValueFilter>,
 }
 
@@ -47,10 +46,12 @@ impl Filter for AndFilter {
 }
 
 impl Parser {
+    /// Creates a new `Parser` with input query `String`
     pub fn new(query: String) -> Self {
         Self { query }
     }
 
+    /// Parses the query returning `Filter` if the query is valid
     pub fn parse(&self) -> Result<Box<dyn Filter>> {
         let mut tokens = Scanner::new(self.query.clone()).scan()?;
         tokens.truncate(tokens.len() - 1);
@@ -82,6 +83,7 @@ impl Parser {
     }
 }
 
+/// Scans and validates input query turning it into a list of `Token` values.
 struct Scanner {
     query: String,
     start: usize,
@@ -247,6 +249,14 @@ mod tests {
         let filter = parser.parse().unwrap();
         let cnt = map.iter().filter(|e| filter.apply(e)).count();
         assert_eq!(cnt, 0);
+    }
+
+    #[test]
+    fn parse_invalid() {
+        let parser = Parser::new("name=test01&".to_string());
+        assert!(parser.parse().is_err());
+        let parser = Parser::new("name==test01".to_string());
+        assert!(parser.parse().is_err());
     }
 
     #[test]
