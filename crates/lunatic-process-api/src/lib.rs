@@ -507,8 +507,8 @@ where
             .data(&caller)
             .get(params_ptr as usize..(params_ptr + params_len) as usize)
             .or_trap("lunatic::process::spawn")?;
-        let params = params
-            .chunks_exact(17)
+        let params_chunks = &mut params.chunks_exact(17);
+        let params = params_chunks
             .map(|chunk| {
                 let value = u128::from_le_bytes(chunk[1..].try_into()?);
                 let result = match chunk[0] {
@@ -520,6 +520,13 @@ where
                 Ok(result)
             })
             .collect::<Result<Vec<_>>>()?;
+        if !params_chunks.remainder().is_empty() {
+            return Err(anyhow!(
+                "Params array must be in chunks of 17 bytes, but {} bytes remained",
+                params_chunks.remainder().len()
+            )
+            .into());
+        }
         // Should processes be linked together?
         let link: Option<(Option<i64>, Arc<dyn Process>)> = match link {
             0 => None,
