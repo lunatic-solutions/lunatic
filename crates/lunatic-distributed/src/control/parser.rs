@@ -3,9 +3,16 @@ use dashmap::mapref::multiple::RefMulti;
 
 use super::message::Registration;
 
-/// Query parser for node lookup based on tag metadata.
+/// Query parser for node lookup based on tag attributes.
 ///
-/// Syntax is like URL Query string, e.g. name=node01&group=workers
+/// Syntax is like URL Query string, e.g. name=node01&group=workers, consisting of
+/// literals and operators.
+///
+/// Literals are case sensitive alphanumeric values that start with an alphabetic character.
+///
+/// The syntax defines two operators:
+///     * `=` - equality operator compares two literals, first the lookup key and second value, e.g. name=node01
+///     * `&` - and operator which is used to chain multiple equality expressions, e.g. name=node01&group=workers
 pub struct Parser {
     query: String,
 }
@@ -29,7 +36,7 @@ struct KeyValueFilter {
 
 impl Filter for KeyValueFilter {
     fn apply(&self, e: &RefMulti<'_, u64, Registration>) -> bool {
-        e.node_metadata
+        e.attributes
             .iter()
             .any(|(key, value)| key == &self.key && value == &self.value)
     }
@@ -53,15 +60,21 @@ impl Parser {
 
     /// Parses the query returning `Filter` if the query is valid
     pub fn parse(&self) -> Result<Box<dyn Filter>> {
-        let mut tokens = Scanner::new(self.query.clone()).scan()?;
-        tokens.truncate(tokens.len() - 1);
+        let tokens = Scanner::new(self.query.clone()).scan()?;
         if tokens.is_empty() {
             return Ok(Box::new(EmptyFilter));
         }
         let mut key_value_filters = vec![];
         for parts in tokens.split(|t| t.t == TokenType::And) {
             if parts.len() != 3 {
-                return Err(anyhow!("invalid query"));
+                let token_str = parts
+                    .iter()
+                    .map(|t| t.literal.as_str())
+                    .collect::<Vec<&str>>()
+                    .join("");
+                return Err(anyhow!(
+                    "Query syntax error at \"{token_str}\", expected \"key=value\""
+                ));
             }
             let key = &parts[0];
             let equal = &parts[1];
@@ -70,21 +83,28 @@ impl Parser {
                 && equal.t == TokenType::Equal
                 && value.t == TokenType::Literal)
             {
-                return Err(anyhow!("invalid query"));
+                let token_str = [
+                    key.literal.as_str(),
+                    equal.literal.as_str(),
+                    value.literal.as_str(),
+                ]
+                .join("");
+                return Err(anyhow!(
+                    "Query syntax error at \"{token_str}\", expected \"key=value\""
+                ));
             }
 
-            if let (Some(key), Some(value)) = (key.literal.clone(), value.literal.clone()) {
-                key_value_filters.push(KeyValueFilter { key, value })
-            } else {
-                return Err(anyhow!("invalid query"));
-            }
+            key_value_filters.push(KeyValueFilter {
+                key: key.literal.clone(),
+                value: value.literal.clone(),
+            })
         }
         Ok(Box::new(AndFilter { key_value_filters }))
     }
 }
 
 /// Scans and validates input query turning it into a list of `Token` values.
-struct Scanner {
+pub struct Scanner {
     query: String,
     start: usize,
     current: usize,
@@ -92,7 +112,7 @@ struct Scanner {
 }
 
 impl Scanner {
-    fn new(query: String) -> Self {
+    pub fn new(query: String) -> Self {
         Self {
             query,
             start: 0,
@@ -101,15 +121,11 @@ impl Scanner {
         }
     }
 
-    fn scan(mut self) -> Result<Vec<Token>> {
+    pub fn scan(mut self) -> Result<Vec<Token>> {
         while !self.is_at_end() {
             self.start = self.current;
             self.scan_token()?;
         }
-        self.add_token(Token {
-            t: TokenType::Eof,
-            literal: None,
-        });
         Ok(self.tokens)
     }
 
@@ -118,17 +134,18 @@ impl Scanner {
         match c {
             '=' => self.add_token(Token {
                 t: TokenType::Equal,
-                literal: None,
+                literal: '='.to_string(),
             }),
             '&' => self.add_token(Token {
                 t: TokenType::And,
-                literal: None,
+                literal: '&'.to_string(),
             }),
             _ => {
                 if c.is_alphabetic() {
                     self.literal();
                 } else {
-                    return Err(anyhow!("character {c} is not allowed"));
+                    let query_part = self.query.as_str()[self.start..].to_string();
+                    return Err(anyhow!("Unexpected character {c} at {query_part}"));
                 }
             }
         };
@@ -164,23 +181,22 @@ impl Scanner {
         let literal = self.query.as_str()[self.start..self.current].to_string();
         self.add_token(Token {
             t: TokenType::Literal,
-            literal: Some(literal),
+            literal,
         });
     }
 }
 
 #[derive(Debug)]
-struct Token {
-    t: TokenType,
-    literal: Option<String>,
+pub struct Token {
+    pub t: TokenType,
+    pub literal: String,
 }
 
 #[derive(Debug, PartialEq, Eq)]
-enum TokenType {
+pub enum TokenType {
     Literal,
     Equal,
     And,
-    Eof,
 }
 
 #[cfg(test)]
@@ -203,7 +219,7 @@ mod tests {
             Registration {
                 node_address: "127.0.0.1:10000".parse().unwrap(),
                 node_name: "test01".to_string(),
-                node_metadata: metadata.clone(),
+                attributes: metadata.clone(),
                 signing_request: "request01".to_string(),
             },
         );
@@ -214,7 +230,7 @@ mod tests {
             Registration {
                 node_address: "127.0.0.1:10001".parse().unwrap(),
                 node_name: "test02".to_string(),
-                node_metadata: metadata.clone(),
+                attributes: metadata.clone(),
                 signing_request: "request01".to_string(),
             },
         );
@@ -263,8 +279,7 @@ mod tests {
     fn scan_empty() {
         let scanner = Scanner::new("".to_string());
         let tokens = scanner.scan().unwrap();
-        assert_eq!(1, tokens.len());
-        assert_eq!(TokenType::Eof, tokens[0].t)
+        assert_eq!(0, tokens.len());
     }
 
     #[test]
@@ -272,11 +287,10 @@ mod tests {
         let scanner = Scanner::new("name=value".to_string());
         let tokens = scanner.scan().unwrap();
 
-        assert_eq!(4, tokens.len());
+        assert_eq!(3, tokens.len());
         assert_eq!(TokenType::Literal, tokens[0].t);
         assert_eq!(TokenType::Equal, tokens[1].t);
         assert_eq!(TokenType::Literal, tokens[2].t);
-        assert_eq!(TokenType::Eof, tokens[3].t);
     }
 
     #[test]
@@ -299,7 +313,7 @@ mod tests {
         let scanner = Scanner::new("k1=v1&k2=v2".to_string());
         let tokens = scanner.scan().unwrap();
 
-        assert_eq!(8, tokens.len());
+        assert_eq!(7, tokens.len());
         assert_eq!(TokenType::Literal, tokens[0].t);
         assert_eq!(TokenType::Equal, tokens[1].t);
         assert_eq!(TokenType::Literal, tokens[2].t);
@@ -309,7 +323,6 @@ mod tests {
         assert_eq!(TokenType::Literal, tokens[4].t);
         assert_eq!(TokenType::Equal, tokens[5].t);
         assert_eq!(TokenType::Literal, tokens[6].t);
-        assert_eq!(TokenType::Eof, tokens[7].t);
     }
 
     #[test]

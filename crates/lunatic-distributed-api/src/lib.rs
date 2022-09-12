@@ -6,6 +6,7 @@ use lunatic_distributed::{
     distributed::message::{Spawn, Val},
     DistributedCtx,
 };
+use lunatic_error_api::ErrorCtx;
 use lunatic_process::message::{DataMessage, Message};
 use lunatic_process_api::ProcessCtx;
 use tokio::time::timeout;
@@ -14,7 +15,7 @@ use wasmtime::{Caller, Linker, ResourceLimiter, Trap};
 // Register the lunatic distributed APIs to the linker
 pub fn register<T>(linker: &mut Linker<T>) -> Result<()>
 where
-    T: DistributedCtx + ProcessCtx<T> + Send + ResourceLimiter + 'static,
+    T: DistributedCtx + ProcessCtx<T> + Send + ResourceLimiter + 'static + ErrorCtx,
     for<'a> &'a T: Send,
 {
     linker.func_wrap("lunatic::distributed", "nodes_count", nodes_count)?;
@@ -28,7 +29,7 @@ where
         "send_receive_skip_search",
         send_receive_skip_search,
     )?;
-    linker.func_wrap4_async(
+    linker.func_wrap5_async(
         "lunatic::distributed",
         "exec_lookup_nodes",
         exec_lookup_nodes,
@@ -91,9 +92,10 @@ fn exec_lookup_nodes<T>(
     query_len: u32,
     query_id_ptr: u32,
     nodes_len_ptr: u32,
+    error_ptr: u32,
 ) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_>
 where
-    T: DistributedCtx + Send + 'static,
+    T: DistributedCtx + ErrorCtx + Send + 'static,
     for<'a> &'a T: Send,
 {
     Box::new(async move {
@@ -105,20 +107,27 @@ where
         let query = std::str::from_utf8(query_str)
             .or_trap("lunatic::distributed::lookup_nodes::query_str_utf8")?;
         let distributed = caller.data().distributed()?;
-        if let Some((query_id, nodes_len)) = distributed.control.lookup_nodes(query).await {
-            memory
-                .write(&mut caller, query_id_ptr as usize, &query_id.to_le_bytes())
-                .or_trap("lunatic::distributed::lookup_nodes::query_id")?;
-            memory
-                .write(
-                    &mut caller,
-                    nodes_len_ptr as usize,
-                    &nodes_len.to_le_bytes(),
-                )
-                .or_trap("lunatic::distributed::lookup_nodes::nodes_len")?;
-            Ok(0)
-        } else {
-            Ok(1)
+        match distributed.control.lookup_nodes(query).await {
+            Ok((query_id, nodes_len)) => {
+                memory
+                    .write(&mut caller, query_id_ptr as usize, &query_id.to_le_bytes())
+                    .or_trap("lunatic::distributed::lookup_nodes::query_id")?;
+                memory
+                    .write(
+                        &mut caller,
+                        nodes_len_ptr as usize,
+                        &nodes_len.to_le_bytes(),
+                    )
+                    .or_trap("lunatic::distributed::lookup_nodes::nodes_len")?;
+                Ok(0)
+            }
+            Err(error) => {
+                let error_id = caller.data_mut().error_resources_mut().add(error);
+                memory
+                    .write(&mut caller, error_ptr as usize, &error_id.to_le_bytes())
+                    .or_trap("lunatic::distributed::lookup_nodes::error_ptr")?;
+                Ok(1)
+            }
         }
     })
 }
@@ -127,12 +136,14 @@ where
 //
 // Traps:
 // * If any memory outside the guest heap space is referenced.
-fn copy_lookup_nodes_results<T: DistributedCtx>(
+fn copy_lookup_nodes_results<T: DistributedCtx + ErrorCtx>(
     mut caller: Caller<T>,
     query_id: u64,
     nodes_ptr: u32,
     nodes_len: u32,
+    error_ptr: u32,
 ) -> Result<i32, Trap> {
+    let memory = get_memory(&mut caller)?;
     if let Some(query_results) = caller
         .data()
         .distributed()
@@ -151,6 +162,11 @@ fn copy_lookup_nodes_results<T: DistributedCtx>(
             .copy_from_slice(unsafe { nodes[..copy_nodes_len].align_to::<u8>().1 });
         Ok(copy_nodes_len as i32)
     } else {
+        let error = anyhow!("Invalid query id");
+        let error_id = caller.data_mut().error_resources_mut().add(error);
+        memory
+            .write(&mut caller, error_ptr as usize, &error_id.to_le_bytes())
+            .or_trap("lunatic::distributed::copy_lookup_nodes_results::error_ptr")?;
         Ok(-1)
     }
 }

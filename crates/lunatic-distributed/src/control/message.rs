@@ -42,7 +42,7 @@ pub struct Registration {
     pub node_address: SocketAddr,
     pub node_name: String,
     pub signing_request: String,
-    pub node_metadata: HashMap<String, String>,
+    pub attributes: HashMap<String, String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

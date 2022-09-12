@@ -1293,6 +1293,7 @@ dependencies = [
  "log",
  "lunatic-common-api",
  "lunatic-distributed",
+ "lunatic-error-api",
  "lunatic-process",
  "lunatic-process-api",
  "serde",

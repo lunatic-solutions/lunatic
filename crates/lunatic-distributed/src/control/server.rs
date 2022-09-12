@@ -97,17 +97,16 @@ impl Server {
 
     pub fn lookup_nodes(&self, query: String) -> Response {
         let parser = Parser::new(query);
-        if let Ok(filter) = parser.parse() {
-            Response::Nodes(
+        match parser.parse() {
+            Ok(filter) => Response::Nodes(
                 self.inner
                     .nodes
                     .iter()
                     .filter(|e| filter.apply(e))
                     .map(|e| (*e.key(), e.value().clone()))
                     .collect(),
-            )
-        } else {
-            Response::Nodes(Vec::new())
+            ),
+            Err(e) => Response::Error(e.to_string()),
         }
     }
 

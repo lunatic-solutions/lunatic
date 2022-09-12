@@ -30,17 +30,17 @@ pub struct InnerClient {
     control_addr: SocketAddr,
     connection: Connection,
     pending_requests: DashMap<u64, Arc<AsyncCell<Response>>>,
-    pending_queries: DashMap<u64, Vec<u64>>,
+    node_queries: DashMap<u64, Vec<u64>>,
     nodes: DashMap<u64, NodeInfo>,
     node_ids: RwLock<Vec<u64>>,
-    node_metadata: HashMap<String, String>,
+    attributes: HashMap<String, String>,
 }
 
 impl Client {
     pub async fn register(
         node_addr: SocketAddr,
         node_name: String,
-        node_metadata: HashMap<String, String>,
+        attributes: HashMap<String, String>,
         control_addr: SocketAddr,
         quic_client: quic::Client,
         signing_request: String,
@@ -55,11 +55,11 @@ impl Client {
                     .connect(control_addr, CTRL_SERVER_NAME, 5)
                     .await?,
                 pending_requests: DashMap::new(),
-                pending_queries: DashMap::new(),
+                node_queries: DashMap::new(),
                 next_query_id: AtomicU64::new(1),
                 nodes: Default::default(),
                 node_ids: Default::default(),
-                node_metadata,
+                attributes,
             }),
         };
         // Spawn reader task before register
@@ -112,7 +112,7 @@ impl Client {
         let reg = Registration {
             node_address: self.inner.node_addr,
             node_name: self.inner.node_name.clone(),
-            node_metadata: self.inner.node_metadata.clone(),
+            attributes: self.inner.attributes.clone(),
             signing_request,
         };
         let resp = self.send(Request::Register(reg)).await?;
@@ -164,21 +164,23 @@ impl Client {
         self.inner.node_ids.read().unwrap().clone()
     }
 
-    pub async fn lookup_nodes(&self, query: &str) -> Option<(u64, usize)> {
-        if let Ok(Response::Nodes(nodes)) = self.send(Request::LookupNodes(query.to_string())).await
-        {
-            let nodes: Vec<u64> = nodes.into_iter().map(move |v| v.0).collect();
-            let nodes_count = nodes.len();
-            let query_id = self.next_query_id();
-            self.inner.pending_queries.insert(query_id, nodes);
-            Some((query_id, nodes_count))
-        } else {
-            None
+    pub async fn lookup_nodes(&self, query: &str) -> Result<(u64, usize)> {
+        let response = self.send(Request::LookupNodes(query.to_string())).await?;
+        match response {
+            Response::Nodes(nodes) => {
+                let nodes: Vec<u64> = nodes.into_iter().map(move |v| v.0).collect();
+                let nodes_count = nodes.len();
+                let query_id = self.next_query_id();
+                self.inner.node_queries.insert(query_id, nodes);
+                Ok((query_id, nodes_count))
+            }
+            Response::Error(message) => Err(anyhow!(message)),
+            _ => Err(anyhow!("Invalid response type on lookup_nodes.")),
         }
     }
 
     pub fn query_result(&self, query_id: &u64) -> Option<(u64, Vec<u64>)> {
-        self.inner.pending_queries.remove(query_id)
+        self.inner.node_queries.remove(query_id)
     }
 
     pub fn node_count(&self) -> usize {

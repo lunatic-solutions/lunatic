@@ -1,11 +1,11 @@
-use std::{collections::HashMap, env, error::Error, fs, path::Path, sync::Arc};
+use std::{collections::HashMap, env, fs, path::Path, sync::Arc};
 
 use anyhow::{anyhow, Context, Ok, Result};
 use clap::{crate_version, Arg, Command};
 use tokio::sync::mpsc::channel;
 
 use lunatic_distributed::{
-    control::{self, server::control_server},
+    control::{self, server::control_server, Scanner, TokenType},
     distributed::{self, server::ServerCtx},
     quic,
 };
@@ -19,19 +19,21 @@ use lunatic_runtime::{DefaultProcessConfig, DefaultProcessState};
 use uuid::Uuid;
 
 /// Parse a single key-value pair
-fn parse_key_val<K, V>(s: &str) -> Result<(K, V)>
-where
-    K: std::str::FromStr,
-    K::Err: Error + Send + Sync + 'static,
-    V: std::str::FromStr,
-    V::Err: Error + Send + Sync + 'static,
-{
-    let pos = s
-        .find('=')
-        .ok_or_else(|| anyhow!("invalid KEY=value: no `=` found in `{}`", s))?;
-    let k = s[..pos].parse()?;
-    let v = s[pos + 1..].parse()?;
-    Ok((k, v))
+fn parse_key_val(s: &str) -> Result<(String, String)> {
+    let scanner = Scanner::new(s.to_string());
+    let tokens = scanner.scan()?;
+    if tokens.len() == 3 {
+        let key = &tokens[0];
+        let equals = &tokens[1];
+        let value = &tokens[2];
+        if equals.t == TokenType::Equal {
+            Ok((key.literal.clone(), value.literal.clone()))
+        } else {
+            Err(anyhow!("invalid key=value: no `=` found in `{}`", s))
+        }
+    } else {
+        Err(anyhow!("invalid key=value syntax found in `{}`", s))
+    }
 }
 
 pub(crate) async fn execute() -> Result<()> {
@@ -95,7 +97,7 @@ pub(crate) async fn execute() -> Result<()> {
             Arg::new("tag")
                 .long("tag")
                 .help("Define key=value variable to store as node information")
-                .value_parser(parse_key_val::<String, String>)
+                .value_parser(parse_key_val)
                 .action(clap::ArgAction::Append)
         )
         .arg(
@@ -158,7 +160,7 @@ pub(crate) async fn execute() -> Result<()> {
             // TODO unwrap, better message
             let node_address = node_address.parse().unwrap();
             let node_name = Uuid::new_v4().to_string();
-            let node_metadata: HashMap<String, String> = args
+            let node_attributes: HashMap<String, String> = args
                 .get_many::<(String, String)>("tag")
                 .map(|vals| vals.cloned().collect())
                 .unwrap_or_default();
@@ -176,7 +178,7 @@ pub(crate) async fn execute() -> Result<()> {
             let (node_id, control_client, signed_cert_pem) = control::Client::register(
                 node_address,
                 node_name.to_string(),
-                node_metadata,
+                node_attributes,
                 control_address,
                 quic_client.clone(),
                 node_cert.serialize_request_pem().unwrap(),
