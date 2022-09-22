@@ -14,10 +14,11 @@ use wasmtime::ResourceLimiter;
 
 use crate::{
     distributed::message::{Request, Response},
-    quic, DistributedCtx, DistributedProcessState,
+    quic::{self, SendStream},
+    DistributedCtx, DistributedProcessState,
 };
 
-use super::message::Spawn;
+use super::message::{ClientError, Spawn};
 
 pub struct ServerCtx<T> {
     pub envs: Environments,
@@ -72,18 +73,18 @@ where
     Ok(())
 }
 
-pub async fn handle_message<T>(ctx: ServerCtx<T>, conn: quic::Connection, msg_id: u64, msg: Request)
+pub async fn handle_message<T>(ctx: ServerCtx<T>, send: &mut SendStream, msg_id: u64, msg: Request)
 where
     T: ProcessState + DistributedCtx + ResourceLimiter + Send + 'static,
 {
-    if let Err(e) = handle_message_err(ctx, conn, msg_id, msg).await {
+    if let Err(e) = handle_message_err(ctx, send, msg_id, msg).await {
         log::error!("Error handling message: {e}");
     }
 }
 
 async fn handle_message_err<T>(
     ctx: ServerCtx<T>,
-    conn: quic::Connection,
+    send: &mut SendStream,
     msg_id: u64,
     msg: Request,
 ) -> Result<()>
@@ -92,20 +93,45 @@ where
 {
     match msg {
         Request::Spawn(spawn) => {
-            let id = handle_spawn(ctx, spawn).await?;
-            conn.send(msg_id, Response::Spawned(id)).await?;
+            match handle_spawn(ctx, spawn).await {
+                Ok(Ok(id)) => {
+                    let mut data = super::message::pack_response(msg_id, Response::Spawned(id));
+                    send.send(&mut data).await?;
+                }
+                Ok(Err(client_error)) => {
+                    let mut data =
+                        super::message::pack_response(msg_id, Response::Error(client_error));
+                    send.send(&mut data).await?;
+                }
+                Err(error) => {
+                    let mut data = super::message::pack_response(
+                        msg_id,
+                        Response::Error(ClientError::Unexpected(error.to_string())),
+                    );
+                    send.send(&mut data).await?
+                }
+            };
         }
         Request::Message {
             environment_id,
             process_id,
             tag,
             data,
-        } => handle_process_message(ctx, environment_id, process_id, tag, data).await?,
-    }
+        } => match handle_process_message(ctx, environment_id, process_id, tag, data).await {
+            Ok(_) => {
+                let mut data = super::message::pack_response(msg_id, Response::Sent);
+                send.send(&mut data).await?;
+            }
+            Err(error) => {
+                let mut data = super::message::pack_response(msg_id, Response::Error(error));
+                send.send(&mut data).await?;
+            }
+        },
+    };
     Ok(())
 }
 
-async fn handle_spawn<T>(mut ctx: ServerCtx<T>, spawn: Spawn) -> Result<u64>
+async fn handle_spawn<T>(mut ctx: ServerCtx<T>, spawn: Spawn) -> Result<Result<u64, ClientError>>
 where
     T: ProcessState + DistributedCtx + ResourceLimiter + Send + 'static,
 {
@@ -127,7 +153,7 @@ where
                 let wasm = RawWasm::new(Some(module_id), bytes);
                 ctx.modules.compile(ctx.runtime.clone(), wasm).await??
             } else {
-                return Err(anyhow!("Cannot get the module from control"));
+                return Ok(Err(ClientError::ModuleNotFound));
             }
         }
     };
@@ -140,7 +166,7 @@ where
     let (_handle, proc) = env
         .spawn_wasm(ctx.runtime, module, state, &function, params, None)
         .await?;
-    Ok(proc.id())
+    Ok(Ok(proc.id()))
 }
 
 async fn handle_process_message<T>(
@@ -149,15 +175,18 @@ async fn handle_process_message<T>(
     process_id: u64,
     tag: Option<i64>,
     data: Vec<u8>,
-) -> Result<()>
+) -> std::result::Result<(), ClientError>
 where
     T: ProcessState + DistributedCtx + ResourceLimiter + Send + 'static,
 {
     let env = ctx.envs.get_or_create(environment_id);
-    if let Some(proc) = env.get_process(process_id) {
-        proc.send(Signal::Message(Message::Data(DataMessage::new_from_vec(
-            tag, data,
-        ))))
+    match env.get_process(process_id) {
+        Some(proc) => {
+            proc.send(Signal::Message(Message::Data(DataMessage::new_from_vec(
+                tag, data,
+            ))));
+            Ok(())
+        }
+        None => Err(ClientError::ProcessNotFound),
     }
-    Ok(())
 }

@@ -7,12 +7,15 @@ use std::{
     },
 };
 
+use crate::control::message::Response;
+use crate::{
+    control::message::{Registered, Registration},
+    quic::SendStream,
+};
 use anyhow::Result;
+use bytes::Bytes;
 use dashmap::DashMap;
 use rcgen::*;
-
-use crate::control::message::{Registered, Registration};
-use crate::{control::message::Response, quic::Connection};
 
 #[derive(Clone)]
 pub struct Server {
@@ -178,7 +181,7 @@ pub async fn control_server(socket: SocketAddr, ca_cert: Certificate) -> Result<
 
 pub async fn handle_request(
     server: Server,
-    conn: Connection,
+    send: &mut SendStream,
     msg_id: u64,
     request: crate::control::message::Request,
 ) -> Result<u64> {
@@ -190,5 +193,10 @@ pub async fn handle_request(
         AddModule(bytes) => server.add_module(bytes),
         GetModule(id) => server.get_module(id),
     };
-    conn.send(msg_id, response).await
+    let data = bincode::serialize(&(msg_id, response))?;
+    let size = (data.len() as u32).to_le_bytes();
+    let size: Bytes = Bytes::copy_from_slice(&size[..]);
+    let bytes: Bytes = data.into();
+    send.send(&mut [size, bytes]).await?;
+    Ok(msg_id)
 }

@@ -1,6 +1,6 @@
-use std::net::SocketAddr;
-
+use bytes::Bytes;
 use serde::{Deserialize, Serialize};
+use std::net::SocketAddr;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum Request {
@@ -46,4 +46,12 @@ pub struct Registration {
 pub struct Registered {
     pub node_id: u64,
     pub signed_cert: String,
+}
+
+pub fn pack_response(msg_id: u64, resp: Response) -> [Bytes; 2] {
+    let data = bincode::serialize(&(msg_id, resp)).unwrap();
+    let size = (data.len() as u32).to_le_bytes();
+    let size: Bytes = Bytes::copy_from_slice(&size[..]);
+    let bytes: Bytes = data.into();
+    [size, bytes]
 }

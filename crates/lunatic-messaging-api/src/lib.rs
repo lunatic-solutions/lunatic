@@ -323,7 +323,7 @@ fn take_tcp_stream<T: ProcessState + ProcessCtx<T> + NetworkingCtx>(
 fn send<T: ProcessState + ProcessCtx<T>>(
     mut caller: Caller<T>,
     process_id: u64,
-) -> Result<(), Trap> {
+) -> Result<u32, Trap> {
     let message = caller
         .data_mut()
         .message_scratch_area()
@@ -334,7 +334,7 @@ fn send<T: ProcessState + ProcessCtx<T>>(
         process.send(Signal::Message(message));
     }
 
-    Ok(())
+    Ok(0)
 }
 
 // Sends the message to a process and waits for a reply, but doesn't look through existing
