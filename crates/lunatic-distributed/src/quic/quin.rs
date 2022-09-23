@@ -11,7 +11,7 @@ use wasmtime::ResourceLimiter;
 use crate::{control, distributed, DistributedCtx};
 
 pub struct SendStream {
-    stream: quinn::SendStream,
+    pub stream: quinn::SendStream,
 }
 
 impl SendStream {
@@ -22,7 +22,7 @@ impl SendStream {
 }
 
 pub struct RecvStream {
-    stream: quinn::RecvStream,
+    pub stream: quinn::RecvStream,
 }
 
 impl RecvStream {
