@@ -2,6 +2,8 @@ use bytes::Bytes;
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 
+use crate::NodeInfo;
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum Request {
     Register(Registration),
@@ -28,7 +30,7 @@ impl Request {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum Response {
     Register(Registered),
-    Nodes(Vec<(u64, Registration)>),
+    Nodes(Vec<NodeInfo>),
     Module(Option<Vec<u8>>),
     ModuleId(u64),
     Error(String),

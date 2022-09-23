@@ -117,17 +117,11 @@ impl Client {
     pub async fn refresh_nodes(&self) -> Result<()> {
         if let Response::Nodes(nodes) = self.send(Request::ListNodes).await? {
             let mut node_ids = vec![];
-            for (id, reg) in nodes {
+            for node in nodes {
+                let id = node.id;
                 node_ids.push(id);
                 if !self.inner.nodes.contains_key(&id) {
-                    self.inner.nodes.insert(
-                        id,
-                        NodeInfo {
-                            id,
-                            address: reg.node_address,
-                            name: reg.node_name,
-                        },
-                    );
+                    self.inner.nodes.insert(id, node);
                 }
             }
             if let Ok(mut self_node_ids) = self.inner.node_ids.write() {

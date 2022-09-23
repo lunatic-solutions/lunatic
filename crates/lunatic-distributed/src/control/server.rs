@@ -7,7 +7,7 @@ use std::{
     },
 };
 
-use crate::control::message::Response;
+use crate::{control::message::Response, NodeInfo};
 use crate::{
     control::message::{Registered, Registration},
     quic::SendStream,
@@ -91,7 +91,11 @@ impl Server {
             self.inner
                 .nodes
                 .iter()
-                .map(|e| (*e.key(), e.value().clone()))
+                .map(|e| NodeInfo {
+                    id: *e.key(),
+                    address: e.value().node_address,
+                    name: e.value().node_name.clone(),
+                })
                 .collect(),
         )
     }
