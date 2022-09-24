@@ -1432,6 +1432,7 @@ dependencies = [
  "lunatic-common-api",
  "lunatic-process",
  "lunatic-process-api",
+ "metrics",
  "tokio",
  "wasmtime",
 ]

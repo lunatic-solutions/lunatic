@@ -89,6 +89,32 @@ pub fn register<T: ProcessState + ProcessCtx<T> + TimerCtx + Send + 'static>(
 ) -> Result<()> {
     linker.func_wrap("lunatic::timer", "send_after", send_after)?;
     linker.func_wrap1_async("lunatic::timer", "cancel_timer", cancel_timer)?;
+
+    #[cfg(feature = "metrics")]
+    metrics::describe_counter!(
+        "lunatic.timers.started",
+        metrics::Unit::Count,
+        "number of timers set since startup, will usually be completed + canceled + active"
+    );
+    #[cfg(feature = "metrics")]
+    metrics::describe_counter!(
+        "lunatic.timers.completed",
+        metrics::Unit::Count,
+        "number of timers completed since startup"
+    );
+    #[cfg(feature = "metrics")]
+    metrics::describe_counter!(
+        "lunatic.timers.canceled",
+        metrics::Unit::Count,
+        "number of timers canceled since startup"
+    );
+    #[cfg(feature = "metrics")]
+    metrics::describe_gauge!(
+        "lunatic.timers.active",
+        metrics::Unit::Count,
+        "number of timers currently active"
+    );
+
     Ok(())
 }
 
@@ -114,11 +140,15 @@ fn send_after<T: ProcessState + ProcessCtx<T> + TimerCtx>(
 
     let target_time = Instant::now() + Duration::from_millis(delay);
     let timer_handle = tokio::task::spawn(async move {
+        metrics::increment_counter!("lunatic.timers.started");
+        metrics::increment_gauge!("lunatic.timers.active", 1.0);
         let duration_remaining = target_time - Instant::now();
         if duration_remaining != Duration::ZERO {
             tokio::time::sleep(duration_remaining).await;
         }
         if let Some(process) = process {
+            metrics::increment_counter!("lunatic.timers.completed");
+            metrics::decrement_gauge!("lunatic.timers.active", 1.0);
             process.send(Signal::Message(message));
         }
     });
@@ -147,6 +177,8 @@ fn cancel_timer<T: ProcessState + TimerCtx + Send>(
         match timer_handle {
             Some(timer_handle) => {
                 timer_handle.abort();
+                metrics::increment_counter!("lunatic.timers.canceled");
+                metrics::decrement_gauge!("lunatic.timers.active", 1.0);
                 Ok(1)
             }
             None => Ok(0),
