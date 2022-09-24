@@ -1418,6 +1418,7 @@ dependencies = [
  "lunatic-process",
  "lunatic-stdout-capture",
  "lunatic-wasi-api",
+ "metrics",
  "tokio",
  "wasmtime",
 ]

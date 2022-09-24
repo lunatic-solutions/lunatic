@@ -27,6 +27,7 @@ metrics = [
     "dep:metrics",
     "lunatic-timer-api/metrics",
     "lunatic-registry-api/metrics",
+    "lunatic-process-api/metrics",
 ]
 prometheus = ["dep:metrics-exporter-prometheus", "metrics"]
 
