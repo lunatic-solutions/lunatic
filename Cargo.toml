@@ -23,7 +23,11 @@ default = ["distributed-quinn", "metrics"]
 distributed-tcp = ["lunatic-distributed/tcp"]
 distributed-s2n = ["lunatic-distributed/quic-s2n"]
 distributed-quinn = ["lunatic-distributed/quic-quinn"]
-metrics = ["dep:metrics", "lunatic-timer-api/metrics"]
+metrics = [
+    "dep:metrics",
+    "lunatic-timer-api/metrics",
+    "lunatic-registry-api/metrics",
+]
 prometheus = ["dep:metrics-exporter-prometheus", "metrics"]
 
 [dependencies]
