@@ -147,7 +147,9 @@ fn send_after<T: ProcessState + ProcessCtx<T> + TimerCtx>(
             tokio::time::sleep(duration_remaining).await;
         }
         if let Some(process) = process {
+            #[cfg(feature = "metrics")]
             metrics::increment_counter!("lunatic.timers.completed");
+            #[cfg(feature = "metrics")]
             metrics::decrement_gauge!("lunatic.timers.active", 1.0);
             process.send(Signal::Message(message));
         }
@@ -177,7 +179,9 @@ fn cancel_timer<T: ProcessState + TimerCtx + Send>(
         match timer_handle {
             Some(timer_handle) => {
                 timer_handle.abort();
+                #[cfg(feature = "metrics")]
                 metrics::increment_counter!("lunatic.timers.canceled");
+                #[cfg(feature = "metrics")]
                 metrics::decrement_gauge!("lunatic.timers.active", 1.0);
                 Ok(1)
             }
