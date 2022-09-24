@@ -78,6 +78,28 @@ where
 
     linker.func_wrap("lunatic::process", "compile_module", compile_module)?;
     linker.func_wrap("lunatic::process", "drop_module", drop_module)?;
+
+    #[cfg(feature = "metrics")]
+    metrics::describe_counter!(
+        "lunatic.process.configs.created",
+        metrics::Unit::Count,
+        "number of configs created since startup"
+    );
+
+    #[cfg(feature = "metrics")]
+    metrics::describe_counter!(
+        "lunatic.process.configs.dropped",
+        metrics::Unit::Count,
+        "number of configs dropped since startup"
+    );
+
+    #[cfg(feature = "metrics")]
+    metrics::describe_gauge!(
+        "lunatic.process.configs.active",
+        metrics::Unit::Count,
+        "number of configs currently in memory"
+    );
+
     linker.func_wrap("lunatic::process", "create_config", create_config)?;
     linker.func_wrap("lunatic::process", "drop_config", drop_config)?;
     linker.func_wrap(
@@ -238,6 +260,10 @@ where
         return -1;
     }
     let config = T::Config::default();
+    #[cfg(feature = "metrics")]
+    metrics::increment_counter!("lunatic.process.configs.created");
+    #[cfg(feature = "metrics")]
+    metrics::increment_gauge!("lunatic.process.configs.active", 1.0);
     caller.data_mut().config_resources_mut().add(config) as i64
 }
 
@@ -254,6 +280,10 @@ fn drop_config<T: ProcessState + ProcessCtx<T>>(
         .config_resources_mut()
         .remove(config_id)
         .or_trap("lunatic::process::drop_config: Config ID doesn't exist")?;
+    #[cfg(feature = "metrics")]
+    metrics::increment_counter!("lunatic.process.configs.dropped");
+    #[cfg(feature = "metrics")]
+    metrics::decrement_gauge!("lunatic.process.configs.active", 1.0);
     Ok(())
 }
 
