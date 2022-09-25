@@ -35,14 +35,14 @@ jobs:
         if: runner.os != 'macOS'
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: 1.64.0
+          toolchain: nightly
           override: true
           components: rustfmt, clippy
       - name: Install latest Rust with an additional AArch64 target on macOS
         if: runner.os == 'macOS'
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: 1.64.0
+          toolchain: nightly
           target: aarch64-apple-darwin
           override: true
           components: rustfmt, clippy
