@@ -268,7 +268,7 @@ where
                         #[cfg(feature = "metrics")]
                         message.write_metrics();
 
-                        let res = message_mailbox.push(message);
+                        message_mailbox.push(message);
 
                         // process metrics
                         #[cfg(feature = "metrics")]
@@ -276,8 +276,6 @@ where
 
                         #[cfg(feature = "metrics")]
                         metrics::gauge!("lunatic.process.messages.outstanding", message_mailbox.len() as f64, &labels);
-
-                        res
                     },
                     Ok(Signal::DieWhenLinkDies(value)) => die_when_link_dies = value,
                     // Put process into list of linked processes
