@@ -35,6 +35,16 @@ impl Message {
             Message::LinkDied(tag) => *tag,
         }
     }
+
+    #[cfg(feature = "metrics")]
+    pub fn write_metrics(&self) {
+        match self {
+            Message::Data(message) => message.write_metrics(),
+            Message::LinkDied(_) => {
+                metrics::increment_counter!("lunatic.process.messages.link_died.count");
+            }
+        }
+    }
 }
 
 /// A variant of a [`Message`] that has a buffer of data and resources attached to it.
@@ -155,6 +165,16 @@ impl DataMessage {
 
     pub fn size(&self) -> usize {
         self.buffer.len()
+    }
+
+    #[cfg(feature = "metrics")]
+    pub fn write_metrics(&self) {
+        metrics::increment_counter!("lunatic.process.messages.data.count");
+        metrics::histogram!(
+            "lunatic.process.messages.data.resources.count",
+            self.resources.len() as f64
+        );
+        metrics::histogram!("lunatic.process.messages.data.size", self.size() as f64);
     }
 }
 

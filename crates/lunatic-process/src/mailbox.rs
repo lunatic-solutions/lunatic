@@ -138,6 +138,13 @@ impl MessageMailbox {
         // Otherwise put message into queue
         mailbox.messages.push_back(message);
     }
+
+    /// Retrieves the number of messages currently available in the mailbox
+    pub fn len(&self) -> usize {
+        let mailbox = self.inner.lock().expect("only accessed by one process");
+
+        mailbox.messages.len()
+    }
 }
 
 impl Future for &MessageMailbox {

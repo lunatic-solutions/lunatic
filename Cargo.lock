@@ -1402,6 +1402,7 @@ dependencies = [
  "hash-map-id",
  "log",
  "lunatic-networking-api",
+ "metrics",
  "serde",
  "tokio",
  "wasmtime",

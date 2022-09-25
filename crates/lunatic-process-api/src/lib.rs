@@ -49,6 +49,9 @@ where
     T::Config: ProcessConfigCtx,
 {
     #[cfg(feature = "metrics")]
+    lunatic_process::describe_metrics();
+
+    #[cfg(feature = "metrics")]
     metrics::describe_counter!(
         "lunatic.process.modules.compiled",
         metrics::Unit::Count,
