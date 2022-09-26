@@ -80,3 +80,12 @@ members = [
     "crates/lunatic-registry-api",
     "crates/lunatic-distributed-api",
 ]
+
+##########################################################
+# This is required until wasmtime is bumped to ^1
+# https://github.com/bytecodealliance/wasmtime/issues/4936
+# Tracking: https://github.com/lunatic-solutions/lunatic/issues/136
+[patch.crates-io]
+cap-std = { git = "https://github.com/bytecodealliance/cap-std.git", branch = "0.26-with-a-0.25.2-version-number" }
+cap-primitives = { git = "https://github.com/bytecodealliance/cap-std.git", branch = "0.26-with-a-0.25.2-version-number" }
+cap-fs-ext = { git = "https://github.com/bytecodealliance/cap-std.git", branch = "0.26-with-a-0.25.2-version-number" }
