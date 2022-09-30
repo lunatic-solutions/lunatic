@@ -12,5 +12,5 @@ license = "Apache-2.0/MIT"
 
 [dependencies]
 anyhow = "^1.0"
-wasmtime = "^0.40"
+wasmtime = "^1" # managed by root Cargo.toml
 paste = "^1.0"
