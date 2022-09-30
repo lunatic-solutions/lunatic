@@ -10,7 +10,7 @@ use std::{
     sync::Arc,
 };
 
-use lunatic_networking_api::TcpConnection;
+use lunatic_networking_api::{TcpConnection, TlsConnection};
 use tokio::net::UdpSocket;
 
 use crate::Process;
@@ -88,6 +88,12 @@ impl DataMessage {
         self.resources.len() - 1
     }
 
+    /// Adds a TLS stream to the message and returns the index of it inside of the message
+    pub fn add_tls_stream(&mut self, tls_stream: Arc<TlsConnection>) -> usize {
+        self.resources.push(Resource::TlsStream(tls_stream));
+        self.resources.len() - 1
+    }
+
     /// Takes a process from the message, but preserves the indexes of all others.
     ///
     /// If the index is out of bound or the resource is not a process the function will return
@@ -148,6 +154,26 @@ impl DataMessage {
         None
     }
 
+    /// Takes a TLS stream from the message, but preserves the indexes of all others.
+    ///
+    /// If the index is out of bound or the resource is not a tcp stream the function will return
+    /// None.
+    pub fn take_tls_stream(&mut self, index: usize) -> Option<Arc<TlsConnection>> {
+        if let Some(resource_ref) = self.resources.get_mut(index) {
+            let resource = std::mem::replace(resource_ref, Resource::None);
+            match resource {
+                Resource::TlsStream(stream) => {
+                    return Some(stream);
+                }
+                other => {
+                    // Put the resource back if it's not a tcp stream and drop empty.
+                    let _ = std::mem::replace(resource_ref, other);
+                }
+            }
+        }
+        None
+    }
+
     /// Moves read pointer to index.
     pub fn seek(&mut self, index: usize) {
         self.read_ptr = index;
@@ -192,6 +218,7 @@ pub enum Resource {
     Process(Arc<dyn Process>),
     TcpStream(Arc<TcpConnection>),
     UdpSocket(Arc<UdpSocket>),
+    TlsStream(Arc<TlsConnection>),
 }
 
 impl Debug for Resource {
@@ -201,6 +228,7 @@ impl Debug for Resource {
             Self::Process(_) => write!(f, "Process"),
             Self::TcpStream(_) => write!(f, "TcpStream"),
             Self::UdpSocket(_) => write!(f, "UdpSocket"),
+            Self::TlsStream(_) => write!(f, "TcpStream"),
         }
     }
 }

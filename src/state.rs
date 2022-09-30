@@ -6,7 +6,7 @@ use dashmap::DashMap;
 use hash_map_id::HashMapId;
 use lunatic_distributed::{DistributedCtx, DistributedProcessState};
 use lunatic_error_api::{ErrorCtx, ErrorResource};
-use lunatic_networking_api::DnsIterator;
+use lunatic_networking_api::{DnsIterator, TlsConnection, TlsListener};
 use lunatic_networking_api::{NetworkingCtx, TcpConnection};
 use lunatic_process::config::ProcessConfig;
 use lunatic_process::env::Environment;
@@ -314,6 +314,22 @@ impl NetworkingCtx for DefaultProcessState {
         &mut self.resources.tcp_streams
     }
 
+    fn tls_listener_resources(&self) -> &lunatic_networking_api::TlsListenerResources {
+        &self.resources.tls_listeners
+    }
+
+    fn tls_listener_resources_mut(&mut self) -> &mut lunatic_networking_api::TlsListenerResources {
+        &mut self.resources.tls_listeners
+    }
+
+    fn tls_stream_resources(&self) -> &lunatic_networking_api::TlsStreamResources {
+        &self.resources.tls_streams
+    }
+
+    fn tls_stream_resources_mut(&mut self) -> &mut lunatic_networking_api::TlsStreamResources {
+        &mut self.resources.tls_streams
+    }
+
     fn udp_resources(&self) -> &lunatic_networking_api::UdpResources {
         &self.resources.udp_sockets
     }
@@ -379,6 +395,8 @@ pub(crate) struct Resources {
     pub(crate) dns_iterators: HashMapId<DnsIterator>,
     pub(crate) tcp_listeners: HashMapId<TcpListener>,
     pub(crate) tcp_streams: HashMapId<Arc<TcpConnection>>,
+    pub(crate) tls_listeners: HashMapId<TlsListener>,
+    pub(crate) tls_streams: HashMapId<Arc<TlsConnection>>,
     pub(crate) udp_sockets: HashMapId<Arc<UdpSocket>>,
     pub(crate) errors: HashMapId<anyhow::Error>,
 }
