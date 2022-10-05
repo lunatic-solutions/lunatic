@@ -10,6 +10,32 @@ pub fn register<T: ProcessState + ProcessCtx<T> + 'static>(linker: &mut Linker<T
     linker.func_wrap("lunatic::registry", "put", put)?;
     linker.func_wrap("lunatic::registry", "get", get)?;
     linker.func_wrap("lunatic::registry", "remove", remove)?;
+
+    #[cfg(feature = "metrics")]
+    metrics::describe_counter!(
+        "lunatic.registry.write",
+        metrics::Unit::Count,
+        "number of new entries written to the registry"
+    );
+    #[cfg(feature = "metrics")]
+    metrics::describe_counter!(
+        "lunatic.timers.read",
+        metrics::Unit::Count,
+        "number of entries read from the registry"
+    );
+    #[cfg(feature = "metrics")]
+    metrics::describe_counter!(
+        "lunatic.timers.deletion",
+        metrics::Unit::Count,
+        "number of entries deleted from the registry"
+    );
+    #[cfg(feature = "metrics")]
+    metrics::describe_gauge!(
+        "lunatic.timers.registered",
+        metrics::Unit::Count,
+        "number of processes currently registered"
+    );
+
     Ok(())
 }
 
@@ -35,6 +61,11 @@ fn put<T: ProcessState + ProcessCtx<T>>(
     state
         .registry()
         .insert(name.to_owned(), (node_id, process_id));
+    #[cfg(feature = "metrics")]
+    metrics::increment_counter!("lunatic.registry.write");
+
+    #[cfg(feature = "metrics")]
+    metrics::increment_gauge!("lunatic.registry.registered", 1.0);
 
     Ok(())
 }
@@ -56,6 +87,9 @@ fn get<T: ProcessState + ProcessCtx<T>>(
         .get(name_str_ptr as usize..(name_str_ptr + name_str_len) as usize)
         .or_trap("lunatic::registry::get")?;
     let name = std::str::from_utf8(name).or_trap("lunatic::registry::get")?;
+
+    #[cfg(feature = "metrics")]
+    metrics::increment_counter!("lunatic.registry.read");
 
     let (node_id, process_id) = if let Some(process) = state.registry().get(name) {
         *process
@@ -94,6 +128,12 @@ fn remove<T: ProcessState + ProcessCtx<T>>(
     let name = std::str::from_utf8(name).or_trap("lunatic::registry::get")?;
 
     state.registry().remove(name);
+
+    #[cfg(feature = "metrics")]
+    metrics::increment_counter!("lunatic.registry.deletion");
+
+    #[cfg(feature = "metrics")]
+    metrics::decrement_gauge!("lunatic.registry.registered", 1.0);
 
     Ok(())
 }

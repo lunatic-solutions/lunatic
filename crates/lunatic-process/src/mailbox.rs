@@ -138,6 +138,20 @@ impl MessageMailbox {
         // Otherwise put message into queue
         mailbox.messages.push_back(message);
     }
+
+    /// Returns the number of messages currently available
+    pub fn len(&self) -> usize {
+        let mailbox = self.inner.lock().expect("only accessed by one process");
+
+        mailbox.messages.len()
+    }
+
+    /// Returns true if the mailbox has no available messages
+    pub fn is_empty(&self) -> bool {
+        let mailbox = self.inner.lock().expect("only accessed by one process");
+
+        mailbox.messages.is_empty()
+    }
 }
 
 impl Future for &MessageMailbox {
