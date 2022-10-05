@@ -40,7 +40,6 @@ pub struct TlsConnection {
     pub writer: Mutex<WriteHalf<TlsStream<TcpStream>>>,
     pub closing: bool,
     pub clean_closure: bool,
-    // pub acceptor: TlsAcceptor,
     pub read_timeout: Mutex<Option<Duration>>,
     pub write_timeout: Mutex<Option<Duration>>,
     pub peek_timeout: Mutex<Option<Duration>>,
@@ -53,18 +52,13 @@ pub struct TlsListener {
 }
 
 impl TlsConnection {
-    pub fn new(
-        sock: TlsStream<TcpStream>,
-        // server_name: rustls::ServerName,
-        // cfg: Arc<rustls::ClientConfig>,
-    ) -> TlsConnection {
+    pub fn new(sock: TlsStream<TcpStream>) -> TlsConnection {
         let (read_half, write_half) = split(sock);
         TlsConnection {
             reader: Mutex::new(read_half),
             writer: Mutex::new(write_half),
             closing: false,
             clean_closure: false,
-            // tls_conn: rustls::ClientConnection::new(cfg, server_name).unwrap(),
             read_timeout: Mutex::new(None),
             write_timeout: Mutex::new(None),
             peek_timeout: Mutex::new(None),

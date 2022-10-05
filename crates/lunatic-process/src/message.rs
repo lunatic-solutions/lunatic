@@ -228,7 +228,7 @@ impl Debug for Resource {
             Self::Process(_) => write!(f, "Process"),
             Self::TcpStream(_) => write!(f, "TcpStream"),
             Self::UdpSocket(_) => write!(f, "UdpSocket"),
-            Self::TlsStream(_) => write!(f, "TcpStream"),
+            Self::TlsStream(_) => write!(f, "TlsStream"),
         }
     }
 }

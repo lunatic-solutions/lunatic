@@ -318,10 +318,10 @@ fn take_tcp_stream<T: ProcessState + ProcessCtx<T> + NetworkingCtx>(
 // move tls stream
 
 // Adds a tls stream resource to the message that is currently in the scratch area and returns
-// the new location of it. This will remove the tcp stream from  the current process' resources.
+// the new location of it. This will remove the tls stream from  the current process' resources.
 //
 // Traps:
-// * If TCP stream ID doesn't exist
+// * If TLS stream ID doesn't exist
 // * If no data message is in the scratch area.
 fn push_tls_stream<T: ProcessState + ProcessCtx<T> + NetworkingCtx>(
     mut caller: Caller<T>,
@@ -349,7 +349,7 @@ fn push_tls_stream<T: ProcessState + ProcessCtx<T> + NetworkingCtx>(
 // it into the process' resources and returns the resource ID.
 //
 // Traps:
-// * If index ID doesn't exist or matches the wrong resource (not a tcp stream).
+// * If index ID doesn't exist or matches the wrong resource (not a tls stream).
 // * If no data message is in the scratch area.
 fn take_tls_stream<T: ProcessState + ProcessCtx<T> + NetworkingCtx>(
     mut caller: Caller<T>,
