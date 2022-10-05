@@ -86,6 +86,7 @@ fn resolve<T: NetworkingCtx + ErrorCtx + Send>(
         } {
             match result {
                 Ok(sockets) => {
+                    println!("LOOKUP SUCCESS");
                     // This is a bug in clippy, this collect is not needless
                     #[allow(clippy::needless_collect)]
                     let id = state.dns_resources_mut().add(DnsIterator::new(
@@ -94,6 +95,7 @@ fn resolve<T: NetworkingCtx + ErrorCtx + Send>(
                     (id, 0)
                 }
                 Err(error) => {
+                    println!("LOOKUP ERROR for {} -> {:?}", name, error);
                     let error_id = state.error_resources_mut().add(error.into());
                     (error_id, 1)
                 }

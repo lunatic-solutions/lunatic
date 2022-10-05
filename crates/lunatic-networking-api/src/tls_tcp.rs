@@ -1,7 +1,7 @@
 use std::convert::TryInto;
-use std::fs;
+use std::fs::{self, File};
 use std::future::Future;
-use std::io::{self, IoSlice, Read, Write};
+use std::io::{self, BufReader, IoSlice, Read, Write};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -20,7 +20,7 @@ use lunatic_error_api::ErrorCtx;
 use crate::dns::DnsIterator;
 use crate::{socket_address, NetworkingCtx, TcpConnection, TlsConnection, TlsListener};
 use tokio_rustls::rustls::{self, OwnedTrustAnchor, PrivateKey};
-use tokio_rustls::{webpki, TlsAcceptor, TlsConnector};
+use tokio_rustls::{webpki, TlsAcceptor, TlsConnector, TlsStream};
 
 // Register TCP networking APIs to the linker
 pub fn register<T: NetworkingCtx + ErrorCtx + Send + 'static>(
@@ -34,7 +34,7 @@ pub fn register<T: NetworkingCtx + ErrorCtx + Send + 'static>(
     )?;
     linker.func_wrap("lunatic::networking", "tls_local_addr", tls_local_addr)?;
     linker.func_wrap3_async("lunatic::networking", "tls_accept", tls_accept)?;
-    // linker.func_wrap7_async("lunatic::networking", "tls_connect", tls_connect)?;
+    linker.func_wrap7_async("lunatic::networking", "tls_connect", tls_connect)?;
     linker.func_wrap("lunatic::networking", "drop_tls_stream", drop_tls_stream)?;
     linker.func_wrap("lunatic::networking", "clone_tls_stream", clone_tls_stream)?;
     linker.func_wrap4_async(
@@ -347,61 +347,124 @@ fn load_certs(file: &[u8]) -> io::Result<rustls::Certificate> {
 // Traps:
 // * If **addr_type** is neither 4 or 6.
 // * If any memory outside the guest heap space is referenced.
-// #[allow(clippy::too_many_arguments)]
-// fn tls_connect<T: NetworkingCtx + ErrorCtx + Send>(
-//     mut caller: Caller<T>,
-//     addr_type: u32,
-//     addr_u8_ptr: u32,
-//     port: u32,
-//     flow_info: u32,
-//     scope_id: u32,
-//     timeout_duration: u64,
-//     id_u64_ptr: u32,
-// ) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_> {
-//     Box::new(async move {
-//         let memory = get_memory(&mut caller)?;
-//         let socket_addr = socket_address(
-//             &caller,
-//             &memory,
-//             addr_type,
-//             addr_u8_ptr,
-//             port,
-//             flow_info,
-//             scope_id,
-//         )?;
+#[allow(clippy::too_many_arguments)]
+fn tls_connect<T: NetworkingCtx + ErrorCtx + Send>(
+    mut caller: Caller<T>,
+    addr_str_ptr: u32,
+    addr_str_len: u32,
+    port: u32,
+    flow_info: u32,
+    scope_id: u32,
+    timeout_duration: u64,
+    id_u64_ptr: u32,
+) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_> {
+    Box::new(async move {
+        let memory = get_memory(&mut caller)?;
+        // let socket_addr = socket_address(
+        //     &caller,
+        //     &memory,
+        //     addr_type,
+        //     addr_u8_ptr,
+        //     port,
+        //     flow_info,
+        //     scope_id,
+        // )?;
 
-//         let connect = TcpStream::connect(socket_addr);
-//         if let Ok(result) = match timeout_duration {
-//             // Without timeout
-//             u64::MAX => Ok(connect.await),
-//             // With timeout
-//             t => timeout(Duration::from_millis(t), connect).await,
-//         } {
-//             let (stream_or_error_id, result) = match result {
-//                 Ok(stream) => (
-//                     caller
-//                         .data_mut()
-//                         .tls_stream_resources_mut()
-//                         .add(Arc::new(TcpConnection::new(stream))),
-//                     0,
-//                 ),
-//                 Err(error) => (caller.data_mut().error_resources_mut().add(error.into()), 1),
-//             };
+        let socket_addr = String::from_utf8(
+            memory
+                .data(&caller)
+                .get(addr_str_ptr as usize..(addr_str_ptr + addr_str_len) as usize)
+                .or_trap("lunatic::networking::tls_connect")?
+                .to_vec(),
+        )
+        .or_trap("lunatic::network::tls_connect_socket_addr")?;
 
-//             memory
-//                 .write(
-//                     &mut caller,
-//                     id_u64_ptr as usize,
-//                     &stream_or_error_id.to_le_bytes(),
-//                 )
-//                 .or_trap("lunatic::networking::tls_connect")?;
-//             Ok(result)
-//         } else {
-//             // Call timed out
-//             Ok(9027)
-//         }
-//     })
-// }
+        // println!("GOT ADDR {:?}", socket_addr);
+
+        let mut root_cert_store = rustls::RootCertStore::empty();
+        // if let Some(cafile) = &cafile {
+        //     let mut pem = BufReader::new(File::open(cafile)?);
+        //     let certs = rustls_pemfile::certs(&mut pem)?;
+        //     let trust_anchors = certs.iter().map(|cert| {
+        //         let ta = webpki::TrustAnchor::try_from_cert_der(&cert[..]).unwrap();
+        //         OwnedTrustAnchor::from_subject_spki_name_constraints(
+        //             ta.subject,
+        //             ta.spki,
+        //             ta.name_constraints,
+        //         )
+        //     });
+        //     root_cert_store.add_server_trust_anchors(trust_anchors);
+        // } else {
+        root_cert_store.add_server_trust_anchors(webpki_roots::TLS_SERVER_ROOTS.0.iter().map(
+            |ta| {
+                OwnedTrustAnchor::from_subject_spki_name_constraints(
+                    ta.subject,
+                    ta.spki,
+                    ta.name_constraints,
+                )
+            },
+        ));
+        println!("[host::tls_connect] Added server trust");
+        // }
+
+        let config = rustls::ClientConfig::builder()
+            .with_safe_defaults()
+            .with_root_certificates(root_cert_store)
+            .with_no_client_auth(); // i guess this was previously the default?
+        let connector = TlsConnector::from(Arc::new(config));
+        println!("[host::tls_connect] Created connector");
+
+        let connect = TcpStream::connect((&socket_addr[..], port as u16));
+        if let Ok(result) = match timeout_duration {
+            // Without timeout
+            u64::MAX => Ok(connect.await),
+            // With timeout
+            t => timeout(Duration::from_millis(t), connect).await,
+        } {
+            let (stream_or_error_id, result) = match result {
+                Ok(stream) => {
+                    let domain = &socket_addr[..];
+                    let domain = rustls::ServerName::try_from(domain)
+                        // .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "invalid dnsname"))
+                        .map_err(|e| {
+                            eprintln!(
+                                "[host::tls_connect] Error:INVALID DNSNAME {:?} | {:?}",
+                                domain, e
+                            );
+                            Trap::new("lunatic::networking::tls_connect_invalid_dnsname")
+                        })?;
+
+                    println!("[host::tls_connect] GOT SERVER NAME {:?}", domain);
+
+                    let stream = connector.connect(domain, stream).await.map_err(|e| {
+                        eprintln!("[host::tls_connect] Error: INVALID STREAM {:?}", e);
+                        Trap::new("lunatic::networking::tls_connect_failed")
+                    })?;
+                    (
+                        caller
+                            .data_mut()
+                            .tls_stream_resources_mut()
+                            .add(Arc::new(TlsConnection::new(TlsStream::Client(stream)))),
+                        0,
+                    )
+                }
+                Err(error) => (caller.data_mut().error_resources_mut().add(error.into()), 1),
+            };
+
+            memory
+                .write(
+                    &mut caller,
+                    id_u64_ptr as usize,
+                    &stream_or_error_id.to_le_bytes(),
+                )
+                .or_trap("lunatic::networking::tls_connect")?;
+            Ok(result)
+        } else {
+            // Call timed out
+            Ok(9027)
+        }
+    })
+}
 
 // Drops the TCP stream resource..
 //
@@ -824,141 +887,3 @@ fn tls_flush<T: NetworkingCtx + ErrorCtx + Send>(
         Ok(result)
     })
 }
-
-impl TlsConnection {
-    // /// Handles events sent to the TlsConnection by mio::Poll
-    // fn ready(&mut self, ev: &mio::event::Event) {
-    //     assert_eq!(ev.token(), CLIENT);
-
-    //     if ev.is_readable() {
-    //         self.do_read();
-    //     }
-
-    //     if ev.is_writable() {
-    //         self.do_write();
-    //     }
-
-    //     if self.is_closed() {
-    //         println!("Connection closed");
-    //         process::exit(if self.clean_closure { 0 } else { 1 });
-    //     }
-    // }
-
-    // fn read_source_to_end(&mut self, rd: &mut dyn io::Read) -> io::Result<usize> {
-    //     let mut buf = Vec::new();
-    //     let len = rd.read_to_end(&mut buf)?;
-    //     self.tls_conn.writer().write_all(&buf).unwrap();
-    //     Ok(len)
-    // }
-
-    /// We're ready to do a read.
-    // fn do_read(&mut self) {
-    //     // Read TLS data.  This fails if the underlying TCP connection
-    //     // is broken.
-    //     match self.tls_conn.read_tls(&mut self.socket) {
-    //         Err(error) => {
-    //             if error.kind() == io::ErrorKind::WouldBlock {
-    //                 return;
-    //             }
-    //             println!("TLS read error: {:?}", error);
-    //             self.closing = true;
-    //             return;
-    //         }
-
-    //         // If we're ready but there's no data: EOF.
-    //         Ok(0) => {
-    //             println!("EOF");
-    //             self.closing = true;
-    //             self.clean_closure = true;
-    //             return;
-    //         }
-
-    //         Ok(_) => {}
-    //     };
-
-    //     // Reading some TLS data might have yielded new TLS
-    //     // messages to process.  Errors from this indicate
-    //     // TLS protocol problems and are fatal.
-    //     let io_state = match self.tls_conn.process_new_packets() {
-    //         Ok(io_state) => io_state,
-    //         Err(err) => {
-    //             println!("TLS error: {:?}", err);
-    //             self.closing = true;
-    //             return;
-    //         }
-    //     };
-
-    //     // Having read some TLS data, and processed any new messages,
-    //     // we might have new plaintext as a result.
-    //     //
-    //     // Read it and then write it to stdout.
-    //     if io_state.plaintext_bytes_to_read() > 0 {
-    //         let mut plaintext = Vec::new();
-    //         plaintext.resize(io_state.plaintext_bytes_to_read(), 0u8);
-    //         self.tls_conn.reader().read_exact(&mut plaintext).unwrap();
-    //         io::stdout().write_all(&plaintext).unwrap();
-    //     }
-
-    //     // If wethat fails, the peer might have started a clean TLS-level
-    //     // session closure.
-    //     if io_state.peer_has_closed() {
-    //         self.clean_closure = true;
-    //         self.closing = true;
-    //     }
-    // }
-
-    // fn do_write(&mut self) {
-    //     self.tls_conn.write_tls(&mut self.socket).unwrap();
-    // }
-
-    // /// Registers self as a 'listener' in mio::Registry
-    // fn register(&mut self, registry: &mio::Registry) {
-    //     let interest = self.event_set();
-    //     registry
-    //         .register(&mut self.socket, CLIENT, interest)
-    //         .unwrap();
-    // }
-
-    // /// Reregisters self as a 'listener' in mio::Registry.
-    // fn reregister(&mut self, registry: &mio::Registry) {
-    //     let interest = self.event_set();
-    //     registry
-    //         .reregister(&mut self.socket, CLIENT, interest)
-    //         .unwrap();
-    // }
-
-    // /// Use wants_read/wants_write to register for different mio-level
-    // /// IO readiness events.
-    // fn event_set(&self) -> mio::Interest {
-    //     let rd = self.tls_conn.wants_read();
-    //     let wr = self.tls_conn.wants_write();
-
-    //     if rd && wr {
-    //         mio::Interest::READABLE | mio::Interest::WRITABLE
-    //     } else if wr {
-    //         mio::Interest::WRITABLE
-    //     } else {
-    //         mio::Interest::READABLE
-    //     }
-    // }
-
-    fn is_closed(&self) -> bool {
-        self.closing
-    }
-}
-
-// impl Write for TlsConnection {
-//     fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
-//         self.tls_conn.writer().write(bytes)
-//     }
-
-//     fn flush(&mut self) -> io::Result<()> {
-//         self.tls_conn.writer().flush()
-//     }
-// }
-
-// impl Read for TlsConnection {
-//     fn read(&mut self, bytes: &mut [u8]) -> io::Result<usize> {
-//         self.tls_conn.reader().read(bytes)
-//     }
-// }
