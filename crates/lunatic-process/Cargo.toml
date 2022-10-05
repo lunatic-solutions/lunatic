@@ -10,12 +10,24 @@ license = "Apache-2.0/MIT"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[features]
+metrics = ["dep:metrics"]
+
+# Disabled by default as it will usually lead to giant metrics exports
+detailed_metrics = ["metrics"]
+
 [dependencies]
 anyhow = "^1.0"
 log = "^0.4"
 dashmap = "5.3.4"
-tokio = { version = "^1.20", features = ["macros", "rt-multi-thread", "sync", "net"] }
-wasmtime = "^0.40"
+metrics = { version = "0.20.1", optional = true }
+tokio = { version = "^1.20", features = [
+    "macros",
+    "rt-multi-thread",
+    "sync",
+    "net",
+] }
+wasmtime = "^1"
 serde = "^1.0"
 hash-map-id = { version = "^0.10", path = "../hash-map-id" }
 lunatic-networking-api = { version = "^0.10", path = "../lunatic-networking-api" }

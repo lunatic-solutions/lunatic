@@ -28,10 +28,29 @@ impl Environment {
 
     pub fn add_process(&self, id: u64, proc: Arc<dyn Process>) {
         self.processes.insert(id, proc);
+        #[cfg(all(feature = "metrics", not(feature = "detailed_metrics")))]
+        let labels: [(String, String); 0] = [];
+        #[cfg(all(feature = "metrics", feature = "detailed_metrics"))]
+        let labels = [("environment_id", self.id().to_string())];
+
+        metrics::gauge!(
+            "lunatic.process.environment.process.count",
+            self.processes.len() as f64,
+            &labels
+        );
     }
 
     pub fn remove_process(&self, id: u64) {
         self.processes.remove(&id);
+        #[cfg(all(feature = "metrics", not(feature = "detailed_metrics")))]
+        let labels: [(String, String); 0] = [];
+        #[cfg(all(feature = "metrics", feature = "detailed_metrics"))]
+        let labels = [("environment_id", self.id().to_string())];
+        metrics::gauge!(
+            "lunatic.process.environment.process.count",
+            self.processes.len() as f64,
+            &labels
+        );
     }
 
     pub fn process_count(&self) -> usize {
@@ -63,6 +82,7 @@ impl Environments {
         if !self.envs.contains_key(&id) {
             let env = Environment::new(id);
             self.envs.insert(id, env.clone());
+            metrics::gauge!("lunatic.process.environment.count", self.envs.len() as f64);
             env
         } else {
             self.envs.get(&id).map(|e| e.clone()).unwrap()
