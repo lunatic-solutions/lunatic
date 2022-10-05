@@ -1,7 +1,6 @@
 use std::convert::TryInto;
-use std::fs::{self, File};
 use std::future::Future;
-use std::io::{self, BufReader, IoSlice, Read, Write};
+use std::io::{self, IoSlice};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -18,8 +17,8 @@ use lunatic_common_api::{get_memory, IntoTrap};
 use lunatic_error_api::ErrorCtx;
 
 use crate::dns::DnsIterator;
-use crate::{socket_address, NetworkingCtx, TcpConnection, TlsConnection, TlsListener};
-use tokio_rustls::rustls::{self, OwnedTrustAnchor, PrivateKey};
+use crate::{socket_address, NetworkingCtx, TlsConnection, TlsListener};
+use tokio_rustls::rustls::{self, OwnedTrustAnchor};
 use tokio_rustls::{webpki, TlsAcceptor, TlsConnector, TlsStream};
 
 // Register TCP networking APIs to the linker
@@ -133,6 +132,7 @@ fn tls_local_addr<T: NetworkingCtx + ErrorCtx>(
 //
 // Traps:
 // * If any memory outside the guest heap space is referenced.
+#[allow(clippy::too_many_arguments)]
 fn tls_bind<T: NetworkingCtx + ErrorCtx + Send>(
     mut caller: Caller<T>,
     addr_type: u32,
@@ -228,26 +228,11 @@ fn tls_accept<T: NetworkingCtx + ErrorCtx + Send>(
     socket_addr_id_ptr: u32,
 ) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_> {
     Box::new(async move {
-        let memory = get_memory(&mut caller)?;
         let tls_listener = caller
             .data()
             .tls_listener_resources()
             .get(listener_id)
             .or_trap("lunatic::network::tls_accept")?;
-
-        // let certs = memory
-        //     .data(&caller)
-        //     .get(certs_array_ptr as usize..(certs_array_ptr + certs_array_len) as usize)
-        //     .or_trap("lunatic::networking::tls_accept")?
-        //     .to_vec();
-
-        // let keys = memory
-        //     .data(&caller)
-        //     .get(keys_array_ptr as usize..(keys_array_ptr + keys_array_len) as usize)
-        //     .or_trap("lunatic::networking::tls_accept")?
-        //     .to_vec();
-        // let keys = load_private_key(&keys).expect("should have unpacked the keys");
-        // let certs = load_certs(&certs).expect("should have unpacked the certs");
         let keys = tls_listener.keys.clone();
         let certs = tls_listener.certs.clone();
 
@@ -261,11 +246,10 @@ fn tls_accept<T: NetworkingCtx + ErrorCtx + Send>(
                         .map_err(|err| io::Error::new(io::ErrorKind::InvalidInput, err))
                         .unwrap(); // todo: handle errors here
                     let acceptor = TlsAcceptor::from(Arc::new(config));
-                    let stream = acceptor.accept(stream).await.unwrap();
-                    // .map_err(|e| {
-                    //     println!("ERROR {:?}", e);
-                    //     Trap::new("unexpected tls error")
-                    // })?;
+                    let stream = acceptor
+                        .accept(stream)
+                        .await
+                        .map_err(|_| Trap::new("unexpected tls error"))?;
 
                     let stream_id = caller.data_mut().tls_stream_resources_mut().add(Arc::new(
                         TlsConnection::new(tokio_rustls::TlsStream::Server(stream)),
@@ -338,6 +322,7 @@ fn load_certs(file: &[u8]) -> io::Result<rustls::Certificate> {
 
 // If timeout is specified (value different from `u64::MAX`), the function will return on timeout
 // expiration with value 9027.
+// If cert_array_len is 0 it is treated as if there's no cert and the default certs are added
 //
 // Returns:
 // * 0 on success - The ID of the newly created TCP stream is written to **id_ptr**.
@@ -353,22 +338,13 @@ fn tls_connect<T: NetworkingCtx + ErrorCtx + Send>(
     addr_str_ptr: u32,
     addr_str_len: u32,
     port: u32,
-    flow_info: u32,
-    scope_id: u32,
     timeout_duration: u64,
     id_u64_ptr: u32,
+    certs_array_ptr: u32,
+    certs_array_len: u32,
 ) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_> {
     Box::new(async move {
         let memory = get_memory(&mut caller)?;
-        // let socket_addr = socket_address(
-        //     &caller,
-        //     &memory,
-        //     addr_type,
-        //     addr_u8_ptr,
-        //     port,
-        //     flow_info,
-        //     scope_id,
-        // )?;
 
         let socket_addr = String::from_utf8(
             memory
@@ -379,41 +355,63 @@ fn tls_connect<T: NetworkingCtx + ErrorCtx + Send>(
         )
         .or_trap("lunatic::network::tls_connect_socket_addr")?;
 
-        // println!("GOT ADDR {:?}", socket_addr);
+        // if cerst_array_len is 0 this means there are no custom certs
+        let cafile = if certs_array_len == 0 {
+            None
+        } else {
+            let certs_list = memory
+                .data(&caller)
+                .get(certs_array_ptr as usize..(certs_array_ptr + certs_array_len * 8) as usize)
+                .or_trap("lunatic::networking::tls_connect")?
+                .to_vec();
+
+            let vec_slices: Result<Vec<_>> = certs_list
+                .chunks_exact(8)
+                .map(|ciovec| {
+                    let ciovec_ptr =
+                        u32::from_le_bytes(ciovec[0..4].try_into().expect("works")) as usize;
+                    let ciovec_len =
+                        u32::from_le_bytes(ciovec[4..8].try_into().expect("works")) as usize;
+                    let slice = memory
+                        .data(&caller)
+                        .get(ciovec_ptr..(ciovec_ptr + ciovec_len))
+                        .or_trap("lunatic::networking::tcp_write_vectored")?;
+                    Ok(slice.to_vec())
+                })
+                .collect();
+            Some(vec_slices)
+        };
 
         let mut root_cert_store = rustls::RootCertStore::empty();
-        // if let Some(cafile) = &cafile {
-        //     let mut pem = BufReader::new(File::open(cafile)?);
-        //     let certs = rustls_pemfile::certs(&mut pem)?;
-        //     let trust_anchors = certs.iter().map(|cert| {
-        //         let ta = webpki::TrustAnchor::try_from_cert_der(&cert[..]).unwrap();
-        //         OwnedTrustAnchor::from_subject_spki_name_constraints(
-        //             ta.subject,
-        //             ta.spki,
-        //             ta.name_constraints,
-        //         )
-        //     });
-        //     root_cert_store.add_server_trust_anchors(trust_anchors);
-        // } else {
-        root_cert_store.add_server_trust_anchors(webpki_roots::TLS_SERVER_ROOTS.0.iter().map(
-            |ta| {
+        if let Some(Ok(pem_list)) = cafile {
+            let trust_anchors = pem_list.iter().map(|pem| {
+                let certs = load_certs(pem).expect("should have unpacked the certs");
+                let ta = webpki::TrustAnchor::try_from_cert_der(&certs.0[..]).unwrap();
                 OwnedTrustAnchor::from_subject_spki_name_constraints(
                     ta.subject,
                     ta.spki,
                     ta.name_constraints,
                 )
-            },
-        ));
-        println!("[host::tls_connect] Added server trust");
-        // }
+            });
+            root_cert_store.add_server_trust_anchors(trust_anchors);
+        } else {
+            root_cert_store.add_server_trust_anchors(webpki_roots::TLS_SERVER_ROOTS.0.iter().map(
+                |ta| {
+                    OwnedTrustAnchor::from_subject_spki_name_constraints(
+                        ta.subject,
+                        ta.spki,
+                        ta.name_constraints,
+                    )
+                },
+            ));
+        }
 
         let config = rustls::ClientConfig::builder()
             .with_safe_defaults()
             .with_root_certificates(root_cert_store)
             .with_no_client_auth(); // i guess this was previously the default?
-        let connector = TlsConnector::from(Arc::new(config));
-        println!("[host::tls_connect] Created connector");
 
+        let connector = TlsConnector::from(Arc::new(config));
         let connect = TcpStream::connect((&socket_addr[..], port as u16));
         if let Ok(result) = match timeout_duration {
             // Without timeout
@@ -426,20 +424,14 @@ fn tls_connect<T: NetworkingCtx + ErrorCtx + Send>(
                     let domain = &socket_addr[..];
                     let domain = rustls::ServerName::try_from(domain)
                         // .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "invalid dnsname"))
-                        .map_err(|e| {
-                            eprintln!(
-                                "[host::tls_connect] Error:INVALID DNSNAME {:?} | {:?}",
-                                domain, e
-                            );
+                        .map_err(|_| {
                             Trap::new("lunatic::networking::tls_connect_invalid_dnsname")
                         })?;
 
-                    println!("[host::tls_connect] GOT SERVER NAME {:?}", domain);
-
-                    let stream = connector.connect(domain, stream).await.map_err(|e| {
-                        eprintln!("[host::tls_connect] Error: INVALID STREAM {:?}", e);
-                        Trap::new("lunatic::networking::tls_connect_failed")
-                    })?;
+                    let stream = connector
+                        .connect(domain, stream)
+                        .await
+                        .map_err(|_| Trap::new("lunatic::networking::tls_connect_failed"))?;
                     (
                         caller
                             .data_mut()
@@ -490,16 +482,13 @@ fn clone_tls_stream<T: NetworkingCtx>(
     mut caller: Caller<T>,
     tls_stream_id: u64,
 ) -> Result<u64, Trap> {
-    println!("START CLONING");
     let stream = caller
         .data()
         .tls_stream_resources()
         .get(tls_stream_id)
         .or_trap("lunatic::networking::clone_process")?
         .clone();
-    println!("PROCEED CLONING");
     let id = caller.data_mut().tls_stream_resources_mut().add(stream);
-    println!("CLONE DONE {:?}", id);
     Ok(id)
 }
 

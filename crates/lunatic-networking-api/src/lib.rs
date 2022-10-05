@@ -17,7 +17,7 @@ use tokio::sync::Mutex;
 
 use tokio::net::{TcpListener, TcpStream, UdpSocket};
 use tokio_rustls::rustls::{Certificate, PrivateKey};
-use tokio_rustls::{TlsAcceptor, TlsStream};
+use tokio_rustls::TlsStream;
 use wasmtime::{Caller, Linker};
 use wasmtime::{Memory, Trap};
 
