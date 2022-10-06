@@ -250,6 +250,7 @@ where
     //       to protect against panics in host function calls that unwind through Wasm code.
     //       Currently a panic would just kill the task, but not notify linked processes.
     let mut signal_mailbox = signal_mailbox.lock().await;
+    let mut has_sender = true;
     #[cfg(all(feature = "metrics", not(feature = "detailed_metrics")))]
     let labels: [(String, String); 0] = [];
     #[cfg(all(feature = "metrics", feature = "detailed_metrics"))]
@@ -258,7 +259,7 @@ where
         tokio::select! {
             biased;
             // Handle signals first
-            signal = signal_mailbox.recv() => {
+            signal = signal_mailbox.recv(), if has_sender => {
                 #[cfg(feature = "metrics")]
                 metrics::increment_counter!("lunatic.process.signals.received", &labels);
 
@@ -322,7 +323,10 @@ where
                             DeathReason::Normal => {},
                         }
                     },
-                    Err(_) => unreachable!("The process holds the sending side and is not closed")
+                    Err(_) => {
+                        debug_assert!(has_sender);
+                        has_sender = false;
+                    }
                 }
             }
             // Run process
