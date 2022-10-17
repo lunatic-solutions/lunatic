@@ -29,6 +29,8 @@ pub fn register<T: ProcessState + ProcessCtx<T> + NetworkingCtx + Send + 'static
     linker.func_wrap("lunatic::message", "data_size", data_size)?;
     linker.func_wrap("lunatic::message", "push_tcp_stream", push_tcp_stream)?;
     linker.func_wrap("lunatic::message", "take_tcp_stream", take_tcp_stream)?;
+    linker.func_wrap("lunatic::message", "push_tls_stream", push_tls_stream)?;
+    linker.func_wrap("lunatic::message", "take_tls_stream", take_tls_stream)?;
     linker.func_wrap("lunatic::message", "send", send)?;
     linker.func_wrap2_async(
         "lunatic::message",
@@ -311,6 +313,62 @@ fn take_tcp_stream<T: ProcessState + ProcessCtx<T> + NetworkingCtx>(
         }
     };
     Ok(caller.data_mut().tcp_stream_resources_mut().add(tcp_stream))
+}
+
+// move tls stream
+
+// Adds a tls stream resource to the message that is currently in the scratch area and returns
+// the new location of it. This will remove the tls stream from  the current process' resources.
+//
+// Traps:
+// * If TLS stream ID doesn't exist
+// * If no data message is in the scratch area.
+fn push_tls_stream<T: ProcessState + ProcessCtx<T> + NetworkingCtx>(
+    mut caller: Caller<T>,
+    stream_id: u64,
+) -> Result<u64, Trap> {
+    let resources = caller.data_mut().tls_stream_resources_mut();
+    let stream = resources
+        .remove(stream_id)
+        .or_trap("lunatic::message::push_tls_stream")?;
+    let message = caller
+        .data_mut()
+        .message_scratch_area()
+        .as_mut()
+        .or_trap("lunatic::message::push_tls_stream")?;
+    let index = match message {
+        Message::Data(data) => data.add_tls_stream(stream) as u64,
+        Message::LinkDied(_) => {
+            return Err(Trap::new("Unexpected `Message::LinkDied` in scratch area"))
+        }
+    };
+    Ok(index)
+}
+
+// Takes the tls stream from the message that is currently in the scratch area by index, puts
+// it into the process' resources and returns the resource ID.
+//
+// Traps:
+// * If index ID doesn't exist or matches the wrong resource (not a tls stream).
+// * If no data message is in the scratch area.
+fn take_tls_stream<T: ProcessState + ProcessCtx<T> + NetworkingCtx>(
+    mut caller: Caller<T>,
+    index: u64,
+) -> Result<u64, Trap> {
+    let message = caller
+        .data_mut()
+        .message_scratch_area()
+        .as_mut()
+        .or_trap("lunatic::message::take_tls_stream")?;
+    let tls_stream = match message {
+        Message::Data(data) => data
+            .take_tls_stream(index as usize)
+            .or_trap("lunatic::message::take_tls_stream")?,
+        Message::LinkDied(_) => {
+            return Err(Trap::new("Unexpected `Message::LinkDied` in scratch area"))
+        }
+    };
+    Ok(caller.data_mut().tls_stream_resources_mut().add(tls_stream))
 }
 
 // Sends the message to a process.
