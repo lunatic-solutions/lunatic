@@ -30,13 +30,17 @@ fn open<T: ProcessState + ErrorCtx + SQLiteCtx>(
     path_str_len: u32,
     connection_id_ptr: u32,
 ) -> Result<u32, Trap> {
+    // obtain the memory and the state
     let memory = get_memory(&mut caller)?;
     let (memory_slice, _state) = memory.data_and_store_mut(&mut caller);
+
+    // obtain the path as a byte slice reference
     let path = memory_slice
         .get(path_str_ptr as usize..(path_str_ptr + path_str_len) as usize)
         .or_trap("lunatic::sqlite::open")?;
     let path = std::str::from_utf8(path).or_trap("lunatic::sqlite::open")?;
 
+    // call the open function, and define the return code
     let (conn_or_err_id, return_code) = match sqlite::open(path) {
         Ok(conn) => (
             caller
@@ -48,6 +52,7 @@ fn open<T: ProcessState + ErrorCtx + SQLiteCtx>(
         Err(error) => (caller.data_mut().error_resources_mut().add(error.into()), 1),
     };
 
+    // write the result into memory and return the return code
     let memory = get_memory(&mut caller)?;
     memory
         .write(
@@ -72,6 +77,7 @@ fn execute<T: ProcessState + ErrorCtx + SQLiteCtx>(
         .or_trap("lunatic::sqlite::execute")?;
     let exec = std::str::from_utf8(exec).or_trap("lunatic::sqlite::execute")?;
 
+    // execute a single sqlite query
     state
         .sqlite_resources()
         .get(conn_id)
@@ -186,10 +192,10 @@ fn query<T: ProcessState + ErrorCtx + SQLiteCtx>(
 }
 
 enum ColumnType {
-    Binary = 0x00,  // has a header that indicates the length (4 bytes long)
-    Float = 0x01,   // occupies 4 (or better 8?) bytes
-    Integer = 0x02, // occupies 4 bytes
-    String = 0x03,  // has 2 (or better 4?) bytes of length
+    Binary = 0x00,  // has 4 bytes of length header, followed by the bytes
+    Float = 0x01,   // occupies 8 bytes f64
+    Integer = 0x02, // occupies 8 bytes i64
+    String = 0x03,  // has 4 bytes of length header, followed by the bytes
     Null = 0x04,    // has no variable header, in fact occupies only single byte
     NewRow = 0x05,  // indicates end of the row
 }
