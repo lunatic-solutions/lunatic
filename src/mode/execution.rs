@@ -22,7 +22,7 @@ pub(crate) async fn execute() -> Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).init();
 
     // Parse command line arguments
-    let args = Command::new("lunatic")
+    let command = Command::new("lunatic")
         .version(crate_version!())
         .arg(
             Arg::new("dir")
@@ -100,8 +100,26 @@ pub(crate) async fn execute() -> Result<()> {
                 .conflicts_with("no_entry")
                 .multiple_values(true)
                 .index(2),
+        );
+
+    #[cfg(feature = "prometheus")]
+    let command = command
+        .arg(
+            Arg::new("prometheus")
+                .long("prometheus")
+                .help("whether to enable the prometheus metrics exporter"),
         )
-        .get_matches();
+        .arg(
+            Arg::new("prometheus_http")
+                .long("prometheus-http")
+                .value_name("PROMETHEUS_HTTP_ADDRESS")
+                .help("The address to bind the prometheus http listener to")
+                .requires("prometheus")
+                .takes_value(true)
+                .default_value("0.0.0.0:9927"),
+        );
+
+    let args = command.get_matches();
 
     if args.is_present("test_ca") {
         log::warn!("Do not use test Certificate Authority in production!")
@@ -184,6 +202,24 @@ pub(crate) async fn execute() -> Result<()> {
         } else {
             (None, None, None)
         };
+
+    #[cfg(feature = "prometheus")]
+    if args.is_present("prometheus") {
+        let builder = metrics_exporter_prometheus::PrometheusBuilder::new();
+        let builder = if let Some(addr) = args.value_of("prometheus_http") {
+            builder.with_http_listener(addr.parse::<std::net::SocketAddr>().unwrap())
+        } else {
+            builder
+        };
+
+        let builder = if let Some(node_id) = node_id {
+            builder.add_global_label("node_id", node_id.to_string())
+        } else {
+            builder
+        };
+
+        builder.install().unwrap()
+    }
 
     let mut config = DefaultProcessConfig::default();
     // Allow initial process to compile modules, create configurations and spawn sub-processes

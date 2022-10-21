@@ -86,7 +86,7 @@ hundreds of thousands of such processes concurrently running in your app.
 Some common use cases for processes are:
 
 - HTTP request handling
-- Long running requests, like Websocket connections
+- Long running requests, like WebSocket connections
 - Long running background tasks, like email sending
 - Calling untrusted libraries in an sandboxed environment
 

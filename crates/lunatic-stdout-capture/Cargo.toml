@@ -10,5 +10,5 @@ license = "Apache-2.0/MIT"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-wiggle = "^0.39"
-wasi-common = "^0.39"
+wiggle = "^1" # must reflect wasmtime controlled via Cargo.toml
+wasi-common = "^1" # managed by root Cargo.toml

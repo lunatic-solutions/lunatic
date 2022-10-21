@@ -1,19 +1,21 @@
 [package]
-name = "lunatic-networking-api"
-version = "0.10.0"
-edition = "2021"
 description = "Lunatic host functions for tcp and udp networking."
+edition = "2021"
 homepage = "https://lunatic.solutions"
-repository = "https://github.com/lunatic-solutions/lunatic/tree/main/crates/lunatic-networking-api"
 license = "Apache-2.0/MIT"
-
+name = "lunatic-networking-api"
+repository = "https://github.com/lunatic-solutions/lunatic/tree/main/crates/lunatic-networking-api"
+version = "0.10.0"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 anyhow = "^1.0"
-wasmtime = "^0.39"
+wasmtime = "^1" # managed by root Cargo.toml
 tokio = { version = "^1.20", features = ["macros", "rt-multi-thread", "sync", "net", "time", "io-util"] }
 hash-map-id = { version = "^0.10", path = "../hash-map-id" }
 lunatic-common-api = { version = "^0.10", path = "../lunatic-common-api" }
 lunatic-error-api = { version = "^0.10", path = "../lunatic-error-api" }
+rustls-pemfile = {version = "^1.0"}
+tokio-rustls = "0.23.4"
+webpki-roots = "0.22.0"

@@ -78,7 +78,9 @@ fn get_nodes<T: DistributedCtx>(
 //  - 0x7F => i32
 //  - 0x7E => i64
 //  - 0x7B => v128
-// If any other value is used as type ID, this function will trap.
+// If any other value is used as type ID, this function will trap. If your type
+// would ordinarily occupy fewer than 16 bytes (e.g. in an i32 or i64), you MUST
+// first convert it to an i128.
 //
 // Returns:
 // * 0 on success - The ID of the newly created process is written to `id_ptr`

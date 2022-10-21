@@ -10,7 +10,7 @@ use std::{
     sync::Arc,
 };
 
-use lunatic_networking_api::TcpConnection;
+use lunatic_networking_api::{TcpConnection, TlsConnection};
 use tokio::net::UdpSocket;
 
 use crate::{runtimes::wasmtime::WasmtimeCompiledModule, Process};
@@ -33,6 +33,16 @@ impl<T> Message<T> {
         match self {
             Message::Data(message) => message.tag,
             Message::LinkDied(tag) => *tag,
+        }
+    }
+
+    #[cfg(feature = "metrics")]
+    pub fn write_metrics(&self) {
+        match self {
+            Message::Data(message) => message.write_metrics(),
+            Message::LinkDied(_) => {
+                metrics::increment_counter!("lunatic.process.messages.link_died.count");
+            }
         }
     }
 }
@@ -91,6 +101,12 @@ impl<T> DataMessage<T> {
     /// Adds a UDP socket to the message and returns the index of it inside of the message
     pub fn add_udp_socket(&mut self, udp_socket: Arc<UdpSocket>) -> usize {
         self.resources.push(Resource::UdpSocket(udp_socket));
+        self.resources.len() - 1
+    }
+
+    /// Adds a TLS stream to the message and returns the index of it inside of the message
+    pub fn add_tls_stream(&mut self, tls_stream: Arc<TlsConnection>) -> usize {
+        self.resources.push(Resource::TlsStream(tls_stream));
         self.resources.len() - 1
     }
 
@@ -174,6 +190,26 @@ impl<T> DataMessage<T> {
         None
     }
 
+    /// Takes a TLS stream from the message, but preserves the indexes of all others.
+    ///
+    /// If the index is out of bound or the resource is not a tcp stream the function will return
+    /// None.
+    pub fn take_tls_stream(&mut self, index: usize) -> Option<Arc<TlsConnection>> {
+        if let Some(resource_ref) = self.resources.get_mut(index) {
+            let resource = std::mem::replace(resource_ref, Resource::None);
+            match resource {
+                Resource::TlsStream(stream) => {
+                    return Some(stream);
+                }
+                other => {
+                    // Put the resource back if it's not a tcp stream and drop empty.
+                    let _ = std::mem::replace(resource_ref, other);
+                }
+            }
+        }
+        None
+    }
+
     /// Moves read pointer to index.
     pub fn seek(&mut self, index: usize) {
         self.read_ptr = index;
@@ -181,6 +217,16 @@ impl<T> DataMessage<T> {
 
     pub fn size(&self) -> usize {
         self.buffer.len()
+    }
+
+    #[cfg(feature = "metrics")]
+    pub fn write_metrics(&self) {
+        metrics::increment_counter!("lunatic.process.messages.data.count");
+        metrics::histogram!(
+            "lunatic.process.messages.data.resources.count",
+            self.resources.len() as f64
+        );
+        metrics::histogram!("lunatic.process.messages.data.size", self.size() as f64);
     }
 }
 
@@ -219,6 +265,7 @@ pub enum Resource<T> {
     Module(Arc<WasmtimeCompiledModule<T>>),
     TcpStream(Arc<TcpConnection>),
     UdpSocket(Arc<UdpSocket>),
+    TlsStream(Arc<TlsConnection>),
 }
 
 impl<T> Debug for Resource<T> {
@@ -229,6 +276,7 @@ impl<T> Debug for Resource<T> {
             Self::Module(_) => write!(f, "Module"),
             Self::TcpStream(_) => write!(f, "TcpStream"),
             Self::UdpSocket(_) => write!(f, "UdpSocket"),
+            Self::TlsStream(_) => write!(f, "TlsStream"),
         }
     }
 }
