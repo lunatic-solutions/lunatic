@@ -8,17 +8,20 @@ use lunatic_distributed::{DistributedCtx, DistributedProcessState};
 use lunatic_error_api::{ErrorCtx, ErrorResource};
 use lunatic_networking_api::{DnsIterator, TlsConnection, TlsListener};
 use lunatic_networking_api::{NetworkingCtx, TcpConnection};
-use lunatic_process::config::ProcessConfig;
 use lunatic_process::env::Environment;
 use lunatic_process::runtimes::wasmtime::{WasmtimeCompiledModule, WasmtimeRuntime};
 use lunatic_process::state::{ConfigResources, ProcessState};
-use lunatic_process::{mailbox::MessageMailbox, message::Message, Signal};
+use lunatic_process::{
+    config::ProcessConfig,
+    state::{SignalReceiver, SignalSender},
+};
+use lunatic_process::{mailbox::MessageMailbox, message::Message};
 use lunatic_process_api::{ProcessConfigCtx, ProcessCtx};
 use lunatic_stdout_capture::StdoutCapture;
 use lunatic_timer_api::{TimerCtx, TimerResources};
 use lunatic_wasi_api::{build_wasi, LunaticWasiCtx};
 use tokio::net::{TcpListener, UdpSocket};
-use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
+use tokio::sync::mpsc::unbounded_channel;
 use tokio::sync::Mutex;
 use wasmtime::{Linker, ResourceLimiter};
 use wasmtime_wasi::WasiCtx;
@@ -43,10 +46,7 @@ pub struct DefaultProcessState {
     // `message` as a temp space to store messages across host calls.
     message: Option<Message<Self>>,
     // Signals sent to the mailbox
-    signal_mailbox: (
-        UnboundedSender<Signal<Self>>,
-        Arc<Mutex<UnboundedReceiver<Signal<Self>>>>,
-    ),
+    signal_mailbox: (SignalSender<Self>, SignalReceiver<Self>),
     // Messages sent to the process
     message_mailbox: MessageMailbox<Self>,
     // Resources
@@ -201,12 +201,7 @@ impl ProcessState for DefaultProcessState {
         self.id
     }
 
-    fn signal_mailbox(
-        &self,
-    ) -> &(
-        UnboundedSender<Signal<Self>>,
-        Arc<Mutex<UnboundedReceiver<Signal<Self>>>>,
-    ) {
+    fn signal_mailbox(&self) -> &(SignalSender<Self>, SignalReceiver<Self>) {
         &self.signal_mailbox
     }
 
