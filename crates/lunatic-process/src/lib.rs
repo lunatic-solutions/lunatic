@@ -401,7 +401,7 @@ impl<T> Clone for NativeProcess<T> {
 ///
 /// ## Example:
 ///
-/// ```no_run
+/// ```no_run,ignore
 /// let env = lunatic_process::env::Environment::new(1);
 /// let _proc = env.spawn(|_this, mailbox| async move {
 ///     // Wait on a message with the tag `27`.
