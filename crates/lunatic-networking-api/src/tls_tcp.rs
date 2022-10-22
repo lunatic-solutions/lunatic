@@ -389,8 +389,7 @@ fn tls_connect<T: NetworkingCtx + ErrorCtx + Send>(
                         ta.name_constraints,
                     ))
                 })
-                .filter(|r: &Result<OwnedTrustAnchor, Trap>| r.is_ok())
-                .map(|r| r.unwrap());
+                .filter_map(|r: Result<OwnedTrustAnchor, Trap>| r.ok());
             root_cert_store.add_server_trust_anchors(trust_anchors);
         } else {
             root_cert_store.add_server_trust_anchors(webpki_roots::TLS_SERVER_ROOTS.0.iter().map(
