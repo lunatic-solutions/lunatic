@@ -7,11 +7,14 @@ use sqlite::Connection;
 use std::{io::Write, sync::Mutex};
 use wasmtime::{Caller, Linker, Trap};
 
-pub type SQLiteResource = HashMapId<Mutex<Connection>>;
-
+pub type SQLiteConnections = HashMapId<Mutex<Connection>>;
+pub type SQLiteResults = HashMapId<Vec<u8>>;
 pub trait SQLiteCtx {
-    fn sqlite_resources(&self) -> &SQLiteResource;
-    fn sqlite_resources_mut(&mut self) -> &mut SQLiteResource;
+    fn sqlite_results(&self) -> &SQLiteResults;
+    fn sqlite_results_mut(&self) -> &mut SQLiteResults;
+
+    fn sqlite_connections(&self) -> &SQLiteConnections;
+    fn sqlite_connections_mut(&mut self) -> &mut SQLiteConnections;
 }
 
 // Register the SqlLite apis
@@ -19,7 +22,9 @@ pub fn register<T: SQLiteCtx + ProcessState + Send + ErrorCtx + 'static>(
     linker: &mut Linker<T>,
 ) -> Result<()> {
     linker.func_wrap("lunatic::sqlite", "open", open)?;
-    linker.func_wrap("lunatic::sqlite", "query", query)?;
+    linker.func_wrap("lunatic::sqlite", "query_prepare", query_prepare)?;
+    linker.func_wrap("lunatic::sqlite", "query_result_get", query_result_get)?;
+    linker.func_wrap("lunatic::sqlite", "drop_query_result", drop_query_result)?;
     linker.func_wrap("lunatic::sqlite", "execute", execute)?;
     Ok(())
 }
@@ -45,7 +50,7 @@ fn open<T: ProcessState + ErrorCtx + SQLiteCtx>(
         Ok(conn) => (
             caller
                 .data_mut()
-                .sqlite_resources_mut()
+                .sqlite_connections_mut()
                 .add(Mutex::new(conn)),
             0,
         ),
@@ -79,7 +84,7 @@ fn execute<T: ProcessState + ErrorCtx + SQLiteCtx>(
 
     // execute a single sqlite query
     state
-        .sqlite_resources()
+        .sqlite_connections()
         .get(conn_id)
         .or_trap("lunatic::sqlite::execute")?
         .lock()
@@ -88,14 +93,14 @@ fn execute<T: ProcessState + ErrorCtx + SQLiteCtx>(
         .or_trap("lunatic::sqlite::execute")
 }
 
-fn query<T: ProcessState + ErrorCtx + SQLiteCtx>(
+fn query_prepare<T: ProcessState + ErrorCtx + SQLiteCtx>(
     mut caller: Caller<T>,
     conn_id: u64,
     query_str_ptr: u32,
     query_str_len: u32,
-    data_ptr: u32,
-    data_len: u32,
-) -> Result<u32, Trap> {
+    len_ptr: u32,
+    resource_ptr: u32,
+) -> Result<(), Trap> {
     // get the memory
     let memory = get_memory(&mut caller)?;
     let (memory_slice, state) = memory.data_and_store_mut(&mut caller);
@@ -103,21 +108,21 @@ fn query<T: ProcessState + ErrorCtx + SQLiteCtx>(
     // get the query
     let query = memory_slice
         .get(query_str_ptr as usize..(query_str_ptr + query_str_len) as usize)
-        .or_trap("lunatic::sqlite::query::get_query")?;
-    let query = std::str::from_utf8(query).or_trap("lunatic::sqlite::query::from_utf8")?;
+        .or_trap("lunatic::sqlite::query_prepare::get_query")?;
+    let query = std::str::from_utf8(query).or_trap("lunatic::sqlite::query_prepare::from_utf8")?;
 
     // obtain the sqlite connection
     let conn = state
-        .sqlite_resources()
+        .sqlite_connections()
         .get(conn_id)
-        .or_trap("lunatic::sqlite::query::obtain_conn")?
+        .or_trap("lunatic::sqlite::query_prepare::obtain_conn")?
         .lock()
-        .or_trap("lunatic::sqlite::query::obtain_conn")?;
+        .or_trap("lunatic::sqlite::query_prepare::obtain_conn")?;
 
     // prepare the statement
     let mut statement = conn
         .prepare(query)
-        .or_trap("lunatic::sqlite::query::prepare_statement")?;
+        .or_trap("lunatic::sqlite::query_prepare::prepare_statement")?;
 
     // allocate a vec to return some bytes back to the module
     let mut return_value = Vec::new();
@@ -129,7 +134,7 @@ fn query<T: ProcessState + ErrorCtx + SQLiteCtx>(
                 sqlite::Type::Binary => {
                     let mut bytes = statement
                         .read::<Vec<u8>>(i)
-                        .or_trap("lunatic::sqlite::query::read_binary")?;
+                        .or_trap("lunatic::sqlite::query_prepare::read_binary")?;
 
                     let len = bytes.len();
                     let mut result = vec![ColumnType::Binary as u8];
@@ -142,7 +147,7 @@ fn query<T: ProcessState + ErrorCtx + SQLiteCtx>(
                     result.append(
                         &mut statement
                             .read::<f64>(i)
-                            .or_trap("lunatic::sqlite::query::read_float")?
+                            .or_trap("lunatic::sqlite::query_prepare::read_float")?
                             .to_le_bytes()
                             .to_vec(),
                     );
@@ -153,7 +158,7 @@ fn query<T: ProcessState + ErrorCtx + SQLiteCtx>(
                     result.append(
                         &mut statement
                             .read::<i64>(i)
-                            .or_trap("lunatic::sqlite::query::read_integer")?
+                            .or_trap("lunatic::sqlite::query_prepare::read_integer")?
                             .to_le_bytes()
                             .to_vec(),
                     );
@@ -162,7 +167,7 @@ fn query<T: ProcessState + ErrorCtx + SQLiteCtx>(
                 sqlite::Type::String => {
                     let bytes = statement
                         .read::<String>(i)
-                        .or_trap("lunatic::sqlite::query::read_string")?;
+                        .or_trap("lunatic::sqlite::query_prepare::read_string")?;
 
                     let len = bytes.len();
                     let mut result = vec![ColumnType::String as u8];
@@ -178,17 +183,67 @@ fn query<T: ProcessState + ErrorCtx + SQLiteCtx>(
         return_value.push(ColumnType::NewRow as u8);
     }
 
-    // write data into memory
+    // write length into memory
     let mut slice = memory_slice
-        .get_mut(data_ptr as usize..(data_ptr as usize + data_len as usize))
-        .or_trap("lunatic::sqlite::query::write_memory")?;
+        .get_mut(len_ptr as usize..(len_ptr as usize + 8 as usize))
+        .or_trap("lunatic::sqlite::query_prepare::write_memory")?;
     slice
-        .write(return_value.as_slice())
-        .or_trap("lunatic::sqlite::query::write_memory")?;
+        .write(&(return_value.len() as u64).to_le_bytes())
+        .or_trap("lunatic::sqlite::query_prepare::write_memory")?;
 
-    let return_len = return_value.len() as u32;
+    // store the result of the query
+    let results = state.sqlite_results_mut();
+    let result_id = results.add(return_value);
+        
+    // write the result_id into memory
+    let mut slice = memory_slice
+        .get_mut(resource_ptr as usize..(resource_ptr as usize + 8))
+        .or_trap("lunatic::sqlite::query_prepare::write_memory")?;
 
-    Ok(return_len)
+    slice.write(&result_id.to_le_bytes())
+        .or_trap("lunatic::sqlite::query_prepare::write_memory")?;
+    
+    Ok(())
+}
+
+fn query_result_get<T: ProcessState + ErrorCtx + SQLiteCtx>(
+    mut caller: Caller<T>,
+    resource_id: u64,
+    data_ptr: u32,
+    data_len: u32,
+) -> Result<(), Trap> {
+    // get the memory and the state
+    let memory = get_memory(&mut caller)?;
+    let (memory_slice, state) = memory.data_and_store_mut(&mut caller);
+
+    // get the vevtor
+    let result = state.sqlite_results()
+        .get(resource_id)
+        .or_trap("lunatic::sqlite::query_result_get::get_result")?;
+
+     memory_slice
+        .get_mut(data_ptr as usize..(data_ptr + data_len) as usize)
+        .or_trap("lunatic::sqlite::query_result_get::write_result")?
+        .write(result)
+        .or_trap("lunatic::sqlite::query_result_get::write_result")?;
+    
+    Ok(())
+}
+
+fn drop_query_result <T: ProcessState + ErrorCtx + SQLiteCtx>(
+    mut caller: Caller<T>,
+    resource_id: u64
+) -> Result<(), Trap> {
+    // get state
+    let memory = get_memory(&mut caller)?;
+    let (_, state) = memory
+        .data_and_store_mut(&mut caller);
+
+    let resoruces = state.sqlite_results_mut();
+    resoruces.remove(resource_id)
+        .or_trap("lunatic::sqlite::drop_query_result")?;
+    
+    Ok(())
 }
 
 enum ColumnType {
@@ -199,3 +254,4 @@ enum ColumnType {
     Null = 0x04,    // has no variable header, in fact occupies only single byte
     NewRow = 0x05,  // indicates end of the row
 }
+
