@@ -232,15 +232,15 @@ fn query_result_get<T: ProcessState + ErrorCtx + SQLiteCtx>(
 
 fn drop_query_result <T: ProcessState + ErrorCtx + SQLiteCtx>(
     mut caller: Caller<T>,
-    resource_id: u64
+    result_id: u64
 ) -> Result<(), Trap> {
     // get state
     let memory = get_memory(&mut caller)?;
     let (_, state) = memory
         .data_and_store_mut(&mut caller);
 
-    let resoruces = state.sqlite_results_mut();
-    resoruces.remove(resource_id)
+    let results = state.sqlite_results_mut();
+    results.remove(result_id)
         .or_trap("lunatic::sqlite::drop_query_result")?;
     
     Ok(())
