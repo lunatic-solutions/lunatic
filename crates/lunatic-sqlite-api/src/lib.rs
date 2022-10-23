@@ -194,15 +194,16 @@ fn query_prepare<T: ProcessState + ErrorCtx + SQLiteCtx>(
     // store the result of the query
     let results = state.sqlite_results_mut();
     let result_id = results.add(return_value);
-        
+
     // write the result_id into memory
     let mut slice = memory_slice
         .get_mut(resource_ptr as usize..(resource_ptr as usize + 8))
         .or_trap("lunatic::sqlite::query_prepare::write_memory")?;
 
-    slice.write(&result_id.to_le_bytes())
+    slice
+        .write(&result_id.to_le_bytes())
         .or_trap("lunatic::sqlite::query_prepare::write_memory")?;
-    
+
     Ok(())
 }
 
@@ -217,32 +218,33 @@ fn query_result_get<T: ProcessState + ErrorCtx + SQLiteCtx>(
     let (memory_slice, state) = memory.data_and_store_mut(&mut caller);
 
     // get the vevtor
-    let result = state.sqlite_results()
+    let result = state
+        .sqlite_results()
         .get(resource_id)
         .or_trap("lunatic::sqlite::query_result_get::get_result")?;
 
-     memory_slice
+    memory_slice
         .get_mut(data_ptr as usize..(data_ptr + data_len) as usize)
         .or_trap("lunatic::sqlite::query_result_get::write_result")?
         .write(result)
         .or_trap("lunatic::sqlite::query_result_get::write_result")?;
-    
+
     Ok(())
 }
 
-fn drop_query_result <T: ProcessState + ErrorCtx + SQLiteCtx>(
+fn drop_query_result<T: ProcessState + ErrorCtx + SQLiteCtx>(
     mut caller: Caller<T>,
-    result_id: u64
+    result_id: u64,
 ) -> Result<(), Trap> {
     // get state
     let memory = get_memory(&mut caller)?;
-    let (_, state) = memory
-        .data_and_store_mut(&mut caller);
+    let (_, state) = memory.data_and_store_mut(&mut caller);
 
     let results = state.sqlite_results_mut();
-    results.remove(result_id)
+    results
+        .remove(result_id)
         .or_trap("lunatic::sqlite::drop_query_result")?;
-    
+
     Ok(())
 }
 
@@ -254,4 +256,3 @@ enum ColumnType {
     Null = 0x04,    // has no variable header, in fact occupies only single byte
     NewRow = 0x05,  // indicates end of the row
 }
-
