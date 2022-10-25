@@ -91,14 +91,6 @@ impl DataMessage {
         self.resources.len() - 1
     }
 
-    // /// Takes a process from the message, but preserves the indexes of all others.
-    // ///
-    // /// If the index is out of bound or the resource is not a process the function will return
-    // /// None.
-    // pub fn take_process(&mut self, index: usize) -> Option<Arc<dyn Process>> {
-    //     self.take_downcast(index)
-    // }
-
     /// Takes a module from the message, but preserves the indexes of all others.
     ///
     /// If the index is out of bound or the resource is not a module the function will return
