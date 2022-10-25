@@ -31,7 +31,7 @@ use crate::DefaultProcessConfig;
 pub struct DefaultProcessState {
     // Process id
     pub(crate) id: u64,
-    pub(crate) environment: Environment<Self>,
+    pub(crate) environment: Environment,
     pub(crate) distributed: Option<DistributedProcessState>,
     // The WebAssembly runtime
     runtime: Option<WasmtimeRuntime>,
@@ -44,11 +44,11 @@ pub struct DefaultProcessState {
     // receiving messages is done in two steps, first the message size is returned to allow the
     // guest to reserve enough space and then the it's received. Both of those actions use
     // `message` as a temp space to store messages across host calls.
-    message: Option<Message<Self>>,
+    message: Option<Message>,
     // Signals sent to the mailbox
-    signal_mailbox: (SignalSender<Self>, SignalReceiver<Self>),
+    signal_mailbox: (SignalSender, SignalReceiver),
     // Messages sent to the process
-    message_mailbox: MessageMailbox<Self>,
+    message_mailbox: MessageMailbox,
     // Resources
     resources: Resources,
     // WASI
@@ -65,7 +65,7 @@ pub struct DefaultProcessState {
 
 impl DefaultProcessState {
     pub fn new(
-        environment: Environment<Self>,
+        environment: Environment,
         distributed: Option<DistributedProcessState>,
         runtime: WasmtimeRuntime,
         module: Arc<WasmtimeCompiledModule<Self>>,
@@ -201,11 +201,11 @@ impl ProcessState for DefaultProcessState {
         self.id
     }
 
-    fn signal_mailbox(&self) -> &(SignalSender<Self>, SignalReceiver<Self>) {
+    fn signal_mailbox(&self) -> &(SignalSender, SignalReceiver) {
         &self.signal_mailbox
     }
 
-    fn message_mailbox(&self) -> &MessageMailbox<Self> {
+    fn message_mailbox(&self) -> &MessageMailbox {
         &self.message_mailbox
     }
 
@@ -269,11 +269,11 @@ impl ErrorCtx for DefaultProcessState {
 }
 
 impl ProcessCtx<DefaultProcessState> for DefaultProcessState {
-    fn mailbox(&mut self) -> &mut MessageMailbox<Self> {
+    fn mailbox(&mut self) -> &mut MessageMailbox {
         &mut self.message_mailbox
     }
 
-    fn message_scratch_area(&mut self) -> &mut Option<Message<Self>> {
+    fn message_scratch_area(&mut self) -> &mut Option<Message> {
         &mut self.message
     }
 
@@ -287,7 +287,7 @@ impl ProcessCtx<DefaultProcessState> for DefaultProcessState {
         &mut self.resources.modules
     }
 
-    fn environment(&self) -> &lunatic_process::env::Environment<Self> {
+    fn environment(&self) -> &lunatic_process::env::Environment {
         &self.environment
     }
 }
@@ -427,7 +427,7 @@ impl DistributedCtx for DefaultProcessState {
     }
 
     fn new_dist_state(
-        environment: Environment<Self>,
+        environment: Environment,
         distributed: DistributedProcessState,
         runtime: WasmtimeRuntime,
         module: Arc<WasmtimeCompiledModule<Self>>,

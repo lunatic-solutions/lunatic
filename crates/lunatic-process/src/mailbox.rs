@@ -16,52 +16,27 @@ use crate::message::Message;
 ///
 /// This should be cancellation safe and can be used inside `tokio::select!` statements:
 /// https://docs.rs/tokio/1.10.0/tokio/macro.select.html#cancellation-safety
-pub struct MessageMailbox<T> {
-    inner: Arc<Mutex<InnerMessageMailbox<T>>>,
+#[derive(Clone, Default)]
+pub struct MessageMailbox {
+    inner: Arc<Mutex<InnerMessageMailbox>>,
 }
 
-impl<T> Clone for MessageMailbox<T> {
-    fn clone(&self) -> Self {
-        Self {
-            inner: self.inner.clone(),
-        }
-    }
-}
-
-impl<T> Default for MessageMailbox<T> {
-    fn default() -> Self {
-        Self {
-            inner: Default::default(),
-        }
-    }
-}
-
-struct InnerMessageMailbox<T> {
+#[derive(Default)]
+struct InnerMessageMailbox {
     waker: Option<Waker>,
     tags: Option<Vec<i64>>,
-    found: Option<Message<T>>,
-    messages: VecDeque<Message<T>>,
+    found: Option<Message>,
+    messages: VecDeque<Message>,
 }
 
-impl<T> Default for InnerMessageMailbox<T> {
-    fn default() -> Self {
-        Self {
-            waker: Default::default(),
-            tags: Default::default(),
-            found: Default::default(),
-            messages: Default::default(),
-        }
-    }
-}
-
-impl<T> MessageMailbox<T> {
+impl MessageMailbox {
     /// Return message in FIFO order from mailbox.
     ///
     /// If function is called with a `tags` value different from None, it will only return the first
     /// message matching any of the tags.
     ///
     /// If no message exist, blocks until a message is received.
-    pub async fn pop(&self, tags: Option<&[i64]>) -> Message<T> {
+    pub async fn pop(&self, tags: Option<&[i64]>) -> Message {
         // Mailbox lock must be released before .await
         {
             let mut mailbox = self.inner.lock().expect("only accessed by one process");
@@ -117,7 +92,7 @@ impl<T> MessageMailbox<T> {
     /// When using this function we need to make sure that sending a specific tag and waiting on it
     /// doesn't contain any `.await` calls in-between. This implementation detail can be hidden
     /// inside of atomic host function calls so that end users don't need to worry about it.
-    pub async fn pop_skip_search(&self, tags: Option<&[i64]>) -> Message<T> {
+    pub async fn pop_skip_search(&self, tags: Option<&[i64]>) -> Message {
         // Mailbox lock must be released before .await
         {
             let mut mailbox = self.inner.lock().expect("only accessed by one process");
@@ -138,7 +113,7 @@ impl<T> MessageMailbox<T> {
     ///
     /// If the message is being .awaited on, this call will immediately notify the waker that it's
     /// ready, otherwise it will push it at the end of the queue.
-    pub fn push(&self, message: Message<T>) {
+    pub fn push(&self, message: Message) {
         let mut mailbox = self.inner.lock().expect("only accessed by one process");
         // If waiting on a new message notify executor that it arrived.
         if let Some(waker) = mailbox.waker.take() {
@@ -179,8 +154,8 @@ impl<T> MessageMailbox<T> {
     }
 }
 
-impl<T> Future for &MessageMailbox<T> {
-    type Output = Message<T>;
+impl Future for &MessageMailbox {
+    type Output = Message;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let mut mailbox = self.inner.lock().expect("only accessed by one process");
@@ -205,7 +180,7 @@ mod tests {
 
     #[tokio::test]
     async fn no_tags_signal_message() {
-        let mailbox = MessageMailbox::<()>::default();
+        let mailbox = MessageMailbox::default();
         let message = Message::LinkDied(None);
         mailbox.push(message);
         let result = mailbox.pop(None).await;
@@ -217,7 +192,7 @@ mod tests {
 
     #[tokio::test]
     async fn tag_signal_message() {
-        let mailbox = MessageMailbox::<()>::default();
+        let mailbox = MessageMailbox::default();
         let tag = 1337;
         let message = Message::LinkDied(Some(tag));
         mailbox.push(message);
@@ -227,7 +202,7 @@ mod tests {
 
     #[tokio::test]
     async fn selective_receive_tag_signal_message() {
-        let mailbox = MessageMailbox::<()>::default();
+        let mailbox = MessageMailbox::default();
         let tag1 = 1;
         let tag2 = 2;
         let tag3 = 3;
@@ -253,7 +228,7 @@ mod tests {
 
     #[tokio::test]
     async fn multiple_receive_tags_signal_message() {
-        let mailbox = MessageMailbox::<()>::default();
+        let mailbox = MessageMailbox::default();
         let tag1 = 1;
         let tag2 = 2;
         let tag3 = 3;
@@ -287,7 +262,7 @@ mod tests {
     }
     #[test]
     fn waiting_on_none_activates_waker() {
-        let mailbox = MessageMailbox::<()>::default();
+        let mailbox = MessageMailbox::default();
         // Sending a message with any tags to a mailbox that is "awaiting" a `None` tags should
         // trigger the waker and return the tags.
         let tags = Some(1337);
@@ -313,7 +288,7 @@ mod tests {
 
     #[test]
     fn waiting_on_tag_after_none() {
-        let mailbox = MessageMailbox::<()>::default();
+        let mailbox = MessageMailbox::default();
         // "Awaiting" a specific tags and receiving a `None` message should not trigger the waker.
         let waker = FlagWaker(Arc::new(Mutex::new(false)));
         let waker_ref = waker.clone();
@@ -344,7 +319,7 @@ mod tests {
 
     #[test]
     fn cancellation_safety() {
-        let mailbox = MessageMailbox::<()>::default();
+        let mailbox = MessageMailbox::default();
         // Manually poll future
         let waker = FlagWaker(Arc::new(Mutex::new(false)));
         let waker_ref = waker.clone();

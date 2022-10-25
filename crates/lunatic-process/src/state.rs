@@ -17,8 +17,8 @@ use crate::{
 };
 
 pub type ConfigResources<T> = HashMapId<T>;
-pub type SignalSender<T> = UnboundedSender<Signal<T>>;
-pub type SignalReceiver<T> = Arc<Mutex<UnboundedReceiver<Signal<T>>>>;
+pub type SignalSender = UnboundedSender<Signal>;
+pub type SignalReceiver = Arc<Mutex<UnboundedReceiver<Signal>>>;
 
 /// The internal state of a process.
 ///
@@ -56,9 +56,9 @@ pub trait ProcessState: Sized {
     // Returns process ID
     fn id(&self) -> u64;
     // Returns signal mailbox
-    fn signal_mailbox(&self) -> &(SignalSender<Self>, SignalReceiver<Self>);
+    fn signal_mailbox(&self) -> &(SignalSender, SignalReceiver);
     // Returns message mailbox
-    fn message_mailbox(&self) -> &MessageMailbox<Self>;
+    fn message_mailbox(&self) -> &MessageMailbox;
 
     // Config resources
     fn config_resources(&self) -> &ConfigResources<Self::Config>;

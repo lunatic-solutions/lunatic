@@ -268,7 +268,7 @@ fn data_size<T: ProcessState + ProcessCtx<T>>(mut caller: Caller<T>) -> Result<u
 // Traps:
 // * If module ID doesn't exist
 // * If no data message is in the scratch area.
-fn push_module<T: ProcessState + ProcessCtx<T> + NetworkingCtx>(
+fn push_module<T: ProcessState + ProcessCtx<T> + NetworkingCtx + 'static>(
     mut caller: Caller<T>,
     module_id: u64,
 ) -> Result<u64, Trap> {
@@ -284,7 +284,7 @@ fn push_module<T: ProcessState + ProcessCtx<T> + NetworkingCtx>(
         .as_mut()
         .or_trap("lunatic::message::push_module")?;
     let index = match message {
-        Message::Data(data) => data.add_module(module) as u64,
+        Message::Data(data) => data.add_resource(module) as u64,
         Message::LinkDied(_) => {
             return Err(Trap::new("Unexpected `Message::LinkDied` in scratch area"))
         }
@@ -298,7 +298,7 @@ fn push_module<T: ProcessState + ProcessCtx<T> + NetworkingCtx>(
 // Traps:
 // * If index ID doesn't exist or matches the wrong resource (not a module).
 // * If no data message is in the scratch area.
-fn take_module<T: ProcessState + ProcessCtx<T> + NetworkingCtx>(
+fn take_module<T: ProcessState + ProcessCtx<T> + NetworkingCtx + 'static>(
     mut caller: Caller<T>,
     index: u64,
 ) -> Result<u64, Trap> {
@@ -339,7 +339,7 @@ fn push_tcp_stream<T: ProcessState + ProcessCtx<T> + NetworkingCtx>(
         .as_mut()
         .or_trap("lunatic::message::push_tcp_stream")?;
     let index = match message {
-        Message::Data(data) => data.add_tcp_stream(stream) as u64,
+        Message::Data(data) => data.add_resource(stream) as u64,
         Message::LinkDied(_) => {
             return Err(Trap::new("Unexpected `Message::LinkDied` in scratch area"))
         }
@@ -395,7 +395,7 @@ fn push_tls_stream<T: ProcessState + ProcessCtx<T> + NetworkingCtx>(
         .as_mut()
         .or_trap("lunatic::message::push_tls_stream")?;
     let index = match message {
-        Message::Data(data) => data.add_tls_stream(stream) as u64,
+        Message::Data(data) => data.add_resource(stream) as u64,
         Message::LinkDied(_) => {
             return Err(Trap::new("Unexpected `Message::LinkDied` in scratch area"))
         }
@@ -594,7 +594,7 @@ fn push_udp_socket<T: ProcessState + ProcessCtx<T> + NetworkingCtx>(
         .as_mut()
         .or_trap("lunatic::message::push_udp_socket")?;
     let index = match message {
-        Message::Data(data) => data.add_udp_socket(socket) as u64,
+        Message::Data(data) => data.add_resource(socket) as u64,
         Message::LinkDied(_) => {
             return Err(Trap::new("Unexpected `Message::LinkDied` in scratch area"))
         }

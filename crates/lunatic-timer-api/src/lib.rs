@@ -125,7 +125,7 @@ pub fn register<T: ProcessState + ProcessCtx<T> + TimerCtx + Send + 'static>(
 // Traps:
 // * If the process ID doesn't exist.
 // * If it's called before creating the next message.
-fn send_after<T: ProcessState + ProcessCtx<T> + TimerCtx + 'static>(
+fn send_after<T: ProcessState + ProcessCtx<T> + TimerCtx>(
     mut caller: Caller<T>,
     process_id: u64,
     delay: u64,
