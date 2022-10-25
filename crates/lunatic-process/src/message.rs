@@ -5,6 +5,7 @@ kinds of messages, like the [`Message::LinkDied`], that is received if a linked 
 */
 
 use std::{
+    any::Any,
     fmt::Debug,
     io::{Read, Write},
     sync::Arc,
@@ -13,7 +14,9 @@ use std::{
 use lunatic_networking_api::{TcpConnection, TlsConnection};
 use tokio::net::UdpSocket;
 
-use crate::Process;
+use crate::runtimes::wasmtime::WasmtimeCompiledModule;
+
+pub type Resource = dyn Any + Send + Sync;
 
 /// Can be sent between processes by being embedded into a  [`Signal::Message`][0]
 ///
@@ -56,7 +59,7 @@ pub struct DataMessage {
     pub tag: Option<i64>,
     pub read_ptr: usize,
     pub buffer: Vec<u8>,
-    pub resources: Vec<Resource>,
+    pub resources: Vec<Option<Arc<Resource>>>,
 }
 
 impl DataMessage {
@@ -70,7 +73,7 @@ impl DataMessage {
         }
     }
 
-    /// Create a new message from a vec
+    /// Create a new message from a vec.
     pub fn new_from_vec(tag: Option<i64>, buffer: Vec<u8>) -> Self {
         Self {
             tag,
@@ -80,48 +83,23 @@ impl DataMessage {
         }
     }
 
-    /// Adds a process to the message and returns the index of it inside of the message
-    pub fn add_process(&mut self, process: Arc<dyn Process>) -> usize {
-        self.resources.push(Resource::Process(process));
-        self.resources.len() - 1
-    }
-
-    /// Adds a TCP stream to the message and returns the index of it inside of the message
-    pub fn add_tcp_stream(&mut self, tcp_stream: Arc<TcpConnection>) -> usize {
-        self.resources.push(Resource::TcpStream(tcp_stream));
-        self.resources.len() - 1
-    }
-
-    /// Adds a UDP socket to the message and returns the index of it inside of the message
-    pub fn add_udp_socket(&mut self, udp_socket: Arc<UdpSocket>) -> usize {
-        self.resources.push(Resource::UdpSocket(udp_socket));
-        self.resources.len() - 1
-    }
-
-    /// Adds a TLS stream to the message and returns the index of it inside of the message
-    pub fn add_tls_stream(&mut self, tls_stream: Arc<TlsConnection>) -> usize {
-        self.resources.push(Resource::TlsStream(tls_stream));
-        self.resources.len() - 1
-    }
-
-    /// Takes a process from the message, but preserves the indexes of all others.
+    /// Adds a resource to the message and returns the index of it inside of the message.
     ///
-    /// If the index is out of bound or the resource is not a process the function will return
+    /// The resource is `Any` and is downcasted when accessing later.
+    pub fn add_resource(&mut self, resource: Arc<Resource>) -> usize {
+        self.resources.push(Some(resource));
+        self.resources.len() - 1
+    }
+
+    /// Takes a module from the message, but preserves the indexes of all others.
+    ///
+    /// If the index is out of bound or the resource is not a module the function will return
     /// None.
-    pub fn take_process(&mut self, index: usize) -> Option<Arc<dyn Process>> {
-        if let Some(resource_ref) = self.resources.get_mut(index) {
-            let resource = std::mem::replace(resource_ref, Resource::None);
-            match resource {
-                Resource::Process(process) => {
-                    return Some(process);
-                }
-                other => {
-                    // Put the resource back if it's not a process and drop empty.
-                    let _ = std::mem::replace(resource_ref, other);
-                }
-            }
-        }
-        None
+    pub fn take_module<T: 'static>(
+        &mut self,
+        index: usize,
+    ) -> Option<Arc<WasmtimeCompiledModule<T>>> {
+        self.take_downcast(index)
     }
 
     /// Takes a TCP stream from the message, but preserves the indexes of all others.
@@ -129,19 +107,7 @@ impl DataMessage {
     /// If the index is out of bound or the resource is not a tcp stream the function will return
     /// None.
     pub fn take_tcp_stream(&mut self, index: usize) -> Option<Arc<TcpConnection>> {
-        if let Some(resource_ref) = self.resources.get_mut(index) {
-            let resource = std::mem::replace(resource_ref, Resource::None);
-            match resource {
-                Resource::TcpStream(stream) => {
-                    return Some(stream);
-                }
-                other => {
-                    // Put the resource back if it's not a tcp stream and drop empty.
-                    let _ = std::mem::replace(resource_ref, other);
-                }
-            }
-        }
-        None
+        self.take_downcast(index)
     }
 
     /// Takes a UDP Socket from the message, but preserves the indexes of all others.
@@ -149,19 +115,7 @@ impl DataMessage {
     /// If the index is out of bound or the resource is not a tcp stream the function will return
     /// None.
     pub fn take_udp_socket(&mut self, index: usize) -> Option<Arc<UdpSocket>> {
-        if let Some(resource_ref) = self.resources.get_mut(index) {
-            let resource = std::mem::replace(resource_ref, Resource::None);
-            match resource {
-                Resource::UdpSocket(socket) => {
-                    return Some(socket);
-                }
-                other => {
-                    // Put the resource back if it's not a tcp stream and drop empty.
-                    let _ = std::mem::replace(resource_ref, other);
-                }
-            }
-        }
-        None
+        self.take_downcast(index)
     }
 
     /// Takes a TLS stream from the message, but preserves the indexes of all others.
@@ -169,19 +123,7 @@ impl DataMessage {
     /// If the index is out of bound or the resource is not a tcp stream the function will return
     /// None.
     pub fn take_tls_stream(&mut self, index: usize) -> Option<Arc<TlsConnection>> {
-        if let Some(resource_ref) = self.resources.get_mut(index) {
-            let resource = std::mem::replace(resource_ref, Resource::None);
-            match resource {
-                Resource::TlsStream(stream) => {
-                    return Some(stream);
-                }
-                other => {
-                    // Put the resource back if it's not a tcp stream and drop empty.
-                    let _ = std::mem::replace(resource_ref, other);
-                }
-            }
-        }
-        None
+        self.take_downcast(index)
     }
 
     /// Moves read pointer to index.
@@ -201,6 +143,24 @@ impl DataMessage {
             self.resources.len() as f64
         );
         metrics::histogram!("lunatic.process.messages.data.size", self.size() as f64);
+    }
+
+    fn take_downcast<T: Send + Sync + 'static>(&mut self, index: usize) -> Option<Arc<T>> {
+        let resource = self.resources.get_mut(index);
+        match resource {
+            Some(resource_ref) => {
+                let resource_any = std::mem::take(resource_ref).map(|resource| resource.downcast());
+                match resource_any {
+                    Some(Ok(resource)) => Some(resource),
+                    Some(Err(resource)) => {
+                        *resource_ref = Some(resource);
+                        None
+                    }
+                    None => None,
+                }
+            }
+            None => None,
+        }
     }
 }
 
@@ -228,27 +188,5 @@ impl Read for DataMessage {
         let bytes = buf.write(slice)?;
         self.read_ptr += bytes;
         Ok(bytes)
-    }
-}
-
-/// A resource ([`WasmProcess`](crate::WasmProcess), [`TcpStream`](tokio::net::TcpStream),
-/// ...) that is attached to a [`DataMessage`].
-pub enum Resource {
-    None,
-    Process(Arc<dyn Process>),
-    TcpStream(Arc<TcpConnection>),
-    UdpSocket(Arc<UdpSocket>),
-    TlsStream(Arc<TlsConnection>),
-}
-
-impl Debug for Resource {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::None => write!(f, "None"),
-            Self::Process(_) => write!(f, "Process"),
-            Self::TcpStream(_) => write!(f, "TcpStream"),
-            Self::UdpSocket(_) => write!(f, "UdpSocket"),
-            Self::TlsStream(_) => write!(f, "TlsStream"),
-        }
     }
 }

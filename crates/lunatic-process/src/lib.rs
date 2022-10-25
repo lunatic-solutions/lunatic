@@ -191,6 +191,7 @@ impl Process for WasmProcess {
     fn id(&self) -> u64 {
         self.id
     }
+
     fn send(&self, signal: Signal) {
         #[cfg(all(feature = "metrics", not(feature = "detailed_metrics")))]
         let labels = [("process_kind", "wasm")];
@@ -427,6 +428,7 @@ impl Process for NativeProcess {
     fn id(&self) -> u64 {
         self.id
     }
+
     fn send(&self, signal: Signal) {
         #[cfg(all(feature = "metrics", not(feature = "detailed_metrics")))]
         let labels = [("process_kind", "native")];

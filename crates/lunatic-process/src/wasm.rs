@@ -23,12 +23,11 @@ impl Environment {
     pub async fn spawn_wasm<S>(
         &self,
         runtime: WasmtimeRuntime,
-        module: WasmtimeCompiledModule<S>,
+        module: &WasmtimeCompiledModule<S>,
         state: S,
         function: &str,
         params: Vec<Val>,
         link: Option<(Option<i64>, Arc<dyn Process>)>,
-        //) -> Result<(JoinHandle<anyhow::Error>, Arc<dyn Process>)>
     ) -> Result<(JoinHandle<Result<S>>, Arc<dyn Process>)>
     where
         S: ProcessState + Send + ResourceLimiter + 'static,
@@ -38,7 +37,7 @@ impl Environment {
         let signal_mailbox = state.signal_mailbox().clone();
         let message_mailbox = state.message_mailbox().clone();
 
-        let instance = runtime.instantiate(&module, state).await?;
+        let instance = runtime.instantiate(module, state).await?;
         let function = function.to_string();
         let fut = async move { instance.call(&function, params).await };
         let child_process = crate::new(fut, id, self.clone(), signal_mailbox.1, message_mailbox);
