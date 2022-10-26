@@ -8,17 +8,20 @@ use lunatic_distributed::{DistributedCtx, DistributedProcessState};
 use lunatic_error_api::{ErrorCtx, ErrorResource};
 use lunatic_networking_api::{DnsIterator, TlsConnection, TlsListener};
 use lunatic_networking_api::{NetworkingCtx, TcpConnection};
-use lunatic_process::config::ProcessConfig;
 use lunatic_process::env::Environment;
 use lunatic_process::runtimes::wasmtime::{WasmtimeCompiledModule, WasmtimeRuntime};
 use lunatic_process::state::{ConfigResources, ProcessState};
-use lunatic_process::{mailbox::MessageMailbox, message::Message, Signal};
+use lunatic_process::{
+    config::ProcessConfig,
+    state::{SignalReceiver, SignalSender},
+};
+use lunatic_process::{mailbox::MessageMailbox, message::Message};
 use lunatic_process_api::{ProcessConfigCtx, ProcessCtx};
 use lunatic_stdout_capture::StdoutCapture;
 use lunatic_timer_api::{TimerCtx, TimerResources};
 use lunatic_wasi_api::{build_wasi, LunaticWasiCtx};
 use tokio::net::{TcpListener, UdpSocket};
-use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
+use tokio::sync::mpsc::unbounded_channel;
 use tokio::sync::Mutex;
 use wasmtime::{Linker, ResourceLimiter};
 use wasmtime_wasi::WasiCtx;
@@ -33,7 +36,7 @@ pub struct DefaultProcessState {
     // The WebAssembly runtime
     runtime: Option<WasmtimeRuntime>,
     // The module that this process was spawned from
-    module: Option<WasmtimeCompiledModule<Self>>,
+    module: Option<Arc<WasmtimeCompiledModule<Self>>>,
     // The process configuration
     config: Arc<DefaultProcessConfig>,
     // A space that can be used to temporarily store messages when sending or receiving them.
@@ -43,10 +46,7 @@ pub struct DefaultProcessState {
     // `message` as a temp space to store messages across host calls.
     message: Option<Message>,
     // Signals sent to the mailbox
-    signal_mailbox: (
-        UnboundedSender<Signal>,
-        Arc<Mutex<UnboundedReceiver<Signal>>>,
-    ),
+    signal_mailbox: (SignalSender, SignalReceiver),
     // Messages sent to the process
     message_mailbox: MessageMailbox,
     // Resources
@@ -68,7 +68,7 @@ impl DefaultProcessState {
         environment: Environment,
         distributed: Option<DistributedProcessState>,
         runtime: WasmtimeRuntime,
-        module: WasmtimeCompiledModule<Self>,
+        module: Arc<WasmtimeCompiledModule<Self>>,
         config: Arc<DefaultProcessConfig>,
         registry: Arc<DashMap<String, (u64, u64)>>,
     ) -> Result<Self> {
@@ -105,7 +105,7 @@ impl ProcessState for DefaultProcessState {
 
     fn new_state(
         &self,
-        module: WasmtimeCompiledModule<Self>,
+        module: Arc<WasmtimeCompiledModule<Self>>,
         config: Arc<DefaultProcessConfig>,
     ) -> Result<Self> {
         let signal_mailbox = unbounded_channel();
@@ -193,7 +193,7 @@ impl ProcessState for DefaultProcessState {
         &self.config
     }
 
-    fn module(&self) -> &WasmtimeCompiledModule<Self> {
+    fn module(&self) -> &Arc<WasmtimeCompiledModule<Self>> {
         self.module.as_ref().unwrap()
     }
 
@@ -201,12 +201,7 @@ impl ProcessState for DefaultProcessState {
         self.id
     }
 
-    fn signal_mailbox(
-        &self,
-    ) -> &(
-        UnboundedSender<Signal>,
-        Arc<Mutex<UnboundedReceiver<Signal>>>,
-    ) {
+    fn signal_mailbox(&self) -> &(SignalSender, SignalReceiver) {
         &self.signal_mailbox
     }
 
@@ -390,7 +385,7 @@ impl LunaticWasiCtx for DefaultProcessState {
 #[derive(Default, Debug)]
 pub(crate) struct Resources {
     pub(crate) configs: HashMapId<DefaultProcessConfig>,
-    pub(crate) modules: HashMapId<WasmtimeCompiledModule<DefaultProcessState>>,
+    pub(crate) modules: HashMapId<Arc<WasmtimeCompiledModule<DefaultProcessState>>>,
     pub(crate) timers: TimerResources,
     pub(crate) dns_iterators: HashMapId<DnsIterator>,
     pub(crate) tcp_listeners: HashMapId<TcpListener>,
@@ -435,7 +430,7 @@ impl DistributedCtx for DefaultProcessState {
         environment: Environment,
         distributed: DistributedProcessState,
         runtime: WasmtimeRuntime,
-        module: WasmtimeCompiledModule<Self>,
+        module: Arc<WasmtimeCompiledModule<Self>>,
         config: Arc<Self::Config>,
     ) -> Result<Self> {
         let signal_mailbox = unbounded_channel();
@@ -484,7 +479,7 @@ mod tests {
         let runtime = WasmtimeRuntime::new(&wasmtime_config).unwrap();
 
         let raw_module = wat::parse_file("./wat/all_imports.wat").unwrap();
-        let module = runtime.compile_module(raw_module.into()).unwrap();
+        let module = Arc::new(runtime.compile_module(raw_module.into()).unwrap());
         let env = lunatic_process::env::Environment::new(0);
         let registry = Arc::new(dashmap::DashMap::new());
         let state = DefaultProcessState::new(
@@ -497,7 +492,7 @@ mod tests {
         )
         .unwrap();
 
-        env.spawn_wasm(runtime, module, state, "hello", Vec::new(), None)
+        env.spawn_wasm(runtime, &module, state, "hello", Vec::new(), None)
             .await
             .unwrap();
     }

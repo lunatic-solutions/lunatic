@@ -15,7 +15,7 @@ pub trait DistributedCtx: ProcessState + Sized {
         environment: Environment,
         distributed: DistributedProcessState,
         runtime: WasmtimeRuntime,
-        module: WasmtimeCompiledModule<Self>,
+        module: Arc<WasmtimeCompiledModule<Self>>,
         config: Arc<Self::Config>,
     ) -> Result<Self>;
     fn distributed(&self) -> Result<&DistributedProcessState>;

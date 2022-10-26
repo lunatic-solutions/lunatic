@@ -22,7 +22,7 @@ use lunatic_wasi_api::LunaticWasiCtx;
 use wasmtime::{Caller, Linker, ResourceLimiter, Trap, Val};
 
 pub type ProcessResources = HashMapId<Arc<dyn Process>>;
-pub type ModuleResources<T> = HashMapId<WasmtimeCompiledModule<T>>;
+pub type ModuleResources<S> = HashMapId<Arc<WasmtimeCompiledModule<S>>>;
 
 pub trait ProcessConfigCtx {
     fn can_compile_modules(&self) -> bool;
@@ -210,7 +210,13 @@ where
 
     let module = RawWasm::new(None, module);
     let (mod_or_error_id, result) = match caller.data().runtime().compile_module(module) {
-        Ok(module) => (caller.data_mut().module_resources_mut().add(module), 0),
+        Ok(module) => (
+            caller
+                .data_mut()
+                .module_resources_mut()
+                .add(Arc::new(module)),
+            0,
+        ),
         Err(error) => (caller.data_mut().error_resources_mut().add(error), 1),
     };
 
@@ -644,7 +650,7 @@ where
         // set state instead of config TODO
         let env = caller.data().environment();
         let (proc_or_error_id, result) = match env
-            .spawn_wasm(runtime, module, state, function, params, link)
+            .spawn_wasm(runtime, &module, state, function, params, link)
             .await
         {
             Ok((_, process)) => (process.id(), 0),

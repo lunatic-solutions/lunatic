@@ -138,7 +138,7 @@ where
     let state = T::new_dist_state(env.clone(), distributed, runtime, module.clone(), config)?;
     let params: Vec<wasmtime::Val> = params.into_iter().map(Into::into).collect();
     let (_handle, proc) = env
-        .spawn_wasm(ctx.runtime, module, state, &function, params, None)
+        .spawn_wasm(ctx.runtime, &module, state, &function, params, None)
         .await?;
     Ok(proc.id())
 }

@@ -17,9 +17,11 @@ fn criterion_benchmark(c: &mut Criterion) {
     let runtime = WasmtimeRuntime::new(&wasmtime_config).unwrap();
 
     let raw_module = wat::parse_file("./wat/hello.wat").unwrap();
-    let module = runtime
-        .compile_module::<DefaultProcessState>(raw_module.into())
-        .unwrap();
+    let module = Arc::new(
+        runtime
+            .compile_module::<DefaultProcessState>(raw_module.into())
+            .unwrap(),
+    );
 
     let env = Environment::new(0);
     c.bench_function("spawn process", |b| {
@@ -34,20 +36,13 @@ fn criterion_benchmark(c: &mut Criterion) {
                 registry,
             )
             .unwrap();
-            env.spawn_wasm(
-                runtime.clone(),
-                module.clone(),
-                state,
-                "hello",
-                Vec::new(),
-                None,
-            )
-            .await
-            .unwrap()
-            .0
-            .await
-            .unwrap()
-            .ok();
+            env.spawn_wasm(runtime.clone(), &module, state, "hello", Vec::new(), None)
+                .await
+                .unwrap()
+                .0
+                .await
+                .unwrap()
+                .ok();
         });
     });
 }
