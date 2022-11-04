@@ -10,7 +10,7 @@ use lunatic_distributed::{
     quic,
 };
 use lunatic_process::{
-    env::Environments,
+    env::{Environments, LunaticEnvironments},
     runtimes::{self, Modules, RawWasm},
     wasm::spawn_wasm,
 };
@@ -143,7 +143,7 @@ pub(crate) async fn execute() -> Result<()> {
     // Create wasmtime runtime
     let wasmtime_config = runtimes::wasmtime::default_config();
     let runtime = runtimes::wasmtime::WasmtimeRuntime::new(&wasmtime_config)?;
-    let mut envs = Environments::default();
+    let envs = Arc::new(LunaticEnvironments::default());
 
     let env = envs.get_or_create(1);
 

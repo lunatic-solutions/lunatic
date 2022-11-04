@@ -20,7 +20,7 @@ use crate::{
 use super::message::Spawn;
 
 pub struct ServerCtx<T> {
-    pub envs: Environments,
+    pub envs: Arc<dyn Environments>,
     pub modules: Modules<T>,
     pub distributed: DistributedProcessState,
     pub runtime: WasmtimeRuntime,
@@ -105,7 +105,7 @@ where
     Ok(())
 }
 
-async fn handle_spawn<T>(mut ctx: ServerCtx<T>, spawn: Spawn) -> Result<u64>
+async fn handle_spawn<T>(ctx: ServerCtx<T>, spawn: Spawn) -> Result<u64>
 where
     T: ProcessState + DistributedCtx + ResourceLimiter + Send + 'static,
 {
@@ -151,7 +151,7 @@ where
 }
 
 async fn handle_process_message<T>(
-    mut ctx: ServerCtx<T>,
+    ctx: ServerCtx<T>,
     environment_id: u64,
     process_id: u64,
     tag: Option<i64>,
