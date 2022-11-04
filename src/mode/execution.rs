@@ -12,6 +12,7 @@ use lunatic_distributed::{
 use lunatic_process::{
     env::Environments,
     runtimes::{self, Modules, RawWasm},
+    wasm::spawn_wasm,
 };
 use lunatic_process_api::ProcessConfigCtx;
 use lunatic_runtime::{DefaultProcessConfig, DefaultProcessState};
@@ -274,8 +275,7 @@ pub(crate) async fn execute() -> Result<()> {
         )
         .unwrap();
 
-        let (task, _) = env
-            .spawn_wasm(runtime, &module, state, "_start", Vec::new(), None)
+        let (task, _) = spawn_wasm(env, runtime, &module, state, "_start", Vec::new(), None)
             .await
             .context(format!(
                 "Failed to spawn process from {}::_start()",

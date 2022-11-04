@@ -6,14 +6,24 @@ use std::sync::{
 
 use crate::{Process, Signal};
 
+pub trait Environment: Send + Sync {
+    fn id(&self) -> u64;
+    fn get_next_process_id(&self) -> u64;
+    fn get_process(&self, id: u64) -> Option<Arc<dyn Process>>;
+    fn add_process(&self, id: u64, proc: Arc<dyn Process>);
+    fn remove_process(&self, id: u64);
+    fn process_count(&self) -> usize;
+    fn send(&self, id: u64, signal: Signal);
+}
+
 #[derive(Clone)]
-pub struct Environment {
+pub struct LunaticEnvironment {
     environment_id: u64,
     next_process_id: Arc<AtomicU64>,
     processes: Arc<DashMap<u64, Arc<dyn Process>>>,
 }
 
-impl Environment {
+impl LunaticEnvironment {
     pub fn new(id: u64) -> Self {
         Self {
             environment_id: id,
@@ -21,12 +31,14 @@ impl Environment {
             next_process_id: Arc::new(AtomicU64::new(1)),
         }
     }
+}
 
-    pub fn get_process(&self, id: u64) -> Option<Arc<dyn Process>> {
+impl Environment for LunaticEnvironment {
+    fn get_process(&self, id: u64) -> Option<Arc<dyn Process>> {
         self.processes.get(&id).map(|x| x.clone())
     }
 
-    pub fn add_process(&self, id: u64, proc: Arc<dyn Process>) {
+    fn add_process(&self, id: u64, proc: Arc<dyn Process>) {
         self.processes.insert(id, proc);
         #[cfg(all(feature = "metrics", not(feature = "detailed_metrics")))]
         let labels: [(String, String); 0] = [];
@@ -40,7 +52,7 @@ impl Environment {
         );
     }
 
-    pub fn remove_process(&self, id: u64) {
+    fn remove_process(&self, id: u64) {
         self.processes.remove(&id);
         #[cfg(all(feature = "metrics", not(feature = "detailed_metrics")))]
         let labels: [(String, String); 0] = [];
@@ -53,34 +65,34 @@ impl Environment {
         );
     }
 
-    pub fn process_count(&self) -> usize {
+    fn process_count(&self) -> usize {
         self.processes.len()
     }
 
-    pub fn send(&self, id: u64, signal: Signal) {
+    fn send(&self, id: u64, signal: Signal) {
         if let Some(proc) = self.processes.get(&id) {
             proc.send(signal);
         }
     }
 
-    pub fn get_next_process_id(&self) -> u64 {
+    fn get_next_process_id(&self) -> u64 {
         self.next_process_id.fetch_add(1, Ordering::Relaxed)
     }
 
-    pub fn id(&self) -> u64 {
+    fn id(&self) -> u64 {
         self.environment_id
     }
 }
 
 #[derive(Clone, Default)]
 pub struct Environments {
-    envs: Arc<DashMap<u64, Environment>>,
+    envs: Arc<DashMap<u64, Arc<dyn Environment>>>,
 }
 
 impl Environments {
-    pub fn get_or_create(&mut self, id: u64) -> Environment {
+    pub fn get_or_create(&mut self, id: u64) -> Arc<dyn Environment> {
         if !self.envs.contains_key(&id) {
-            let env = Environment::new(id);
+            let env = Arc::new(LunaticEnvironment::new(id));
             self.envs.insert(id, env.clone());
             metrics::gauge!("lunatic.process.environment.count", self.envs.len() as f64);
             env

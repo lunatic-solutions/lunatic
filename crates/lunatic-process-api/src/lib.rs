@@ -38,7 +38,7 @@ pub trait ProcessCtx<S: ProcessState> {
     fn message_scratch_area(&mut self) -> &mut Option<Message>;
     fn module_resources(&self) -> &ModuleResources<S>;
     fn module_resources_mut(&mut self) -> &mut ModuleResources<S>;
-    fn environment(&self) -> &Environment;
+    fn environment(&self) -> Arc<dyn Environment>;
 }
 
 // Register the process APIs to the linker
@@ -649,9 +649,10 @@ where
 
         // set state instead of config TODO
         let env = caller.data().environment();
-        let (proc_or_error_id, result) = match env
-            .spawn_wasm(runtime, &module, state, function, params, link)
-            .await
+        let (proc_or_error_id, result) = match lunatic_process::wasm::spawn_wasm(
+            env, runtime, &module, state, function, params, link,
+        )
+        .await
         {
             Ok((_, process)) => (process.id(), 0),
             Err(error) => (caller.data_mut().error_resources_mut().add(error), 1),

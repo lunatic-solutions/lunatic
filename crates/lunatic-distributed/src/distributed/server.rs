@@ -137,9 +137,16 @@ where
     let runtime = ctx.runtime.clone();
     let state = T::new_dist_state(env.clone(), distributed, runtime, module.clone(), config)?;
     let params: Vec<wasmtime::Val> = params.into_iter().map(Into::into).collect();
-    let (_handle, proc) = env
-        .spawn_wasm(ctx.runtime, &module, state, &function, params, None)
-        .await?;
+    let (_handle, proc) = lunatic_process::wasm::spawn_wasm(
+        env,
+        ctx.runtime,
+        &module,
+        state,
+        &function,
+        params,
+        None,
+    )
+    .await?;
     Ok(proc.id())
 }
 

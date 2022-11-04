@@ -230,7 +230,7 @@ impl Process for WasmProcess {
 pub(crate) async fn new<F, S, R>(
     fut: F,
     id: u64,
-    env: Environment,
+    env: Arc<dyn Environment>,
     signal_mailbox: Arc<Mutex<UnboundedReceiver<Signal>>>,
     message_mailbox: MessageMailbox,
 ) -> Result<S>
@@ -393,8 +393,9 @@ pub struct NativeProcess {
 /// ## Example:
 ///
 /// ```no_run
-/// let env = lunatic_process::env::Environment::new(1);
-/// let _proc = env.spawn(|_this, mailbox| async move {
+/// use std::sync::Arc;
+/// let env = Arc::new(lunatic_process::env::LunaticEnvironment::new(1));
+/// let _proc = lunatic_process::spawn(env, |_this, mailbox| async move {
 ///     // Wait on a message with the tag `27`.
 ///     mailbox.pop(Some(&[27])).await;
 ///     // TODO: Needs to return ExecutionResult. Probably the `new` function will need to be adjusted
@@ -402,26 +403,27 @@ pub struct NativeProcess {
 /// });
 /// ```
 
-impl Environment {
-    pub fn spawn<T, F, K, R>(&self, func: F) -> (JoinHandle<Result<T>>, NativeProcess)
-    where
-        T: Send + 'static,
-        R: Into<ExecutionResult<T>> + 'static,
-        K: Future<Output = R> + Send + 'static,
-        F: FnOnce(NativeProcess, MessageMailbox) -> K,
-    {
-        let id = self.get_next_process_id();
-        let (signal_sender, signal_mailbox) = unbounded_channel::<Signal>();
-        let message_mailbox = MessageMailbox::default();
-        let process = NativeProcess {
-            id,
-            signal_mailbox: signal_sender,
-        };
-        let fut = func(process.clone(), message_mailbox.clone());
-        let signal_mailbox = Arc::new(Mutex::new(signal_mailbox));
-        let join = tokio::task::spawn(new(fut, id, self.clone(), signal_mailbox, message_mailbox));
-        (join, process)
-    }
+pub fn spawn<T, F, K, R>(
+    env: Arc<dyn Environment>,
+    func: F,
+) -> (JoinHandle<Result<T>>, NativeProcess)
+where
+    T: Send + 'static,
+    R: Into<ExecutionResult<T>> + 'static,
+    K: Future<Output = R> + Send + 'static,
+    F: FnOnce(NativeProcess, MessageMailbox) -> K,
+{
+    let id = env.get_next_process_id();
+    let (signal_sender, signal_mailbox) = unbounded_channel::<Signal>();
+    let message_mailbox = MessageMailbox::default();
+    let process = NativeProcess {
+        id,
+        signal_mailbox: signal_sender,
+    };
+    let fut = func(process.clone(), message_mailbox.clone());
+    let signal_mailbox = Arc::new(Mutex::new(signal_mailbox));
+    let join = tokio::task::spawn(new(fut, id, env.clone(), signal_mailbox, message_mailbox));
+    (join, process)
 }
 
 impl Process for NativeProcess {

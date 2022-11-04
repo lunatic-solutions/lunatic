@@ -4,7 +4,7 @@ use anyhow::{Context, Result};
 use clap::{crate_version, Arg, Command};
 
 use dashmap::DashMap;
-use lunatic_process::{env::Environment, runtimes};
+use lunatic_process::{env::LunaticEnvironment, runtimes, wasm::spawn_wasm};
 use lunatic_process_api::ProcessConfigCtx;
 use lunatic_runtime::{DefaultProcessConfig, DefaultProcessState};
 use lunatic_stdout_capture::StdoutCapture;
@@ -253,7 +253,7 @@ pub(crate) async fn test() -> Result<()> {
             continue;
         }
 
-        let env = Environment::new(0);
+        let env = Arc::new(LunaticEnvironment::new(0));
         let registry = Arc::new(DashMap::new());
         let mut state = DefaultProcessState::new(
             env.clone(),
@@ -272,21 +272,21 @@ pub(crate) async fn test() -> Result<()> {
         state.set_stdout(stdout.clone());
         state.set_stderr(stdout.clone());
 
-        let (task, _) = env
-            .spawn_wasm(
-                runtime.clone(),
-                &module,
-                state,
-                &test_function.wasm_export_name,
-                Vec::new(),
-                None,
-            )
-            .await
-            .context(format!(
-                "Failed to spawn process from {}::{}",
-                path.to_string_lossy(),
-                test_function.function_name
-            ))?;
+        let (task, _) = spawn_wasm(
+            env,
+            runtime.clone(),
+            &module,
+            state,
+            &test_function.wasm_export_name,
+            Vec::new(),
+            None,
+        )
+        .await
+        .context(format!(
+            "Failed to spawn process from {}::{}",
+            path.to_string_lossy(),
+            test_function.function_name
+        ))?;
 
         let sender = sender.clone();
         tokio::task::spawn(async move {

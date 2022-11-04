@@ -8,7 +8,7 @@ use lunatic_distributed::{DistributedCtx, DistributedProcessState};
 use lunatic_error_api::{ErrorCtx, ErrorResource};
 use lunatic_networking_api::{DnsIterator, TlsConnection, TlsListener};
 use lunatic_networking_api::{NetworkingCtx, TcpConnection};
-use lunatic_process::env::Environment;
+use lunatic_process::env::{Environment, LunaticEnvironment};
 use lunatic_process::runtimes::wasmtime::{WasmtimeCompiledModule, WasmtimeRuntime};
 use lunatic_process::state::{ConfigResources, ProcessState};
 use lunatic_process::{
@@ -31,7 +31,7 @@ use crate::DefaultProcessConfig;
 pub struct DefaultProcessState {
     // Process id
     pub(crate) id: u64,
-    pub(crate) environment: Environment,
+    pub(crate) environment: Arc<dyn Environment>,
     pub(crate) distributed: Option<DistributedProcessState>,
     // The WebAssembly runtime
     runtime: Option<WasmtimeRuntime>,
@@ -65,7 +65,7 @@ pub struct DefaultProcessState {
 
 impl DefaultProcessState {
     pub fn new(
-        environment: Environment,
+        environment: Arc<dyn Environment>,
         distributed: Option<DistributedProcessState>,
         runtime: WasmtimeRuntime,
         module: Arc<WasmtimeCompiledModule<Self>>,
@@ -142,7 +142,7 @@ impl ProcessState for DefaultProcessState {
         let message_mailbox = MessageMailbox::default();
         Self {
             id: 1,
-            environment: Environment::new(0),
+            environment: Arc::new(LunaticEnvironment::new(0)),
             distributed: None,
             runtime: None,
             module: None,
@@ -287,8 +287,8 @@ impl ProcessCtx<DefaultProcessState> for DefaultProcessState {
         &mut self.resources.modules
     }
 
-    fn environment(&self) -> &lunatic_process::env::Environment {
-        &self.environment
+    fn environment(&self) -> Arc<dyn Environment> {
+        self.environment.clone()
     }
 }
 
@@ -427,7 +427,7 @@ impl DistributedCtx for DefaultProcessState {
     }
 
     fn new_dist_state(
-        environment: Environment,
+        environment: Arc<dyn Environment>,
         distributed: DistributedProcessState,
         runtime: WasmtimeRuntime,
         module: Arc<WasmtimeCompiledModule<Self>>,
@@ -468,6 +468,7 @@ mod tests {
         use crate::state::DefaultProcessState;
         use crate::DefaultProcessConfig;
         use lunatic_process::runtimes::wasmtime::WasmtimeRuntime;
+        use lunatic_process::wasm::spawn_wasm;
         use std::sync::Arc;
 
         // The default configuration includes both, the "lunatic::*" and "wasi_*" namespaces.
@@ -480,7 +481,7 @@ mod tests {
 
         let raw_module = wat::parse_file("./wat/all_imports.wat").unwrap();
         let module = Arc::new(runtime.compile_module(raw_module.into()).unwrap());
-        let env = lunatic_process::env::Environment::new(0);
+        let env = Arc::new(lunatic_process::env::LunaticEnvironment::new(0));
         let registry = Arc::new(dashmap::DashMap::new());
         let state = DefaultProcessState::new(
             env.clone(),
@@ -492,7 +493,7 @@ mod tests {
         )
         .unwrap();
 
-        env.spawn_wasm(runtime, &module, state, "hello", Vec::new(), None)
+        spawn_wasm(env, runtime, &module, state, "hello", Vec::new(), None)
             .await
             .unwrap();
     }
