@@ -31,7 +31,7 @@ use crate::DefaultProcessConfig;
 pub struct DefaultProcessState {
     // Process id
     pub(crate) id: u64,
-    pub(crate) environment: Arc<dyn Environment>,
+    pub(crate) environment: Arc<LunaticEnvironment>,
     pub(crate) distributed: Option<DistributedProcessState>,
     // The WebAssembly runtime
     runtime: Option<WasmtimeRuntime>,
@@ -65,7 +65,7 @@ pub struct DefaultProcessState {
 
 impl DefaultProcessState {
     pub fn new(
-        environment: Arc<dyn Environment>,
+        environment: Arc<LunaticEnvironment>,
         distributed: Option<DistributedProcessState>,
         runtime: WasmtimeRuntime,
         module: Arc<WasmtimeCompiledModule<Self>>,
@@ -396,7 +396,7 @@ pub(crate) struct Resources {
     pub(crate) errors: HashMapId<anyhow::Error>,
 }
 
-impl DistributedCtx for DefaultProcessState {
+impl DistributedCtx<LunaticEnvironment> for DefaultProcessState {
     fn distributed_mut(&mut self) -> Result<&mut DistributedProcessState> {
         match self.distributed.as_mut() {
             Some(d) => Ok(d),
@@ -427,7 +427,7 @@ impl DistributedCtx for DefaultProcessState {
     }
 
     fn new_dist_state(
-        environment: Arc<dyn Environment>,
+        environment: Arc<LunaticEnvironment>,
         distributed: DistributedProcessState,
         runtime: WasmtimeRuntime,
         module: Arc<WasmtimeCompiledModule<Self>>,

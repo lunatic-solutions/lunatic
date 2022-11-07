@@ -17,7 +17,8 @@ pub trait Environment: Send + Sync {
 }
 
 pub trait Environments: Send + Sync {
-    fn get_or_create(&self, id: u64) -> Arc<dyn Environment>;
+    type Env: Environment;
+    fn get_or_create(&self, id: u64) -> Arc<Self::Env>;
 }
 
 #[derive(Clone)]
@@ -90,11 +91,12 @@ impl Environment for LunaticEnvironment {
 
 #[derive(Clone, Default)]
 pub struct LunaticEnvironments {
-    envs: Arc<DashMap<u64, Arc<dyn Environment>>>,
+    envs: Arc<DashMap<u64, Arc<LunaticEnvironment>>>,
 }
 
 impl Environments for LunaticEnvironments {
-    fn get_or_create(&self, id: u64) -> Arc<dyn Environment> {
+    type Env = LunaticEnvironment;
+    fn get_or_create(&self, id: u64) -> Arc<Self::Env> {
         if !self.envs.contains_key(&id) {
             let env = Arc::new(LunaticEnvironment::new(id));
             self.envs.insert(id, env.clone());
