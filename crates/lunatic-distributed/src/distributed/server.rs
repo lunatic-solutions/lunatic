@@ -143,7 +143,7 @@ where
     let env = ctx
         .envs
         .get(environment_id)
-        .unwrap_or(ctx.envs.create(environment_id));
+        .unwrap_or_else(|| ctx.envs.create(environment_id));
     let distributed = ctx.distributed.clone();
     let runtime = ctx.runtime.clone();
     let state = T::new_dist_state(env.clone(), distributed, runtime, module.clone(), config)?;
