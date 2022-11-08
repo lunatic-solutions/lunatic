@@ -140,7 +140,10 @@ where
         }
     };
 
-    let env = ctx.envs.get_or_create(environment_id);
+    let env = ctx
+        .envs
+        .get(environment_id)
+        .unwrap_or(ctx.envs.create(environment_id));
     let distributed = ctx.distributed.clone();
     let runtime = ctx.runtime.clone();
     let state = T::new_dist_state(env.clone(), distributed, runtime, module.clone(), config)?;
@@ -169,11 +172,13 @@ where
     T: ProcessState + DistributedCtx<E> + ResourceLimiter + Send + 'static,
     E: Environment,
 {
-    let env = ctx.envs.get_or_create(environment_id);
-    if let Some(proc) = env.get_process(process_id) {
-        proc.send(Signal::Message(Message::Data(DataMessage::new_from_vec(
-            tag, data,
-        ))))
+    let env = ctx.envs.get(environment_id);
+    if let Some(env) = env {
+        if let Some(proc) = env.get_process(process_id) {
+            proc.send(Signal::Message(Message::Data(DataMessage::new_from_vec(
+                tag, data,
+            ))))
+        }
     }
     Ok(())
 }

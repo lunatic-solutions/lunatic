@@ -18,7 +18,8 @@ pub trait Environment: Send + Sync {
 
 pub trait Environments: Send + Sync {
     type Env: Environment;
-    fn get_or_create(&self, id: u64) -> Arc<Self::Env>;
+    fn create(&self, id: u64) -> Arc<Self::Env>;
+    fn get(&self, id: u64) -> Option<Arc<Self::Env>>;
 }
 
 #[derive(Clone)]
@@ -96,14 +97,13 @@ pub struct LunaticEnvironments {
 
 impl Environments for LunaticEnvironments {
     type Env = LunaticEnvironment;
-    fn get_or_create(&self, id: u64) -> Arc<Self::Env> {
-        if !self.envs.contains_key(&id) {
-            let env = Arc::new(LunaticEnvironment::new(id));
-            self.envs.insert(id, env.clone());
-            metrics::gauge!("lunatic.process.environment.count", self.envs.len() as f64);
-            env
-        } else {
-            self.envs.get(&id).map(|e| e.clone()).unwrap()
-        }
+    fn create(&self, id: u64) -> Arc<Self::Env> {
+        let env = Arc::new(LunaticEnvironment::new(id));
+        self.envs.insert(id, env.clone());
+        metrics::gauge!("lunatic.process.environment.count", self.envs.len() as f64);
+        env
+    }
+    fn get(&self, id: u64) -> Option<Arc<Self::Env>> {
+        self.envs.get(&id).map(|e| e.clone())
     }
 }

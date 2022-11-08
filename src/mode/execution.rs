@@ -145,7 +145,7 @@ pub(crate) async fn execute() -> Result<()> {
     let runtime = runtimes::wasmtime::WasmtimeRuntime::new(&wasmtime_config)?;
     let envs = Arc::new(LunaticEnvironments::default());
 
-    let env = envs.get_or_create(1);
+    let env = envs.create(1);
 
     let (distributed_state, control_client, node_id) =
         if let (Some(node_address), Some(control_address)) =
