@@ -10,8 +10,9 @@ use lunatic_distributed::{
     quic,
 };
 use lunatic_process::{
-    env::Environments,
+    env::{Environments, LunaticEnvironments},
     runtimes::{self, Modules, RawWasm},
+    wasm::spawn_wasm,
 };
 use lunatic_process_api::ProcessConfigCtx;
 use lunatic_runtime::{DefaultProcessConfig, DefaultProcessState};
@@ -142,9 +143,9 @@ pub(crate) async fn execute() -> Result<()> {
     // Create wasmtime runtime
     let wasmtime_config = runtimes::wasmtime::default_config();
     let runtime = runtimes::wasmtime::WasmtimeRuntime::new(&wasmtime_config)?;
-    let mut envs = Environments::default();
+    let envs = Arc::new(LunaticEnvironments::default());
 
-    let env = envs.get_or_create(1);
+    let env = envs.create(1);
 
     let (distributed_state, control_client, node_id) =
         if let (Some(node_address), Some(control_address)) =
@@ -274,8 +275,7 @@ pub(crate) async fn execute() -> Result<()> {
         )
         .unwrap();
 
-        let (task, _) = env
-            .spawn_wasm(runtime, &module, state, "_start", Vec::new(), None)
+        let (task, _) = spawn_wasm(env, runtime, &module, state, "_start", Vec::new(), None)
             .await
             .context(format!(
                 "Failed to spawn process from {}::_start()",

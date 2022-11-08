@@ -6,15 +6,19 @@ use lunatic_distributed::{
     distributed::message::{Spawn, Val},
     DistributedCtx,
 };
-use lunatic_process::message::{DataMessage, Message};
+use lunatic_process::{
+    env::Environment,
+    message::{DataMessage, Message},
+};
 use lunatic_process_api::ProcessCtx;
 use tokio::time::timeout;
 use wasmtime::{Caller, Linker, ResourceLimiter, Trap};
 
 // Register the lunatic distributed APIs to the linker
-pub fn register<T>(linker: &mut Linker<T>) -> Result<()>
+pub fn register<T, E>(linker: &mut Linker<T>) -> Result<()>
 where
-    T: DistributedCtx + ProcessCtx<T> + Send + ResourceLimiter + 'static,
+    T: DistributedCtx<E> + ProcessCtx<T> + Send + ResourceLimiter + 'static,
+    E: Environment + 'static,
     for<'a> &'a T: Send,
 {
     linker.func_wrap("lunatic::distributed", "nodes_count", nodes_count)?;
@@ -32,7 +36,11 @@ where
 }
 
 // Returns the number of registered nodes
-fn nodes_count<T: DistributedCtx>(caller: Caller<T>) -> u32 {
+fn nodes_count<T, E>(caller: Caller<T>) -> u32
+where
+    T: DistributedCtx<E>,
+    E: Environment,
+{
     caller
         .data()
         .distributed()
@@ -44,11 +52,11 @@ fn nodes_count<T: DistributedCtx>(caller: Caller<T>) -> u32 {
 //
 // Traps:
 // * If any memory outside the guest heap space is referenced.
-fn get_nodes<T: DistributedCtx>(
-    mut caller: Caller<T>,
-    nodes_ptr: u32,
-    nodes_len: u32,
-) -> Result<u32, Trap> {
+fn get_nodes<T, E>(mut caller: Caller<T>, nodes_ptr: u32, nodes_len: u32) -> Result<u32, Trap>
+where
+    T: DistributedCtx<E>,
+    E: Environment,
+{
     let memory = get_memory(&mut caller)?;
     let node_ids = caller
         .data()
@@ -92,7 +100,7 @@ fn get_nodes<T: DistributedCtx>(
 // * If the params array is in a wrong format.
 // * If any memory outside the guest heap space is referenced.
 #[allow(clippy::too_many_arguments)]
-fn spawn<T>(
+fn spawn<T, E>(
     mut caller: Caller<T>,
     node_id: u64,
     config_id: i64,
@@ -104,7 +112,8 @@ fn spawn<T>(
     id_ptr: u32,
 ) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_>
 where
-    T: DistributedCtx + ResourceLimiter + Send + 'static,
+    T: DistributedCtx<E> + ResourceLimiter + Send + 'static,
+    E: Environment,
     for<'a> &'a T: Send,
 {
     Box::new(async move {
@@ -190,13 +199,14 @@ where
 // Traps:
 // * If it's called before creating the next message.
 // * If the message contains resources
-fn send<T>(
+fn send<T, E>(
     mut caller: Caller<T>,
     node_id: u64,
     process_id: u64,
 ) -> Box<dyn Future<Output = Result<(), Trap>> + Send + '_>
 where
-    T: DistributedCtx + ProcessCtx<T> + Send + 'static,
+    T: DistributedCtx<E> + ProcessCtx<T> + Send + 'static,
+    E: Environment,
     for<'a> &'a T: Send,
 {
     Box::new(async move {
@@ -247,14 +257,15 @@ where
 // Traps:
 // * If it's called with wrong data in the scratch area.
 // * If the message contains resources
-fn send_receive_skip_search<T>(
+fn send_receive_skip_search<T, E>(
     mut caller: Caller<T>,
     node_id: u64,
     process_id: u64,
     timeout_duration: u64,
 ) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_>
 where
-    T: DistributedCtx + ProcessCtx<T> + Send + 'static,
+    T: DistributedCtx<E> + ProcessCtx<T> + Send + 'static,
+    E: Environment,
     for<'a> &'a T: Send,
 {
     Box::new(async move {
@@ -311,7 +322,11 @@ where
 }
 
 // Returns the id of the node that the current process is running on
-fn node_id<T: DistributedCtx>(caller: Caller<T>) -> u64 {
+fn node_id<T, E>(caller: Caller<T>) -> u64
+where
+    T: DistributedCtx<E>,
+    E: Environment,
+{
     caller
         .data()
         .distributed()
@@ -321,6 +336,10 @@ fn node_id<T: DistributedCtx>(caller: Caller<T>) -> u64 {
 }
 
 // Returns id of the module that the current process is spawned from
-fn module_id<T: DistributedCtx>(caller: Caller<T>) -> u64 {
+fn module_id<T, E>(caller: Caller<T>) -> u64
+where
+    T: DistributedCtx<E>,
+    E: Environment,
+{
     caller.data().module_id()
 }

@@ -10,9 +10,9 @@ use lunatic_process::{
 };
 use std::{net::SocketAddr, sync::Arc};
 
-pub trait DistributedCtx: ProcessState + Sized {
+pub trait DistributedCtx<E: Environment>: ProcessState + Sized {
     fn new_dist_state(
-        environment: Environment,
+        environment: Arc<E>,
         distributed: DistributedProcessState,
         runtime: WasmtimeRuntime,
         module: Arc<WasmtimeCompiledModule<Self>>,

@@ -3,7 +3,7 @@ use std::{net::SocketAddr, sync::Arc, time::Duration};
 use anyhow::{anyhow, Result};
 use bincode::{deserialize, serialize};
 use futures_util::StreamExt;
-use lunatic_process::state::ProcessState;
+use lunatic_process::{env::Environment, state::ProcessState};
 use quinn::{
     ClientConfig, Connecting, Endpoint, Incoming, NewConnection, RecvStream, SendStream,
     ServerConfig,
@@ -160,12 +160,13 @@ async fn handle_quic_connection(connection: Connection, control_server: control:
     }
 }
 
-pub async fn handle_node_server<T>(
+pub async fn handle_node_server<T, E>(
     quic_server: &mut (Endpoint, Incoming),
-    ctx: distributed::server::ServerCtx<T>,
+    ctx: distributed::server::ServerCtx<T, E>,
 ) -> Result<()>
 where
-    T: ProcessState + ResourceLimiter + DistributedCtx + Send + 'static,
+    T: ProcessState + ResourceLimiter + DistributedCtx<E> + Send + 'static,
+    E: Environment + 'static,
 {
     while let Some(conn) = quic_server.1.next().await {
         tokio::spawn(handle_quic_connection_node(ctx.clone(), conn));
@@ -173,12 +174,13 @@ where
     Ok(())
 }
 
-async fn handle_quic_connection_node<T>(
-    ctx: distributed::server::ServerCtx<T>,
+async fn handle_quic_connection_node<T, E>(
+    ctx: distributed::server::ServerCtx<T, E>,
     conn: Connecting,
 ) -> Result<()>
 where
-    T: ProcessState + ResourceLimiter + DistributedCtx + Send + 'static,
+    T: ProcessState + ResourceLimiter + DistributedCtx<E> + Send + 'static,
+    E: Environment + 'static,
 {
     let NewConnection { mut bi_streams, .. } = conn.await?;
     while let Some(stream) = bi_streams.next().await {
@@ -188,9 +190,10 @@ where
     Ok(())
 }
 
-async fn handle_quic_stream_node<T>(ctx: distributed::server::ServerCtx<T>, conn: Connection)
+async fn handle_quic_stream_node<T, E>(ctx: distributed::server::ServerCtx<T, E>, conn: Connection)
 where
-    T: ProcessState + ResourceLimiter + DistributedCtx + Send + 'static,
+    T: ProcessState + ResourceLimiter + DistributedCtx<E> + Send + 'static,
+    E: Environment + 'static,
 {
     while let Ok((msg_id, request)) = conn.receive().await {
         distributed::server::handle_message(ctx.clone(), conn.clone(), msg_id, request).await;

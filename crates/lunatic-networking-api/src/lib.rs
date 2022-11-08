@@ -124,7 +124,7 @@ fn socket_address<T: NetworkingCtx>(
     Ok(match addr_type {
         4 => {
             let ip = memory
-                .data(&caller)
+                .data(caller)
                 .get(addr_u8_ptr as usize..(addr_u8_ptr + 4) as usize)
                 .or_trap("lunatic::network::socket_address*")?;
             let addr = <Ipv4Addr as From<[u8; 4]>>::from(ip.try_into().expect("exactly 4 bytes"));
@@ -132,7 +132,7 @@ fn socket_address<T: NetworkingCtx>(
         }
         6 => {
             let ip = memory
-                .data(&caller)
+                .data(caller)
                 .get(addr_u8_ptr as usize..(addr_u8_ptr + 16) as usize)
                 .or_trap("lunatic::network::socket_address*")?;
             let addr = <Ipv6Addr as From<[u8; 16]>>::from(ip.try_into().expect("exactly 16 bytes"));
