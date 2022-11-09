@@ -164,9 +164,10 @@ where
                                 ResultValue::Failed(trap.to_string())
                             }
                         }
-                        None => {
-                            ResultValue::Failed("Can't downcast trap to wasmtime::Trap".to_string())
-                        }
+                        None => ResultValue::Failed(format!(
+                            "Can't downcast trap ({}) to wasmtime::Trap",
+                            err
+                        )),
                     }
                 }
             },
