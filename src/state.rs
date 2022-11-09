@@ -6,19 +6,22 @@ use dashmap::DashMap;
 use hash_map_id::HashMapId;
 use lunatic_distributed::{DistributedCtx, DistributedProcessState};
 use lunatic_error_api::{ErrorCtx, ErrorResource};
-use lunatic_networking_api::DnsIterator;
+use lunatic_networking_api::{DnsIterator, TlsConnection, TlsListener};
 use lunatic_networking_api::{NetworkingCtx, TcpConnection};
-use lunatic_process::config::ProcessConfig;
-use lunatic_process::env::Environment;
+use lunatic_process::env::{Environment, LunaticEnvironment};
 use lunatic_process::runtimes::wasmtime::{WasmtimeCompiledModule, WasmtimeRuntime};
 use lunatic_process::state::{ConfigResources, ProcessState};
-use lunatic_process::{mailbox::MessageMailbox, message::Message, Signal};
+use lunatic_process::{
+    config::ProcessConfig,
+    state::{SignalReceiver, SignalSender},
+};
+use lunatic_process::{mailbox::MessageMailbox, message::Message};
 use lunatic_process_api::{ProcessConfigCtx, ProcessCtx};
 use lunatic_stdout_capture::StdoutCapture;
 use lunatic_timer_api::{TimerCtx, TimerResources};
 use lunatic_wasi_api::{build_wasi, LunaticWasiCtx};
 use tokio::net::{TcpListener, UdpSocket};
-use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
+use tokio::sync::mpsc::unbounded_channel;
 use tokio::sync::Mutex;
 use wasmtime::{Linker, ResourceLimiter};
 use wasmtime_wasi::WasiCtx;
@@ -28,12 +31,12 @@ use crate::DefaultProcessConfig;
 pub struct DefaultProcessState {
     // Process id
     pub(crate) id: u64,
-    pub(crate) environment: Environment,
+    pub(crate) environment: Arc<LunaticEnvironment>,
     pub(crate) distributed: Option<DistributedProcessState>,
     // The WebAssembly runtime
     runtime: Option<WasmtimeRuntime>,
     // The module that this process was spawned from
-    module: Option<WasmtimeCompiledModule<Self>>,
+    module: Option<Arc<WasmtimeCompiledModule<Self>>>,
     // The process configuration
     config: Arc<DefaultProcessConfig>,
     // A space that can be used to temporarily store messages when sending or receiving them.
@@ -43,10 +46,7 @@ pub struct DefaultProcessState {
     // `message` as a temp space to store messages across host calls.
     message: Option<Message>,
     // Signals sent to the mailbox
-    signal_mailbox: (
-        UnboundedSender<Signal>,
-        Arc<Mutex<UnboundedReceiver<Signal>>>,
-    ),
+    signal_mailbox: (SignalSender, SignalReceiver),
     // Messages sent to the process
     message_mailbox: MessageMailbox,
     // Resources
@@ -65,10 +65,10 @@ pub struct DefaultProcessState {
 
 impl DefaultProcessState {
     pub fn new(
-        environment: Environment,
+        environment: Arc<LunaticEnvironment>,
         distributed: Option<DistributedProcessState>,
         runtime: WasmtimeRuntime,
-        module: WasmtimeCompiledModule<Self>,
+        module: Arc<WasmtimeCompiledModule<Self>>,
         config: Arc<DefaultProcessConfig>,
         registry: Arc<DashMap<String, (u64, u64)>>,
     ) -> Result<Self> {
@@ -105,7 +105,7 @@ impl ProcessState for DefaultProcessState {
 
     fn new_state(
         &self,
-        module: WasmtimeCompiledModule<Self>,
+        module: Arc<WasmtimeCompiledModule<Self>>,
         config: Arc<DefaultProcessConfig>,
     ) -> Result<Self> {
         let signal_mailbox = unbounded_channel();
@@ -142,7 +142,7 @@ impl ProcessState for DefaultProcessState {
         let message_mailbox = MessageMailbox::default();
         Self {
             id: 1,
-            environment: Environment::new(0),
+            environment: Arc::new(LunaticEnvironment::new(0)),
             distributed: None,
             runtime: None,
             module: None,
@@ -193,7 +193,7 @@ impl ProcessState for DefaultProcessState {
         &self.config
     }
 
-    fn module(&self) -> &WasmtimeCompiledModule<Self> {
+    fn module(&self) -> &Arc<WasmtimeCompiledModule<Self>> {
         self.module.as_ref().unwrap()
     }
 
@@ -201,12 +201,7 @@ impl ProcessState for DefaultProcessState {
         self.id
     }
 
-    fn signal_mailbox(
-        &self,
-    ) -> &(
-        UnboundedSender<Signal>,
-        Arc<Mutex<UnboundedReceiver<Signal>>>,
-    ) {
+    fn signal_mailbox(&self) -> &(SignalSender, SignalReceiver) {
         &self.signal_mailbox
     }
 
@@ -292,8 +287,8 @@ impl ProcessCtx<DefaultProcessState> for DefaultProcessState {
         &mut self.resources.modules
     }
 
-    fn environment(&self) -> &lunatic_process::env::Environment {
-        &self.environment
+    fn environment(&self) -> Arc<dyn Environment> {
+        self.environment.clone()
     }
 }
 
@@ -312,6 +307,22 @@ impl NetworkingCtx for DefaultProcessState {
 
     fn tcp_stream_resources_mut(&mut self) -> &mut lunatic_networking_api::TcpStreamResources {
         &mut self.resources.tcp_streams
+    }
+
+    fn tls_listener_resources(&self) -> &lunatic_networking_api::TlsListenerResources {
+        &self.resources.tls_listeners
+    }
+
+    fn tls_listener_resources_mut(&mut self) -> &mut lunatic_networking_api::TlsListenerResources {
+        &mut self.resources.tls_listeners
+    }
+
+    fn tls_stream_resources(&self) -> &lunatic_networking_api::TlsStreamResources {
+        &self.resources.tls_streams
+    }
+
+    fn tls_stream_resources_mut(&mut self) -> &mut lunatic_networking_api::TlsStreamResources {
+        &mut self.resources.tls_streams
     }
 
     fn udp_resources(&self) -> &lunatic_networking_api::UdpResources {
@@ -374,16 +385,18 @@ impl LunaticWasiCtx for DefaultProcessState {
 #[derive(Default, Debug)]
 pub(crate) struct Resources {
     pub(crate) configs: HashMapId<DefaultProcessConfig>,
-    pub(crate) modules: HashMapId<WasmtimeCompiledModule<DefaultProcessState>>,
+    pub(crate) modules: HashMapId<Arc<WasmtimeCompiledModule<DefaultProcessState>>>,
     pub(crate) timers: TimerResources,
     pub(crate) dns_iterators: HashMapId<DnsIterator>,
     pub(crate) tcp_listeners: HashMapId<TcpListener>,
     pub(crate) tcp_streams: HashMapId<Arc<TcpConnection>>,
+    pub(crate) tls_listeners: HashMapId<TlsListener>,
+    pub(crate) tls_streams: HashMapId<Arc<TlsConnection>>,
     pub(crate) udp_sockets: HashMapId<Arc<UdpSocket>>,
     pub(crate) errors: HashMapId<anyhow::Error>,
 }
 
-impl DistributedCtx for DefaultProcessState {
+impl DistributedCtx<LunaticEnvironment> for DefaultProcessState {
     fn distributed_mut(&mut self) -> Result<&mut DistributedProcessState> {
         match self.distributed.as_mut() {
             Some(d) => Ok(d),
@@ -414,10 +427,10 @@ impl DistributedCtx for DefaultProcessState {
     }
 
     fn new_dist_state(
-        environment: Environment,
+        environment: Arc<LunaticEnvironment>,
         distributed: DistributedProcessState,
         runtime: WasmtimeRuntime,
-        module: WasmtimeCompiledModule<Self>,
+        module: Arc<WasmtimeCompiledModule<Self>>,
         config: Arc<Self::Config>,
     ) -> Result<Self> {
         let signal_mailbox = unbounded_channel();
@@ -455,6 +468,7 @@ mod tests {
         use crate::state::DefaultProcessState;
         use crate::DefaultProcessConfig;
         use lunatic_process::runtimes::wasmtime::WasmtimeRuntime;
+        use lunatic_process::wasm::spawn_wasm;
         use std::sync::Arc;
 
         // The default configuration includes both, the "lunatic::*" and "wasi_*" namespaces.
@@ -466,8 +480,8 @@ mod tests {
         let runtime = WasmtimeRuntime::new(&wasmtime_config).unwrap();
 
         let raw_module = wat::parse_file("./wat/all_imports.wat").unwrap();
-        let module = runtime.compile_module(raw_module.into()).unwrap();
-        let env = lunatic_process::env::Environment::new(0);
+        let module = Arc::new(runtime.compile_module(raw_module.into()).unwrap());
+        let env = Arc::new(lunatic_process::env::LunaticEnvironment::new(0));
         let registry = Arc::new(dashmap::DashMap::new());
         let state = DefaultProcessState::new(
             env.clone(),
@@ -479,7 +493,7 @@ mod tests {
         )
         .unwrap();
 
-        env.spawn_wasm(runtime, module, state, "hello", Vec::new(), None)
+        spawn_wasm(env, runtime, &module, state, "hello", Vec::new(), None)
             .await
             .unwrap();
     }

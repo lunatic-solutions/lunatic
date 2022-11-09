@@ -22,6 +22,77 @@ use tokio::{
 
 use crate::{mailbox::MessageMailbox, message::Message};
 
+#[cfg(feature = "metrics")]
+pub fn describe_metrics() {
+    use metrics::{describe_counter, describe_gauge, describe_histogram, Unit};
+
+    describe_counter!(
+        "lunatic.process.signals.send",
+        Unit::Count,
+        "Number of signals sent to processes since startup"
+    );
+
+    describe_counter!(
+        "lunatic.process.signals.received",
+        Unit::Count,
+        "Number of signals received by processes since startup"
+    );
+
+    describe_counter!(
+        "lunatic.process.messages.send",
+        Unit::Count,
+        "Number of messages sent to processes since startup"
+    );
+
+    describe_gauge!(
+        "lunatic.process.messages.outstanding",
+        Unit::Count,
+        "Current number of messages that are ready to be consumed by the process"
+    );
+
+    describe_gauge!(
+        "lunatic.process.links.alive",
+        Unit::Count,
+        "Number of links currently alive"
+    );
+
+    describe_counter!(
+        "lunatic.process.messages.data.count",
+        Unit::Count,
+        "Number of data messages send since startup"
+    );
+
+    describe_histogram!(
+        "lunatic.process.messages.data.resources.count",
+        Unit::Count,
+        "Number of resources used by each individual data message"
+    );
+
+    describe_histogram!(
+        "lunatic.process.messages.data.size",
+        Unit::Bytes,
+        "Number of bytes used by each individual data message"
+    );
+
+    describe_counter!(
+        "lunatic.process.messages.link_died.count",
+        Unit::Count,
+        "Number of LinkDied messages send since startup"
+    );
+
+    describe_gauge!(
+        "lunatic.process.environment.process.count",
+        Unit::Count,
+        "Number of currently registered processes"
+    );
+
+    describe_gauge!(
+        "lunatic.process.environment.count",
+        Unit::Count,
+        "Number of currently active environments"
+    );
+}
+
 /// The `Process` is the main abstraction in lunatic.
 ///
 /// It usually represents some code that is being executed (Wasm instance or V8 isolate), but it
@@ -120,7 +191,18 @@ impl Process for WasmProcess {
     fn id(&self) -> u64 {
         self.id
     }
+
     fn send(&self, signal: Signal) {
+        #[cfg(all(feature = "metrics", not(feature = "detailed_metrics")))]
+        let labels = [("process_kind", "wasm")];
+        #[cfg(all(feature = "metrics", feature = "detailed_metrics"))]
+        let labels = [
+            ("process_kind", "wasm"),
+            ("process_id", self.id().to_string()),
+        ];
+        #[cfg(feature = "metrics")]
+        metrics::increment_counter!("lunatic.process.signals.send", &labels);
+
         // If the receiver doesn't exist or is closed, just ignore it and drop the `signal`.
         // lunatic can't guarantee that a message was successfully seen by the receiving side even
         // if this call succeeds. We deliberately don't expose this API, as it would not make sense
@@ -148,7 +230,7 @@ impl Process for WasmProcess {
 pub(crate) async fn new<F, S, R>(
     fut: F,
     id: u64,
-    env: Environment,
+    env: Arc<dyn Environment>,
     signal_mailbox: Arc<Mutex<UnboundedReceiver<Signal>>>,
     message_mailbox: MessageMailbox,
 ) -> Result<S>
@@ -169,24 +251,58 @@ where
     //       to protect against panics in host function calls that unwind through Wasm code.
     //       Currently a panic would just kill the task, but not notify linked processes.
     let mut signal_mailbox = signal_mailbox.lock().await;
+    let mut has_sender = true;
+    #[cfg(all(feature = "metrics", not(feature = "detailed_metrics")))]
+    let labels: [(String, String); 0] = [];
+    #[cfg(all(feature = "metrics", feature = "detailed_metrics"))]
+    let labels = [("process_id", id.to_string())];
     let result = loop {
         tokio::select! {
             biased;
             // Handle signals first
-            signal = signal_mailbox.recv() => {
+            signal = signal_mailbox.recv(), if has_sender => {
+                #[cfg(feature = "metrics")]
+                metrics::increment_counter!("lunatic.process.signals.received", &labels);
+
                 match signal.ok_or(()) {
-                    Ok(Signal::Message(message)) => message_mailbox.push(message),
+                    Ok(Signal::Message(message)) => {
+
+                        #[cfg(feature = "metrics")]
+                        message.write_metrics();
+
+                        message_mailbox.push(message);
+
+                        // process metrics
+                        #[cfg(feature = "metrics")]
+                        metrics::increment_counter!("lunatic.process.messages.send", &labels);
+
+                        #[cfg(feature = "metrics")]
+                        metrics::gauge!("lunatic.process.messages.outstanding", message_mailbox.len() as f64, &labels);
+                    },
                     Ok(Signal::DieWhenLinkDies(value)) => die_when_link_dies = value,
                     // Put process into list of linked processes
-                    Ok(Signal::Link(tag, proc)) => { links.insert(proc.id(), (proc, tag)); },
+                    Ok(Signal::Link(tag, proc)) => {
+                        links.insert(proc.id(), (proc, tag));
+
+                        #[cfg(feature = "metrics")]
+                        metrics::gauge!("lunatic.process.links.alive", links.len() as f64, &labels);
+                    },
                     // Remove process from list
-                    Ok(Signal::UnLink { process_id }) => { links.remove(&process_id); }
+                    Ok(Signal::UnLink { process_id }) => {
+                        links.remove(&process_id);
+
+                        #[cfg(feature = "metrics")]
+                        metrics::gauge!("lunatic.process.links.alive", links.len() as f64, &labels);
+                    }
                     // Exit loop and don't poll anymore the future if Signal::Kill received.
                     Ok(Signal::Kill) => break Finished::KillSignal,
                     // Depending if `die_when_link_dies` is set, process will die or turn the
                     // signal into a message
                     Ok(Signal::LinkDied(id, tag, reason)) => {
                         links.remove(&id);
+
+                        #[cfg(feature = "metrics")]
+                        metrics::gauge!("lunatic.process.links.alive", links.len() as f64, &labels);
                         match reason {
                             DeathReason::Failure | DeathReason::NoProcess => {
                                 if die_when_link_dies {
@@ -195,6 +311,12 @@ where
                                     break Finished::KillSignal
                                 } else {
                                     let message = Message::LinkDied(tag);
+
+                                    #[cfg(feature = "metrics")]
+                                    metrics::increment_counter!("lunatic.process.messages.send", &labels);
+
+                                    #[cfg(feature = "metrics")]
+                                    metrics::gauge!("lunatic.process.messages.outstanding", message_mailbox.len() as f64, &labels);
                                     message_mailbox.push(message);
                                 }
                             },
@@ -202,7 +324,10 @@ where
                             DeathReason::Normal => {},
                         }
                     },
-                    Err(_) => unreachable!("The process holds the sending side and is not closed")
+                    Err(_) => {
+                        debug_assert!(has_sender);
+                        has_sender = false;
+                    }
                 }
             }
             // Run process
@@ -268,8 +393,9 @@ pub struct NativeProcess {
 /// ## Example:
 ///
 /// ```no_run
-/// let env = lunatic_process::env::Environment::new(1);
-/// let _proc = env.spawn(|_this, mailbox| async move {
+/// use std::sync::Arc;
+/// let env = Arc::new(lunatic_process::env::LunaticEnvironment::new(1));
+/// let _proc = lunatic_process::spawn(env, |_this, mailbox| async move {
 ///     // Wait on a message with the tag `27`.
 ///     mailbox.pop(Some(&[27])).await;
 ///     // TODO: Needs to return ExecutionResult. Probably the `new` function will need to be adjusted
@@ -277,33 +403,45 @@ pub struct NativeProcess {
 /// });
 /// ```
 
-impl Environment {
-    pub fn spawn<T, F, K, R>(&self, func: F) -> (JoinHandle<Result<T>>, NativeProcess)
-    where
-        T: Send + 'static,
-        R: Into<ExecutionResult<T>> + 'static,
-        K: Future<Output = R> + Send + 'static,
-        F: FnOnce(NativeProcess, MessageMailbox) -> K,
-    {
-        let id = self.get_next_process_id();
-        let (signal_sender, signal_mailbox) = unbounded_channel::<Signal>();
-        let message_mailbox = MessageMailbox::default();
-        let process = NativeProcess {
-            id,
-            signal_mailbox: signal_sender,
-        };
-        let fut = func(process.clone(), message_mailbox.clone());
-        let signal_mailbox = Arc::new(Mutex::new(signal_mailbox));
-        let join = tokio::task::spawn(new(fut, id, self.clone(), signal_mailbox, message_mailbox));
-        (join, process)
-    }
+pub fn spawn<T, F, K, R>(
+    env: Arc<dyn Environment>,
+    func: F,
+) -> (JoinHandle<Result<T>>, NativeProcess)
+where
+    T: Send + 'static,
+    R: Into<ExecutionResult<T>> + 'static,
+    K: Future<Output = R> + Send + 'static,
+    F: FnOnce(NativeProcess, MessageMailbox) -> K,
+{
+    let id = env.get_next_process_id();
+    let (signal_sender, signal_mailbox) = unbounded_channel::<Signal>();
+    let message_mailbox = MessageMailbox::default();
+    let process = NativeProcess {
+        id,
+        signal_mailbox: signal_sender,
+    };
+    let fut = func(process.clone(), message_mailbox.clone());
+    let signal_mailbox = Arc::new(Mutex::new(signal_mailbox));
+    let join = tokio::task::spawn(new(fut, id, env.clone(), signal_mailbox, message_mailbox));
+    (join, process)
 }
 
 impl Process for NativeProcess {
     fn id(&self) -> u64 {
         self.id
     }
+
     fn send(&self, signal: Signal) {
+        #[cfg(all(feature = "metrics", not(feature = "detailed_metrics")))]
+        let labels = [("process_kind", "native")];
+        #[cfg(all(feature = "metrics", feature = "detailed_metrics"))]
+        let labels = [
+            ("process_kind", "native"),
+            ("process_id", self.id().to_string()),
+        ];
+        #[cfg(feature = "metrics")]
+        metrics::increment_counter!("lunatic.process.signals.send", &labels);
+
         // If the receiver doesn't exist or is closed, just ignore it and drop the `signal`.
         // lunatic can't guarantee that a message was successfully seen by the receiving side even
         // if this call succeeds. We deliberately don't expose this API, as it would not make sense

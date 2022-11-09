@@ -3,7 +3,7 @@ use std::{net::SocketAddr, sync::Arc};
 use anyhow::{anyhow, Result};
 
 use lunatic_process::{
-    env::Environments,
+    env::{Environment, Environments},
     message::{DataMessage, Message},
     runtimes::{wasmtime::WasmtimeRuntime, Modules, RawWasm},
     state::ProcessState,
@@ -20,14 +20,14 @@ use crate::{
 
 use super::message::{ClientError, Spawn};
 
-pub struct ServerCtx<T> {
-    pub envs: Environments,
+pub struct ServerCtx<T, E: Environment> {
+    pub envs: Arc<dyn Environments<Env = E>>,
     pub modules: Modules<T>,
     pub distributed: DistributedProcessState,
     pub runtime: WasmtimeRuntime,
 }
 
-impl<T: 'static> Clone for ServerCtx<T> {
+impl<T: 'static, E: Environment> Clone for ServerCtx<T, E> {
     fn clone(&self) -> Self {
         Self {
             envs: self.envs.clone(),
@@ -59,37 +59,44 @@ pub fn gen_node_cert(node_name: &str) -> Result<Certificate> {
         .map_err(|_| anyhow!("Error while generating node certificate."))
 }
 
-pub async fn node_server<T>(
-    ctx: ServerCtx<T>,
+pub async fn node_server<T, E>(
+    ctx: ServerCtx<T, E>,
     socket: SocketAddr,
     cert: String,
     key: String,
 ) -> Result<()>
 where
-    T: ProcessState + ResourceLimiter + DistributedCtx + Send + 'static,
+    T: ProcessState + ResourceLimiter + DistributedCtx<E> + Send + 'static,
+    E: Environment + 'static,
 {
     let mut quic_server = quic::new_quic_server(socket, &cert, &key)?;
     quic::handle_node_server(&mut quic_server, ctx.clone()).await?;
     Ok(())
 }
 
-pub async fn handle_message<T>(ctx: ServerCtx<T>, send: &mut SendStream, msg_id: u64, msg: Request)
-where
-    T: ProcessState + DistributedCtx + ResourceLimiter + Send + 'static,
+pub async fn handle_message<T, E>(
+    ctx: ServerCtx<T, E>,
+    send: &mut SendStream,
+    msg_id: u64,
+    msg: Request,
+) where
+    T: ProcessState + DistributedCtx<E> + ResourceLimiter + Send + 'static,
+    E: Environment + 'static,
 {
     if let Err(e) = handle_message_err(ctx, send, msg_id, msg).await {
         log::error!("Error handling message: {e}");
     }
 }
 
-async fn handle_message_err<T>(
-    ctx: ServerCtx<T>,
+async fn handle_message_err<T, E>(
+    ctx: ServerCtx<T, E>,
     send: &mut SendStream,
     msg_id: u64,
     msg: Request,
 ) -> Result<()>
 where
-    T: ProcessState + DistributedCtx + ResourceLimiter + Send + 'static,
+    T: ProcessState + DistributedCtx<E> + ResourceLimiter + Send + 'static,
+    E: Environment + 'static,
 {
     match msg {
         Request::Spawn(spawn) => {
@@ -131,9 +138,10 @@ where
     Ok(())
 }
 
-async fn handle_spawn<T>(mut ctx: ServerCtx<T>, spawn: Spawn) -> Result<Result<u64, ClientError>>
+async fn handle_spawn<T, E>(ctx: ServerCtx<T, E>, spawn: Spawn) -> Result<Result<u64, ClientError>>
 where
-    T: ProcessState + DistributedCtx + ResourceLimiter + Send + 'static,
+    T: ProcessState + DistributedCtx<E> + ResourceLimiter + Send + 'static,
+    E: Environment + 'static,
 {
     let Spawn {
         environment_id,
@@ -158,35 +166,47 @@ where
         }
     };
 
-    let env = ctx.envs.get_or_create(environment_id);
+    let env = ctx
+        .envs
+        .get(environment_id)
+        .unwrap_or_else(|| ctx.envs.create(environment_id));
     let distributed = ctx.distributed.clone();
     let runtime = ctx.runtime.clone();
     let state = T::new_dist_state(env.clone(), distributed, runtime, module.clone(), config)?;
     let params: Vec<wasmtime::Val> = params.into_iter().map(Into::into).collect();
-    let (_handle, proc) = env
-        .spawn_wasm(ctx.runtime, module, state, &function, params, None)
-        .await?;
+    let (_handle, proc) = lunatic_process::wasm::spawn_wasm(
+        env,
+        ctx.runtime,
+        &module,
+        state,
+        &function,
+        params,
+        None,
+    )
+    .await?;
     Ok(Ok(proc.id()))
 }
 
-async fn handle_process_message<T>(
-    mut ctx: ServerCtx<T>,
+async fn handle_process_message<T, E>(
+    ctx: ServerCtx<T, E>,
     environment_id: u64,
     process_id: u64,
     tag: Option<i64>,
     data: Vec<u8>,
 ) -> std::result::Result<(), ClientError>
 where
-    T: ProcessState + DistributedCtx + ResourceLimiter + Send + 'static,
+    T: ProcessState + DistributedCtx<E> + ResourceLimiter + Send + 'static,
+    E: Environment,
 {
-    let env = ctx.envs.get_or_create(environment_id);
-    match env.get_process(process_id) {
-        Some(proc) => {
+    let env = ctx.envs.get(environment_id);
+    if let Some(env) = env {
+        if let Some(proc) = env.get_process(process_id) {
             proc.send(Signal::Message(Message::Data(DataMessage::new_from_vec(
                 tag, data,
             ))));
-            Ok(())
+        } else {
+            return Err(ClientError::ProcessNotFound);
         }
-        None => Err(ClientError::ProcessNotFound),
     }
+    Ok(())
 }

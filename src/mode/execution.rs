@@ -10,8 +10,9 @@ use lunatic_distributed::{
     quic,
 };
 use lunatic_process::{
-    env::Environments,
+    env::{Environments, LunaticEnvironments},
     runtimes::{self, Modules, RawWasm},
+    wasm::spawn_wasm,
 };
 use lunatic_process_api::ProcessConfigCtx;
 use lunatic_runtime::{DefaultProcessConfig, DefaultProcessState};
@@ -22,7 +23,7 @@ pub(crate) async fn execute() -> Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).init();
 
     // Parse command line arguments
-    let args = Command::new("lunatic")
+    let command = Command::new("lunatic")
         .version(crate_version!())
         .arg(
             Arg::new("dir")
@@ -100,8 +101,26 @@ pub(crate) async fn execute() -> Result<()> {
                 .conflicts_with("no_entry")
                 .multiple_values(true)
                 .index(2),
+        );
+
+    #[cfg(feature = "prometheus")]
+    let command = command
+        .arg(
+            Arg::new("prometheus")
+                .long("prometheus")
+                .help("whether to enable the prometheus metrics exporter"),
         )
-        .get_matches();
+        .arg(
+            Arg::new("prometheus_http")
+                .long("prometheus-http")
+                .value_name("PROMETHEUS_HTTP_ADDRESS")
+                .help("The address to bind the prometheus http listener to")
+                .requires("prometheus")
+                .takes_value(true)
+                .default_value("0.0.0.0:9927"),
+        );
+
+    let args = command.get_matches();
 
     if args.is_present("test_ca") {
         log::warn!("Do not use test Certificate Authority in production!")
@@ -124,9 +143,9 @@ pub(crate) async fn execute() -> Result<()> {
     // Create wasmtime runtime
     let wasmtime_config = runtimes::wasmtime::default_config();
     let runtime = runtimes::wasmtime::WasmtimeRuntime::new(&wasmtime_config)?;
-    let mut envs = Environments::default();
+    let envs = Arc::new(LunaticEnvironments::default());
 
-    let env = envs.get_or_create(1);
+    let env = envs.create(1);
 
     let (distributed_state, control_client, node_id) =
         if let (Some(node_address), Some(control_address)) =
@@ -185,6 +204,24 @@ pub(crate) async fn execute() -> Result<()> {
             (None, None, None)
         };
 
+    #[cfg(feature = "prometheus")]
+    if args.is_present("prometheus") {
+        let builder = metrics_exporter_prometheus::PrometheusBuilder::new();
+        let builder = if let Some(addr) = args.value_of("prometheus_http") {
+            builder.with_http_listener(addr.parse::<std::net::SocketAddr>().unwrap())
+        } else {
+            builder
+        };
+
+        let builder = if let Some(node_id) = node_id {
+            builder.add_global_label("node_id", node_id.to_string())
+        } else {
+            builder
+        };
+
+        builder.install().unwrap()
+    }
+
     let mut config = DefaultProcessConfig::default();
     // Allow initial process to compile modules, create configurations and spawn sub-processes
     config.set_can_compile_modules(true);
@@ -227,7 +264,7 @@ pub(crate) async fn execute() -> Result<()> {
         } else {
             module.into()
         };
-        let module = runtime.compile_module::<DefaultProcessState>(module)?;
+        let module = Arc::new(runtime.compile_module::<DefaultProcessState>(module)?);
         let state = DefaultProcessState::new(
             env.clone(),
             distributed_state,
@@ -238,8 +275,7 @@ pub(crate) async fn execute() -> Result<()> {
         )
         .unwrap();
 
-        let (task, _) = env
-            .spawn_wasm(runtime, module, state, "_start", Vec::new(), None)
+        let (task, _) = spawn_wasm(env, runtime, &module, state, "_start", Vec::new(), None)
             .await
             .context(format!(
                 "Failed to spawn process from {}::_start()",

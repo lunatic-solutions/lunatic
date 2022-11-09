@@ -74,7 +74,7 @@ pub trait WasmInstance {
 }
 
 pub struct Modules<T> {
-    modules: Arc<DashMap<u64, WasmtimeCompiledModule<T>>>,
+    modules: Arc<DashMap<u64, Arc<WasmtimeCompiledModule<T>>>>,
 }
 
 impl<T> Clone for Modules<T> {
@@ -94,7 +94,7 @@ impl<T> Default for Modules<T> {
 }
 
 impl<T: ProcessState + 'static> Modules<T> {
-    pub fn get(&self, module_id: u64) -> Option<WasmtimeCompiledModule<T>> {
+    pub fn get(&self, module_id: u64) -> Option<Arc<WasmtimeCompiledModule<T>>> {
         self.modules.get(&module_id).map(|m| m.clone())
     }
 
@@ -102,16 +102,17 @@ impl<T: ProcessState + 'static> Modules<T> {
         &self,
         runtime: WasmtimeRuntime,
         wasm: RawWasm,
-    ) -> JoinHandle<Result<WasmtimeCompiledModule<T>>> {
+    ) -> JoinHandle<Result<Arc<WasmtimeCompiledModule<T>>>> {
         let modules = self.modules.clone();
         tokio::task::spawn_blocking(move || {
             let id = wasm.id;
             match runtime.compile_module(wasm) {
                 Ok(m) => {
+                    let module = Arc::new(m);
                     if let Some(id) = id {
-                        modules.insert(id, m.clone());
+                        modules.insert(id, Arc::clone(&module));
                     }
-                    Ok(m)
+                    Ok(module)
                 }
                 Err(e) => Err(e),
             }

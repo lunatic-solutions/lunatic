@@ -1,5 +1,6 @@
 mod dns;
 mod tcp;
+mod tls_tcp;
 mod udp;
 
 use std::convert::TryInto;
@@ -10,10 +11,13 @@ use std::time::Duration;
 use anyhow::Result;
 use hash_map_id::HashMapId;
 use lunatic_error_api::ErrorCtx;
+use tokio::io::{split, ReadHalf, WriteHalf};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::sync::Mutex;
 
 use tokio::net::{TcpListener, TcpStream, UdpSocket};
+use tokio_rustls::rustls::{Certificate, PrivateKey};
+use tokio_rustls::TlsStream;
 use wasmtime::{Caller, Linker};
 use wasmtime::{Memory, Trap};
 
@@ -27,6 +31,39 @@ pub struct TcpConnection {
     pub read_timeout: Mutex<Option<Duration>>,
     pub write_timeout: Mutex<Option<Duration>>,
     pub peek_timeout: Mutex<Option<Duration>>,
+}
+
+/// This encapsulates the TCP-level connection, some connection
+/// state, and the underlying TLS-level session.
+pub struct TlsConnection {
+    pub reader: Mutex<ReadHalf<TlsStream<TcpStream>>>,
+    pub writer: Mutex<WriteHalf<TlsStream<TcpStream>>>,
+    pub closing: bool,
+    pub clean_closure: bool,
+    pub read_timeout: Mutex<Option<Duration>>,
+    pub write_timeout: Mutex<Option<Duration>>,
+    pub peek_timeout: Mutex<Option<Duration>>,
+}
+
+pub struct TlsListener {
+    listener: TcpListener,
+    certs: Certificate,
+    keys: PrivateKey,
+}
+
+impl TlsConnection {
+    pub fn new(sock: TlsStream<TcpStream>) -> TlsConnection {
+        let (read_half, write_half) = split(sock);
+        TlsConnection {
+            reader: Mutex::new(read_half),
+            writer: Mutex::new(write_half),
+            closing: false,
+            clean_closure: false,
+            read_timeout: Mutex::new(None),
+            write_timeout: Mutex::new(None),
+            peek_timeout: Mutex::new(None),
+        }
+    }
 }
 
 impl TcpConnection {
@@ -43,7 +80,9 @@ impl TcpConnection {
 }
 
 pub type TcpListenerResources = HashMapId<TcpListener>;
+pub type TlsListenerResources = HashMapId<TlsListener>;
 pub type TcpStreamResources = HashMapId<Arc<TcpConnection>>;
+pub type TlsStreamResources = HashMapId<Arc<TlsConnection>>;
 pub type UdpResources = HashMapId<Arc<UdpSocket>>;
 pub type DnsResources = HashMapId<DnsIterator>;
 
@@ -52,6 +91,10 @@ pub trait NetworkingCtx {
     fn tcp_listener_resources_mut(&mut self) -> &mut TcpListenerResources;
     fn tcp_stream_resources(&self) -> &TcpStreamResources;
     fn tcp_stream_resources_mut(&mut self) -> &mut TcpStreamResources;
+    fn tls_listener_resources(&self) -> &TlsListenerResources;
+    fn tls_listener_resources_mut(&mut self) -> &mut TlsListenerResources;
+    fn tls_stream_resources(&self) -> &TlsStreamResources;
+    fn tls_stream_resources_mut(&mut self) -> &mut TlsStreamResources;
     fn udp_resources(&self) -> &UdpResources;
     fn udp_resources_mut(&mut self) -> &mut UdpResources;
     fn dns_resources(&self) -> &DnsResources;
@@ -64,6 +107,7 @@ pub fn register<T: NetworkingCtx + ErrorCtx + Send + 'static>(
 ) -> Result<()> {
     dns::register(linker)?;
     tcp::register(linker)?;
+    tls_tcp::register(linker)?;
     udp::register(linker)?;
     Ok(())
 }
@@ -80,7 +124,7 @@ fn socket_address<T: NetworkingCtx>(
     Ok(match addr_type {
         4 => {
             let ip = memory
-                .data(&caller)
+                .data(caller)
                 .get(addr_u8_ptr as usize..(addr_u8_ptr + 4) as usize)
                 .or_trap("lunatic::network::socket_address*")?;
             let addr = <Ipv4Addr as From<[u8; 4]>>::from(ip.try_into().expect("exactly 4 bytes"));
@@ -88,7 +132,7 @@ fn socket_address<T: NetworkingCtx>(
         }
         6 => {
             let ip = memory
-                .data(&caller)
+                .data(caller)
                 .get(addr_u8_ptr as usize..(addr_u8_ptr + 16) as usize)
                 .or_trap("lunatic::network::socket_address*")?;
             let addr = <Ipv6Addr as From<[u8; 16]>>::from(ip.try_into().expect("exactly 16 bytes"));
