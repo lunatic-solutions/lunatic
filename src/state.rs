@@ -39,7 +39,7 @@ pub struct DefaultProcessState {
     module: Option<Arc<WasmtimeCompiledModule<Self>>>,
     // The process configuration
     config: Arc<DefaultProcessConfig>,
-    // A space for received messages to sit when they are received. Receiving messages is 
+    // A space for received messages to sit when they are received. Receiving messages is
     // done in two steps, first the message size is returned to allow the
     // guest to reserve enough space and then the it's received.
     received_message: Option<Message>,
@@ -284,7 +284,6 @@ impl ProcessCtx<DefaultProcessState> for DefaultProcessState {
     fn message_receive_area(&mut self) -> &mut Option<Message> {
         &mut self.received_message
     }
-
 
     fn module_resources(&self) -> &lunatic_process_api::ModuleResources<DefaultProcessState> {
         &self.resources.modules

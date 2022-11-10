@@ -136,9 +136,7 @@ fn send_after<T: ProcessState + ProcessCtx<T> + TimerCtx>(
         .take()
         .or_trap("lunatic::message::send_after")?;
 
-    let message = stack
-        .pop()
-        .or_trap("lunatic::message::send_after")?;
+    let message = stack.pop().or_trap("lunatic::message::send_after")?;
 
     caller.data_mut().message_scratch_area().replace(stack);
 

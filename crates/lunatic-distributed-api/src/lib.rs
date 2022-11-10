@@ -215,9 +215,7 @@ where
             .message_scratch_area()
             .take()
             .or_trap("lunatic::message::send::no_message")?;
-        let message = stack 
-            .pop()
-            .or_trap("lunatic::message::send::no_message")?;
+        let message = stack.pop().or_trap("lunatic::message::send::no_message")?;
 
         if let Message::Data(DataMessage {
             tag,
@@ -280,9 +278,7 @@ where
             .take()
             .or_trap("lunatic::message::send::no_message")?;
 
-        let message = stack
-            .pop()
-            .or_trap("lunatic::message::send::no_message")?;
+        let message = stack.pop().or_trap("lunatic::message::send::no_message")?;
 
         let mut _tags = [0; 1];
         let tags = if let Some(tag) = message.tag() {
