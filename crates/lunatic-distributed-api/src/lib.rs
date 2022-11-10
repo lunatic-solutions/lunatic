@@ -210,10 +210,13 @@ where
     for<'a> &'a T: Send,
 {
     Box::new(async move {
-        let message = caller
+        let mut stack = caller
             .data_mut()
             .message_scratch_area()
             .take()
+            .or_trap("lunatic::message::send::no_message")?;
+        let message = stack 
+            .pop()
             .or_trap("lunatic::message::send::no_message")?;
 
         if let Message::Data(DataMessage {
@@ -233,6 +236,8 @@ where
                 .node_client
                 .message_process(node_id, state.environment_id(), process_id, tag, buffer)
                 .await?;
+
+            caller.data_mut().message_scratch_area().replace(stack);
         }
         Ok(())
     })
@@ -269,10 +274,14 @@ where
     for<'a> &'a T: Send,
 {
     Box::new(async move {
-        let message = caller
+        let mut stack = caller
             .data_mut()
             .message_scratch_area()
             .take()
+            .or_trap("lunatic::message::send::no_message")?;
+
+        let message = stack
+            .pop()
             .or_trap("lunatic::message::send::no_message")?;
 
         let mut _tags = [0; 1];
@@ -309,7 +318,7 @@ where
                 t => timeout(Duration::from_millis(t), pop_skip_search).await,
             } {
                 // Put the message into the scratch area
-                caller.data_mut().message_scratch_area().replace(message);
+                caller.data_mut().message_receive_area().replace(message);
                 Ok(0)
             } else {
                 Ok(9027)

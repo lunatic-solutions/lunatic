@@ -39,12 +39,13 @@ pub struct DefaultProcessState {
     module: Option<Arc<WasmtimeCompiledModule<Self>>>,
     // The process configuration
     config: Arc<DefaultProcessConfig>,
-    // A space that can be used to temporarily store messages when sending or receiving them.
-    // Messages can contain resources that need to be added across multiple host. Likewise,
-    // receiving messages is done in two steps, first the message size is returned to allow the
-    // guest to reserve enough space and then the it's received. Both of those actions use
-    // `message` as a temp space to store messages across host calls.
-    message: Option<Message>,
+    // A space for received messages to sit when they are received. Receiving messages is 
+    // done in two steps, first the message size is returned to allow the
+    // guest to reserve enough space and then the it's received.
+    received_message: Option<Message>,
+    // A space that can be used to temporarily store messages when sending them.
+    // Messages can contain resources that need to be added across multiple host.
+    messages: Option<Vec<Message>>,
     // Signals sent to the mailbox
     signal_mailbox: (SignalSender, SignalReceiver),
     // Messages sent to the process
@@ -82,7 +83,8 @@ impl DefaultProcessState {
             runtime: Some(runtime),
             module: Some(module),
             config: config.clone(),
-            message: None,
+            received_message: None,
+            messages: Some(Vec::new()),
             signal_mailbox,
             message_mailbox,
             resources: Resources::default(),
@@ -118,7 +120,8 @@ impl ProcessState for DefaultProcessState {
             runtime: self.runtime.clone(),
             module: Some(module),
             config: config.clone(),
-            message: None,
+            received_message: None,
+            messages: Some(Vec::new()),
             signal_mailbox,
             message_mailbox,
             resources: Resources::default(),
@@ -148,7 +151,8 @@ impl ProcessState for DefaultProcessState {
             module: None,
             registry: Default::default(),
             config: Arc::new(config.clone()),
-            message: None,
+            received_message: None,
+            messages: Some(Vec::new()),
             signal_mailbox,
             message_mailbox,
             resources: Resources::default(),
@@ -273,9 +277,14 @@ impl ProcessCtx<DefaultProcessState> for DefaultProcessState {
         &mut self.message_mailbox
     }
 
-    fn message_scratch_area(&mut self) -> &mut Option<Message> {
-        &mut self.message
+    fn message_scratch_area(&mut self) -> &mut Option<Vec<Message>> {
+        &mut self.messages
     }
+
+    fn message_receive_area(&mut self) -> &mut Option<Message> {
+        &mut self.received_message
+    }
+
 
     fn module_resources(&self) -> &lunatic_process_api::ModuleResources<DefaultProcessState> {
         &self.resources.modules
@@ -443,7 +452,8 @@ impl DistributedCtx<LunaticEnvironment> for DefaultProcessState {
             runtime: Some(runtime),
             module: Some(module),
             config: config.clone(),
-            message: None,
+            received_message: None,
+            messages: Some(Vec::new()),
             signal_mailbox,
             message_mailbox,
             resources: Resources::default(),

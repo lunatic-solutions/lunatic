@@ -130,11 +130,17 @@ fn send_after<T: ProcessState + ProcessCtx<T> + TimerCtx>(
     process_id: u64,
     delay: u64,
 ) -> Result<u64, Trap> {
-    let message = caller
+    let mut stack = caller
         .data_mut()
         .message_scratch_area()
         .take()
         .or_trap("lunatic::message::send_after")?;
+
+    let message = stack
+        .pop()
+        .or_trap("lunatic::message::send_after")?;
+
+    caller.data_mut().message_scratch_area().replace(stack);
 
     let process = caller.data_mut().environment().get_process(process_id);
 

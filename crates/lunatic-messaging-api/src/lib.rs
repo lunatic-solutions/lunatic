@@ -126,16 +126,23 @@ fn create_data<T: ProcessState + ProcessCtx<T>>(
     mut caller: Caller<T>,
     tag: i64,
     buffer_capacity: u64,
-) {
+) -> Result<u32, Trap> {
     let tag = match tag {
         0 => None,
         tag => Some(tag),
     };
     let message = DataMessage::new(tag, buffer_capacity as usize);
-    caller
+
+    let mut stack = caller
         .data_mut()
         .message_scratch_area()
-        .replace(Message::Data(message));
+        .take()
+        .or_trap("lunatic::message::create_data")?;
+    
+    stack.push(Message::Data(message));
+
+    caller.data_mut().message_scratch_area().replace(stack);
+    Ok(0)
 }
 
 // Writes some data into the message buffer and returns how much data is written in bytes.
@@ -149,24 +156,31 @@ fn write_data<T: ProcessState + ProcessCtx<T>>(
     data_len: u32,
 ) -> Result<u32, Trap> {
     let memory = get_memory(&mut caller)?;
-    let mut message = caller
+    
+    let mut stack = caller
         .data_mut()
         .message_scratch_area()
         .take()
         .or_trap("lunatic::message::write_data")?;
+
     let buffer = memory
-        .data(&caller)
+        .data(&mut caller)
         .get(data_ptr as usize..(data_ptr as usize + data_len as usize))
         .or_trap("lunatic::message::write_data")?;
+
+
+    let mut message = stack
+        .last_mut()
+        .or_trap("lunatic::message::write_data")?;
+
     let bytes = match &mut message {
         Message::Data(data) => data.write(buffer).or_trap("lunatic::message::write_data")?,
         Message::LinkDied(_) => {
             return Err(Trap::new("Unexpected `Message::LinkDied` in scratch area"))
         }
     };
-    // Put message back after writing to it.
-    caller.data_mut().message_scratch_area().replace(message);
-
+    // Put stack back after writing to the message.
+    caller.data_mut().message_scratch_area().replace(stack);
     Ok(bytes as u32)
 }
 
@@ -180,12 +194,18 @@ fn read_data<T: ProcessState + ProcessCtx<T>>(
     data_ptr: u32,
     data_len: u32,
 ) -> Result<u32, Trap> {
+
     let memory = get_memory(&mut caller)?;
-    let mut message = caller
+    let mut stack = caller
         .data_mut()
         .message_scratch_area()
         .take()
         .or_trap("lunatic::message::read_data")?;
+
+    let mut message = stack
+        .last_mut()
+        .or_trap("lunatic::message::read_data")?;
+
     let buffer = memory
         .data_mut(&mut caller)
         .get_mut(data_ptr as usize..(data_ptr as usize + data_len as usize))
@@ -197,7 +217,7 @@ fn read_data<T: ProcessState + ProcessCtx<T>>(
         }
     };
     // Put message back after reading from it.
-    caller.data_mut().message_scratch_area().replace(message);
+    caller.data_mut().message_scratch_area().replace(stack);
 
     Ok(bytes as u32)
 }
@@ -212,10 +232,14 @@ fn seek_data<T: ProcessState + ProcessCtx<T>>(
     mut caller: Caller<T>,
     index: u64,
 ) -> Result<(), Trap> {
-    let mut message = caller
+    let mut stack = caller
         .data_mut()
         .message_scratch_area()
-        .as_mut()
+        .take()
+        .or_trap("lunatic::message::seek_data")?;
+
+    let mut message = stack
+        .last_mut()
         .or_trap("lunatic::message::seek_data")?;
     match &mut message {
         Message::Data(data) => data.seek(index as usize),
@@ -223,6 +247,9 @@ fn seek_data<T: ProcessState + ProcessCtx<T>>(
             return Err(Trap::new("Unexpected `Message::LinkDied` in scratch area"))
         }
     };
+
+    caller.data_mut().message_scratch_area().replace(stack);
+
     Ok(())
 }
 
@@ -233,10 +260,15 @@ fn seek_data<T: ProcessState + ProcessCtx<T>>(
 fn get_tag<T: ProcessState + ProcessCtx<T>>(mut caller: Caller<T>) -> Result<i64, Trap> {
     let message = caller
         .data_mut()
-        .message_scratch_area()
-        .as_ref()
+        .message_receive_area()
+        .take()
         .or_trap("lunatic::message::get_tag")?;
-    match message.tag() {
+
+    let tag = message.tag();
+
+    caller.data_mut().message_receive_area().replace(message);
+
+    match tag {
         Some(tag) => Ok(tag),
         None => Ok(0),
     }
@@ -249,15 +281,18 @@ fn get_tag<T: ProcessState + ProcessCtx<T>>(mut caller: Caller<T>) -> Result<i64
 fn data_size<T: ProcessState + ProcessCtx<T>>(mut caller: Caller<T>) -> Result<u64, Trap> {
     let message = caller
         .data_mut()
-        .message_scratch_area()
-        .as_ref()
+        .message_receive_area()
+        .take()
         .or_trap("lunatic::message::data_size")?;
-    let bytes = match message {
+
+    let bytes = match &message {
         Message::Data(data) => data.size(),
         Message::LinkDied(_) => {
             return Err(Trap::new("Unexpected `Message::LinkDied` in scratch area"))
         }
     };
+
+    caller.data_mut().message_receive_area().replace(message);
 
     Ok(bytes as u64)
 }
@@ -278,17 +313,26 @@ fn push_module<T: ProcessState + ProcessCtx<T> + NetworkingCtx + 'static>(
         .get(module_id)
         .or_trap("lunatic::message::push_module")?
         .clone();
-    let message = caller
+
+    let mut stack = caller
         .data_mut()
         .message_scratch_area()
-        .as_mut()
+        .take()
         .or_trap("lunatic::message::push_module")?;
+    
+    let message = stack
+        .last_mut()
+        .or_trap("lunatic::message::push_module")?;
+
     let index = match message {
         Message::Data(data) => data.add_resource(module) as u64,
         Message::LinkDied(_) => {
             return Err(Trap::new("Unexpected `Message::LinkDied` in scratch area"))
         }
     };
+
+    caller.data_mut().message_scratch_area().replace(stack);
+
     Ok(index)
 }
 
@@ -304,7 +348,7 @@ fn take_module<T: ProcessState + ProcessCtx<T> + NetworkingCtx + 'static>(
 ) -> Result<u64, Trap> {
     let message = caller
         .data_mut()
-        .message_scratch_area()
+        .message_receive_area()
         .as_mut()
         .or_trap("lunatic::message::take_module")?;
     let module = match message {
@@ -333,10 +377,15 @@ fn push_tcp_stream<T: ProcessState + ProcessCtx<T> + NetworkingCtx>(
         .tcp_stream_resources_mut()
         .remove(stream_id)
         .or_trap("lunatic::message::push_tcp_stream")?;
-    let message = caller
+
+    let mut stack = caller
         .data_mut()
         .message_scratch_area()
-        .as_mut()
+        .take()
+        .or_trap("lunatic::message::push_tcp_stream")?;
+
+    let message = stack
+        .last_mut()
         .or_trap("lunatic::message::push_tcp_stream")?;
     let index = match message {
         Message::Data(data) => data.add_resource(stream) as u64,
@@ -344,6 +393,7 @@ fn push_tcp_stream<T: ProcessState + ProcessCtx<T> + NetworkingCtx>(
             return Err(Trap::new("Unexpected `Message::LinkDied` in scratch area"))
         }
     };
+    caller.data_mut().message_scratch_area().replace(stack);
     Ok(index)
 }
 
@@ -359,7 +409,7 @@ fn take_tcp_stream<T: ProcessState + ProcessCtx<T> + NetworkingCtx>(
 ) -> Result<u64, Trap> {
     let message = caller
         .data_mut()
-        .message_scratch_area()
+        .message_receive_area()
         .as_mut()
         .or_trap("lunatic::message::take_tcp_stream")?;
     let tcp_stream = match message {
@@ -389,17 +439,25 @@ fn push_tls_stream<T: ProcessState + ProcessCtx<T> + NetworkingCtx>(
     let stream = resources
         .remove(stream_id)
         .or_trap("lunatic::message::push_tls_stream")?;
-    let message = caller
+
+    let mut stack  = caller
         .data_mut()
         .message_scratch_area()
-        .as_mut()
+        .take()
         .or_trap("lunatic::message::push_tls_stream")?;
+
+    let message = stack
+        .last_mut()
+        .or_trap("lunatic::message::push_tls_stream")?;
+
     let index = match message {
         Message::Data(data) => data.add_resource(stream) as u64,
         Message::LinkDied(_) => {
             return Err(Trap::new("Unexpected `Message::LinkDied` in scratch area"))
         }
     };
+    caller.data_mut().message_scratch_area().replace(stack);
+
     Ok(index)
 }
 
@@ -415,7 +473,7 @@ fn take_tls_stream<T: ProcessState + ProcessCtx<T> + NetworkingCtx>(
 ) -> Result<u64, Trap> {
     let message = caller
         .data_mut()
-        .message_scratch_area()
+        .message_receive_area()
         .as_mut()
         .or_trap("lunatic::message::take_tls_stream")?;
     let tls_stream = match message {
@@ -440,15 +498,21 @@ fn send<T: ProcessState + ProcessCtx<T>>(
     mut caller: Caller<T>,
     process_id: u64,
 ) -> Result<(), Trap> {
-    let message = caller
+    let mut stack = caller
         .data_mut()
         .message_scratch_area()
         .take()
         .or_trap("lunatic::message::send::no_message")?;
 
+    let message = stack
+        .pop()
+        .or_trap("lunatic::message::send::no_message")?;
+
     if let Some(process) = caller.data_mut().environment().get_process(process_id) {
         process.send(Signal::Message(message));
     }
+
+    caller.data_mut().message_scratch_area().replace(stack);
 
     Ok(())
 }
@@ -477,10 +541,14 @@ fn send_receive_skip_search<T: ProcessState + ProcessCtx<T> + Send>(
     timeout_duration: u64,
 ) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_> {
     Box::new(async move {
-        let message = caller
+        let mut stack = caller
             .data_mut()
             .message_scratch_area()
             .take()
+            .or_trap("lunatic::message::send_receive_skip_search")?;
+
+        let message = stack
+            .pop()
             .or_trap("lunatic::message::send_receive_skip_search")?;
         let mut _tags = [0; 1];
         let tags = if let Some(tag) = message.tag() {
@@ -494,6 +562,8 @@ fn send_receive_skip_search<T: ProcessState + ProcessCtx<T> + Send>(
             process.send(Signal::Message(message));
         }
 
+        caller.data_mut().message_scratch_area().replace(stack);
+
         let pop_skip_search_tag = caller.data_mut().mailbox().pop_skip_search(tags);
         if let Ok(message) = match timeout_duration {
             // Without timeout
@@ -502,7 +572,7 @@ fn send_receive_skip_search<T: ProcessState + ProcessCtx<T> + Send>(
             t => timeout(Duration::from_millis(t), pop_skip_search_tag).await,
         } {
             // Put the message into the scratch area
-            caller.data_mut().message_scratch_area().replace(message);
+            caller.data_mut().message_receive_area().replace(message);
             Ok(0)
         } else {
             Ok(9027)
@@ -566,7 +636,7 @@ fn receive<T: ProcessState + ProcessCtx<T> + Send>(
                 Message::LinkDied(_) => 1,
             };
             // Put the message into the scratch area
-            caller.data_mut().message_scratch_area().replace(message);
+            caller.data_mut().message_receive_area().replace(message);
             Ok(result)
         } else {
             Ok(9027)
@@ -589,16 +659,25 @@ fn push_udp_socket<T: ProcessState + ProcessCtx<T> + NetworkingCtx>(
         .udp_resources_mut()
         .remove(socket_id)
         .or_trap("lunatic::message::push_udp_socket")?;
-    let message = data
+
+    let mut stack = data
         .message_scratch_area()
-        .as_mut()
+        .take()
         .or_trap("lunatic::message::push_udp_socket")?;
+
+    let message = stack
+        .last_mut()
+        .or_trap("lunatic::message::push_udp_socket")?;
+
     let index = match message {
         Message::Data(data) => data.add_resource(socket) as u64,
         Message::LinkDied(_) => {
             return Err(Trap::new("Unexpected `Message::LinkDied` in scratch area"))
         }
     };
+
+    data.message_scratch_area().replace(stack);
+
     Ok(index)
 }
 
@@ -614,7 +693,7 @@ fn take_udp_socket<T: ProcessState + ProcessCtx<T> + NetworkingCtx>(
 ) -> Result<u64, Trap> {
     let message = caller
         .data_mut()
-        .message_scratch_area()
+        .message_receive_area()
         .as_mut()
         .or_trap("lunatic::message::take_udp_socket")?;
     let udp_socket = match message {

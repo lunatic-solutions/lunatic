@@ -35,7 +35,8 @@ pub trait ProcessConfigCtx {
 
 pub trait ProcessCtx<S: ProcessState> {
     fn mailbox(&mut self) -> &mut MessageMailbox;
-    fn message_scratch_area(&mut self) -> &mut Option<Message>;
+    fn message_scratch_area(&mut self) -> &mut Option<Vec<Message>>;
+    fn message_receive_area(&mut self) -> &mut Option<Message>;
     fn module_resources(&self) -> &ModuleResources<S>;
     fn module_resources_mut(&mut self) -> &mut ModuleResources<S>;
     fn environment(&self) -> Arc<dyn Environment>;
