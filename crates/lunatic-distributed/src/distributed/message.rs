@@ -1,3 +1,4 @@
+use bytes::Bytes;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -11,6 +12,15 @@ pub enum Request {
     },
 }
 
+impl Request {
+    pub fn kind(&self) -> &'static str {
+        match self {
+            Request::Spawn(_) => "Spawn",
+            Request::Message { .. } => "Message",
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Spawn {
     pub environment_id: u64,
@@ -21,9 +31,37 @@ pub struct Spawn {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum ClientError {
+    Unexpected(String),
+    Connection(String),
+    NodeNotFound,
+    ModuleNotFound,
+    ProcessNotFound,
+}
+
+impl Default for ClientError {
+    fn default() -> Self {
+        Self::Unexpected("Unexpected error.".to_string())
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum Response {
     Spawned(u64),
+    Sent,
     Linked,
+    Error(ClientError),
+}
+
+impl Response {
+    pub fn kind(&self) -> &'static str {
+        match self {
+            Response::Spawned(_) => "Spawned",
+            Response::Sent => "Sent",
+            Response::Linked => "Linked",
+            Response::Error(_) => "Error",
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -42,4 +80,12 @@ impl Into<wasmtime::Val> for Val {
             Val::V128(v) => wasmtime::Val::V128(v),
         }
     }
+}
+
+pub fn pack_response(msg_id: u64, resp: Response) -> [Bytes; 2] {
+    let data = bincode::serialize(&(msg_id, resp)).unwrap();
+    let size = (data.len() as u32).to_le_bytes();
+    let size: Bytes = Bytes::copy_from_slice(&size[..]);
+    let bytes: Bytes = data.into();
+    [size, bytes]
 }

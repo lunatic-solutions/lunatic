@@ -1,5 +1,6 @@
 use anyhow::{anyhow, Result};
 use async_cell::sync::AsyncCell;
+use bytes::Bytes;
 use dashmap::DashMap;
 use lunatic_process::runtimes::RawWasm;
 use std::{
@@ -8,10 +9,11 @@ use std::{
     sync::{atomic, atomic::AtomicU64, Arc, RwLock},
     time::Duration,
 };
+use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 
 use crate::{
     control::message::{Registered, Registration, Request, Response},
-    quic::{self, Connection},
+    quic::{self, RecvStream},
     NodeInfo,
 };
 
@@ -28,7 +30,7 @@ pub struct InnerClient {
     node_addr: SocketAddr,
     node_name: String,
     control_addr: SocketAddr,
-    connection: Connection,
+    tx: UnboundedSender<(u64, Request)>,
     pending_requests: DashMap<u64, Arc<AsyncCell<Response>>>,
     node_queries: DashMap<u64, Vec<u64>>,
     nodes: DashMap<u64, NodeInfo>,
@@ -45,15 +47,15 @@ impl Client {
         quic_client: quic::Client,
         signing_request: String,
     ) -> Result<(u64, Self, String)> {
+        let (tx, rx) = mpsc::unbounded_channel();
+
         let client = Client {
             inner: Arc::new(InnerClient {
                 next_message_id: AtomicU64::new(1),
                 control_addr,
                 node_addr,
-                node_name,
-                connection: quic_client
-                    .connect(control_addr, CTRL_SERVER_NAME, 5)
-                    .await?,
+                node_name: node_name.clone(),
+                tx,
                 pending_requests: DashMap::new(),
                 node_queries: DashMap::new(),
                 next_query_id: AtomicU64::new(1),
@@ -63,7 +65,13 @@ impl Client {
             }),
         };
         // Spawn reader task before register
-        tokio::task::spawn(reader_task(client.clone()));
+        tokio::task::spawn(connection_task(
+            client.clone(),
+            quic_client,
+            control_addr,
+            CTRL_SERVER_NAME.to_string(),
+            rx,
+        ));
         tokio::task::spawn(refresh_nodes_task(client.clone()));
         let Registered {
             node_id,
@@ -96,16 +104,12 @@ impl Client {
 
     pub async fn send(&self, req: Request) -> Result<Response> {
         let msg_id = self.next_message_id();
-        self.inner.connection.send(msg_id, req).await?;
+        self.inner.tx.send((msg_id, req))?;
         let cell = AsyncCell::shared();
         self.inner.pending_requests.insert(msg_id, cell.clone());
         let response = cell.take().await;
         self.inner.pending_requests.remove(&msg_id);
         Ok(response)
-    }
-
-    pub async fn recv(&self) -> Result<(u64, Response)> {
-        self.inner.connection.receive().await
     }
 
     async fn send_registration(&self, signing_request: String) -> Result<Registered> {
@@ -132,17 +136,11 @@ impl Client {
     pub async fn refresh_nodes(&self) -> Result<()> {
         if let Response::Nodes(nodes) = self.send(Request::ListNodes).await? {
             let mut node_ids = vec![];
-            for (id, reg) in nodes {
+            for node in nodes {
+                let id = node.id;
                 node_ids.push(id);
                 if !self.inner.nodes.contains_key(&id) {
-                    self.inner.nodes.insert(
-                        id,
-                        NodeInfo {
-                            id,
-                            address: reg.node_address,
-                            name: reg.node_name,
-                        },
-                    );
+                    self.inner.nodes.insert(id, node);
                 }
             }
             if let Ok(mut self_node_ids) = self.inner.node_ids.write() {
@@ -204,11 +202,20 @@ impl Client {
     }
 }
 
-async fn reader_task(client: Client) -> Result<()> {
+async fn reader_task(client: Client, mut recv: RecvStream) -> Result<()> {
     loop {
-        if let Ok((id, resp)) = client.recv().await {
-            client.process_response(id, resp);
-        }
+        match recv.receive().await {
+            Ok(bytes) => {
+                let (msg_id, response) =
+                    bincode::deserialize::<(u64, super::message::Response)>(&bytes)?;
+                client.process_response(msg_id, response);
+                Ok(())
+            }
+            Err(e) => {
+                log::debug!("Control connection error: {e}");
+                Err(e)
+            }
+        }?;
     }
 }
 
@@ -216,5 +223,30 @@ async fn refresh_nodes_task(client: Client) -> Result<()> {
     loop {
         client.refresh_nodes().await.ok();
         tokio::time::sleep(Duration::from_secs(5)).await;
+    }
+}
+
+async fn connection_task(
+    client: Client,
+    quic_client: quic::Client,
+    addr: SocketAddr,
+    name: String,
+    mut rx: UnboundedReceiver<(u64, Request)>,
+) {
+    let (mut send, recv) = quic::try_connect_forever(&quic_client, addr, &name).await;
+    tokio::spawn(reader_task(client.clone(), recv));
+    while let Some(msg) = rx.recv().await {
+        if let Ok(data) = bincode::serialize(&msg) {
+            let size = (data.len() as u32).to_le_bytes();
+            let size: Bytes = Bytes::copy_from_slice(&size[..]);
+            let bytes: Bytes = data.into();
+            while let Err(e) = send.send(&mut [size.clone(), bytes.clone()]).await {
+                log::debug!("Cannot send data to control node: {e}, reconnecting...");
+                let (new_send, new_recv) =
+                    quic::try_connect_forever(&quic_client, addr, &name).await;
+                tokio::spawn(reader_task(client.clone(), new_recv));
+                send = new_send;
+            }
+        }
     }
 }

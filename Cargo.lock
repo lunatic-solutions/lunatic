@@ -1158,6 +1158,7 @@ dependencies = [
  "anyhow",
  "async_cell",
  "bincode",
+ "bytes",
  "dashmap",
  "futures-util",
  "log",
