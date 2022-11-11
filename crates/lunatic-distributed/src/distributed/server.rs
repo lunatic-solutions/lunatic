@@ -14,10 +14,11 @@ use wasmtime::ResourceLimiter;
 
 use crate::{
     distributed::message::{Request, Response},
-    quic, DistributedCtx, DistributedProcessState,
+    quic::{self, SendStream},
+    DistributedCtx, DistributedProcessState,
 };
 
-use super::message::Spawn;
+use super::message::{ClientError, Spawn};
 
 pub struct ServerCtx<T, E: Environment> {
     pub envs: Arc<dyn Environments<Env = E>>,
@@ -75,21 +76,21 @@ where
 
 pub async fn handle_message<T, E>(
     ctx: ServerCtx<T, E>,
-    conn: quic::Connection,
+    send: &mut SendStream,
     msg_id: u64,
     msg: Request,
 ) where
     T: ProcessState + DistributedCtx<E> + ResourceLimiter + Send + 'static,
     E: Environment + 'static,
 {
-    if let Err(e) = handle_message_err(ctx, conn, msg_id, msg).await {
+    if let Err(e) = handle_message_err(ctx, send, msg_id, msg).await {
         log::error!("Error handling message: {e}");
     }
 }
 
 async fn handle_message_err<T, E>(
     ctx: ServerCtx<T, E>,
-    conn: quic::Connection,
+    send: &mut SendStream,
     msg_id: u64,
     msg: Request,
 ) -> Result<()>
@@ -99,20 +100,45 @@ where
 {
     match msg {
         Request::Spawn(spawn) => {
-            let id = handle_spawn(ctx, spawn).await?;
-            conn.send(msg_id, Response::Spawned(id)).await?;
+            match handle_spawn(ctx, spawn).await {
+                Ok(Ok(id)) => {
+                    let mut data = super::message::pack_response(msg_id, Response::Spawned(id));
+                    send.send(&mut data).await?;
+                }
+                Ok(Err(client_error)) => {
+                    let mut data =
+                        super::message::pack_response(msg_id, Response::Error(client_error));
+                    send.send(&mut data).await?;
+                }
+                Err(error) => {
+                    let mut data = super::message::pack_response(
+                        msg_id,
+                        Response::Error(ClientError::Unexpected(error.to_string())),
+                    );
+                    send.send(&mut data).await?
+                }
+            };
         }
         Request::Message {
             environment_id,
             process_id,
             tag,
             data,
-        } => handle_process_message(ctx, environment_id, process_id, tag, data).await?,
-    }
+        } => match handle_process_message(ctx, environment_id, process_id, tag, data).await {
+            Ok(_) => {
+                let mut data = super::message::pack_response(msg_id, Response::Sent);
+                send.send(&mut data).await?;
+            }
+            Err(error) => {
+                let mut data = super::message::pack_response(msg_id, Response::Error(error));
+                send.send(&mut data).await?;
+            }
+        },
+    };
     Ok(())
 }
 
-async fn handle_spawn<T, E>(ctx: ServerCtx<T, E>, spawn: Spawn) -> Result<u64>
+async fn handle_spawn<T, E>(ctx: ServerCtx<T, E>, spawn: Spawn) -> Result<Result<u64, ClientError>>
 where
     T: ProcessState + DistributedCtx<E> + ResourceLimiter + Send + 'static,
     E: Environment + 'static,
@@ -135,7 +161,7 @@ where
                 let wasm = RawWasm::new(Some(module_id), bytes);
                 ctx.modules.compile(ctx.runtime.clone(), wasm).await??
             } else {
-                return Err(anyhow!("Cannot get the module from control"));
+                return Ok(Err(ClientError::ModuleNotFound));
             }
         }
     };
@@ -158,7 +184,7 @@ where
         None,
     )
     .await?;
-    Ok(proc.id())
+    Ok(Ok(proc.id()))
 }
 
 async fn handle_process_message<T, E>(
@@ -167,7 +193,7 @@ async fn handle_process_message<T, E>(
     process_id: u64,
     tag: Option<i64>,
     data: Vec<u8>,
-) -> Result<()>
+) -> std::result::Result<(), ClientError>
 where
     T: ProcessState + DistributedCtx<E> + ResourceLimiter + Send + 'static,
     E: Environment,
@@ -177,7 +203,9 @@ where
         if let Some(proc) = env.get_process(process_id) {
             proc.send(Signal::Message(Message::Data(DataMessage::new_from_vec(
                 tag, data,
-            ))))
+            ))));
+        } else {
+            return Err(ClientError::ProcessNotFound);
         }
     }
     Ok(())

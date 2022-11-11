@@ -3,9 +3,10 @@ use std::{future::Future, sync::Arc, time::Duration};
 use anyhow::{anyhow, Result};
 use lunatic_common_api::{get_memory, IntoTrap};
 use lunatic_distributed::{
-    distributed::message::{Spawn, Val},
+    distributed::message::{ClientError, Spawn, Val},
     DistributedCtx,
 };
+use lunatic_error_api::ErrorCtx;
 use lunatic_process::{
     env::Environment,
     message::{DataMessage, Message},
@@ -17,7 +18,7 @@ use wasmtime::{Caller, Linker, ResourceLimiter, Trap};
 // Register the lunatic distributed APIs to the linker
 pub fn register<T, E>(linker: &mut Linker<T>) -> Result<()>
 where
-    T: DistributedCtx<E> + ProcessCtx<T> + Send + ResourceLimiter + 'static,
+    T: DistributedCtx<E> + ProcessCtx<T> + Send + ResourceLimiter + ErrorCtx + 'static,
     E: Environment + 'static,
     for<'a> &'a T: Send,
 {
@@ -91,11 +92,12 @@ where
 // first convert it to an i128.
 //
 // Returns:
-// * 0 on success - The ID of the newly created process is written to `id_ptr`
-// * 1 on error   - The error ID is written to `id_ptr`
+// * 0      on success - The ID of the newly created process is written to `id_ptr`
+// * 1      If node does not exist
+// * 2      If module does not exist
+// * 9027   If node connection error occurred
 //
 // Traps:
-// * If the module ID doesn't exist.
 // * If the function string is not a valid utf8 string.
 // * If the params array is in a wrong format.
 // * If any memory outside the guest heap space is referenced.
@@ -112,7 +114,7 @@ fn spawn<T, E>(
     id_ptr: u32,
 ) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_>
 where
-    T: DistributedCtx<E> + ResourceLimiter + Send + 'static,
+    T: DistributedCtx<E> + ResourceLimiter + Send + ErrorCtx + 'static,
     E: Environment,
     for<'a> &'a T: Send,
 {
@@ -165,7 +167,7 @@ where
 
         log::debug!("Spawn on node {node_id}, mod {module_id}, fn {function}, params {params:?}");
 
-        let (proc_id, ret) = match state
+        let (process_or_error_id, ret) = match state
             .distributed()?
             .node_client
             .spawn(
@@ -180,12 +182,31 @@ where
             )
             .await
         {
-            Ok(id) => (id, 0),
-            Err(_) => (0, 1), // TODO errors
+            Ok(process_id) => (process_id, 0),
+            Err(error) => {
+                let (code, message): (u32, String) = match error {
+                    ClientError::Unexpected(cause) => Err(Trap::new(cause)),
+                    ClientError::NodeNotFound => Ok((1, "Node does not exist.".to_string())),
+                    ClientError::ModuleNotFound => Ok((2, "Module does not exist.".to_string())),
+                    ClientError::Connection(cause) => Ok((9027, cause)),
+                    _ => Err(Trap::new("unreachable")),
+                }?;
+                (
+                    caller
+                        .data_mut()
+                        .error_resources_mut()
+                        .add(anyhow!(message)),
+                    code,
+                )
+            }
         };
 
         memory
-            .write(&mut caller, id_ptr as usize, &proc_id.to_le_bytes())
+            .write(
+                &mut caller,
+                id_ptr as usize,
+                &process_or_error_id.to_le_bytes(),
+            )
             .or_trap("lunatic::distributed::spawn::write_id")?;
 
         Ok(ret)
@@ -196,6 +217,12 @@ where
 //
 // There are no guarantees that the message will be received.
 //
+// Returns:
+// * 0      If message sent
+// * 1      If process_id does not exist
+// * 2      If node_id does not exist
+// * 9027   If node connection error occurred
+//
 // Traps:
 // * If it's called before creating the next message.
 // * If the message contains resources
@@ -203,9 +230,9 @@ fn send<T, E>(
     mut caller: Caller<T>,
     node_id: u64,
     process_id: u64,
-) -> Box<dyn Future<Output = Result<(), Trap>> + Send + '_>
+) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_>
 where
-    T: DistributedCtx<E> + ProcessCtx<T> + Send + 'static,
+    T: DistributedCtx<E> + ProcessCtx<T> + Send + ErrorCtx + 'static,
     E: Environment,
     for<'a> &'a T: Send,
 {
@@ -228,13 +255,24 @@ where
             }
 
             let state = caller.data();
-            state
+            match state
                 .distributed()?
                 .node_client
                 .message_process(node_id, state.environment_id(), process_id, tag, buffer)
-                .await?;
+                .await
+            {
+                Ok(_) => Ok(0),
+                Err(error) => match error {
+                    ClientError::Unexpected(cause) => Err(Trap::new(cause)),
+                    ClientError::ProcessNotFound => Ok(1),
+                    ClientError::NodeNotFound => Ok(2),
+                    ClientError::Connection(_) => Ok(9027),
+                    _ => Err(Trap::new("unreachable")),
+                },
+            }
+        } else {
+            Err(Trap::new("Only Message::Data can be sent across nodes."))
         }
-        Ok(())
     })
 }
 
@@ -251,8 +289,10 @@ where
 // expiration with value 9027.
 //
 // Returns:
-// * 0    if message arrived.
-// * 9027 if call timed out.
+// * 0    If message arrived.
+// * 1    If process_id does not exist
+// * 2    If node_id does not exist
+// * 9027 If call timed out.
 //
 // Traps:
 // * If it's called with wrong data in the scratch area.
@@ -295,11 +335,24 @@ where
             }
 
             let state = caller.data();
-            state
+            let code = match state
                 .distributed()?
                 .node_client
                 .message_process(node_id, state.environment_id(), process_id, tag, buffer)
-                .await?;
+                .await
+            {
+                Ok(_) => Ok(0),
+                Err(error) => match error {
+                    ClientError::ProcessNotFound => Ok(1),
+                    ClientError::NodeNotFound => Ok(2),
+                    ClientError::Unexpected(cause) => Err(Trap::new(cause)),
+                    _ => Err(Trap::new("unreachable")),
+                },
+            }?;
+
+            if code != 0 {
+                return Ok(code);
+            }
 
             let pop_skip_search = caller.data_mut().mailbox().pop_skip_search(tags);
             if let Ok(message) = match timeout_duration {
@@ -315,8 +368,7 @@ where
                 Ok(9027)
             }
         } else {
-            // TODO err?
-            Ok(9027)
+            Err(Trap::new("Only Message::Data can be sent across nodes."))
         }
     })
 }

@@ -12,6 +12,7 @@ license = "Apache-2.0/MIT"
 [dependencies]
 lunatic-common-api = { version = "^0.10", path = "../lunatic-common-api" }
 lunatic-distributed = { version = "^0.10", path = "../lunatic-distributed" }
+lunatic-error-api = { version = "^0.10", path = "../lunatic-error-api" }
 lunatic-process = { version = "^0.10", path = "../lunatic-process" }
 lunatic-process-api = { version = "^0.10", path = "../lunatic-process-api" }
 wasmtime = "^1" # managed by root Cargo.toml

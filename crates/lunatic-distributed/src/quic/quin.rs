@@ -1,59 +1,42 @@
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 
 use anyhow::{anyhow, Result};
-use bincode::{deserialize, serialize};
+use bytes::Bytes;
 use futures_util::StreamExt;
 use lunatic_process::{env::Environment, state::ProcessState};
-use quinn::{
-    ClientConfig, Connecting, Endpoint, Incoming, NewConnection, RecvStream, SendStream,
-    ServerConfig,
-};
+use quinn::{ClientConfig, Connecting, Endpoint, Incoming, NewConnection, ServerConfig};
 use rustls_pemfile::Item;
-use serde::{de::DeserializeOwned, Serialize};
-use tokio::sync::Mutex;
 use wasmtime::ResourceLimiter;
 
 use crate::{control, distributed, DistributedCtx};
 
-#[derive(Clone)]
-pub struct Connection {
-    inner: Arc<InnerConnection>,
+pub struct SendStream {
+    pub stream: quinn::SendStream,
 }
 
-pub struct InnerConnection {
-    reader: Mutex<RecvStream>,
-    writer: Mutex<SendStream>,
+impl SendStream {
+    pub async fn send(&mut self, data: &mut [Bytes]) -> Result<()> {
+        self.stream.write_all_chunks(data).await?;
+        Ok(())
+    }
 }
 
-impl Connection {
-    pub fn new(stream: (SendStream, RecvStream)) -> Self {
-        let (write_half, read_half) = stream;
-        Connection {
-            inner: Arc::new(InnerConnection {
-                reader: Mutex::new(read_half),
-                writer: Mutex::new(write_half),
-            }),
-        }
-    }
+pub struct RecvStream {
+    pub stream: quinn::RecvStream,
+}
 
-    pub async fn send<T: Serialize>(&self, msg_id: u64, msg: T) -> Result<u64> {
-        let message = serialize(&(msg_id, msg))?;
-        // Prefix message with size as little-endian u32 value.
-        let size = (message.len() as u32).to_le_bytes();
-        let mut writer = self.inner.writer.lock().await;
-        writer.write_all(&size).await?;
-        writer.write_all(&message).await?;
-        Ok(msg_id)
-    }
-
-    pub async fn receive<T: DeserializeOwned>(&self) -> Result<(u64, T)> {
-        let mut reader = self.inner.reader.lock().await;
+impl RecvStream {
+    pub async fn receive(&mut self) -> Result<Bytes> {
         let mut size = [0u8; 4];
-        reader.read_exact(&mut size).await?;
+        self.stream.read_exact(&mut size).await?;
         let size = u32::from_le_bytes(size);
         let mut buffer = vec![0u8; size as usize];
-        reader.read_exact(&mut buffer).await?;
-        Ok(deserialize(&buffer)?)
+        self.stream.read_exact(&mut buffer).await?;
+        Ok(buffer.into())
+    }
+
+    pub fn id(&self) -> quinn::StreamId {
+        self.stream.id()
     }
 }
 
@@ -63,15 +46,19 @@ pub struct Client {
 }
 
 impl Client {
-    pub async fn connect(&self, addr: SocketAddr, name: &str, retry: u32) -> Result<Connection> {
+    pub async fn connect(
+        &self,
+        addr: SocketAddr,
+        name: &str,
+        retry: u32,
+    ) -> Result<(SendStream, RecvStream)> {
         for _ in 0..retry {
-            log::info!("Connecting to control {addr}");
             let new_conn = self.inner.connect(addr, name)?.await?;
             let NewConnection {
                 connection: conn, ..
             } = new_conn;
-            if let Ok(stream) = conn.open_bi().await {
-                return Ok(Connection::new(stream));
+            if let Ok((send, recv)) = conn.open_bi().await {
+                return Ok((SendStream { stream: send }, RecvStream { stream: recv }));
             }
             tokio::time::sleep(Duration::from_secs(2)).await;
         }
@@ -140,23 +127,28 @@ async fn handle_quic_stream(
 ) -> Result<()> {
     let NewConnection { mut bi_streams, .. } = conn.await?;
     while let Some(stream) = bi_streams.next().await {
-        let connection = Connection::new(stream?);
-        tokio::spawn(handle_quic_connection(
-            connection.clone(),
-            control_server.clone(),
-        ));
+        if let Ok((s, r)) = stream {
+            let send = SendStream { stream: s };
+            let recv = RecvStream { stream: r };
+            tokio::spawn(handle_quic_connection(send, recv, control_server.clone()));
+        }
     }
     Ok(())
 }
 
-async fn handle_quic_connection(connection: Connection, control_server: control::server::Server) {
-    while let Ok((msg_id, request)) = connection.receive().await {
-        tokio::spawn(control::server::handle_request(
-            control_server.clone(),
-            connection.clone(),
-            msg_id,
-            request,
-        ));
+async fn handle_quic_connection(
+    mut send: SendStream,
+    mut recv: RecvStream,
+    control_server: control::server::Server,
+) {
+    while let Ok(bytes) = recv.receive().await {
+        if let Ok((msg_id, request)) =
+            bincode::deserialize::<(u64, control::message::Request)>(&bytes)
+        {
+            control::server::handle_request(control_server.clone(), &mut send, msg_id, request)
+                .await
+                .ok();
+        }
     }
 }
 
@@ -184,18 +176,30 @@ where
 {
     let NewConnection { mut bi_streams, .. } = conn.await?;
     while let Some(stream) = bi_streams.next().await {
-        let connection = Connection::new(stream?);
-        tokio::spawn(handle_quic_stream_node(ctx.clone(), connection));
+        if let Ok((s, r)) = stream {
+            let send = SendStream { stream: s };
+            let recv = RecvStream { stream: r };
+            tokio::spawn(handle_quic_stream_node(ctx.clone(), send, recv));
+        }
     }
     Ok(())
 }
 
-async fn handle_quic_stream_node<T, E>(ctx: distributed::server::ServerCtx<T, E>, conn: Connection)
-where
+async fn handle_quic_stream_node<T, E>(
+    ctx: distributed::server::ServerCtx<T, E>,
+    mut send: SendStream,
+    mut recv: RecvStream,
+) where
     T: ProcessState + ResourceLimiter + DistributedCtx<E> + Send + 'static,
     E: Environment + 'static,
 {
-    while let Ok((msg_id, request)) = conn.receive().await {
-        distributed::server::handle_message(ctx.clone(), conn.clone(), msg_id, request).await;
+    while let Ok(bytes) = recv.receive().await {
+        if let Ok((msg_id, request)) =
+            bincode::deserialize::<(u64, distributed::message::Request)>(&bytes)
+        {
+            distributed::server::handle_message(ctx.clone(), &mut send, msg_id, request).await;
+        } else {
+            log::debug!("Error deserializing request");
+        }
     }
 }
