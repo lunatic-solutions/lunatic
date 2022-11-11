@@ -33,6 +33,16 @@ where
         "send_receive_skip_search",
         send_receive_skip_search,
     )?;
+    linker.func_wrap5_async(
+        "lunatic::distributed",
+        "exec_lookup_nodes",
+        exec_lookup_nodes,
+    )?;
+    linker.func_wrap(
+        "lunatic::distributed",
+        "copy_lookup_nodes_results",
+        copy_lookup_nodes_results,
+    )?;
     Ok(())
 }
 
@@ -74,6 +84,104 @@ where
         .or_trap("lunatic::distributed::get_nodes::memory")?
         .copy_from_slice(unsafe { node_ids[..copy_nodes_len].align_to::<u8>().1 });
     Ok(copy_nodes_len as u32)
+}
+
+// Submits a lookup node query to the control server and waits for the results.
+//
+// Filtering is done based on tags which are `key=value` user defined node
+// metadata, see CLI flag `tag`.
+//
+// Traps:
+// * If the query is not a valid UTF-8 string
+// * if any memory outside the guest heap space is referenced
+fn exec_lookup_nodes<T, E>(
+    mut caller: Caller<T>,
+    query_ptr: u32,
+    query_len: u32,
+    query_id_ptr: u32,
+    nodes_len_ptr: u32,
+    error_ptr: u32,
+) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_>
+where
+    T: DistributedCtx<E> + ErrorCtx + Send + 'static,
+    E: Environment + 'static,
+    for<'a> &'a T: Send,
+{
+    Box::new(async move {
+        let memory = get_memory(&mut caller)?;
+        let query_str = memory
+            .data(&caller)
+            .get(query_ptr as usize..(query_ptr + query_len) as usize)
+            .or_trap("lunatic::distributed::lookup_nodes::query_ptr")?;
+        let query = std::str::from_utf8(query_str)
+            .or_trap("lunatic::distributed::lookup_nodes::query_str_utf8")?;
+        let distributed = caller.data().distributed()?;
+        match distributed.control.lookup_nodes(query).await {
+            Ok((query_id, nodes_len)) => {
+                memory
+                    .write(&mut caller, query_id_ptr as usize, &query_id.to_le_bytes())
+                    .or_trap("lunatic::distributed::lookup_nodes::query_id")?;
+                memory
+                    .write(
+                        &mut caller,
+                        nodes_len_ptr as usize,
+                        &nodes_len.to_le_bytes(),
+                    )
+                    .or_trap("lunatic::distributed::lookup_nodes::nodes_len")?;
+                Ok(0)
+            }
+            Err(error) => {
+                let error_id = caller.data_mut().error_resources_mut().add(error);
+                memory
+                    .write(&mut caller, error_ptr as usize, &error_id.to_le_bytes())
+                    .or_trap("lunatic::distributed::lookup_nodes::error_ptr")?;
+                Ok(1)
+            }
+        }
+    })
+}
+
+// Copies node ids to guest memory from the lookup node query result, returns number of node ids copied.
+//
+// Traps:
+// * If any memory outside the guest heap space is referenced.
+fn copy_lookup_nodes_results<T, E>(
+    mut caller: Caller<T>,
+    query_id: u64,
+    nodes_ptr: u32,
+    nodes_len: u32,
+    error_ptr: u32,
+) -> Result<i32, Trap>
+where
+    T: DistributedCtx<E> + ErrorCtx,
+    E: Environment,
+{
+    let memory = get_memory(&mut caller)?;
+    if let Some(query_results) = caller
+        .data()
+        .distributed()
+        .map(|d| d.control.query_result(&query_id))?
+    {
+        let nodes = query_results.1;
+        let copy_nodes_len = nodes.len().min(nodes_len as usize);
+        let memory = get_memory(&mut caller)?;
+        memory
+            .data_mut(&mut caller)
+            .get_mut(
+                nodes_ptr as usize
+                    ..(nodes_ptr as usize + std::mem::size_of::<u64>() * copy_nodes_len as usize),
+            )
+            .or_trap("lunatic::distributed::copy_lookup_nodes_results::memory")?
+            .copy_from_slice(unsafe { nodes[..copy_nodes_len].align_to::<u8>().1 });
+        Ok(copy_nodes_len as i32)
+    } else {
+        let error = anyhow!("Invalid query id");
+        let error_id = caller.data_mut().error_resources_mut().add(error);
+        memory
+            .write(&mut caller, error_ptr as usize, &error_id.to_le_bytes())
+            .or_trap("lunatic::distributed::copy_lookup_nodes_results::error_ptr")?;
+        Ok(-1)
+    }
 }
 
 // Similar to a local spawn, it spawns a new process using the passed in function inside a module

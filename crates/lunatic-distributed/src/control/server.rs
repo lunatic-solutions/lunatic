@@ -17,6 +17,8 @@ use bytes::Bytes;
 use dashmap::DashMap;
 use rcgen::*;
 
+use super::parser::Parser;
+
 #[derive(Clone)]
 pub struct Server {
     inner: Arc<InnerServer>,
@@ -98,6 +100,25 @@ impl Server {
                 })
                 .collect(),
         )
+    }
+
+    pub fn lookup_nodes(&self, query: String) -> Response {
+        let parser = Parser::new(query);
+        match parser.parse() {
+            Ok(filter) => Response::Nodes(
+                self.inner
+                    .nodes
+                    .iter()
+                    .filter(|e| filter.apply(e))
+                    .map(|e| NodeInfo {
+                        id: *e.key(),
+                        address: e.node_address,
+                        name: e.node_name.clone(),
+                    })
+                    .collect(),
+            ),
+            Err(e) => Response::Error(e.to_string()),
+        }
     }
 
     pub fn add_module(&self, bytes: Vec<u8>) -> Response {
@@ -196,6 +217,7 @@ pub async fn handle_request(
         ListNodes => server.list_nodes(),
         AddModule(bytes) => server.add_module(bytes),
         GetModule(id) => server.get_module(id),
+        LookupNodes(query) => server.lookup_nodes(query),
     };
     let data = bincode::serialize(&(msg_id, response))?;
     let size = (data.len() as u32).to_le_bytes();

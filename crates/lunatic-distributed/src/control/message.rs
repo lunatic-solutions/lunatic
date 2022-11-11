@@ -1,6 +1,6 @@
 use bytes::Bytes;
 use serde::{Deserialize, Serialize};
-use std::net::SocketAddr;
+use std::{collections::HashMap, net::SocketAddr};
 
 use crate::NodeInfo;
 
@@ -11,6 +11,7 @@ pub enum Request {
     // should always handle registration first and later know which node is sending requests.
     Deregister(u64),
     ListNodes,
+    LookupNodes(String),
     AddModule(Vec<u8>),
     GetModule(u64),
 }
@@ -21,6 +22,7 @@ impl Request {
             Request::Register(_) => "Register",
             Request::Deregister(_) => "Deregister",
             Request::ListNodes => "ListNodes",
+            Request::LookupNodes(_) => "LookupNodes",
             Request::AddModule(_) => "AddModule",
             Request::GetModule(_) => "GetModule",
         }
@@ -42,6 +44,7 @@ pub struct Registration {
     pub node_address: SocketAddr,
     pub node_name: String,
     pub signing_request: String,
+    pub attributes: HashMap<String, String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

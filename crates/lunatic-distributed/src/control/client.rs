@@ -4,6 +4,7 @@ use bytes::Bytes;
 use dashmap::DashMap;
 use lunatic_process::runtimes::RawWasm;
 use std::{
+    collections::HashMap,
     net::SocketAddr,
     sync::{atomic, atomic::AtomicU64, Arc, RwLock},
     time::Duration,
@@ -25,19 +26,23 @@ pub struct Client {
 
 pub struct InnerClient {
     next_message_id: AtomicU64,
+    next_query_id: AtomicU64,
     node_addr: SocketAddr,
     node_name: String,
     control_addr: SocketAddr,
     tx: UnboundedSender<(u64, Request)>,
     pending_requests: DashMap<u64, Arc<AsyncCell<Response>>>,
+    node_queries: DashMap<u64, Vec<u64>>,
     nodes: DashMap<u64, NodeInfo>,
     node_ids: RwLock<Vec<u64>>,
+    attributes: HashMap<String, String>,
 }
 
 impl Client {
     pub async fn register(
         node_addr: SocketAddr,
         node_name: String,
+        attributes: HashMap<String, String>,
         control_addr: SocketAddr,
         quic_client: quic::Client,
         signing_request: String,
@@ -52,8 +57,11 @@ impl Client {
                 node_name: node_name.clone(),
                 tx,
                 pending_requests: DashMap::new(),
+                node_queries: DashMap::new(),
+                next_query_id: AtomicU64::new(1),
                 nodes: Default::default(),
                 node_ids: Default::default(),
+                attributes,
             }),
         };
         // Spawn reader task before register
@@ -80,6 +88,12 @@ impl Client {
             .fetch_add(1, atomic::Ordering::Relaxed)
     }
 
+    pub fn next_query_id(&self) -> u64 {
+        self.inner
+            .next_query_id
+            .fetch_add(1, atomic::Ordering::Relaxed)
+    }
+
     pub fn control_addr(&self) -> SocketAddr {
         self.inner.control_addr
     }
@@ -98,6 +112,7 @@ impl Client {
         let reg = Registration {
             node_address: self.inner.node_addr,
             node_name: self.inner.node_name.clone(),
+            attributes: self.inner.attributes.clone(),
             signing_request,
         };
         let resp = self.send(Request::Register(reg)).await?;
@@ -141,6 +156,25 @@ impl Client {
 
     pub fn node_ids(&self) -> Vec<u64> {
         self.inner.node_ids.read().unwrap().clone()
+    }
+
+    pub async fn lookup_nodes(&self, query: &str) -> Result<(u64, usize)> {
+        let response = self.send(Request::LookupNodes(query.to_string())).await?;
+        match response {
+            Response::Nodes(nodes) => {
+                let nodes: Vec<u64> = nodes.into_iter().map(move |v| v.id).collect();
+                let nodes_count = nodes.len();
+                let query_id = self.next_query_id();
+                self.inner.node_queries.insert(query_id, nodes);
+                Ok((query_id, nodes_count))
+            }
+            Response::Error(message) => Err(anyhow!(message)),
+            _ => Err(anyhow!("Invalid response type on lookup_nodes.")),
+        }
+    }
+
+    pub fn query_result(&self, query_id: &u64) -> Option<(u64, Vec<u64>)> {
+        self.inner.node_queries.remove(query_id)
     }
 
     pub fn node_count(&self) -> usize {
