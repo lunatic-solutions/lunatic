@@ -1,6 +1,6 @@
-use std::{collections::HashMap, net::SocketAddr};
 use bytes::Bytes;
 use serde::{Deserialize, Serialize};
+use std::{collections::HashMap, net::SocketAddr};
 
 use crate::NodeInfo;
 
