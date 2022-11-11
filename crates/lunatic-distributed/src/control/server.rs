@@ -17,9 +17,6 @@ use bytes::Bytes;
 use dashmap::DashMap;
 use rcgen::*;
 
-use crate::control::message::{Registered, Registration};
-use crate::{control::message::Response, quic::Connection};
-
 use super::parser::Parser;
 
 #[derive(Clone)]
@@ -113,7 +110,11 @@ impl Server {
                     .nodes
                     .iter()
                     .filter(|e| filter.apply(e))
-                    .map(|e| (*e.key(), e.value().clone()))
+                    .map(|e| NodeInfo {
+                        id: *e.key(),
+                        address: e.node_address,
+                        name: e.node_name.clone(),
+                    })
                     .collect(),
             ),
             Err(e) => Response::Error(e.to_string()),

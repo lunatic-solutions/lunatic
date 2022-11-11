@@ -94,10 +94,6 @@ impl Client {
             .fetch_add(1, atomic::Ordering::Relaxed)
     }
 
-    pub fn connection(&self) -> &Connection {
-        &self.inner.connection
-    }
-
     pub fn control_addr(&self) -> SocketAddr {
         self.inner.control_addr
     }
@@ -166,7 +162,7 @@ impl Client {
         let response = self.send(Request::LookupNodes(query.to_string())).await?;
         match response {
             Response::Nodes(nodes) => {
-                let nodes: Vec<u64> = nodes.into_iter().map(move |v| v.0).collect();
+                let nodes: Vec<u64> = nodes.into_iter().map(move |v| v.id).collect();
                 let nodes_count = nodes.len();
                 let query_id = self.next_query_id();
                 self.inner.node_queries.insert(query_id, nodes);
