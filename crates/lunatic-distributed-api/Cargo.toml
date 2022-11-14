@@ -15,7 +15,7 @@ lunatic-distributed = { version = "^0.10", path = "../lunatic-distributed" }
 lunatic-error-api = { version = "^0.10", path = "../lunatic-error-api" }
 lunatic-process = { version = "^0.10", path = "../lunatic-process" }
 lunatic-process-api = { version = "^0.10", path = "../lunatic-process-api" }
-wasmtime = "^1" # managed by root Cargo.toml
+wasmtime = "^2" # managed by root Cargo.toml
 tokio = { version = "^1.20", features = ["macros", "net", "time"] }
 anyhow = "^1.0"
 serde = { version = "^1.0", features = ["derive"] }
