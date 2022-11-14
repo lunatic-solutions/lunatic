@@ -277,10 +277,10 @@ mod tests {
         // First poll will block
         let result = fut.as_mut().poll(&mut context);
         assert!(result.is_pending());
-        assert_eq!(*waker_ref.0.lock().unwrap(), false);
+        assert!(!*waker_ref.0.lock().unwrap());
         // Pushing a message to the mailbox will call the waker
         mailbox.push(Message::LinkDied(tags));
-        assert_eq!(*waker_ref.0.lock().unwrap(), true);
+        assert!(*waker_ref.0.lock().unwrap());
         // Next poll will return the value
         let result = fut.as_mut().poll(&mut context);
         assert!(result.is_ready());
@@ -300,10 +300,10 @@ mod tests {
         // First poll will block
         let result = fut.as_mut().poll(&mut context);
         assert!(result.is_pending());
-        assert_eq!(*waker_ref.0.lock().unwrap(), false);
+        assert!(!*waker_ref.0.lock().unwrap());
         // Pushing a message with the `None` tags should not trigger the waker
         mailbox.push(Message::LinkDied(None));
-        assert_eq!(*waker_ref.0.lock().unwrap(), false);
+        assert!(!*waker_ref.0.lock().unwrap());
         // Next poll will still not have the value with the tags 1337
         let result = fut.as_mut().poll(&mut context);
         assert!(result.is_pending());
@@ -311,7 +311,7 @@ mod tests {
         mailbox.push(Message::LinkDied(None));
         // Pushing a message with tags 1337 should trigger the waker
         mailbox.push(Message::LinkDied(Some(1337)));
-        assert_eq!(*waker_ref.0.lock().unwrap(), true);
+        assert!(*waker_ref.0.lock().unwrap());
         // Next poll will have the message ready
         let result = fut.as_mut().poll(&mut context);
         assert!(result.is_ready());
@@ -330,10 +330,10 @@ mod tests {
         // First poll will block the future
         let result = fut.as_mut().poll(&mut context);
         assert!(result.is_pending());
-        assert_eq!(*waker_ref.0.lock().unwrap(), false);
+        assert!(!*waker_ref.0.lock().unwrap());
         // Pushing a message with the `None` tags should call the waker()
         mailbox.push(Message::LinkDied(None));
-        assert_eq!(*waker_ref.0.lock().unwrap(), true);
+        assert!(*waker_ref.0.lock().unwrap());
         // Dropping the future will cancel it
         drop(fut);
         // Next poll will not have the value with the tags 1337
@@ -346,10 +346,7 @@ mod tests {
         tokio::pin!(fut);
         let result = fut.poll(&mut context);
         match result {
-            Poll::Ready(message) => match message {
-                Message::LinkDied(tags) => assert_eq!(tags, None),
-                _ => panic!("Unexpected message"),
-            },
+            Poll::Ready(Message::LinkDied(tags)) => assert_eq!(tags, None),
             _ => panic!("Unexpected message"),
         }
     }

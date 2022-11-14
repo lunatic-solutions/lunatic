@@ -4,7 +4,7 @@ use criterion::{criterion_group, criterion_main, Criterion};
 use dashmap::DashMap;
 // TODO: Re-export this under lunatic_runtime
 use lunatic_process::{
-    env::Environment,
+    env::LunaticEnvironment,
     runtimes::wasmtime::{default_config, WasmtimeRuntime},
 };
 use lunatic_runtime::{state::DefaultProcessState, DefaultProcessConfig};
@@ -23,7 +23,7 @@ fn criterion_benchmark(c: &mut Criterion) {
             .unwrap(),
     );
 
-    let env = Environment::new(0);
+    let env = Arc::new(LunaticEnvironment::new(0));
     c.bench_function("spawn process", |b| {
         b.to_async(&rt).iter(|| async {
             let registry = Arc::new(DashMap::new());
@@ -36,13 +36,21 @@ fn criterion_benchmark(c: &mut Criterion) {
                 registry,
             )
             .unwrap();
-            env.spawn_wasm(runtime.clone(), &module, state, "hello", Vec::new(), None)
-                .await
-                .unwrap()
-                .0
-                .await
-                .unwrap()
-                .ok();
+            lunatic_process::wasm::spawn_wasm(
+                env.clone(),
+                runtime.clone(),
+                &module,
+                state,
+                "hello",
+                Vec::new(),
+                None,
+            )
+            .await
+            .unwrap()
+            .0
+            .await
+            .unwrap()
+            .ok();
         });
     });
 }
