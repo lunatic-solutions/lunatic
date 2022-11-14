@@ -11,7 +11,7 @@ version = "0.10.0"
 
 [dependencies]
 anyhow = "^1.0"
-wasmtime = "^1" # managed by root Cargo.toml
+wasmtime = "^2" # managed by root Cargo.toml
 tokio = { version = "^1.20", features = ["macros", "rt-multi-thread", "sync", "net", "time", "io-util"] }
 hash-map-id = { version = "^0.10", path = "../hash-map-id" }
 lunatic-common-api = { version = "^0.10", path = "../lunatic-common-api" }

@@ -2,9 +2,8 @@ use std::{net::SocketAddr, sync::Arc, time::Duration};
 
 use anyhow::{anyhow, Result};
 use bytes::Bytes;
-use futures_util::StreamExt;
 use lunatic_process::{env::Environment, state::ProcessState};
-use quinn::{ClientConfig, Connecting, Endpoint, Incoming, NewConnection, ServerConfig};
+use quinn::{ClientConfig, Connecting, ConnectionError, Endpoint, ServerConfig};
 use rustls_pemfile::Item;
 use wasmtime::ResourceLimiter;
 
@@ -53,10 +52,7 @@ impl Client {
         retry: u32,
     ) -> Result<(SendStream, RecvStream)> {
         for _ in 0..retry {
-            let new_conn = self.inner.connect(addr, name)?.await?;
-            let NewConnection {
-                connection: conn, ..
-            } = new_conn;
+            let conn = self.inner.connect(addr, name)?.await?;
             if let Ok((send, recv)) = conn.open_bi().await {
                 return Ok((SendStream { stream: send }, RecvStream { stream: recv }));
             }
@@ -85,7 +81,7 @@ pub fn new_quic_client(ca_cert: &str) -> Result<Client> {
     Ok(Client { inner: endpoint })
 }
 
-pub fn new_quic_server(addr: SocketAddr, cert: &str, key: &str) -> Result<(Endpoint, Incoming)> {
+pub fn new_quic_server(addr: SocketAddr, cert: &str, key: &str) -> Result<Endpoint> {
     let mut cert = cert.as_bytes();
     let mut key = key.as_bytes();
     let pk = rustls_pemfile::read_one(&mut key)?.unwrap();
@@ -112,10 +108,10 @@ pub fn new_quic_server(addr: SocketAddr, cert: &str, key: &str) -> Result<(Endpo
 }
 
 pub async fn handle_accept_control(
-    quic_server: &mut (Endpoint, Incoming),
+    quic_server: &mut Endpoint,
     control_server: control::server::Server,
 ) -> Result<()> {
-    while let Some(conn) = quic_server.1.next().await {
+    while let Some(conn) = quic_server.accept().await {
         tokio::spawn(handle_quic_stream(conn, control_server.clone()));
     }
     Ok(())
@@ -125,12 +121,19 @@ async fn handle_quic_stream(
     conn: Connecting,
     control_server: control::server::Server,
 ) -> Result<()> {
-    let NewConnection { mut bi_streams, .. } = conn.await?;
-    while let Some(stream) = bi_streams.next().await {
-        if let Ok((s, r)) = stream {
-            let send = SendStream { stream: s };
-            let recv = RecvStream { stream: r };
-            tokio::spawn(handle_quic_connection(send, recv, control_server.clone()));
+    let conn = conn.await?;
+    loop {
+        let stream = conn.accept_bi().await;
+        match stream {
+            Ok((s, r)) => {
+                let send = SendStream { stream: s };
+                let recv = RecvStream { stream: r };
+                tokio::spawn(handle_quic_connection(send, recv, control_server.clone()));
+            }
+            Err(ConnectionError::LocallyClosed) => {
+                break;
+            }
+            Err(_) => {}
         }
     }
     Ok(())
@@ -153,14 +156,14 @@ async fn handle_quic_connection(
 }
 
 pub async fn handle_node_server<T, E>(
-    quic_server: &mut (Endpoint, Incoming),
+    quic_server: &mut Endpoint,
     ctx: distributed::server::ServerCtx<T, E>,
 ) -> Result<()>
 where
     T: ProcessState + ResourceLimiter + DistributedCtx<E> + Send + 'static,
     E: Environment + 'static,
 {
-    while let Some(conn) = quic_server.1.next().await {
+    while let Some(conn) = quic_server.accept().await {
         tokio::spawn(handle_quic_connection_node(ctx.clone(), conn));
     }
     Ok(())
@@ -174,12 +177,17 @@ where
     T: ProcessState + ResourceLimiter + DistributedCtx<E> + Send + 'static,
     E: Environment + 'static,
 {
-    let NewConnection { mut bi_streams, .. } = conn.await?;
-    while let Some(stream) = bi_streams.next().await {
-        if let Ok((s, r)) = stream {
-            let send = SendStream { stream: s };
-            let recv = RecvStream { stream: r };
-            tokio::spawn(handle_quic_stream_node(ctx.clone(), send, recv));
+    let conn = conn.await?;
+    loop {
+        let stream = conn.accept_bi().await;
+        match stream {
+            Ok((s, r)) => {
+                let send = SendStream { stream: s };
+                let recv = RecvStream { stream: r };
+                tokio::spawn(handle_quic_stream_node(ctx.clone(), send, recv));
+            }
+            Err(ConnectionError::LocallyClosed) => break,
+            Err(_) => {}
         }
     }
     Ok(())
