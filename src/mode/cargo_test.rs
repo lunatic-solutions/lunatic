@@ -1,14 +1,57 @@
 use std::{env, fs, path::Path, sync::Arc, time::Instant};
 
 use anyhow::{Context, Result};
-use clap::{crate_version, Arg, Command};
-
+use clap::Parser;
 use dashmap::DashMap;
 use lunatic_process::{env::LunaticEnvironment, runtimes, wasm::spawn_wasm};
 use lunatic_process_api::ProcessConfigCtx;
 use lunatic_runtime::{DefaultProcessConfig, DefaultProcessState};
 use lunatic_stdout_capture::StdoutCapture;
 use lunatic_wasi_api::LunaticWasiCtx;
+
+#[derive(Parser, Debug)]
+#[command(version)]
+struct Args {
+    /// Entry .wasm file
+    #[arg()]
+    wasm: String,
+
+    /// Run only tests that contain the filter string
+    #[arg()]
+    filter: Option<String>,
+
+    /// Grant access to the given host directories
+    #[arg(long, value_name = "DIRECTORY")]
+    dir: Vec<String>,
+
+    /// Run only ignored tests
+    #[arg(long)]
+    ignored: bool,
+
+    /// Don't hide output from test executions
+    #[arg(long)]
+    nocapture: bool,
+
+    /// Show also the output of successfull tests
+    #[arg(long)]
+    show_output: bool,
+
+    /// List all tests
+    #[arg(long, requires = "format")]
+    list: bool,
+
+    /// Configure formatting of output (only supported: terse)
+    #[arg(long, requires = "list")]
+    format: Option<String>,
+
+    /// Exactly match filters rather than by substring
+    #[arg(long)]
+    exact: bool,
+
+    /// Arguments passed to the guest
+    #[arg()]
+    wasm_args: Vec<String>,
+}
 
 pub(crate) async fn test() -> Result<()> {
     // Set logger level to "error" to avoid printing process failures warnings during tests.
@@ -17,80 +60,7 @@ pub(crate) async fn test() -> Result<()> {
     let now = Instant::now();
 
     // Parse command line arguments
-    let args = Command::new("lunatic")
-        .version(crate_version!())
-        .arg(
-            Arg::new("wasm")
-                .value_name("WASM")
-                .help("Entry .wasm file")
-                .required(true),
-        )
-        .arg(
-            Arg::new("filter")
-                .value_name("FILTER")
-                .help("Run only tests that contain the filter string")
-                .required(false),
-        )
-        .arg(
-            Arg::new("dir")
-                .long("dir")
-                .value_name("DIRECTORY")
-                .help("Grant access to the given host directory")
-                .multiple_occurrences(true)
-                .takes_value(true),
-        )
-        .arg(
-            Arg::new("ignored")
-                .long("ignored")
-                .help("Run only ignored tests")
-                .required(false),
-        )
-        .arg(
-            Arg::new("nocapture")
-                .long("nocapture")
-                .help("Don't hide output from test executions")
-                .required(false)
-                .takes_value(false),
-        )
-        .arg(
-            Arg::new("showoutput")
-                .long("show-output")
-                .help("Show also the output of successfull tests")
-                .required(false)
-                .takes_value(false),
-        )
-        .arg(
-            Arg::new("list")
-                .long("list")
-                .help("List all tests")
-                .required(false)
-                .takes_value(false)
-                .requires("format"),
-        )
-        .arg(
-            Arg::new("format")
-                .long("format")
-                .value_name("FORMAT")
-                .help("Configure formatting of output (only supported: terse)")
-                .required(false)
-                .takes_value(true)
-                .requires("list"),
-        )
-        .arg(
-            Arg::new("exact")
-                .long("exact")
-                .help("Exactly match filters rather than by substring")
-                .required(false)
-                .takes_value(false),
-        )
-        .arg(
-            Arg::new("wasm_args")
-                .value_name("WASM_ARGS")
-                .help("Arguments passed to the guest")
-                .required(false)
-                .multiple_values(true),
-        )
-        .get_matches();
+    let args = Args::parse();
 
     let mut config = DefaultProcessConfig::default();
     // Allow initial process to compile modules, create configurations and spawn sub-processes
@@ -99,22 +69,15 @@ pub(crate) async fn test() -> Result<()> {
     config.set_can_spawn_processes(true);
 
     // Set correct command line arguments for the guest
-    let wasi_args = args
-        .values_of("wasm_args")
-        .unwrap_or_default()
-        .map(|arg| arg.to_string())
-        .collect();
-    config.set_command_line_arguments(wasi_args);
+    config.set_command_line_arguments(args.wasm_args);
 
     // Inherit environment variables
     config.set_environment_variables(env::vars().collect());
 
     // Always preopen the current dir
     config.preopen_dir(".");
-    if let Some(dirs) = args.values_of("dir") {
-        for dir in dirs {
-            config.preopen_dir(dir);
-        }
+    for dir in args.dir {
+        config.preopen_dir(dir);
     }
 
     // Create wasmtime runtime
@@ -122,13 +85,12 @@ pub(crate) async fn test() -> Result<()> {
     let runtime = runtimes::wasmtime::WasmtimeRuntime::new(&wasmtime_config)?;
 
     // Load and compile wasm module
-    let path = args.value_of("wasm").unwrap();
-    let path = Path::new(path);
+    let path = args.wasm;
+    let path = Path::new(&path);
     let module = fs::read(path)?;
     let module = Arc::new(runtime.compile_module::<DefaultProcessState>(module.into())?);
 
-    let filter = args.value_of("filter").unwrap_or_default();
-    let exact = args.is_present("exact");
+    let filter = args.filter.unwrap_or_default();
 
     // Find all function exports starting with `#lunatic_test_`.
     // Functions with a name that matches `#lunatic_test_#panic_Panic message#` are expected to
@@ -145,7 +107,7 @@ pub(crate) async fn test() -> Result<()> {
                     ignored = true;
                 }
                 // If --ignored flag is present, don't ignore test & filter out non-ignored ones
-                if args.is_present("ignored") {
+                if args.ignored {
                     if ignored {
                         ignored = false
                     } else {
@@ -177,10 +139,10 @@ pub(crate) async fn test() -> Result<()> {
                     let panic_unescaped = panic.replace("\\#", "#");
                     let panic_prefix = format!("{}#", panic);
                     let function_name = name.strip_prefix(&panic_prefix).unwrap().to_string();
-                    let filtered = if exact {
-                        !function_name.eq(filter)
+                    let filtered = if args.exact {
+                        !function_name.eq(&filter)
                     } else {
-                        !function_name.contains(filter)
+                        !function_name.contains(&filter)
                     };
                     Test {
                         filtered,
@@ -190,10 +152,10 @@ pub(crate) async fn test() -> Result<()> {
                         ignored,
                     }
                 } else {
-                    let filtered = if exact {
-                        !name.eq(filter)
+                    let filtered = if args.exact {
+                        !name.eq(&filter)
                     } else {
-                        !name.contains(filter)
+                        !name.contains(&filter)
                     };
                     Test {
                         filtered,
@@ -209,8 +171,8 @@ pub(crate) async fn test() -> Result<()> {
     }
 
     // If --list is specified, ignore everything else and just print out the test names
-    if args.is_present("list") {
-        let format = args.value_of("format").unwrap_or_default();
+    if args.list {
+        let format = args.format.unwrap_or_default();
         if format != "terse" {
             return Err(anyhow::anyhow!(
                 "error: argument for --format must be terse (was {})",
@@ -267,8 +229,7 @@ pub(crate) async fn test() -> Result<()> {
 
         // If --nocapture is not set, use in-memory stdout & stderr to hide output in case of
         // success
-        let no_capture = args.is_present("nocapture");
-        let stdout = StdoutCapture::new(no_capture);
+        let stdout = StdoutCapture::new(args.nocapture);
         state.set_stdout(stdout.clone());
         state.set_stderr(stdout.clone());
 
@@ -289,6 +250,8 @@ pub(crate) async fn test() -> Result<()> {
         ))?;
 
         let sender = sender.clone();
+        let nocapture = args.nocapture;
+
         tokio::task::spawn(async move {
             let result = match task.await.unwrap() {
                 Ok(_state) => {
@@ -324,7 +287,7 @@ pub(crate) async fn test() -> Result<()> {
                     if test_function.panic.is_none() {
                         // In case of --nocapture the regex will never match (content is empty).
                         // At this point we can't be certain if there was a panic.
-                        if panic_detected.is_none() && !no_capture {
+                        if panic_detected.is_none() && !nocapture {
                             stdout.push_str("note: Process trapped or received kill signal\n");
                         }
                         TestResult {
@@ -418,7 +381,7 @@ pub(crate) async fn test() -> Result<()> {
     }
 
     // If --show-output is present, print success outputs if they are not empty
-    if args.is_present("showoutput") {
+    if args.show_output {
         println!("\nsuccesses:");
         // Print stdout of successes
         for (success, stdout) in successes.iter() {

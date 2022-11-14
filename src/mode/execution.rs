@@ -1,9 +1,7 @@
 use std::{collections::HashMap, env, fs, path::Path, sync::Arc};
 
 use anyhow::{anyhow, Context, Ok, Result};
-use clap::{crate_version, Arg, Command};
-use tokio::sync::mpsc::channel;
-
+use clap::Parser;
 use lunatic_distributed::{
     control::{self, server::control_server, Scanner, TokenType},
     distributed::{self, server::ServerCtx},
@@ -16,149 +14,93 @@ use lunatic_process::{
 };
 use lunatic_process_api::ProcessConfigCtx;
 use lunatic_runtime::{DefaultProcessConfig, DefaultProcessState};
-
+use tokio::sync::mpsc::channel;
 use uuid::Uuid;
 
-/// Parse a single key-value pair
-fn parse_key_val(s: &str) -> Result<(String, String)> {
-    let scanner = Scanner::new(s.to_string());
-    let tokens = scanner.scan()?;
-    if tokens.len() == 3 {
-        let key = &tokens[0];
-        let equals = &tokens[1];
-        let value = &tokens[2];
-        if equals.t == TokenType::Equal {
-            Ok((key.literal.clone(), value.literal.clone()))
-        } else {
-            Err(anyhow!("invalid key=value: no `=` found in `{}`", s))
-        }
-    } else {
-        Err(anyhow!("invalid key=value syntax found in `{}`", s))
-    }
+#[derive(Parser, Debug)]
+#[command(version)]
+struct Args {
+    /// Grant access to the given host directories
+    #[arg(long, value_name = "DIRECTORY")]
+    dir: Vec<String>,
+
+    /// Turns local process into a node and binds it to the provided address
+    #[arg(long, value_name = "NODE_ADDRESS", requires = "control")]
+    node: Option<String>,
+
+    /// Address of a control node inside the cluster that will be used for bootstrapping
+    #[arg(long, value_name = "CONTROL_ADDRESS")]
+    control: Option<String>,
+
+    /// When set, runs the control server
+    #[arg(long, requires = "control")]
+    control_server: bool,
+
+    /// Use test Certificate Authority for bootstrapping QUIC connections
+    #[arg(long, requires = "control")]
+    test_ca: bool,
+
+    /// Certificate Authority public certificate used for bootstrapping QUIC connections
+    #[arg(long, requires = "control", conflicts_with = "test_ca")]
+    ca_cert: Option<String>,
+
+    /// Certificate Authority private key used for signing node certificate requests
+    #[arg(long, requires = "control_server", conflicts_with = "test_ca")]
+    ca_key: Option<String>,
+
+    /// Define key=value variable to store as node information
+    #[arg(long, value_parser = parse_key_val, action = clap::ArgAction::Append)]
+    tag: Vec<(String, String)>,
+
+    /// If provided will join other nodes, but not require a .wasm entry file
+    #[arg(long, required_unless_present = "wasm")]
+    no_entry: bool,
+
+    /// Indicate that a benchmark is running
+    #[arg(long)]
+    bench: bool,
+
+    /// Entry .wasm file
+    #[arg(conflicts_with = "no_entry", index = 1)]
+    wasm: Option<String>,
+
+    /// Arguments passed to the guest
+    #[arg(conflicts_with = "no_entry", index = 2)]
+    wasm_args: Vec<String>,
+
+    /// Enables the prometheus metrics exporter
+    #[cfg(feature = "prometheus")]
+    #[arg(long)]
+    prometheus: bool,
+
+    /// Address to bind the prometheus http listener to
+    #[cfg(feature = "prometheus")]
+    #[arg(
+        long,
+        value_name = "PROMETHEUS_HTTP_ADDRESS",
+        requires = "prometheus",
+        default_value_t = "0.0.0.0:9927"
+    )]
+    prometheus_http: String,
 }
 
 pub(crate) async fn execute() -> Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).init();
 
-    // Parse command line arguments
-    let command = Command::new("lunatic")
-        .version(crate_version!())
-        .arg(
-            Arg::new("dir")
-                .long("dir")
-                .value_name("DIRECTORY")
-                .help("Grant access to the given host directory")
-                .multiple_occurrences(true)
-                .takes_value(true),
-        )
-        .arg(
-            Arg::new("node")
-                .long("node")
-                .value_name("NODE_ADDRESS")
-                .help("Turns local process into a node and binds it to the provided address.")
-                .requires("control")
-                .takes_value(true),
-        )
-        .arg(
-            Arg::new("control")
-                .long("control")
-                .value_name("CONTROL_ADDRESS")
-                .help("Address of a control node inside the cluster that will be used for bootstrapping.")
-                .takes_value(true)
-        )
-        .arg(
-            Arg::new("control_server")
-                .long("control-server")
-                .help("When set run the control server")
-                .requires("control"),
-        )
-        .arg(
-            Arg::new("test_ca")
-                .long("test-ca")
-                .help("Use test Certificate Authority for bootstrapping QUIC connections.")
-                .requires("control")
-        )
-        .arg(
-            Arg::new("ca_cert")
-                .long("ca-cert")
-                .help("Certificate Authority public certificate used for bootstrapping QUIC connections.")
-                .requires("control")
-                .conflicts_with("test_ca")
-                .takes_value(true)
-        )
-        .arg(
-            Arg::new("ca_key")
-                .long("ca-key")
-                .help("Certificate Authority private key used for signing node certificate requests")
-                .requires("control_server")
-                .conflicts_with("test_ca")
-                .takes_value(true)
-        )
-        .arg(
-            Arg::new("tag")
-                .long("tag")
-                .help("Define key=value variable to store as node information")
-                .value_parser(parse_key_val)
-                .action(clap::ArgAction::Append)
-        )
-        .arg(
-            Arg::new("no_entry")
-                .long("no-entry")
-                .help("If provided will join other nodes, but not require a .wasm entry file")
-                .required_unless_present("wasm")
-        ).arg(
-            Arg::new("bench")
-                .long("bench")
-                .help("Indicate that a benchmark is running"),
-        )
-        .arg(
-            Arg::new("wasm")
-                .value_name("WASM")
-                .help("Entry .wasm file")
-                .conflicts_with("no_entry")
-                .index(1),
-        )
-        .arg(
-            Arg::new("wasm_args")
-                .value_name("WASM_ARGS")
-                .help("Arguments passed to the guest")
-                .required(false)
-                .conflicts_with("no_entry")
-                .multiple_values(true)
-                .index(2),
-        );
+    let args = Args::parse();
 
-    #[cfg(feature = "prometheus")]
-    let command = command
-        .arg(
-            Arg::new("prometheus")
-                .long("prometheus")
-                .help("whether to enable the prometheus metrics exporter"),
-        )
-        .arg(
-            Arg::new("prometheus_http")
-                .long("prometheus-http")
-                .value_name("PROMETHEUS_HTTP_ADDRESS")
-                .help("The address to bind the prometheus http listener to")
-                .requires("prometheus")
-                .takes_value(true)
-                .default_value("0.0.0.0:9927"),
-        );
-
-    let args = command.get_matches();
-
-    if args.is_present("test_ca") {
+    if args.test_ca {
         log::warn!("Do not use test Certificate Authority in production!")
     }
 
     // Run control server
-    if args.is_present("control_server") {
-        if let Some(control_address) = args.value_of("control") {
+    if args.control_server {
+        if let Some(control_address) = &args.control {
             // TODO unwrap, better message
             let ca_cert = lunatic_distributed::control::server::root_cert(
-                args.is_present("test_ca"),
-                args.value_of("ca_cert"),
-                args.value_of("ca_key"),
+                args.test_ca,
+                args.ca_cert.as_deref(),
+                args.ca_key.as_deref(),
             )
             .unwrap();
             tokio::task::spawn(control_server(control_address.parse().unwrap(), ca_cert));
@@ -173,20 +115,15 @@ pub(crate) async fn execute() -> Result<()> {
     let env = envs.create(1);
 
     let (distributed_state, control_client, node_id) =
-        if let (Some(node_address), Some(control_address)) =
-            (args.value_of("node"), args.value_of("control"))
-        {
+        if let (Some(node_address), Some(control_address)) = (args.node, args.control) {
             // TODO unwrap, better message
             let node_address = node_address.parse().unwrap();
             let node_name = Uuid::new_v4().to_string();
-            let node_attributes: HashMap<String, String> = args
-                .get_many::<(String, String)>("tag")
-                .map(|vals| vals.cloned().collect())
-                .unwrap_or_default();
+            let node_attributes: HashMap<String, String> = args.tag.into_iter().collect();
             let control_address = control_address.parse().unwrap();
             let ca_cert = lunatic_distributed::distributed::server::root_cert(
-                args.is_present("test_ca"),
-                args.value_of("ca_cert"),
+                args.test_ca,
+                args.ca_cert.as_deref(),
             )
             .unwrap();
             let node_cert =
@@ -258,72 +195,84 @@ pub(crate) async fn execute() -> Result<()> {
     config.set_can_create_configs(true);
     config.set_can_spawn_processes(true);
 
-    if !args.is_present("no_entry") {
-        // Path to wasm file
-        let path = args.value_of("wasm").unwrap();
-        let path = Path::new(path);
-
-        // Set correct command line arguments for the guest
-        let filename = path.file_name().unwrap().to_string_lossy().to_string();
-        let mut wasi_args = vec![filename];
-        let wasm_args = args
-            .values_of("wasm_args")
-            .unwrap_or_default()
-            .map(|arg| arg.to_string());
-        wasi_args.extend(wasm_args);
-        if args.is_present("bench") {
-            wasi_args.push("--bench".to_owned());
-        }
-        config.set_command_line_arguments(wasi_args);
-
-        // Inherit environment variables
-        config.set_environment_variables(env::vars().collect());
-
-        // Always preopen the current dir
-        config.preopen_dir(".");
-        if let Some(dirs) = args.values_of("dir") {
-            for dir in dirs {
-                config.preopen_dir(dir);
-            }
-        }
-
-        // Spawn main process
-        let module = fs::read(path)?;
-        let module: RawWasm = if let Some(dist) = distributed_state.as_ref() {
-            dist.control.add_module(module).await?
-        } else {
-            module.into()
-        };
-        let module = Arc::new(runtime.compile_module::<DefaultProcessState>(module)?);
-        let state = DefaultProcessState::new(
-            env.clone(),
-            distributed_state,
-            runtime.clone(),
-            module.clone(),
-            Arc::new(config),
-            Default::default(),
-        )
-        .unwrap();
-
-        let (task, _) = spawn_wasm(env, runtime, &module, state, "_start", Vec::new(), None)
-            .await
-            .context(format!(
-                "Failed to spawn process from {}::_start()",
-                path.to_string_lossy()
-            ))?;
-        // Wait on the main process to finish
-        let result = task.await.map(|_| ()).map_err(|e| anyhow!(e.to_string()));
-
-        // Until we refactor registration and reconnect authentication, send node id explicitly
-        if let (Some(ctrl), Some(node_id)) = (control_client, node_id) {
-            ctrl.deregister(node_id).await;
-        }
-
-        result
-    } else {
+    if args.no_entry {
         // Block forever
         let (_sender, mut receiver) = channel::<()>(1);
         receiver.recv().await.unwrap();
-        Ok(())
+        return Ok(());
+    }
+
+    // Path to wasm file
+    let path = args.wasm.unwrap();
+    let path = Path::new(&path);
+
+    // Set correct command line arguments for the guest
+    let filename = path.file_name().unwrap().to_string_lossy().to_string();
+    let mut wasi_args = vec![filename];
+    wasi_args.extend(args.wasm_args);
+    if args.bench {
+        wasi_args.push("--bench".to_owned());
+    }
+    config.set_command_line_arguments(wasi_args);
+
+    // Inherit environment variables
+    config.set_environment_variables(env::vars().collect());
+
+    // Always preopen the current dir
+    config.preopen_dir(".");
+    for dir in args.dir {
+        config.preopen_dir(dir);
+    }
+
+    // Spawn main process
+    let module = fs::read(path)?;
+    let module: RawWasm = if let Some(dist) = distributed_state.as_ref() {
+        dist.control.add_module(module).await?
+    } else {
+        module.into()
+    };
+    let module = Arc::new(runtime.compile_module::<DefaultProcessState>(module)?);
+    let state = DefaultProcessState::new(
+        env.clone(),
+        distributed_state,
+        runtime.clone(),
+        module.clone(),
+        Arc::new(config),
+        Default::default(),
+    )
+    .unwrap();
+
+    let (task, _) = spawn_wasm(env, runtime, &module, state, "_start", Vec::new(), None)
+        .await
+        .context(format!(
+            "Failed to spawn process from {}::_start()",
+            path.to_string_lossy()
+        ))?;
+    // Wait on the main process to finish
+    let result = task.await.map(|_| ()).map_err(|e| anyhow!(e.to_string()));
+
+    // Until we refactor registration and reconnect authentication, send node id explicitly
+    if let (Some(ctrl), Some(node_id)) = (control_client, node_id) {
+        ctrl.deregister(node_id).await;
+    }
+
+    result
+}
+
+/// Parse a single key-value pair
+fn parse_key_val(s: &str) -> Result<(String, String)> {
+    let scanner = Scanner::new(s.to_string());
+    let tokens = scanner.scan()?;
+    if tokens.len() == 3 {
+        let key = &tokens[0];
+        let equals = &tokens[1];
+        let value = &tokens[2];
+        if equals.t == TokenType::Equal {
+            Ok((key.literal.clone(), value.literal.clone()))
+        } else {
+            Err(anyhow!("invalid key=value: no `=` found in `{}`", s))
+        }
+    } else {
+        Err(anyhow!("invalid key=value syntax found in `{}`", s))
     }
 }

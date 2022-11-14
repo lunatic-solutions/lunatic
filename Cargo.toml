@@ -34,7 +34,7 @@ prometheus = ["dep:metrics-exporter-prometheus", "metrics"]
 
 [dependencies]
 anyhow = "^1.0"
-clap = { version = "^3.2", features = ["cargo"] }
+clap = { version = "^4.0", features = ["cargo", "derive"] }
 lazy_static = "^1.4"
 tokio = { version = "^1.20", features = [
     "macros",
