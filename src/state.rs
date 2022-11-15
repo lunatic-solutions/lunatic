@@ -1,5 +1,5 @@
-use std::sync::Arc;
 use std::{any::Any, collections::HashMap, fmt::Debug};
+use std::{any::TypeId, sync::Arc};
 
 use anyhow::Result;
 use dashmap::DashMap;
@@ -64,7 +64,7 @@ pub struct DefaultProcessState {
     registry: Arc<DashMap<String, (u64, u64)>>,
     // Plugins
     plugins: Arc<Vec<Plugin>>,
-    plugin_state: HashMap<&'static str, Box<dyn Any + Send + Sync>>,
+    plugin_state: HashMap<TypeId, Box<dyn Any + Send + Sync>>,
 }
 
 impl DefaultProcessState {
@@ -489,13 +489,13 @@ impl lunatic_plugin_internal::PluginCtx for DefaultProcessState {
         &self.plugins
     }
 
-    fn plugin_state<T: 'static>(&self, plugin: &'static str) -> Option<&T> {
+    fn plugin_state<T: 'static>(&self, plugin: &TypeId) -> Option<&T> {
         self.plugin_state
             .get(plugin)
             .and_then(|state| state.downcast_ref())
     }
 
-    fn plugin_state_mut<T: 'static>(&mut self, plugin: &'static str) -> Option<&mut T> {
+    fn plugin_state_mut<T: 'static>(&mut self, plugin: &TypeId) -> Option<&mut T> {
         self.plugin_state
             .get_mut(plugin)
             .and_then(|state| state.downcast_mut())

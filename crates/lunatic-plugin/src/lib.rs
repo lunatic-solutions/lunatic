@@ -1,3 +1,5 @@
+use std::any::TypeId;
+
 use anyhow::Result;
 use lunatic_plugin_internal::PluginCtx;
 use wasmtime::Linker;
@@ -5,10 +7,6 @@ use wasmtime::Linker;
 pub use lunatic_runtime::DefaultProcessState;
 
 pub trait Plugin: Sized {
-    fn id() -> &'static str {
-        std::any::type_name::<Self>()
-    }
-
     fn init() -> Self;
     fn register(linker: &mut Linker<DefaultProcessState>) -> Result<()>;
 }
@@ -27,14 +25,14 @@ impl LoadState for DefaultProcessState {
     where
         T: Plugin + 'static,
     {
-        self.plugin_state(T::id())
+        self.plugin_state(&TypeId::of::<T>())
     }
 
     fn load_state_mut<T>(&mut self) -> Option<&mut T>
     where
         T: Plugin + 'static,
     {
-        self.plugin_state_mut(T::id())
+        self.plugin_state_mut(&TypeId::of::<T>())
     }
 }
 
@@ -42,8 +40,8 @@ impl LoadState for DefaultProcessState {
 macro_rules! register_plugin {
     ($plugin:ty) => {
         #[no_mangle]
-        unsafe extern "C" fn plugin_id() -> &'static str {
-            <$plugin as $crate::Plugin>::id()
+        unsafe extern "C" fn plugin_id() -> std::any::TypeId {
+            std::any::TypeId::of::<$plugin>()
         }
 
         #[no_mangle]

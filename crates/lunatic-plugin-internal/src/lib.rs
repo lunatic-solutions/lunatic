@@ -1,22 +1,26 @@
-use std::{any::Any, ffi::OsStr, sync::Arc};
+use std::{
+    any::{Any, TypeId},
+    ffi::OsStr,
+    sync::Arc,
+};
 
 use anyhow::{Context, Result};
 use libloading::{Library, Symbol};
 use wasmtime::Linker;
 
-type PluginIDFn = unsafe extern "C" fn() -> &'static str;
+type PluginIDFn = unsafe extern "C" fn() -> TypeId;
 type InitFn = unsafe extern "C" fn() -> Box<dyn Any + Send + Sync>;
 type RegisterFn<T> = unsafe extern "C" fn(linker: &mut Linker<T>) -> Result<()>;
 
 pub struct Plugin {
-    id: &'static str,
+    id: TypeId,
     lib: Library,
 }
 
 pub trait PluginCtx {
     fn plugins(&self) -> &Arc<Vec<Plugin>>;
-    fn plugin_state<T: 'static>(&self, plugin: &'static str) -> Option<&T>;
-    fn plugin_state_mut<T: 'static>(&mut self, plugin: &'static str) -> Option<&mut T>;
+    fn plugin_state<T: 'static>(&self, plugin: &TypeId) -> Option<&T>;
+    fn plugin_state_mut<T: 'static>(&mut self, plugin: &TypeId) -> Option<&mut T>;
 }
 
 impl Plugin {
@@ -36,7 +40,7 @@ impl Plugin {
         })
     }
 
-    pub fn id(&self) -> &'static str {
+    pub fn id(&self) -> TypeId {
         self.id
     }
 
