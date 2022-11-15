@@ -367,6 +367,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5827cebf4670468b8772dd191856768aedcb1b0278a04f989f7766351917b9dc"
 
 [[package]]
+name = "counter-guest"
+version = "0.1.0"
+
+[[package]]
+name = "counter-plugin"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "lunatic-plugin",
+ "wasmtime",
+]
+
+[[package]]
 name = "cpp_demangle"
 version = "0.3.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1137,6 +1150,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc7fcc620a3bff7cdd7a365be3376c97191aeaccc2a603e600951e452615bf89"
 
 [[package]]
+name = "libloading"
+version = "0.7.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b67380fd3b2fbe7527a606e18729d21c6f3951633d0500574c4dc22d2d638b9f"
+dependencies = [
+ "cfg-if",
+ "winapi",
+]
+
+[[package]]
 name = "libm"
 version = "0.2.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1193,6 +1216,7 @@ dependencies = [
  "dashmap",
  "futures-util",
  "log",
+ "lunatic-plugin-internal",
  "lunatic-process",
  "quinn",
  "rcgen",
@@ -1263,6 +1287,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "lunatic-plugin"
+version = "0.10.0"
+dependencies = [
+ "anyhow",
+ "lunatic-plugin-internal",
+ "lunatic-runtime",
+ "wasmtime",
+]
+
+[[package]]
+name = "lunatic-plugin-internal"
+version = "0.10.0"
+dependencies = [
+ "anyhow",
+ "libloading",
+ "wasmtime",
+]
+
+[[package]]
 name = "lunatic-process"
 version = "0.10.0"
 dependencies = [
@@ -1271,6 +1314,7 @@ dependencies = [
  "hash-map-id",
  "log",
  "lunatic-networking-api",
+ "lunatic-plugin-internal",
  "metrics",
  "serde",
  "tokio",
@@ -1285,6 +1329,7 @@ dependencies = [
  "hash-map-id",
  "lunatic-common-api",
  "lunatic-error-api",
+ "lunatic-plugin-internal",
  "lunatic-process",
  "lunatic-stdout-capture",
  "lunatic-wasi-api",
@@ -1325,6 +1370,7 @@ dependencies = [
  "lunatic-error-api",
  "lunatic-messaging-api",
  "lunatic-networking-api",
+ "lunatic-plugin-internal",
  "lunatic-process",
  "lunatic-process-api",
  "lunatic-registry-api",

@@ -10,6 +10,7 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use dashmap::DashMap;
+use lunatic_plugin_internal::Plugin;
 use tokio::task::JoinHandle;
 
 use crate::state::ProcessState;
@@ -101,12 +102,13 @@ impl<T: ProcessState + 'static> Modules<T> {
     pub fn compile(
         &self,
         runtime: WasmtimeRuntime,
+        plugins: Arc<Vec<Plugin>>,
         wasm: RawWasm,
     ) -> JoinHandle<Result<Arc<WasmtimeCompiledModule<T>>>> {
         let modules = self.modules.clone();
         tokio::task::spawn_blocking(move || {
             let id = wasm.id;
-            match runtime.compile_module(wasm) {
+            match runtime.compile_module(&plugins, wasm) {
                 Ok(m) => {
                     let module = Arc::new(m);
                     if let Some(id) = id {

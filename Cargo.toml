@@ -69,6 +69,7 @@ lunatic-version-api = { version = "^0.10", path = "crates/lunatic-version-api" }
 lunatic-wasi-api = { version = "^0.10", path = "crates/lunatic-wasi-api" }
 lunatic-registry-api = { version = "^0.10", path = "crates/lunatic-registry-api" }
 lunatic-distributed-api = { version = "^0.10", path = "crates/lunatic-distributed-api" }
+lunatic-plugin-internal = { version = "^0.10", path = "crates/lunatic-plugin-internal" }
 
 [dev-dependencies]
 wat = "^1.0"
@@ -94,4 +95,8 @@ members = [
     "crates/lunatic-wasi-api",
     "crates/lunatic-registry-api",
     "crates/lunatic-distributed-api",
+    "crates/lunatic-plugin",
+    "crates/lunatic-plugin-internal",
+    "examples/counter-guest",
+    "examples/counter-plugin",
 ]

@@ -28,6 +28,7 @@ log = "^0.4"
 async_cell = "0.2.1"
 rcgen = { version="^0.10", features=["pem", "x509-parser"] }
 lunatic-process = { version = "^0.10", path = "../lunatic-process" }
+lunatic-plugin-internal = { version = "^0.10", path = "../lunatic-plugin-internal" }
 quinn = { version = "^0.9", optional = true}
 rustls = { version = "^0.20", optional = true }
 rustls-pemfile = { version = "^1.0", optional = true }

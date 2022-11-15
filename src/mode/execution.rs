@@ -7,6 +7,7 @@ use lunatic_distributed::{
     distributed::{self, server::ServerCtx},
     quic,
 };
+use lunatic_plugin_internal::Plugin;
 use lunatic_process::{
     env::{Environments, LunaticEnvironments},
     runtimes::{self, Modules, RawWasm},
@@ -51,6 +52,10 @@ struct Args {
     /// Define key=value variable to store as node information
     #[arg(long, value_parser = parse_key_val, action = clap::ArgAction::Append)]
     tag: Vec<(String, String)>,
+
+    /// Add dynamic plugins to the VM
+    #[arg(long, conflicts_with = "no_entry")]
+    plugins: Vec<String>,
 
     /// If provided will join other nodes, but not require a .wasm entry file
     #[arg(long, required_unless_present = "wasm")]
@@ -114,6 +119,14 @@ pub(crate) async fn execute() -> Result<()> {
 
     let env = envs.create(1);
 
+    // Load plugins
+    let plugins = Arc::new(
+        args.plugins
+            .into_iter()
+            .map(|plugin| unsafe { Plugin::new(plugin) })
+            .collect::<Result<Vec<_>, _>>()?,
+    );
+
     let (distributed_state, control_client, node_id) =
         if let (Some(node_address), Some(control_address)) = (args.node, args.control) {
             // TODO unwrap, better message
@@ -158,6 +171,7 @@ pub(crate) async fn execute() -> Result<()> {
                     modules: Modules::<DefaultProcessState>::default(),
                     distributed: dist.clone(),
                     runtime: runtime.clone(),
+                    plugins: plugins.clone(),
                 },
                 node_address,
                 signed_cert_pem,
@@ -231,7 +245,7 @@ pub(crate) async fn execute() -> Result<()> {
     } else {
         module.into()
     };
-    let module = Arc::new(runtime.compile_module::<DefaultProcessState>(module)?);
+    let module = Arc::new(runtime.compile_module::<DefaultProcessState>(&plugins, module)?);
     let state = DefaultProcessState::new(
         env.clone(),
         distributed_state,
@@ -239,6 +253,7 @@ pub(crate) async fn execute() -> Result<()> {
         module.clone(),
         Arc::new(config),
         Default::default(),
+        plugins,
     )
     .unwrap();
 
@@ -248,6 +263,7 @@ pub(crate) async fn execute() -> Result<()> {
             "Failed to spawn process from {}::_start()",
             path.to_string_lossy()
         ))?;
+
     // Wait on the main process to finish
     let result = task.await.map(|_| ()).map_err(|e| anyhow!(e.to_string()));
 

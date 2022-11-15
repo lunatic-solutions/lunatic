@@ -20,6 +20,7 @@ tokio = { version = "^1.20", features = ["macros", "time"] }
 hash-map-id = { version = "^0.10", path = "../hash-map-id" }
 lunatic-stdout-capture = { version = "^0.10", path = "../lunatic-stdout-capture" }
 lunatic-process = { version = "^0.10", path = "../lunatic-process" }
+lunatic-plugin-internal = { version = "^0.10", path = "../lunatic-plugin-internal" }
 lunatic-common-api = { version = "^0.10", path = "../lunatic-common-api" }
 lunatic-error-api = { version = "^0.10", path = "../lunatic-error-api" }
 lunatic-wasi-api = { version = "^0.10", path = "../lunatic-wasi-api" }

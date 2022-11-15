@@ -15,11 +15,12 @@ fn criterion_benchmark(c: &mut Criterion) {
     let config = Arc::new(DefaultProcessConfig::default());
     let wasmtime_config = default_config();
     let runtime = WasmtimeRuntime::new(&wasmtime_config).unwrap();
+    let plugins = Arc::new(vec![]);
 
     let raw_module = wat::parse_file("./wat/hello.wat").unwrap();
     let module = Arc::new(
         runtime
-            .compile_module::<DefaultProcessState>(raw_module.into())
+            .compile_module::<DefaultProcessState>(&plugins, raw_module.into())
             .unwrap(),
     );
 
@@ -34,6 +35,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                 module.clone(),
                 config.clone(),
                 registry,
+                plugins.clone(),
             )
             .unwrap();
             lunatic_process::wasm::spawn_wasm(

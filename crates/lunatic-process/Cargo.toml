@@ -30,3 +30,4 @@ wasmtime = "^2"
 serde = "^1.0"
 hash-map-id = { version = "^0.10", path = "../hash-map-id" }
 lunatic-networking-api = { version = "^0.10", path = "../lunatic-networking-api" }
+lunatic-plugin-internal = { version = "^0.10", path = "../lunatic-plugin-internal" }
