@@ -63,14 +63,4 @@ impl Plugin {
             register(linker).context("calling register on plugin")
         }
     }
-
-    // pub fn symbols(&self) -> Result<PluginSymbols> {
-    //     let symbols = unsafe {
-    //         PluginSymbols {
-    //             register: self.lib.get(b"register")?,
-    //         }
-    //     };
-
-    //     Ok(symbols)
-    // }
 }
