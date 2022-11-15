@@ -50,7 +50,7 @@ impl Environment for LunaticEnvironment {
         let labels: [(String, String); 0] = [];
         #[cfg(all(feature = "metrics", feature = "detailed_metrics"))]
         let labels = [("environment_id", self.id().to_string())];
-
+        #[cfg(feature = "metrics")]
         metrics::gauge!(
             "lunatic.process.environment.process.count",
             self.processes.len() as f64,
@@ -64,6 +64,7 @@ impl Environment for LunaticEnvironment {
         let labels: [(String, String); 0] = [];
         #[cfg(all(feature = "metrics", feature = "detailed_metrics"))]
         let labels = [("environment_id", self.id().to_string())];
+        #[cfg(feature = "metrics")]
         metrics::gauge!(
             "lunatic.process.environment.process.count",
             self.processes.len() as f64,
@@ -100,6 +101,7 @@ impl Environments for LunaticEnvironments {
     fn create(&self, id: u64) -> Arc<Self::Env> {
         let env = Arc::new(LunaticEnvironment::new(id));
         self.envs.insert(id, env.clone());
+        #[cfg(feature = "metrics")]
         metrics::gauge!("lunatic.process.environment.count", self.envs.len() as f64);
         env
     }
