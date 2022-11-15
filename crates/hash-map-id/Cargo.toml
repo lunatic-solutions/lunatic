@@ -1,6 +1,6 @@
 [package]
 name = "hash-map-id"
-version = "0.10.0"
+version = "0.12.0"
 edition = "2021"
 description = "HashMap wrapper with incremental ID (u64) as key"
 homepage = "https://lunatic.solutions"

@@ -306,9 +306,9 @@ dependencies = [
 
 [[package]]
 name = "clap"
-version = "4.0.23"
+version = "4.0.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0eb41c13df48950b20eb4cd0eefa618819469df1bffc49d11e8487c4ba0037e5"
+checksum = "60494cedb60cb47462c0ff7be53de32c0e42a6fc2c772184554fa12bd9489c03"
 dependencies = [
  "atty",
  "bitflags",
@@ -887,7 +887,7 @@ checksum = "eabb4a44450da02c90444cf74558da904edde8fb4e9035a9a6a4e15445af0bd7"
 
 [[package]]
 name = "hash-map-id"
-version = "0.10.0"
+version = "0.12.0"
 
 [[package]]
 name = "hash_hasher"
@@ -1082,9 +1082,9 @@ checksum = "4217ad341ebadf8d8e724e264f13e593e0648f5b3e94b3896a5df283be015ecc"
 
 [[package]]
 name = "ittapi"
-version = "0.3.1"
+version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "663fe0550070071ff59e981864a9cd3ee1c869ed0a088140d9ac4dc05ea6b1a1"
+checksum = "e8c4f6ff06169ce7048dac5150b1501c7e3716a929721aeb06b87e51a43e42f4"
 dependencies = [
  "anyhow",
  "ittapi-sys",
@@ -1093,9 +1093,9 @@ dependencies = [
 
 [[package]]
 name = "ittapi-sys"
-version = "0.3.1"
+version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e21911b7183f38c71d75ab478a527f314e28db51027037ece2e5511ed9410703"
+checksum = "87e078cce01485f418bae3beb34dd604aaedf2065502853c7da17fbce8e64eda"
 dependencies = [
  "cc",
 ]
@@ -1175,7 +1175,7 @@ dependencies = [
 
 [[package]]
 name = "lunatic-common-api"
-version = "0.10.0"
+version = "0.12.0"
 dependencies = [
  "anyhow",
  "paste",
@@ -1184,7 +1184,7 @@ dependencies = [
 
 [[package]]
 name = "lunatic-distributed"
-version = "0.10.0"
+version = "0.12.0"
 dependencies = [
  "anyhow",
  "async_cell",
@@ -1206,7 +1206,7 @@ dependencies = [
 
 [[package]]
 name = "lunatic-distributed-api"
-version = "0.10.0"
+version = "0.12.0"
 dependencies = [
  "anyhow",
  "async_cell",
@@ -1225,7 +1225,7 @@ dependencies = [
 
 [[package]]
 name = "lunatic-error-api"
-version = "0.10.0"
+version = "0.12.0"
 dependencies = [
  "anyhow",
  "hash-map-id",
@@ -1235,7 +1235,7 @@ dependencies = [
 
 [[package]]
 name = "lunatic-messaging-api"
-version = "0.10.0"
+version = "0.12.0"
 dependencies = [
  "anyhow",
  "hash-map-id",
@@ -1249,7 +1249,7 @@ dependencies = [
 
 [[package]]
 name = "lunatic-networking-api"
-version = "0.10.0"
+version = "0.12.0"
 dependencies = [
  "anyhow",
  "hash-map-id",
@@ -1264,7 +1264,7 @@ dependencies = [
 
 [[package]]
 name = "lunatic-process"
-version = "0.10.0"
+version = "0.12.0"
 dependencies = [
  "anyhow",
  "dashmap",
@@ -1279,7 +1279,7 @@ dependencies = [
 
 [[package]]
 name = "lunatic-process-api"
-version = "0.10.0"
+version = "0.12.0"
 dependencies = [
  "anyhow",
  "hash-map-id",
@@ -1295,7 +1295,7 @@ dependencies = [
 
 [[package]]
 name = "lunatic-registry-api"
-version = "0.10.0"
+version = "0.12.0"
 dependencies = [
  "anyhow",
  "hash-map-id",
@@ -1308,11 +1308,11 @@ dependencies = [
 
 [[package]]
 name = "lunatic-runtime"
-version = "0.10.0"
+version = "0.12.0"
 dependencies = [
  "anyhow",
  "bincode",
- "clap 4.0.23",
+ "clap 4.0.24",
  "criterion",
  "dashmap",
  "env_logger",
@@ -1347,7 +1347,7 @@ dependencies = [
 
 [[package]]
 name = "lunatic-stdout-capture"
-version = "0.10.0"
+version = "0.12.0"
 dependencies = [
  "wasi-common",
  "wiggle",
@@ -1355,7 +1355,7 @@ dependencies = [
 
 [[package]]
 name = "lunatic-timer-api"
-version = "0.10.0"
+version = "0.12.0"
 dependencies = [
  "anyhow",
  "hash-map-id",
@@ -1369,7 +1369,7 @@ dependencies = [
 
 [[package]]
 name = "lunatic-version-api"
-version = "0.10.0"
+version = "0.12.0"
 dependencies = [
  "anyhow",
  "wasmtime",
@@ -1377,7 +1377,7 @@ dependencies = [
 
 [[package]]
 name = "lunatic-wasi-api"
-version = "0.10.0"
+version = "0.12.0"
 dependencies = [
  "anyhow",
  "hash-map-id",
@@ -2679,9 +2679,9 @@ checksum = "a156c684c91ea7d62626509bce3cb4e1d9ed5c4d978f7b4352658f96a4c26b4a"
 
 [[package]]
 name = "uuid"
-version = "1.2.1"
+version = "1.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "feb41e78f93363bb2df8b0e86a2ca30eed7806ea16ea0c790d757cf93f79be83"
+checksum = "422ee0de9031b5b948b97a8fc04e3aa35230001a722ddd27943e0be31564ce4c"
 dependencies = [
  "getrandom 0.2.8",
 ]
