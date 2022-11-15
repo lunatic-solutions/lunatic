@@ -1,5 +1,24 @@
 # Lunatic Changelog
 
+## v0.12.0
+
+Released 2022-11-15.
+
+### Changes
+
+- Compiled modules can now be sent between processes ([@tqwewe](https://github.com/tqwewe))
+- TLS support added ([@SquattingSocrates](https://github.com/SquattingSocrates))
+- Metrics added to the VM ([@HurricanKai](https://github.com/HurricanKai))
+- Improvements to distributed lunatic ([@kosticmarin](https://github.com/kosticmarin))
+- Distributed metadata added ([@kosticmarin](https://github.com/kosticmarin))
+- Improved error reporting ([@alecthomas](https://github.com/alecthomas))
+- TCP read/write timeouts added back ([@SquattingSocrates](https://github.com/SquattingSocrates))
+- Time API moved from async-std to tokio.rs
+  ([@MarkintoshZ](https://github.com/MarkintoshZ))
+- FIX: Sender can be dropped during execution ([@HurricanKai](https://github.com/HurricanKai))
+- FIX: [Dependency issues](https://github.com/lunatic-solutions/lunatic/pull/139)
+  ([@pinkforest](https://github.com/pinkforest))
+
 ## v0.10.0
 
 Released 2022-07-04.

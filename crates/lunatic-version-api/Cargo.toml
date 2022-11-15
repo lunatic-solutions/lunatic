@@ -1,6 +1,6 @@
 [package]
 name = "lunatic-version-api"
-version = "0.10.0"
+version = "0.12.0"
 edition = "2021"
 description = "Lunatic host functions for getting Lunatic host version"
 homepage = "https://lunatic.solutions"
@@ -10,5 +10,5 @@ license = "Apache-2.0/MIT"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-anyhow = "^1.0"
-wasmtime = "^2" # managed by root Cargo.toml
+anyhow = "1.0"
+wasmtime = "2" # managed by root Cargo.toml

@@ -1,6 +1,6 @@
 [package]
 name = "lunatic-process"
-version = "0.10.0"
+version = "0.12.0"
 edition = "2021"
 description = "Lunatic's core process, mailbox and message abstraction'"
 homepage = "https://lunatic.solutions"
@@ -16,17 +16,17 @@ metrics = ["dep:metrics"]
 detailed_metrics = ["metrics"]
 
 [dependencies]
-anyhow = "^1.0"
-log = "^0.4"
+anyhow = "1.0"
+log = "0.4"
 dashmap = "5.3.4"
 metrics = { version = "0.20.1", optional = true }
-tokio = { version = "^1.20", features = [
+tokio = { version = "1.20", features = [
     "macros",
     "rt-multi-thread",
     "sync",
     "net",
 ] }
-wasmtime = "^2"
-serde = "^1.0"
-hash-map-id = { version = "^0.10", path = "../hash-map-id" }
-lunatic-networking-api = { version = "^0.10", path = "../lunatic-networking-api" }
+wasmtime = "2"
+serde = "1.0"
+hash-map-id = { version = "0.12", path = "../hash-map-id" }
+lunatic-networking-api = { version = "0.12", path = "../lunatic-networking-api" }

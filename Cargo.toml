@@ -1,6 +1,6 @@
 [package]
 name = "lunatic-runtime"
-version = "0.10.0"
+version = "0.12.0"
 authors = ["Bernard Kolobara <bernard@lunatic.solutions>"]
 edition = "2018"
 description = "An actor platform built on WebAssembly"
@@ -30,47 +30,47 @@ metrics = [
 prometheus = ["dep:metrics-exporter-prometheus", "metrics"]
 
 [dependencies]
-anyhow = "^1.0"
-clap = { version = "^4.0", features = ["cargo", "derive"] }
-lazy_static = "^1.4"
-tokio = { version = "^1.20", features = [
+anyhow = "1.0"
+clap = { version = "4.0", features = ["cargo", "derive"] }
+lazy_static = "1.4"
+tokio = { version = "1.20", features = [
     "macros",
     "rt-multi-thread",
     "net",
     "time",
 ] }
-wasmtime = "^2.0"
-wasmtime-wasi = "^2.0"
-wasi-common = "^2.0"
-wasmparser = "^0.94"
-env_logger = "^0.9"
-log = "^0.4"
-serde = "^1.0"
-bincode = "^1.3"
-dashmap = "^5.3.4"
-regex = "^1.5"
+wasmtime = "2.0"
+wasmtime-wasi = "2.0"
+wasi-common = "2.0"
+wasmparser = "0.94"
+env_logger = "0.9"
+log = "0.4"
+serde = "1.0"
+bincode = "1.3"
+dashmap = "5.3.4"
+regex = "1.5"
 metrics = { version = "0.20.1", optional = true }
 metrics-exporter-prometheus = { version = "0.11.0", optional = true }
-uuid = { version = "^1.1", features = ["v4"] }
-hash-map-id = { version = "^0.10", path = "crates/hash-map-id" }
-lunatic-stdout-capture = { version = "^0.10", path = "crates/lunatic-stdout-capture" }
-lunatic-process = { version = "^0.10", path = "crates/lunatic-process" }
-lunatic-distributed = { version = "^0.10", path = "crates/lunatic-distributed" }
-lunatic-common-api = { version = "^0.10", path = "crates/lunatic-common-api" }
-lunatic-process-api = { version = "^0.10", path = "crates/lunatic-process-api" }
-lunatic-error-api = { version = "^0.10", path = "crates/lunatic-error-api" }
-lunatic-messaging-api = { version = "^0.10", path = "crates/lunatic-messaging-api" }
-lunatic-timer-api = { version = "^0.10", path = "crates/lunatic-timer-api" }
-lunatic-networking-api = { version = "^0.10", path = "crates/lunatic-networking-api" }
-lunatic-version-api = { version = "^0.10", path = "crates/lunatic-version-api" }
-lunatic-wasi-api = { version = "^0.10", path = "crates/lunatic-wasi-api" }
-lunatic-registry-api = { version = "^0.10", path = "crates/lunatic-registry-api" }
-lunatic-distributed-api = { version = "^0.10", path = "crates/lunatic-distributed-api" }
+uuid = { version = "1.1", features = ["v4"] }
+hash-map-id = { version = "0.12", path = "crates/hash-map-id" }
+lunatic-stdout-capture = { version = "0.12", path = "crates/lunatic-stdout-capture" }
+lunatic-process = { version = "0.12", path = "crates/lunatic-process" }
+lunatic-distributed = { version = "0.12", path = "crates/lunatic-distributed" }
+lunatic-common-api = { version = "0.12", path = "crates/lunatic-common-api" }
+lunatic-process-api = { version = "0.12", path = "crates/lunatic-process-api" }
+lunatic-error-api = { version = "0.12", path = "crates/lunatic-error-api" }
+lunatic-messaging-api = { version = "0.12", path = "crates/lunatic-messaging-api" }
+lunatic-timer-api = { version = "0.12", path = "crates/lunatic-timer-api" }
+lunatic-networking-api = { version = "0.12", path = "crates/lunatic-networking-api" }
+lunatic-version-api = { version = "0.12", path = "crates/lunatic-version-api" }
+lunatic-wasi-api = { version = "0.12", path = "crates/lunatic-wasi-api" }
+lunatic-registry-api = { version = "0.12", path = "crates/lunatic-registry-api" }
+lunatic-distributed-api = { version = "0.12", path = "crates/lunatic-distributed-api" }
 
 [dev-dependencies]
-wat = "^1.0"
-tokio = { version = "^1.20", features = ["rt-multi-thread"] }
-criterion = { version = "^0.4", features = ["async_tokio"] }
+wat = "1.0"
+tokio = { version = "1.20", features = ["rt-multi-thread"] }
+criterion = { version = "0.4", features = ["async_tokio"] }
 
 [[bench]]
 name = "benchmark"
