@@ -1,11 +1,11 @@
 [package]
-description = "Lunatic host functions for tcp and udp networking."
-edition = "2021"
-homepage = "https://lunatic.solutions"
-license = "Apache-2.0/MIT"
 name = "lunatic-networking-api"
-repository = "https://github.com/lunatic-solutions/lunatic/tree/main/crates/lunatic-networking-api"
 version = "0.12.0"
+edition = "2021"
+description = "Lunatic host functions for tcp and udp networking."
+homepage = "https://lunatic.solutions"
+repository = "https://github.com/lunatic-solutions/lunatic/tree/main/crates/lunatic-networking-api"
+license = "Apache-2.0/MIT"
 
 [dependencies]
 hash-map-id = { workspace = true }
