@@ -16,17 +16,18 @@ metrics = ["dep:metrics"]
 detailed_metrics = ["metrics"]
 
 [dependencies]
+hash-map-id = { version = "0.12", path = "../hash-map-id" }
+lunatic-networking-api = { version = "0.12", path = "../lunatic-networking-api" }
+
 anyhow = "1.0"
-log = "0.4"
 dashmap = "5.3.4"
+log = "0.4"
 metrics = { version = "0.20.1", optional = true }
+serde = "1.0"
 tokio = { version = "1.20", features = [
     "macros",
     "rt-multi-thread",
     "sync",
     "net",
 ] }
-wasmtime = "2"
-serde = "1.0"
-hash-map-id = { version = "0.12", path = "../hash-map-id" }
-lunatic-networking-api = { version = "0.12", path = "../lunatic-networking-api" }
+wasmtime = "2" # managed by root Cargo.toml

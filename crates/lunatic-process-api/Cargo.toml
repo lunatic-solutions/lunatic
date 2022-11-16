@@ -13,13 +13,14 @@ license = "Apache-2.0/MIT"
 metrics = ["dep:metrics"]
 
 [dependencies]
-anyhow = "1.0"
-wasmtime = "2"
-metrics = { version = "0.20.1", optional = true }
-tokio = { version = "1.20", features = ["macros", "time"] }
 hash-map-id = { version = "0.12", path = "../hash-map-id" }
-lunatic-stdout-capture = { version = "0.12", path = "../lunatic-stdout-capture" }
-lunatic-process = { version = "0.12", path = "../lunatic-process" }
 lunatic-common-api = { version = "0.12", path = "../lunatic-common-api" }
 lunatic-error-api = { version = "0.12", path = "../lunatic-error-api" }
+lunatic-process = { version = "0.12", path = "../lunatic-process" }
+lunatic-stdout-capture = { version = "0.12", path = "../lunatic-stdout-capture" }
 lunatic-wasi-api = { version = "0.12", path = "../lunatic-wasi-api" }
+
+anyhow = "1.0"
+metrics = { version = "0.20.1", optional = true }
+tokio = { version = "1.20", features = ["macros", "time"] }
+wasmtime = "2" # managed by root Cargo.toml
