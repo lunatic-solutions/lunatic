@@ -10,12 +10,11 @@ license = "Apache-2.0/MIT"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-hash-map-id = { version = "0.12", path = "../hash-map-id" }
-lunatic-common-api = { version = "0.12", path = "../lunatic-common-api" }
-lunatic-networking-api = { version = "0.12", path = "../lunatic-networking-api" }
-lunatic-process = { version = "0.12", path = "../lunatic-process" }
-lunatic-process-api = { version = "0.12", path = "../lunatic-process-api" }
+lunatic-common-api = { workspace = true }
+lunatic-networking-api = { workspace = true }
+lunatic-process = { workspace = true }
+lunatic-process-api = { workspace = true }
 
-anyhow = "1.0"
-tokio = { version = "1.20", features = ["macros", "net", "time"] }
-wasmtime = "2" # managed by root Cargo.toml
+anyhow = { workspace = true }
+tokio = { workspace = true, features = ["time"] }
+wasmtime = { workspace = true }
