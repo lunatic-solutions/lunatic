@@ -478,7 +478,7 @@ dependencies = [
  "itertools",
  "log",
  "smallvec",
- "wasmparser 0.92.0",
+ "wasmparser",
  "wasmtime-types",
 ]
 
@@ -776,17 +776,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "00f5fb52a06bdcadeb54e8d3671f8888a39697dcb0b81b23b55174030427f4eb"
 
 [[package]]
-name = "futures-macro"
-version = "0.3.25"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bdfb8ce053d86b91919aad980c220b1fb8401a9394410e1c289ed7e66b61835d"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
-]
-
-[[package]]
 name = "futures-sink"
 version = "0.3.25"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -805,12 +794,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "197676987abd2f9cadff84926f410af1c183608d36641465df73ae8211dc65d6"
 dependencies = [
  "futures-core",
- "futures-macro",
  "futures-sink",
  "futures-task",
  "pin-project-lite",
  "pin-utils",
- "slab",
 ]
 
 [[package]]
@@ -1126,7 +1113,6 @@ name = "lunatic-common-api"
 version = "0.12.0"
 dependencies = [
  "anyhow",
- "paste",
  "wasmtime",
 ]
 
@@ -1139,7 +1125,6 @@ dependencies = [
  "bincode",
  "bytes",
  "dashmap",
- "futures-util",
  "log",
  "lunatic-process",
  "quinn",
@@ -1156,16 +1141,13 @@ name = "lunatic-distributed-api"
 version = "0.12.0"
 dependencies = [
  "anyhow",
- "async_cell",
  "bincode",
- "dashmap",
  "log",
  "lunatic-common-api",
  "lunatic-distributed",
  "lunatic-error-api",
  "lunatic-process",
  "lunatic-process-api",
- "serde",
  "tokio",
  "wasmtime",
 ]
@@ -1185,7 +1167,6 @@ name = "lunatic-messaging-api"
 version = "0.12.0"
 dependencies = [
  "anyhow",
- "hash-map-id",
  "lunatic-common-api",
  "lunatic-networking-api",
  "lunatic-process",
@@ -1233,7 +1214,6 @@ dependencies = [
  "lunatic-common-api",
  "lunatic-error-api",
  "lunatic-process",
- "lunatic-stdout-capture",
  "lunatic-wasi-api",
  "metrics",
  "tokio",
@@ -1245,7 +1225,6 @@ name = "lunatic-registry-api"
 version = "0.12.0"
 dependencies = [
  "anyhow",
- "hash-map-id",
  "lunatic-common-api",
  "lunatic-process",
  "lunatic-process-api",
@@ -1258,15 +1237,12 @@ name = "lunatic-runtime"
 version = "0.12.0"
 dependencies = [
  "anyhow",
- "bincode",
  "clap 4.0.24",
  "criterion",
  "dashmap",
  "env_logger",
  "hash-map-id",
- "lazy_static",
  "log",
- "lunatic-common-api",
  "lunatic-distributed",
  "lunatic-distributed-api",
  "lunatic-error-api",
@@ -1279,14 +1255,11 @@ dependencies = [
  "lunatic-timer-api",
  "lunatic-version-api",
  "lunatic-wasi-api",
- "metrics",
  "metrics-exporter-prometheus",
  "regex",
  "serde",
  "tokio",
  "uuid",
- "wasi-common",
- "wasmparser 0.94.0",
  "wasmtime",
  "wasmtime-wasi",
  "wat",
@@ -1327,11 +1300,9 @@ name = "lunatic-wasi-api"
 version = "0.12.0"
 dependencies = [
  "anyhow",
- "hash-map-id",
  "lunatic-common-api",
  "lunatic-process",
  "lunatic-stdout-capture",
- "tokio",
  "wasmtime",
  "wasmtime-wasi",
 ]
@@ -2574,15 +2545,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "wasmparser"
-version = "0.94.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cdac7e1d98d70913ae3b4923dd7419c8ea7bdfd4c44a240a0ba305d929b7f191"
-dependencies = [
- "indexmap",
-]
-
-[[package]]
 name = "wasmtime"
 version = "2.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2602,7 +2564,7 @@ dependencies = [
  "rayon",
  "serde",
  "target-lexicon",
- "wasmparser 0.92.0",
+ "wasmparser",
  "wasmtime-cache",
  "wasmtime-cranelift",
  "wasmtime-environ",
@@ -2659,7 +2621,7 @@ dependencies = [
  "object",
  "target-lexicon",
  "thiserror",
- "wasmparser 0.92.0",
+ "wasmparser",
  "wasmtime-environ",
 ]
 
@@ -2678,7 +2640,7 @@ dependencies = [
  "serde",
  "target-lexicon",
  "thiserror",
- "wasmparser 0.92.0",
+ "wasmparser",
  "wasmtime-types",
 ]
 
@@ -2767,7 +2729,7 @@ dependencies = [
  "cranelift-entity",
  "serde",
  "thiserror",
- "wasmparser 0.92.0",
+ "wasmparser",
 ]
 
 [[package]]

@@ -7,15 +7,14 @@ name = "lunatic-networking-api"
 repository = "https://github.com/lunatic-solutions/lunatic/tree/main/crates/lunatic-networking-api"
 version = "0.12.0"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
-anyhow = "1.0"
-wasmtime = "2" # managed by root Cargo.toml
-tokio = { version = "1.20", features = ["macros", "rt-multi-thread", "sync", "net", "time", "io-util"] }
-hash-map-id = { version = "0.12", path = "../hash-map-id" }
-lunatic-common-api = { version = "0.12", path = "../lunatic-common-api" }
-lunatic-error-api = { version = "0.12", path = "../lunatic-error-api" }
-rustls-pemfile = {version = "1.0"}
+hash-map-id = { workspace = true }
+lunatic-common-api = { workspace = true }
+lunatic-error-api = { workspace = true }
+
+anyhow = { workspace = true }
+rustls-pemfile = { workspace = true }
+tokio = { workspace = true, features = ["io-util", "net", "sync", "time"] }
 tokio-rustls = "0.23.4"
+wasmtime = { workspace = true }
 webpki-roots = "0.22.0"

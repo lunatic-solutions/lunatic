@@ -7,19 +7,17 @@ homepage = "https://lunatic.solutions"
 repository = "https://github.com/lunatic-solutions/lunatic/tree/main/crates/lunatic-process-api"
 license = "Apache-2.0/MIT"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [features]
 metrics = ["dep:metrics"]
 
 [dependencies]
-anyhow = "1.0"
-wasmtime = "2"
-metrics = { version = "0.20.1", optional = true }
-tokio = { version = "1.20", features = ["macros", "time"] }
-hash-map-id = { version = "0.12", path = "../hash-map-id" }
-lunatic-stdout-capture = { version = "0.12", path = "../lunatic-stdout-capture" }
-lunatic-process = { version = "0.12", path = "../lunatic-process" }
-lunatic-common-api = { version = "0.12", path = "../lunatic-common-api" }
-lunatic-error-api = { version = "0.12", path = "../lunatic-error-api" }
-lunatic-wasi-api = { version = "0.12", path = "../lunatic-wasi-api" }
+hash-map-id = { workspace = true }
+lunatic-common-api = { workspace = true }
+lunatic-error-api = { workspace = true }
+lunatic-process = { workspace = true }
+lunatic-wasi-api = { workspace = true }
+
+anyhow = { workspace = true }
+metrics = { workspace = true, optional = true }
+tokio = { workspace = true, features = ["time"] }
+wasmtime = { workspace = true }

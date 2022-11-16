@@ -7,16 +7,14 @@ homepage = "https://lunatic.solutions"
 repository = "https://github.com/lunatic-solutions/lunatic/tree/main/crates"
 license = "Apache-2.0/MIT"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [features]
 metrics = ["dep:metrics"]
 
 [dependencies]
-anyhow = "1.0"
-wasmtime = "2"
-metrics = { version = "0.20.1", optional = true }
-hash-map-id = { version = "0.12", path = "../hash-map-id" }
-lunatic-process = { version = "0.12", path = "../lunatic-process" }
-lunatic-process-api = { version = "0.12", path = "../lunatic-process-api" }
-lunatic-common-api = { version = "0.12", path = "../lunatic-common-api" }
+lunatic-common-api = { workspace = true }
+lunatic-process = { workspace = true }
+lunatic-process-api = { workspace = true }
+
+anyhow = { workspace = true }
+metrics = { workspace = true, optional = true }
+wasmtime = { workspace = true }
