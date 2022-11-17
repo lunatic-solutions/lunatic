@@ -83,6 +83,8 @@ members = [
     "crates/lunatic-timer-api",
     "crates/lunatic-version-api",
     "crates/lunatic-wasi-api",
+
+    # Examples
     "examples/counter-guest",
     "examples/counter-plugin",
 ]
@@ -95,6 +97,7 @@ lunatic-distributed-api = { path = "crates/lunatic-distributed-api", version = "
 lunatic-error-api = { path = "crates/lunatic-error-api", version = "0.12" }
 lunatic-messaging-api = { path = "crates/lunatic-messaging-api", version = "0.12" }
 lunatic-networking-api = { path = "crates/lunatic-networking-api", version = "0.12" }
+lunatic-plugin = { path = "crates/lunatic-plugin", version = "0.12" }
 lunatic-plugin-internal = { path = "crates/lunatic-plugin-internal", version = "0.12" }
 lunatic-process = { path = "crates/lunatic-process", version = "0.12" }
 lunatic-process-api = { path = "crates/lunatic-process-api", version = "0.12" }
