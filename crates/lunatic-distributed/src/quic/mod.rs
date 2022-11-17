@@ -1,20 +1,8 @@
-#[cfg(feature = "quic-quinn")]
 mod quin;
-#[cfg(feature = "quic-s2n")]
-mod s2n;
-#[cfg(feature = "tcp")]
-mod tcp;
 
 use std::{net::SocketAddr, time::Duration};
 
-#[cfg(feature = "quic-quinn")]
 pub use quin::*;
-
-#[cfg(feature = "quic-s2n")]
-pub use s2n::*;
-
-#[cfg(feature = "tcp")]
-pub use tcp::*;
 
 pub async fn try_connect_forever(
     quic_client: &self::Client,

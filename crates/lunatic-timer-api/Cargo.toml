@@ -1,23 +1,22 @@
 [package]
 name = "lunatic-timer-api"
-version = "0.10.0"
+version = "0.12.0"
 edition = "2021"
 description = "Lunatic host functions for working with timers."
 homepage = "https://lunatic.solutions"
 repository = "https://github.com/lunatic-solutions/lunatic/tree/main/crates/lunatic-timer-api"
 license = "Apache-2.0/MIT"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [features]
 metrics = ["dep:metrics"]
 
 [dependencies]
-anyhow = "^1.0"
-wasmtime = "^2"
-metrics = { version = "0.20.1", optional = true }
-tokio = { version = "^1.20", features = ["rt", "time"] }
-hash-map-id = { version = "^0.10", path = "../hash-map-id" }
-lunatic-process = { version = "^0.10", path = "../lunatic-process" }
-lunatic-process-api = { version = "^0.10", path = "../lunatic-process-api" }
-lunatic-common-api = { version = "^0.10", path = "../lunatic-common-api" }
+hash-map-id = { workspace = true }
+lunatic-common-api = { workspace = true }
+lunatic-process = { workspace = true }
+lunatic-process-api = { workspace = true }
+
+anyhow = { workspace = true }
+metrics = { workspace = true, optional = true }
+tokio = { workspace = true, features = ["time", "rt"] }
+wasmtime = { workspace = true }

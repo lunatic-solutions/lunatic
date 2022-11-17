@@ -1,16 +1,15 @@
 [package]
 name = "lunatic-error-api"
-version = "0.10.0"
+version = "0.12.0"
 edition = "2021"
 description = "Lunatic host functions that make dealing with Anyhow errors simpler."
 homepage = "https://lunatic.solutions"
 repository = "https://github.com/lunatic-solutions/lunatic/tree/main/crates"
 license = "Apache-2.0/MIT"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
-anyhow = "^1.0"
-wasmtime = "^2" # managed by root Cargo.toml
-hash-map-id = { version = "^0.10", path = "../hash-map-id" }
-lunatic-common-api = { version = "^0.10", path = "../lunatic-common-api" }
+hash-map-id = { workspace = true }
+lunatic-common-api = { workspace = true }
+
+anyhow = { workspace = true }
+wasmtime = { workspace = true }

@@ -233,8 +233,8 @@ where
         Err(error) => (caller.data_mut().error_resources_mut().add(error), 1),
     };
 
+    #[cfg(feature = "metrics")]
     let duration = Instant::now() - start;
-
     #[cfg(feature = "metrics")]
     metrics::histogram!("lunatic.process.modules.compiled.duration", duration);
 

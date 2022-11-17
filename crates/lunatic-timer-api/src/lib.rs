@@ -140,7 +140,9 @@ fn send_after<T: ProcessState + ProcessCtx<T> + TimerCtx>(
 
     let target_time = Instant::now() + Duration::from_millis(delay);
     let timer_handle = tokio::task::spawn(async move {
+        #[cfg(feature = "metrics")]
         metrics::increment_counter!("lunatic.timers.started");
+        #[cfg(feature = "metrics")]
         metrics::increment_gauge!("lunatic.timers.active", 1.0);
         let duration_remaining = target_time - Instant::now();
         if duration_remaining != Duration::ZERO {
