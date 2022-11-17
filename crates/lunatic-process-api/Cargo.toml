@@ -14,6 +14,7 @@ metrics = ["dep:metrics"]
 hash-map-id = { workspace = true }
 lunatic-common-api = { workspace = true }
 lunatic-error-api = { workspace = true }
+lunatic-plugin-internal = { workspace = true }
 lunatic-process = { workspace = true }
 lunatic-wasi-api = { workspace = true }
 

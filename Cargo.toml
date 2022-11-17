@@ -35,6 +35,7 @@ lunatic-distributed-api = { workspace = true }
 lunatic-error-api = { workspace = true }
 lunatic-messaging-api = { workspace = true }
 lunatic-networking-api = { workspace = true }
+lunatic-plugin-internal = { workspace = true }
 lunatic-process = { workspace = true }
 lunatic-process-api = { workspace = true }
 lunatic-registry-api = { workspace = true }
@@ -73,6 +74,8 @@ members = [
     "crates/lunatic-distributed",
     "crates/lunatic-error-api",
     "crates/lunatic-messaging-api",
+    "crates/lunatic-plugin-internal",
+    "crates/lunatic-plugin",
     "crates/lunatic-process-api",
     "crates/lunatic-process",
     "crates/lunatic-registry-api",
@@ -80,6 +83,10 @@ members = [
     "crates/lunatic-timer-api",
     "crates/lunatic-version-api",
     "crates/lunatic-wasi-api",
+
+    # Examples
+    "examples/counter-guest",
+    "examples/counter-plugin",
 ]
 
 [workspace.dependencies]
@@ -90,9 +97,12 @@ lunatic-distributed-api = { path = "crates/lunatic-distributed-api", version = "
 lunatic-error-api = { path = "crates/lunatic-error-api", version = "0.12" }
 lunatic-messaging-api = { path = "crates/lunatic-messaging-api", version = "0.12" }
 lunatic-networking-api = { path = "crates/lunatic-networking-api", version = "0.12" }
+lunatic-plugin = { path = "crates/lunatic-plugin", version = "0.12" }
+lunatic-plugin-internal = { path = "crates/lunatic-plugin-internal", version = "0.12" }
 lunatic-process = { path = "crates/lunatic-process", version = "0.12" }
 lunatic-process-api = { path = "crates/lunatic-process-api", version = "0.12" }
 lunatic-registry-api = { path = "crates/lunatic-registry-api", version = "0.12" }
+lunatic-runtime = { path = ".", version = "0.12" }
 lunatic-stdout-capture = { path = "crates/lunatic-stdout-capture", version = "0.12" }
 lunatic-timer-api = { path = "crates/lunatic-timer-api", version = "0.12" }
 lunatic-version-api = { path = "crates/lunatic-version-api", version = "0.12" }

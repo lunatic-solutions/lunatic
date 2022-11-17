@@ -306,9 +306,9 @@ dependencies = [
 
 [[package]]
 name = "clap"
-version = "4.0.24"
+version = "4.0.26"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "60494cedb60cb47462c0ff7be53de32c0e42a6fc2c772184554fa12bd9489c03"
+checksum = "2148adefda54e14492fb9bddcc600b4344c5d1a3123bd666dcb939c6f0e0e57e"
 dependencies = [
  "atty",
  "bitflags",
@@ -365,6 +365,19 @@ name = "core-foundation-sys"
 version = "0.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5827cebf4670468b8772dd191856768aedcb1b0278a04f989f7766351917b9dc"
+
+[[package]]
+name = "counter-guest"
+version = "0.0.0"
+
+[[package]]
+name = "counter-plugin"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "lunatic-plugin",
+ "wasmtime",
+]
 
 [[package]]
 name = "cpp_demangle"
@@ -1078,6 +1091,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc7fcc620a3bff7cdd7a365be3376c97191aeaccc2a603e600951e452615bf89"
 
 [[package]]
+name = "libloading"
+version = "0.7.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b67380fd3b2fbe7527a606e18729d21c6f3951633d0500574c4dc22d2d638b9f"
+dependencies = [
+ "cfg-if",
+ "winapi",
+]
+
+[[package]]
 name = "linux-raw-sys"
 version = "0.0.46"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1126,6 +1149,7 @@ dependencies = [
  "bytes",
  "dashmap",
  "log",
+ "lunatic-plugin-internal",
  "lunatic-process",
  "quinn",
  "rcgen",
@@ -1191,6 +1215,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "lunatic-plugin"
+version = "0.12.0"
+dependencies = [
+ "anyhow",
+ "lunatic-plugin-internal",
+ "lunatic-runtime",
+ "wasmtime",
+]
+
+[[package]]
+name = "lunatic-plugin-internal"
+version = "0.12.0"
+dependencies = [
+ "anyhow",
+ "libloading",
+ "wasmtime",
+]
+
+[[package]]
 name = "lunatic-process"
 version = "0.12.0"
 dependencies = [
@@ -1199,6 +1242,7 @@ dependencies = [
  "hash-map-id",
  "log",
  "lunatic-networking-api",
+ "lunatic-plugin-internal",
  "metrics",
  "serde",
  "tokio",
@@ -1213,6 +1257,7 @@ dependencies = [
  "hash-map-id",
  "lunatic-common-api",
  "lunatic-error-api",
+ "lunatic-plugin-internal",
  "lunatic-process",
  "lunatic-wasi-api",
  "metrics",
@@ -1237,7 +1282,7 @@ name = "lunatic-runtime"
 version = "0.12.0"
 dependencies = [
  "anyhow",
- "clap 4.0.24",
+ "clap 4.0.26",
  "criterion",
  "dashmap",
  "env_logger",
@@ -1248,6 +1293,7 @@ dependencies = [
  "lunatic-error-api",
  "lunatic-messaging-api",
  "lunatic-networking-api",
+ "lunatic-plugin-internal",
  "lunatic-process",
  "lunatic-process-api",
  "lunatic-registry-api",
@@ -1673,9 +1719,9 @@ dependencies = [
 
 [[package]]
 name = "quinn"
-version = "0.9.0"
+version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6a5f2962a2f18666b1b690cbc33f528b4fcdfc6e51a84b47c7fb19b6a9fab753"
+checksum = "57659b2d8340fa1a8b9358d14597b0b62ea8b9f6cd77cde07895079d619d2d4e"
 dependencies = [
  "bytes",
  "pin-project-lite",
@@ -1691,9 +1737,9 @@ dependencies = [
 
 [[package]]
 name = "quinn-proto"
-version = "0.9.0"
+version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e1268269057c3f78dab82fe8d8b7834e656710cff55b97dbc890a67dcc113b2e"
+checksum = "57098b1a3d2159d13dc3a98c0e3a5f8ab91ac3dd2471e52b1d712ea0c1085555"
 dependencies = [
  "bytes",
  "rand",

@@ -1,0 +1,13 @@
+[package]
+name = "lunatic-plugin-internal"
+version = "0.12.0"
+edition = "2021"
+description = "Lunatic plugins system."
+homepage = "https://lunatic.solutions"
+repository = "https://github.com/lunatic-solutions/lunatic/tree/main/crates"
+license = "Apache-2.0/MIT"
+
+[dependencies]
+anyhow = { workspace = true }
+libloading = "0.7"
+wasmtime = { workspace = true }

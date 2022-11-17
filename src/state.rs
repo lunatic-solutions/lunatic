@@ -1,5 +1,5 @@
-use std::fmt::Debug;
-use std::sync::Arc;
+use std::{any::Any, collections::HashMap, fmt::Debug};
+use std::{any::TypeId, sync::Arc};
 
 use anyhow::Result;
 use dashmap::DashMap;
@@ -8,6 +8,7 @@ use lunatic_distributed::{DistributedCtx, DistributedProcessState};
 use lunatic_error_api::{ErrorCtx, ErrorResource};
 use lunatic_networking_api::{DnsIterator, TlsConnection, TlsListener};
 use lunatic_networking_api::{NetworkingCtx, TcpConnection};
+use lunatic_plugin_internal::Plugin;
 use lunatic_process::env::{Environment, LunaticEnvironment};
 use lunatic_process::runtimes::wasmtime::{WasmtimeCompiledModule, WasmtimeRuntime};
 use lunatic_process::state::{ConfigResources, ProcessState};
@@ -61,6 +62,9 @@ pub struct DefaultProcessState {
     initialized: bool,
     // Shared process registry
     registry: Arc<DashMap<String, (u64, u64)>>,
+    // Plugins
+    plugins: Arc<Vec<Plugin>>,
+    plugin_state: HashMap<TypeId, Box<dyn Any + Send + Sync>>,
 }
 
 impl DefaultProcessState {
@@ -71,6 +75,7 @@ impl DefaultProcessState {
         module: Arc<WasmtimeCompiledModule<Self>>,
         config: Arc<DefaultProcessConfig>,
         registry: Arc<DashMap<String, (u64, u64)>>,
+        plugins: Arc<Vec<Plugin>>,
     ) -> Result<Self> {
         let signal_mailbox = unbounded_channel();
         let signal_mailbox = (signal_mailbox.0, Arc::new(Mutex::new(signal_mailbox.1)));
@@ -95,6 +100,8 @@ impl DefaultProcessState {
             wasi_stderr: None,
             initialized: false,
             registry,
+            plugins,
+            plugin_state: HashMap::new(),
         };
         Ok(state)
     }
@@ -131,6 +138,8 @@ impl ProcessState for DefaultProcessState {
             wasi_stderr: None,
             initialized: false,
             registry: self.registry.clone(),
+            plugins: self.plugins.clone(),
+            plugin_state: HashMap::new(),
         };
         Ok(state)
     }
@@ -161,10 +170,12 @@ impl ProcessState for DefaultProcessState {
             wasi_stdout: None,
             wasi_stderr: None,
             initialized: false,
+            plugins: Arc::new(vec![]),
+            plugin_state: HashMap::new(),
         }
     }
 
-    fn register(linker: &mut Linker<Self>) -> Result<()> {
+    fn register(linker: &mut Linker<Self>, plugins: &[Plugin]) -> Result<()> {
         lunatic_error_api::register(linker)?;
         lunatic_process_api::register(linker)?;
         lunatic_messaging_api::register(linker)?;
@@ -174,11 +185,21 @@ impl ProcessState for DefaultProcessState {
         lunatic_wasi_api::register(linker)?;
         lunatic_registry_api::register(linker)?;
         lunatic_distributed_api::register(linker)?;
+        for plugin in plugins {
+            plugin.register(linker)?;
+        }
         Ok(())
     }
 
-    fn initialize(&mut self) {
+    fn initialize(&mut self) -> Result<()> {
+        for plugin in &*self.plugins {
+            let id = plugin.id();
+            let state = plugin.init()?;
+            self.plugin_state.insert(id, state);
+        }
+
         self.initialized = true;
+        Ok(())
     }
 
     fn is_initialized(&self) -> bool {
@@ -456,8 +477,28 @@ impl DistributedCtx<LunaticEnvironment> for DefaultProcessState {
             wasi_stderr: None,
             initialized: false,
             registry: Default::default(), // TODO move registry into env?
+            plugins: Arc::new(vec![]),
+            plugin_state: HashMap::new(),
         };
         Ok(state)
+    }
+}
+
+impl lunatic_plugin_internal::PluginCtx for DefaultProcessState {
+    fn plugins(&self) -> &Arc<Vec<Plugin>> {
+        &self.plugins
+    }
+
+    fn plugin_state<T: 'static>(&self, plugin: &TypeId) -> Option<&T> {
+        self.plugin_state
+            .get(plugin)
+            .and_then(|state| state.downcast_ref())
+    }
+
+    fn plugin_state_mut<T: 'static>(&mut self, plugin: &TypeId) -> Option<&mut T> {
+        self.plugin_state
+            .get_mut(plugin)
+            .and_then(|state| state.downcast_mut())
     }
 }
 
@@ -480,7 +521,7 @@ mod tests {
         let runtime = WasmtimeRuntime::new(&wasmtime_config).unwrap();
 
         let raw_module = wat::parse_file("./wat/all_imports.wat").unwrap();
-        let module = Arc::new(runtime.compile_module(raw_module.into()).unwrap());
+        let module = Arc::new(runtime.compile_module(&[], raw_module.into()).unwrap());
         let env = Arc::new(lunatic_process::env::LunaticEnvironment::new(0));
         let registry = Arc::new(dashmap::DashMap::new());
         let state = DefaultProcessState::new(
@@ -490,6 +531,7 @@ mod tests {
             module.clone(),
             Arc::new(config),
             registry,
+            Arc::new(vec![]),
         )
         .unwrap();
 

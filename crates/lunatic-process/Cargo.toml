@@ -16,6 +16,7 @@ detailed_metrics = ["metrics"]
 [dependencies]
 hash-map-id = { workspace = true }
 lunatic-networking-api = { workspace = true }
+lunatic-plugin-internal = { workspace = true }
 
 anyhow = { workspace = true }
 dashmap = { workspace = true }

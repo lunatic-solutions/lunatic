@@ -3,6 +3,7 @@ use std::{env, fs, path::Path, sync::Arc, time::Instant};
 use anyhow::{Context, Result};
 use clap::Parser;
 use dashmap::DashMap;
+use lunatic_plugin_internal::Plugin;
 use lunatic_process::{env::LunaticEnvironment, runtimes, wasm::spawn_wasm};
 use lunatic_process_api::ProcessConfigCtx;
 use lunatic_runtime::{DefaultProcessConfig, DefaultProcessState};
@@ -48,6 +49,10 @@ struct Args {
     #[arg(long)]
     exact: bool,
 
+    /// Add plugins
+    #[arg(long, conflicts_with = "no_entry")]
+    plugins: Vec<String>,
+
     /// Arguments passed to the guest
     #[arg()]
     wasm_args: Vec<String>,
@@ -84,11 +89,19 @@ pub(crate) async fn test() -> Result<()> {
     let wasmtime_config = runtimes::wasmtime::default_config();
     let runtime = runtimes::wasmtime::WasmtimeRuntime::new(&wasmtime_config)?;
 
+    // Load plugins
+    let plugins: Arc<Vec<_>> = Arc::new(
+        args.plugins
+            .into_iter()
+            .map(|plugin| unsafe { Plugin::new(plugin) })
+            .collect::<Result<_, _>>()?,
+    );
+
     // Load and compile wasm module
     let path = args.wasm;
     let path = Path::new(&path);
     let module = fs::read(path)?;
-    let module = Arc::new(runtime.compile_module::<DefaultProcessState>(module.into())?);
+    let module = Arc::new(runtime.compile_module::<DefaultProcessState>(&plugins, module.into())?);
 
     let filter = args.filter.unwrap_or_default();
 
@@ -224,6 +237,7 @@ pub(crate) async fn test() -> Result<()> {
             module.clone(),
             config.clone(),
             registry,
+            plugins.clone(),
         )
         .unwrap();
 

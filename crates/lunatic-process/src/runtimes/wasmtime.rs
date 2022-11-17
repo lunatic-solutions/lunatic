@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use anyhow::Result;
+use lunatic_plugin_internal::Plugin;
 use wasmtime::ResourceLimiter;
 
 use crate::{
@@ -23,14 +24,18 @@ impl WasmtimeRuntime {
     }
 
     /// Compiles a wasm module to machine code and performs type-checking on host functions.
-    pub fn compile_module<T>(&self, data: RawWasm) -> Result<WasmtimeCompiledModule<T>>
+    pub fn compile_module<T>(
+        &self,
+        plugins: &[Plugin],
+        data: RawWasm,
+    ) -> Result<WasmtimeCompiledModule<T>>
     where
         T: ProcessState,
     {
         let module = wasmtime::Module::new(&self.engine, data.as_slice())?;
         let mut linker = wasmtime::Linker::new(&self.engine);
         // Register host functions to linker.
-        <T as ProcessState>::register(&mut linker)?;
+        <T as ProcessState>::register(&mut linker, plugins)?;
         // The `default_state` and `store` are just used for resolving host functions that are not
         // owned by any particular `Store`. The "real" instance state and store are created inside
         // the `instantiate` function.
@@ -71,7 +76,7 @@ impl WasmtimeRuntime {
             .instantiate_async(&mut store)
             .await?;
         // Mark state as initialized
-        store.data_mut().initialize();
+        store.data_mut().initialize()?;
         Ok(WasmtimeInstance { store, instance })
     }
 }

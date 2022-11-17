@@ -8,6 +8,7 @@ repository = "https://github.com/lunatic-solutions/lunatic/tree/main/crates"
 license = "Apache-2.0/MIT"
 
 [dependencies]
+lunatic-plugin-internal = { workspace = true }
 lunatic-process = { workspace = true }
 
 anyhow = { workspace = true }

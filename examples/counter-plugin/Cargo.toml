@@ -1,0 +1,13 @@
+[package]
+name = "counter-plugin"
+version = "0.0.0"
+edition = "2021"
+
+[lib]
+crate-type = ["dylib"]
+
+[dependencies]
+lunatic-plugin = { workspace = true }
+
+anyhow = { workspace = true }
+wasmtime = { workspace = true }

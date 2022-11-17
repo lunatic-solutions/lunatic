@@ -3,6 +3,7 @@ use std::sync::Arc;
 use anyhow::Result;
 use dashmap::DashMap;
 use hash_map_id::HashMapId;
+use lunatic_plugin_internal::Plugin;
 use tokio::sync::{
     mpsc::{UnboundedReceiver, UnboundedSender},
     Mutex,
@@ -40,9 +41,9 @@ pub trait ProcessState: Sized {
     fn state_for_instantiation() -> Self;
 
     /// Register all host functions to the linker.
-    fn register(linker: &mut Linker<Self>) -> Result<()>;
+    fn register(linker: &mut Linker<Self>, plugins: &[Plugin]) -> Result<()>;
     /// Marks a wasm instance as initialized
-    fn initialize(&mut self);
+    fn initialize(&mut self) -> Result<()>;
     /// Returns true if the instance was initialized
     fn is_initialized(&self) -> bool;
 

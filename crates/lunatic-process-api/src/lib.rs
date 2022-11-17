@@ -9,6 +9,7 @@ use anyhow::{anyhow, Result};
 use hash_map_id::HashMapId;
 use lunatic_common_api::{get_memory, IntoTrap};
 use lunatic_error_api::ErrorCtx;
+use lunatic_plugin_internal::PluginCtx;
 use lunatic_process::{
     config::ProcessConfig,
     env::Environment,
@@ -44,7 +45,14 @@ pub trait ProcessCtx<S: ProcessState> {
 // Register the process APIs to the linker
 pub fn register<T>(linker: &mut Linker<T>) -> Result<()>
 where
-    T: ProcessState + ProcessCtx<T> + ErrorCtx + LunaticWasiCtx + Send + ResourceLimiter + 'static,
+    T: ProcessState
+        + ProcessCtx<T>
+        + PluginCtx
+        + ErrorCtx
+        + LunaticWasiCtx
+        + Send
+        + ResourceLimiter
+        + 'static,
     for<'a> &'a T: Send,
     T::Config: ProcessConfigCtx,
 {
@@ -186,7 +194,7 @@ fn compile_module<T>(
     id_ptr: u32,
 ) -> Result<i32, Trap>
 where
-    T: ProcessState + ProcessCtx<T> + ErrorCtx,
+    T: ProcessState + ProcessCtx<T> + PluginCtx + ErrorCtx,
     T::Config: ProcessConfigCtx,
 {
     // TODO: Module compilation is CPU intensive and should be done on the blocking task thread pool.
@@ -209,7 +217,12 @@ where
         .or_trap("lunatic::process::compile_module")?;
 
     let module = RawWasm::new(None, module);
-    let (mod_or_error_id, result) = match caller.data().runtime().compile_module(module) {
+    let (mod_or_error_id, result) = match caller
+        .data()
+        .runtime()
+        .clone()
+        .compile_module(caller.data().plugins(), module)
+    {
         Ok(module) => (
             caller
                 .data_mut()

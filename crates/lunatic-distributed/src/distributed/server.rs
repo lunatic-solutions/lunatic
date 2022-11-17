@@ -2,6 +2,7 @@ use std::{net::SocketAddr, sync::Arc};
 
 use anyhow::{anyhow, Result};
 
+use lunatic_plugin_internal::Plugin;
 use lunatic_process::{
     env::{Environment, Environments},
     message::{DataMessage, Message},
@@ -25,6 +26,7 @@ pub struct ServerCtx<T, E: Environment> {
     pub modules: Modules<T>,
     pub distributed: DistributedProcessState,
     pub runtime: WasmtimeRuntime,
+    pub plugins: Arc<Vec<Plugin>>,
 }
 
 impl<T: 'static, E: Environment> Clone for ServerCtx<T, E> {
@@ -34,6 +36,7 @@ impl<T: 'static, E: Environment> Clone for ServerCtx<T, E> {
             modules: self.modules.clone(),
             distributed: self.distributed.clone(),
             runtime: self.runtime.clone(),
+            plugins: self.plugins.clone(),
         }
     }
 }
@@ -159,7 +162,9 @@ where
         None => {
             if let Some(bytes) = ctx.distributed.control.get_module(module_id).await {
                 let wasm = RawWasm::new(Some(module_id), bytes);
-                ctx.modules.compile(ctx.runtime.clone(), wasm).await??
+                ctx.modules
+                    .compile(ctx.runtime.clone(), ctx.plugins.clone(), wasm)
+                    .await??
             } else {
                 return Ok(Err(ClientError::ModuleNotFound));
             }
