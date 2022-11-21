@@ -46,9 +46,9 @@ pub struct TlsConnection {
 }
 
 pub struct TlsListener {
-    listener: TcpListener,
-    certs: Certificate,
-    keys: PrivateKey,
+    pub listener: TcpListener,
+    pub certs: Certificate,
+    pub keys: PrivateKey,
 }
 
 impl TlsConnection {

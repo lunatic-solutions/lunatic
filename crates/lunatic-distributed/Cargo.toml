@@ -18,6 +18,7 @@ dashmap = { workspace = true }
 log = { workspace = true }
 quinn = { version = "0.9" }
 rcgen = { version = "0.10", features = ["pem", "x509-parser"] }
+reqwest = { workspace = true, features = ["json"] }
 rustls = { version = "0.20" }
 rustls-pemfile = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
