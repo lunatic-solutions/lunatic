@@ -28,7 +28,7 @@ struct Args {
     #[arg(long, value_name = "NODE_ADDRESS", requires = "control")]
     node: Option<String>,
 
-    /// Address of a control node inside the cluster that will be used for bootstrapping
+    /// URL of a control node inside the cluster that will be used for bootstrapping
     #[arg(long, value_name = "CONTROL_ADDRESS")]
     control: Option<String>,
 
@@ -113,6 +113,7 @@ pub(crate) async fn execute() -> Result<()> {
     let envs = Arc::new(LunaticEnvironments::default());
 
     let env = envs.create(1);
+    let http_client = reqwest::Client::new();
 
     let (distributed_state, control_client, node_id) =
         if let (Some(node_address), Some(control_address)) = (args.node, args.control) {
@@ -120,7 +121,6 @@ pub(crate) async fn execute() -> Result<()> {
             let node_address = node_address.parse().unwrap();
             let node_name = Uuid::new_v4().to_string();
             let node_attributes: HashMap<String, String> = args.tag.into_iter().collect();
-            let control_address = control_address.parse().unwrap();
             let ca_cert = lunatic_distributed::distributed::server::root_cert(
                 args.test_ca,
                 args.ca_cert.as_deref(),
@@ -136,7 +136,7 @@ pub(crate) async fn execute() -> Result<()> {
                 node_name.to_string(),
                 node_attributes,
                 control_address,
-                quic_client.clone(),
+                http_client.clone(),
                 node_cert.serialize_request_pem().unwrap(),
             )
             .await?;
