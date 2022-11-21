@@ -55,11 +55,11 @@ impl Client {
                 attributes,
             }),
         };
-        tokio::task::spawn(refresh_nodes_task(client.clone()));
         let Registered {
             node_id,
             signed_cert,
         } = client.send_registration(signing_request).await?;
+        tokio::task::spawn(refresh_nodes_task(client.clone()));
         client.refresh_nodes().await?;
 
         Ok((node_id, client, signed_cert))
