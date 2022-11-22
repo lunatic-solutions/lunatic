@@ -125,13 +125,7 @@ impl Client {
             "{}/api/control/deregister/{}",
             self.inner.control_url, node_id
         );
-        self.inner
-            .http_client
-            .post(url)
-            .json(&Request::Deregister(node_id))
-            .send()
-            .await
-            .ok();
+        self.inner.http_client.post(url).send().await.ok();
     }
 
     pub fn node_info(&self, node_id: u64) -> Option<NodeInfo> {
@@ -143,16 +137,11 @@ impl Client {
     }
 
     pub async fn lookup_nodes(&self, query: &str) -> Result<(u64, usize)> {
-        let url = format!("{}/api/control/lookup_nodes", self.inner.control_url);
-        let response = self
-            .inner
-            .http_client
-            .post(url)
-            .json(&Request::LookupNodes(query.to_string()))
-            .send()
-            .await?
-            .json()
-            .await?;
+        let url = format!(
+            "{}/api/control/lookup_nodes?query={}",
+            self.inner.control_url, query
+        );
+        let response = self.inner.http_client.get(url).send().await?.json().await?;
         match response {
             Response::Nodes(nodes) => {
                 let nodes: Vec<u64> = nodes.into_iter().map(move |v| v.id).collect();
