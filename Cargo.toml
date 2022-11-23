@@ -38,6 +38,7 @@ lunatic-networking-api = {workspace = true}
 lunatic-process = {workspace = true}
 lunatic-process-api = {workspace = true}
 lunatic-registry-api = {workspace = true}
+lunatic-sqlite-api = {workspace = true}
 lunatic-stdout-capture = {workspace = true}
 lunatic-timer-api = {workspace = true}
 lunatic-version-api = {workspace = true}
@@ -76,6 +77,7 @@ members = [
   "crates/lunatic-process-api",
   "crates/lunatic-process",
   "crates/lunatic-registry-api",
+  "crates/lunatic-sqlite-api",
   "crates/lunatic-stdout-capture",
   "crates/lunatic-timer-api",
   "crates/lunatic-version-api",
@@ -93,6 +95,7 @@ lunatic-networking-api = {path = "crates/lunatic-networking-api", version = "0.1
 lunatic-process = {path = "crates/lunatic-process", version = "0.12"}
 lunatic-process-api = {path = "crates/lunatic-process-api", version = "0.12"}
 lunatic-registry-api = {path = "crates/lunatic-registry-api", version = "0.12"}
+lunatic-sqlite-api = {path = "crates/lunatic-sqlite-api", version = "0.12"}
 lunatic-stdout-capture = {path = "crates/lunatic-stdout-capture", version = "0.12"}
 lunatic-timer-api = {path = "crates/lunatic-timer-api", version = "0.12"}
 lunatic-version-api = {path = "crates/lunatic-version-api", version = "0.12"}

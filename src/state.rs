@@ -17,6 +17,7 @@ use lunatic_process::{
 };
 use lunatic_process::{mailbox::MessageMailbox, message::Message};
 use lunatic_process_api::{ProcessConfigCtx, ProcessCtx};
+use lunatic_sqlite_api::{SQLiteConnections, SQLiteCtx, SQLiteResults};
 use lunatic_stdout_capture::StdoutCapture;
 use lunatic_timer_api::{TimerCtx, TimerResources};
 use lunatic_wasi_api::{build_wasi, LunaticWasiCtx};
@@ -27,6 +28,13 @@ use wasmtime::{Linker, ResourceLimiter};
 use wasmtime_wasi::WasiCtx;
 
 use crate::DefaultProcessConfig;
+
+#[derive(Debug, Default)]
+pub struct DbResources {
+    // sqlite data
+    sqlite_connections: SQLiteConnections,
+    sqlite_results: SQLiteResults,
+}
 
 pub struct DefaultProcessState {
     // Process id
@@ -61,6 +69,8 @@ pub struct DefaultProcessState {
     initialized: bool,
     // Shared process registry
     registry: Arc<DashMap<String, (u64, u64)>>,
+    // database resources
+    db_resources: DbResources,
 }
 
 impl DefaultProcessState {
@@ -95,6 +105,7 @@ impl DefaultProcessState {
             wasi_stderr: None,
             initialized: false,
             registry,
+            db_resources: DbResources::default(),
         };
         Ok(state)
     }
@@ -131,6 +142,7 @@ impl ProcessState for DefaultProcessState {
             wasi_stderr: None,
             initialized: false,
             registry: self.registry.clone(),
+            db_resources: DbResources::default(),
         };
         Ok(state)
     }
@@ -161,6 +173,7 @@ impl ProcessState for DefaultProcessState {
             wasi_stdout: None,
             wasi_stderr: None,
             initialized: false,
+            db_resources: DbResources::default(),
         }
     }
 
@@ -174,6 +187,7 @@ impl ProcessState for DefaultProcessState {
         lunatic_wasi_api::register(linker)?;
         lunatic_registry_api::register(linker)?;
         lunatic_distributed_api::register(linker)?;
+        lunatic_sqlite_api::register(linker)?;
         Ok(())
     }
 
@@ -382,6 +396,24 @@ impl LunaticWasiCtx for DefaultProcessState {
     }
 }
 
+impl SQLiteCtx for DefaultProcessState {
+    fn sqlite_connections(&self) -> &SQLiteConnections {
+        &self.db_resources.sqlite_connections
+    }
+
+    fn sqlite_connections_mut(&mut self) -> &mut SQLiteConnections {
+        &mut self.db_resources.sqlite_connections
+    }
+
+    fn sqlite_results(&self) -> &SQLiteResults {
+        &self.db_resources.sqlite_results
+    }
+
+    fn sqlite_results_mut(&mut self) -> &mut SQLiteResults {
+        &mut self.db_resources.sqlite_results
+    }
+}
+
 #[derive(Default, Debug)]
 pub(crate) struct Resources {
     pub(crate) configs: HashMapId<DefaultProcessConfig>,
@@ -456,6 +488,7 @@ impl DistributedCtx<LunaticEnvironment> for DefaultProcessState {
             wasi_stderr: None,
             initialized: false,
             registry: Default::default(), // TODO move registry into env?
+            db_resources: DbResources::default(),
         };
         Ok(state)
     }

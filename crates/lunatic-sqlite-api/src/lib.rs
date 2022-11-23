@@ -11,7 +11,7 @@ pub type SQLiteConnections = HashMapId<Mutex<Connection>>;
 pub type SQLiteResults = HashMapId<Vec<u8>>;
 pub trait SQLiteCtx {
     fn sqlite_results(&self) -> &SQLiteResults;
-    fn sqlite_results_mut(&self) -> &mut SQLiteResults;
+    fn sqlite_results_mut(&mut self) -> &mut SQLiteResults;
 
     fn sqlite_connections(&self) -> &SQLiteConnections;
     fn sqlite_connections_mut(&mut self) -> &mut SQLiteConnections;
@@ -34,7 +34,7 @@ fn open<T: ProcessState + ErrorCtx + SQLiteCtx>(
     path_str_ptr: u32,
     path_str_len: u32,
     connection_id_ptr: u32,
-) -> Result<u32, Trap> {
+) -> Result<u64, Trap> {
     // obtain the memory and the state
     let memory = get_memory(&mut caller)?;
     let (memory_slice, _state) = memory.data_and_store_mut(&mut caller);
@@ -62,8 +62,8 @@ fn open<T: ProcessState + ErrorCtx + SQLiteCtx>(
     memory
         .write(
             &mut caller,
-            conn_or_err_id as usize,
-            &connection_id_ptr.to_le_bytes(),
+            connection_id_ptr as usize,
+            &conn_or_err_id.to_le_bytes(),
         )
         .or_trap("lunatic::sqlite::open")?;
     Ok(return_code)
@@ -74,7 +74,7 @@ fn execute<T: ProcessState + ErrorCtx + SQLiteCtx>(
     conn_id: u64,
     exec_str_ptr: u32,
     exec_str_len: u32,
-) -> Result<(), Trap> {
+) -> Result<u32, Trap> {
     let memory = get_memory(&mut caller)?;
     let (memory_slice, state) = memory.data_and_store_mut(&mut caller);
     let exec = memory_slice
@@ -83,14 +83,18 @@ fn execute<T: ProcessState + ErrorCtx + SQLiteCtx>(
     let exec = std::str::from_utf8(exec).or_trap("lunatic::sqlite::execute")?;
 
     // execute a single sqlite query
-    state
+    match state
         .sqlite_connections()
         .get(conn_id)
         .or_trap("lunatic::sqlite::execute")?
         .lock()
         .or_trap("lunatic::sqlite::execute")?
         .execute(exec)
-        .or_trap("lunatic::sqlite::execute")
+    {
+        // 1 is equal to SQLITE_ERROR, which is a generic error code
+        Err(e) => Ok(e.code.unwrap_or(1) as u32),
+        Ok(_) => Ok(0),
+    }
 }
 
 fn query_prepare<T: ProcessState + ErrorCtx + SQLiteCtx>(
@@ -111,76 +115,72 @@ fn query_prepare<T: ProcessState + ErrorCtx + SQLiteCtx>(
         .or_trap("lunatic::sqlite::query_prepare::get_query")?;
     let query = std::str::from_utf8(query).or_trap("lunatic::sqlite::query_prepare::from_utf8")?;
 
-    // obtain the sqlite connection
-    let conn = state
-        .sqlite_connections()
-        .get(conn_id)
-        .or_trap("lunatic::sqlite::query_prepare::obtain_conn")?
-        .lock()
-        .or_trap("lunatic::sqlite::query_prepare::obtain_conn")?;
-
-    // prepare the statement
-    let mut statement = conn
-        .prepare(query)
-        .or_trap("lunatic::sqlite::query_prepare::prepare_statement")?;
-
     // allocate a vec to return some bytes back to the module
     let mut return_value = Vec::new();
+    {
+        // obtain the sqlite connection
+        let conn = state
+            .sqlite_connections()
+            .get(conn_id)
+            .or_trap("lunatic::sqlite::query_prepare::obtain_conn")?
+            .lock()
+            .or_trap("lunatic::sqlite::query_prepare::obtain_conn")?;
 
-    while let Ok(sqlite::State::Row) = statement.next() {
-        let count = statement.column_count();
-        for i in 0..count {
-            let mut bytes = match statement.column_type(i) {
-                sqlite::Type::Binary => {
-                    let mut bytes = statement
-                        .read::<Vec<u8>>(i)
-                        .or_trap("lunatic::sqlite::query_prepare::read_binary")?;
+        // prepare the statement
+        let mut statement = conn
+            .prepare(query)
+            .or_trap("lunatic::sqlite::query_prepare::prepare_statement")?;
 
-                    let len = bytes.len();
-                    let mut result = vec![ColumnType::Binary as u8];
-                    result.append(&mut (len as u32).to_le_bytes().to_vec());
-                    result.append(&mut bytes);
-                    result
-                }
-                sqlite::Type::Float => {
-                    let mut result = vec![ColumnType::Float as u8];
-                    result.append(
-                        &mut statement
-                            .read::<f64>(i)
-                            .or_trap("lunatic::sqlite::query_prepare::read_float")?
-                            .to_le_bytes()
-                            .to_vec(),
-                    );
-                    result
-                }
-                sqlite::Type::Integer => {
-                    let mut result = vec![ColumnType::Integer as u8];
-                    result.append(
-                        &mut statement
-                            .read::<i64>(i)
-                            .or_trap("lunatic::sqlite::query_prepare::read_integer")?
-                            .to_le_bytes()
-                            .to_vec(),
-                    );
-                    result
-                }
-                sqlite::Type::String => {
-                    let bytes = statement
-                        .read::<String>(i)
-                        .or_trap("lunatic::sqlite::query_prepare::read_string")?;
+        while let Ok(sqlite::State::Row) = statement.next() {
+            let count = statement.column_count();
+            for i in 0..count {
+                match statement.column_type(i) {
+                    sqlite::Type::Binary => {
+                        let mut bytes = statement
+                            .read::<Vec<u8>>(i)
+                            .or_trap("lunatic::sqlite::query_prepare::read_binary")?;
 
-                    let len = bytes.len();
-                    let mut result = vec![ColumnType::String as u8];
-                    result.append(&mut (len as u32).to_le_bytes().to_vec());
-                    result.append(&mut bytes.as_bytes().to_vec());
-                    result
-                }
-                sqlite::Type::Null => vec![ColumnType::Null as u8],
-            };
-            return_value.append(&mut bytes);
+                        let len = bytes.len();
+                        return_value.append(&mut vec![ColumnType::Binary as u8]);
+                        return_value.append(&mut (len as u32).to_le_bytes().to_vec());
+                        return_value.append(&mut bytes);
+                    }
+                    sqlite::Type::Float => {
+                        return_value.append(&mut vec![ColumnType::Float as u8]);
+                        return_value.append(
+                            &mut statement
+                                .read::<f64>(i)
+                                .or_trap("lunatic::sqlite::query_prepare::read_float")?
+                                .to_le_bytes()
+                                .to_vec(),
+                        );
+                    }
+                    sqlite::Type::Integer => {
+                        return_value.append(&mut vec![ColumnType::Integer as u8]);
+                        return_value.append(
+                            &mut statement
+                                .read::<i64>(i)
+                                .or_trap("lunatic::sqlite::query_prepare::read_integer")?
+                                .to_le_bytes()
+                                .to_vec(),
+                        );
+                    }
+                    sqlite::Type::String => {
+                        let bytes = statement
+                            .read::<String>(i)
+                            .or_trap("lunatic::sqlite::query_prepare::read_string")?;
+
+                        let len = bytes.len();
+                        return_value.append(&mut vec![ColumnType::String as u8]);
+                        return_value.append(&mut (len as u32).to_le_bytes().to_vec());
+                        return_value.append(&mut bytes.as_bytes().to_vec());
+                    }
+                    sqlite::Type::Null => return_value.append(&mut vec![ColumnType::Null as u8]),
+                };
+            }
+
+            return_value.push(ColumnType::NewRow as u8);
         }
-
-        return_value.push(ColumnType::NewRow as u8);
     }
 
     // write length into memory
@@ -192,8 +192,7 @@ fn query_prepare<T: ProcessState + ErrorCtx + SQLiteCtx>(
         .or_trap("lunatic::sqlite::query_prepare::write_memory")?;
 
     // store the result of the query
-    let results = state.sqlite_results_mut();
-    let result_id = results.add(return_value);
+    let result_id = state.sqlite_results_mut().add(return_value);
 
     // write the result_id into memory
     let mut slice = memory_slice
@@ -217,7 +216,7 @@ fn query_result_get<T: ProcessState + ErrorCtx + SQLiteCtx>(
     let memory = get_memory(&mut caller)?;
     let (memory_slice, state) = memory.data_and_store_mut(&mut caller);
 
-    // get the vevtor
+    // get the vector
     let result = state
         .sqlite_results()
         .get(resource_id)
@@ -248,6 +247,7 @@ fn drop_query_result<T: ProcessState + ErrorCtx + SQLiteCtx>(
     Ok(())
 }
 
+#[repr(u8)]
 enum ColumnType {
     Binary = 0x00,  // has 4 bytes of length header, followed by the bytes
     Float = 0x01,   // occupies 8 bytes f64
