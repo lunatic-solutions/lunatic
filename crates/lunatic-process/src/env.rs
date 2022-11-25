@@ -1,3 +1,4 @@
+use async_trait::async_trait;
 use dashmap::DashMap;
 use std::sync::{
     atomic::{AtomicU64, Ordering},
@@ -16,10 +17,12 @@ pub trait Environment: Send + Sync {
     fn send(&self, id: u64, signal: Signal);
 }
 
+#[async_trait]
 pub trait Environments: Send + Sync {
     type Env: Environment;
-    fn create(&self, id: u64) -> Arc<Self::Env>;
-    fn get(&self, id: u64) -> Option<Arc<Self::Env>>;
+
+    async fn create(&self, id: u64) -> Arc<Self::Env>;
+    async fn get(&self, id: u64) -> Option<Arc<Self::Env>>;
 }
 
 #[derive(Clone)]
@@ -96,16 +99,18 @@ pub struct LunaticEnvironments {
     envs: Arc<DashMap<u64, Arc<LunaticEnvironment>>>,
 }
 
+#[async_trait]
 impl Environments for LunaticEnvironments {
     type Env = LunaticEnvironment;
-    fn create(&self, id: u64) -> Arc<Self::Env> {
+    async fn create(&self, id: u64) -> Arc<Self::Env> {
         let env = Arc::new(LunaticEnvironment::new(id));
         self.envs.insert(id, env.clone());
         #[cfg(feature = "metrics")]
         metrics::gauge!("lunatic.process.environment.count", self.envs.len() as f64);
         env
     }
-    fn get(&self, id: u64) -> Option<Arc<Self::Env>> {
+
+    async fn get(&self, id: u64) -> Option<Arc<Self::Env>> {
         self.envs.get(&id).map(|e| e.clone())
     }
 }

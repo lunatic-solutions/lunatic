@@ -10,6 +10,7 @@ license = "Apache-2.0/MIT"
 [dependencies]
 lunatic-process = { workspace = true }
 
+uuid = { version = "1.0", features = ["serde", "v4"] }
 anyhow = { workspace = true }
 async_cell = "0.2.1"
 bincode = "1.3"

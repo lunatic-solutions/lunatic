@@ -1,7 +1,6 @@
 pub mod client;
-pub mod message;
-mod parser;
-pub mod server;
+//pub mod server;
+pub mod api;
+pub mod cert;
 
 pub use client::Client;
-pub use parser::{Scanner, TokenType};

@@ -7,7 +7,7 @@ use quinn::{ClientConfig, Connecting, ConnectionError, Endpoint, ServerConfig};
 use rustls_pemfile::Item;
 use wasmtime::ResourceLimiter;
 
-use crate::{control, distributed, DistributedCtx};
+use crate::{distributed, DistributedCtx};
 
 pub struct SendStream {
     pub stream: quinn::SendStream,
@@ -105,54 +105,6 @@ pub fn new_quic_server(addr: SocketAddr, cert: &str, key: &str) -> Result<Endpoi
         .max_concurrent_uni_streams(0_u8.into());
 
     Ok(quinn::Endpoint::server(server_config, addr)?)
-}
-
-pub async fn handle_accept_control(
-    quic_server: &mut Endpoint,
-    control_server: control::server::Server,
-) -> Result<()> {
-    while let Some(conn) = quic_server.accept().await {
-        tokio::spawn(handle_quic_stream(conn, control_server.clone()));
-    }
-    Ok(())
-}
-
-async fn handle_quic_stream(
-    conn: Connecting,
-    control_server: control::server::Server,
-) -> Result<()> {
-    let conn = conn.await?;
-    loop {
-        let stream = conn.accept_bi().await;
-        match stream {
-            Ok((s, r)) => {
-                let send = SendStream { stream: s };
-                let recv = RecvStream { stream: r };
-                tokio::spawn(handle_quic_connection(send, recv, control_server.clone()));
-            }
-            Err(ConnectionError::LocallyClosed) => {
-                break;
-            }
-            Err(_) => {}
-        }
-    }
-    Ok(())
-}
-
-async fn handle_quic_connection(
-    mut send: SendStream,
-    mut recv: RecvStream,
-    control_server: control::server::Server,
-) {
-    while let Ok(bytes) = recv.receive().await {
-        if let Ok((msg_id, request)) =
-            bincode::deserialize::<(u64, control::message::Request)>(&bytes)
-        {
-            control::server::handle_request(control_server.clone(), &mut send, msg_id, request)
-                .await
-                .ok();
-        }
-    }
 }
 
 pub async fn handle_node_server<T, E>(

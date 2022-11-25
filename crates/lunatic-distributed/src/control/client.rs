@@ -1,7 +1,8 @@
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use dashmap::DashMap;
 use lunatic_process::runtimes::RawWasm;
-use reqwest::Client as HttpClient;
+use reqwest::{Client as HttpClient, Url};
+use serde::{de::DeserializeOwned, Serialize};
 use std::{
     collections::HashMap,
     net::SocketAddr,
@@ -9,10 +10,7 @@ use std::{
     time::Duration,
 };
 
-use crate::{
-    control::message::{Registered, Registration, Request, Response},
-    NodeInfo,
-};
+use crate::{control::api::*, NodeInfo};
 
 #[derive(Clone)]
 pub struct Client {
@@ -20,49 +18,68 @@ pub struct Client {
 }
 
 pub struct InnerClient {
+    reg: Registration,
+    node_id: u64,
     http_client: HttpClient,
     next_message_id: AtomicU64,
     next_query_id: AtomicU64,
-    node_addr: SocketAddr,
-    node_name: String,
-    control_url: String,
     node_queries: DashMap<u64, Vec<u64>>,
     nodes: DashMap<u64, NodeInfo>,
     node_ids: RwLock<Vec<u64>>,
-    attributes: HashMap<String, String>,
 }
 
 impl Client {
-    pub async fn register(
-        node_addr: SocketAddr,
-        node_name: String,
-        attributes: HashMap<String, String>,
-        control_url: String,
+    pub async fn new(
         http_client: HttpClient,
-        signing_request: String,
-    ) -> Result<(u64, Self, String)> {
+        reg: Registration,
+        node_address: SocketAddr,
+        attributes: HashMap<String, String>,
+    ) -> Result<Self> {
+        let node_id = Self::start(
+            &http_client,
+            &reg,
+            NodeStart {
+                node_address,
+                attributes,
+            },
+        )
+        .await?;
+
         let client = Client {
             inner: Arc::new(InnerClient {
+                reg,
+                node_id,
                 http_client,
                 next_message_id: AtomicU64::new(1),
-                control_url,
-                node_addr,
-                node_name: node_name.clone(),
                 node_queries: DashMap::new(),
                 next_query_id: AtomicU64::new(1),
                 nodes: Default::default(),
                 node_ids: Default::default(),
-                attributes,
             }),
         };
-        let Registered {
-            node_id,
-            signed_cert,
-        } = client.send_registration(signing_request).await?;
+
         tokio::task::spawn(refresh_nodes_task(client.clone()));
         client.refresh_nodes().await?;
 
-        Ok((node_id, client, signed_cert))
+        Ok(client)
+    }
+
+    pub async fn register(
+        http_client: &HttpClient,
+        control_url: Url,
+        node_name: uuid::Uuid,
+        csr_pem: String,
+    ) -> Result<Registration> {
+        let reg = Register { node_name, csr_pem };
+        Self::send_registration(http_client, control_url, reg).await
+    }
+
+    pub fn reg(&self) -> Registration {
+        self.inner.reg.clone()
+    }
+
+    pub fn node_id(&self) -> u64 {
+        self.inner.node_id
     }
 
     pub fn next_message_id(&self) -> u64 {
@@ -77,55 +94,90 @@ impl Client {
             .fetch_add(1, atomic::Ordering::Relaxed)
     }
 
-    async fn send_registration(&self, signing_request: String) -> Result<Registered> {
-        let reg = Registration {
-            node_address: self.inner.node_addr,
-            node_name: self.inner.node_name.clone(),
-            attributes: self.inner.attributes.clone(),
-            signing_request,
-        };
-        let url = format!("{}/api/control/register", self.inner.control_url);
-        let resp = self
-            .inner
-            .http_client
-            .post(url)
-            .json(&Request::Register(reg))
+    async fn send_registration(
+        client: &HttpClient,
+        url: Url,
+        reg: Register,
+    ) -> Result<Registration> {
+        let resp: Registration = client.post(url).json(&reg).send().await?.json().await?;
+        Ok(resp)
+    }
+
+    async fn start(client: &HttpClient, reg: &Registration, start: NodeStart) -> Result<u64> {
+        let resp: NodeStarted = client
+            .post(&reg.urls.node_started)
+            .json(&start)
+            .bearer_auth(&reg.authentication_token)
+            .header(
+                "x-lunatic-node-name",
+                &reg.node_name.hyphenated().to_string(),
+            )
             .send()
             .await?
             .json()
             .await?;
-        match resp {
-            Response::Register(data) => Ok(data),
-            Response::Error(e) => Err(anyhow!("Registration failed. {e}")),
-            _ => Err(anyhow!("Registration failed.")),
-        }
+        Ok(resp.node_id as u64)
+    }
+
+    pub async fn get<T: DeserializeOwned>(&self, url: &str, query: Option<&str>) -> Result<T> {
+        let mut url: Url = url.parse()?;
+        url.set_query(query);
+
+        let resp: T = self
+            .inner
+            .http_client
+            .get(url)
+            .bearer_auth(&self.inner.reg.authentication_token)
+            .header(
+                "x-lunatic-node-name",
+                &self.inner.reg.node_name.hyphenated().to_string(),
+            )
+            .send()
+            .await?
+            .json()
+            .await?;
+        Ok(resp)
+    }
+
+    // TODO handle HTTP codes and errors with a proper message/result
+    pub async fn post<T: Serialize, R: DeserializeOwned>(&self, url: &str, data: T) -> Result<R> {
+        let url: Url = url.parse()?;
+        let resp: R = self
+            .inner
+            .http_client
+            .post(url)
+            .json(&data)
+            .bearer_auth(&self.inner.reg.authentication_token)
+            .header(
+                "x-lunatic-node-name",
+                &self.inner.reg.node_name.hyphenated().to_string(),
+            )
+            .send()
+            .await?
+            .json()
+            .await?;
+        Ok(resp)
     }
 
     pub async fn refresh_nodes(&self) -> Result<()> {
-        let url = format!("{}/api/control/nodes", self.inner.control_url);
-        let resp = self.inner.http_client.get(url).send().await?.json().await?;
-        if let Response::Nodes(nodes) = resp {
-            let mut node_ids = vec![];
-            for node in nodes {
-                let id = node.id;
-                node_ids.push(id);
-                if !self.inner.nodes.contains_key(&id) {
-                    self.inner.nodes.insert(id, node);
-                }
+        let resp: NodesList = self.get(&self.inner.reg.urls.nodes, None).await?;
+        let mut node_ids = vec![];
+        for node in resp.nodes {
+            let id = node.id;
+            node_ids.push(id);
+            if !self.inner.nodes.contains_key(&id) {
+                self.inner.nodes.insert(id, node);
             }
-            if let Ok(mut self_node_ids) = self.inner.node_ids.write() {
-                *self_node_ids = node_ids;
-            }
+        }
+        if let Ok(mut self_node_ids) = self.inner.node_ids.write() {
+            *self_node_ids = node_ids;
         }
         Ok(())
     }
 
-    pub async fn deregister(&self, node_id: u64) {
-        let url = format!(
-            "{}/api/control/deregister/{}",
-            self.inner.control_url, node_id
-        );
-        self.inner.http_client.post(url).send().await.ok();
+    pub async fn notify_node_stopped(&self) -> Result<()> {
+        self.post(&self.inner.reg.urls.node_stopped, ()).await?;
+        Ok(())
     }
 
     pub fn node_info(&self, node_id: u64) -> Option<NodeInfo> {
@@ -137,22 +189,14 @@ impl Client {
     }
 
     pub async fn lookup_nodes(&self, query: &str) -> Result<(u64, usize)> {
-        let url = format!(
-            "{}/api/control/lookup_nodes?query={}",
-            self.inner.control_url, query
-        );
-        let response = self.inner.http_client.get(url).send().await?.json().await?;
-        match response {
-            Response::Nodes(nodes) => {
-                let nodes: Vec<u64> = nodes.into_iter().map(move |v| v.id).collect();
-                let nodes_count = nodes.len();
-                let query_id = self.next_query_id();
-                self.inner.node_queries.insert(query_id, nodes);
-                Ok((query_id, nodes_count))
-            }
-            Response::Error(message) => Err(anyhow!(message)),
-            _ => Err(anyhow!("Invalid response type on lookup_nodes.")),
-        }
+        let resp: NodesList = self
+            .get(&self.inner.reg.urls.get_nodes, Some(query))
+            .await?;
+        let nodes: Vec<u64> = resp.nodes.into_iter().map(move |v| v.id).collect();
+        let nodes_count = nodes.len();
+        let query_id = self.next_query_id();
+        self.inner.node_queries.insert(query_id, nodes);
+        Ok((query_id, nodes_count))
     }
 
     pub fn query_result(&self, query_id: &u64) -> Option<(u64, Vec<u64>)> {
@@ -163,35 +207,32 @@ impl Client {
         self.inner.node_ids.read().unwrap().len()
     }
 
-    pub async fn get_module(&self, module_id: u64) -> Option<Vec<u8>> {
-        let url = format!(
-            "{}/api/control/module/{}",
-            self.inner.control_url, module_id
-        );
-        if let Ok(resp) = self.inner.http_client.get(url).send().await {
-            if let Ok(Response::Module(module)) = resp.json().await {
-                return module;
-            }
-        }
-        None
+    pub async fn get_module(&self, module_id: u64) -> Result<Vec<u8>> {
+        let url: Url = self
+            .inner
+            .reg
+            .urls
+            .get_module
+            .replace("{id}", &module_id.to_string())
+            .parse()?;
+        let resp: ModuleBytes = self.inner.http_client.get(url).send().await?.json().await?;
+        Ok(resp.bytes)
     }
 
     pub async fn add_module(&self, module: Vec<u8>) -> Result<RawWasm> {
-        let url = format!("{}/api/control/module", self.inner.control_url);
-        let resp = self
+        let url: Url = self.inner.reg.urls.add_module.parse()?;
+        let resp: ModuleId = self
             .inner
             .http_client
             .post(url)
-            .json(&Request::AddModule(module.clone()))
+            .json(&AddModule {
+                bytes: module.clone(),
+            })
             .send()
             .await?
             .json()
             .await?;
-        if let Response::ModuleId(id) = resp {
-            Ok(RawWasm::new(Some(id), module))
-        } else {
-            Err(anyhow::anyhow!("Invalid response type on add_module."))
-        }
+        Ok(RawWasm::new(Some(resp.module_id), module))
     }
 }
 
