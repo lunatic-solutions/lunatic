@@ -19,6 +19,18 @@ pub struct RegisterResponse {
     pub cert_pem: String,
     pub authentication_token: String,
     pub root_cert: String,
+    pub urls: ControlUrls,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ControlUrls {
+    pub api_base: String,
+    pub nodes: String,
+    pub node_started: String,
+    pub node_stopped: String,
+    pub get_module: String,
+    pub add_module: String,
+    pub get_nodes: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

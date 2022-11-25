@@ -14,6 +14,7 @@ use lunatic_process::{
 };
 use lunatic_process_api::ProcessConfigCtx;
 use lunatic_runtime::{DefaultProcessConfig, DefaultProcessState};
+use reqwest::Url;
 use tokio::sync::mpsc::channel;
 use uuid::Uuid;
 
@@ -28,25 +29,9 @@ struct Args {
     #[arg(long, value_name = "NODE_ADDRESS", requires = "control")]
     node: Option<String>,
 
-    /// URL of a control node inside the cluster that will be used for bootstrapping
-    #[arg(long, value_name = "CONTROL_ADDRESS")]
-    control: Option<String>,
-
-    /// When set, runs the control server
-    #[arg(long, requires = "control")]
-    control_server: bool,
-
-    /// Use test Certificate Authority for bootstrapping QUIC connections
-    #[arg(long, requires = "control")]
-    test_ca: bool,
-
-    /// Certificate Authority public certificate used for bootstrapping QUIC connections
-    #[arg(long, requires = "control", conflicts_with = "test_ca")]
-    ca_cert: Option<String>,
-
-    /// Certificate Authority private key used for signing node certificate requests
-    #[arg(long, requires = "control_server", conflicts_with = "test_ca")]
-    ca_key: Option<String>,
+    /// URL of a control server
+    #[arg(long, value_name = "CONTROL_URL")]
+    control: Option<Url>,
 
     /// Define key=value variable to store as node information
     /// TODO: parse with URL query string parser?
@@ -90,25 +75,6 @@ pub(crate) async fn execute() -> Result<()> {
 
     let args = Args::parse();
 
-    if args.test_ca {
-        log::warn!("Do not use test Certificate Authority in production!")
-    }
-
-    // Run control server
-    // TODO: this is replaced by a HTTP server
-    //if args.control_server {
-    //    if let Some(control_address) = &args.control {
-    //        // TODO unwrap, better message
-    //        let ca_cert = lunatic_distributed::control::cert::root_cert(
-    //            args.test_ca,
-    //            args.ca_cert.as_deref(),
-    //            args.ca_key.as_deref(),
-    //        )
-    //        .unwrap();
-    //        tokio::task::spawn(control_server(control_address.parse().unwrap(), ca_cert));
-    //    }
-    //}
-
     // Create wasmtime runtime
     let wasmtime_config = runtimes::wasmtime::default_config();
     let runtime = runtimes::wasmtime::WasmtimeRuntime::new(&wasmtime_config)?;
@@ -117,61 +83,61 @@ pub(crate) async fn execute() -> Result<()> {
     let env = envs.create(1).await;
     let http_client = reqwest::Client::new();
 
-    let (distributed_state, control_client, node_id) =
-        if let (Some(node_address), Some(control_address)) = (args.node, args.control) {
-            // TODO unwrap, better message
-            let node_address = node_address.parse().unwrap();
-            let node_name = Uuid::new_v4().to_string();
-            let node_attributes: HashMap<String, String> = Default::default(); //args.tag.into_iter().collect(); TODO
-            let ca_cert = lunatic_distributed::distributed::server::root_cert(
-                args.test_ca,
-                args.ca_cert.as_deref(),
-            )
-            .unwrap();
-            let node_cert =
-                lunatic_distributed::distributed::server::gen_node_cert(&node_name).unwrap();
+    let (distributed_state, control_client) = if let (Some(node_address), Some(control_url)) =
+        (args.node, args.control)
+    {
+        // TODO unwrap, better message
+        let node_address = node_address.parse().unwrap();
+        let node_name = Uuid::new_v4();
+        let node_name_str = node_name.as_hyphenated().to_string();
+        let node_attributes: HashMap<String, String> = Default::default(); //args.tag.into_iter().collect(); TODO
+        let node_cert =
+            lunatic_distributed::distributed::server::gen_node_cert(&node_name_str).unwrap();
+        log::info!("Generate CSR for node name {node_name_str}");
 
-            let quic_client = quic::new_quic_client(&ca_cert).unwrap();
+        let control_client = control::Client::register(
+            node_address,
+            node_name,
+            node_attributes,
+            control_url,
+            http_client.clone(),
+            node_cert.serialize_request_pem()?,
+        )
+        .await?;
 
-            let (node_id, control_client, signed_cert_pem) = control::Client::register(
-                node_address,
-                node_name.to_string(),
-                node_attributes,
-                control_address,
-                http_client.clone(),
-                node_cert.serialize_request_pem().unwrap(),
-            )
-            .await?;
+        let reg = control_client.reg();
+        let node_id = reg.node_id as u64;
 
-            let distributed_client =
-                distributed::Client::new(node_id, control_client.clone(), quic_client.clone())
-                    .await?;
+        log::info!("Registration successful, node id {}", node_id);
 
-            let dist = lunatic_distributed::DistributedProcessState::new(
-                node_id,
-                control_client.clone(),
-                distributed_client,
-            )
-            .await?;
+        let quic_client = quic::new_quic_client(&reg.root_cert).unwrap();
 
-            tokio::task::spawn(lunatic_distributed::distributed::server::node_server(
-                ServerCtx {
-                    envs,
-                    modules: Modules::<DefaultProcessState>::default(),
-                    distributed: dist.clone(),
-                    runtime: runtime.clone(),
-                },
-                node_address,
-                signed_cert_pem,
-                node_cert.serialize_private_key_pem(),
-            ));
+        let distributed_client =
+            distributed::Client::new(node_id, control_client.clone(), quic_client.clone()).await?;
 
-            log::info!("Registration successful, node id {}", node_id);
+        let dist = lunatic_distributed::DistributedProcessState::new(
+            node_id,
+            control_client.clone(),
+            distributed_client,
+        )
+        .await?;
 
-            (Some(dist), Some(control_client), Some(node_id))
-        } else {
-            (None, None, None)
-        };
+        tokio::task::spawn(lunatic_distributed::distributed::server::node_server(
+            ServerCtx {
+                envs,
+                modules: Modules::<DefaultProcessState>::default(),
+                distributed: dist.clone(),
+                runtime: runtime.clone(),
+            },
+            node_address,
+            reg.cert_pem,
+            node_cert.serialize_private_key_pem(),
+        ));
+
+        (Some(dist), Some(control_client))
+    } else {
+        (None, None)
+    };
 
     #[cfg(feature = "prometheus")]
     if args.is_present("prometheus") {
@@ -254,8 +220,8 @@ pub(crate) async fn execute() -> Result<()> {
     let result = task.await.map(|_| ()).map_err(|e| anyhow!(e.to_string()));
 
     // Until we refactor registration and reconnect authentication, send node id explicitly
-    if let (Some(ctrl), Some(node_id)) = (control_client, node_id) {
-        ctrl.deregister(node_id).await;
+    if let Some(ctrl) = control_client {
+        ctrl.notify_node_stopped().await.ok();
     }
 
     result
