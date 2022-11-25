@@ -3,7 +3,7 @@ use std::{collections::HashMap, env, fs, path::Path, sync::Arc};
 use anyhow::{anyhow, Context, Ok, Result};
 use clap::Parser;
 use lunatic_distributed::{
-    control::{self, server::control_server, Scanner, TokenType},
+    control::{self},
     distributed::{self, server::ServerCtx},
     quic,
 };
@@ -49,8 +49,9 @@ struct Args {
     ca_key: Option<String>,
 
     /// Define key=value variable to store as node information
-    #[arg(long, value_parser = parse_key_val, action = clap::ArgAction::Append)]
-    tag: Vec<(String, String)>,
+    /// TODO: parse with URL query string parser?
+    //#[arg(long, value_parser = parse_key_val, action = clap::ArgAction::Append)]
+    //tag: Vec<(String, String)>,
 
     /// If provided will join other nodes, but not require a .wasm entry file
     #[arg(long, required_unless_present = "wasm")]
@@ -94,18 +95,19 @@ pub(crate) async fn execute() -> Result<()> {
     }
 
     // Run control server
-    if args.control_server {
-        if let Some(control_address) = &args.control {
-            // TODO unwrap, better message
-            let ca_cert = lunatic_distributed::control::server::root_cert(
-                args.test_ca,
-                args.ca_cert.as_deref(),
-                args.ca_key.as_deref(),
-            )
-            .unwrap();
-            tokio::task::spawn(control_server(control_address.parse().unwrap(), ca_cert));
-        }
-    }
+    // TODO: this is replaced by a HTTP server
+    //if args.control_server {
+    //    if let Some(control_address) = &args.control {
+    //        // TODO unwrap, better message
+    //        let ca_cert = lunatic_distributed::control::cert::root_cert(
+    //            args.test_ca,
+    //            args.ca_cert.as_deref(),
+    //            args.ca_key.as_deref(),
+    //        )
+    //        .unwrap();
+    //        tokio::task::spawn(control_server(control_address.parse().unwrap(), ca_cert));
+    //    }
+    //}
 
     // Create wasmtime runtime
     let wasmtime_config = runtimes::wasmtime::default_config();
@@ -120,7 +122,7 @@ pub(crate) async fn execute() -> Result<()> {
             // TODO unwrap, better message
             let node_address = node_address.parse().unwrap();
             let node_name = Uuid::new_v4().to_string();
-            let node_attributes: HashMap<String, String> = args.tag.into_iter().collect();
+            let node_attributes: HashMap<String, String> = Default::default(); //args.tag.into_iter().collect(); TODO
             let ca_cert = lunatic_distributed::distributed::server::root_cert(
                 args.test_ca,
                 args.ca_cert.as_deref(),
@@ -257,22 +259,4 @@ pub(crate) async fn execute() -> Result<()> {
     }
 
     result
-}
-
-/// Parse a single key-value pair
-fn parse_key_val(s: &str) -> Result<(String, String)> {
-    let scanner = Scanner::new(s.to_string());
-    let tokens = scanner.scan()?;
-    if tokens.len() == 3 {
-        let key = &tokens[0];
-        let equals = &tokens[1];
-        let value = &tokens[2];
-        if equals.t == TokenType::Equal {
-            Ok((key.literal.clone(), value.literal.clone()))
-        } else {
-            Err(anyhow!("invalid key=value: no `=` found in `{}`", s))
-        }
-    } else {
-        Err(anyhow!("invalid key=value syntax found in `{}`", s))
-    }
 }

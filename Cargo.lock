@@ -1228,6 +1228,7 @@ dependencies = [
  "rustls-pemfile",
  "serde",
  "tokio",
+ "uuid",
  "wasmtime",
 ]
 
@@ -2691,6 +2692,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "422ee0de9031b5b948b97a8fc04e3aa35230001a722ddd27943e0be31564ce4c"
 dependencies = [
  "getrandom",
+ "serde",
 ]
 
 [[package]]
