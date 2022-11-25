@@ -28,23 +28,7 @@ pub struct InnerClient {
 }
 
 impl Client {
-    pub async fn register(
-        node_address: SocketAddr,
-        node_name: uuid::Uuid,
-        attributes: HashMap<String, String>,
-        control_url: Url,
-        http_client: HttpClient,
-        csr_pem: String,
-    ) -> Result<Self> {
-        let reg = Register {
-            node_address,
-            node_name,
-            attributes,
-            csr_pem,
-        };
-
-        let reg = Self::send_registration(control_url, &http_client, reg).await?;
-
+    pub async fn from_registration(reg: RegisterResponse, http_client: HttpClient) -> Result<Self> {
         let client = Client {
             inner: Arc::new(InnerClient {
                 reg,
@@ -61,6 +45,25 @@ impl Client {
         client.refresh_nodes().await?;
 
         Ok(client)
+    }
+
+    pub async fn register(
+        node_address: SocketAddr,
+        node_name: uuid::Uuid,
+        attributes: HashMap<String, String>,
+        control_url: Url,
+        http_client: HttpClient,
+        csr_pem: String,
+    ) -> Result<Self> {
+        let reg = Register {
+            node_address,
+            node_name,
+            attributes,
+            csr_pem,
+        };
+
+        let reg = Self::send_registration(control_url, &http_client, reg).await?;
+        Self::from_registration(reg, http_client).await
     }
 
     pub fn reg(&self) -> RegisterResponse {
@@ -108,6 +111,7 @@ impl Client {
         Ok(resp)
     }
 
+    // TODO handle HTTP codes and errors with a proper message/result
     pub async fn post<T: Serialize, R: DeserializeOwned>(&self, url: &str, data: T) -> Result<R> {
         let url: Url = url.parse()?;
         let resp: R = self
