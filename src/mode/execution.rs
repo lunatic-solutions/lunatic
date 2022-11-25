@@ -112,7 +112,7 @@ pub(crate) async fn execute() -> Result<()> {
     let runtime = runtimes::wasmtime::WasmtimeRuntime::new(&wasmtime_config)?;
     let envs = Arc::new(LunaticEnvironments::default());
 
-    let env = envs.create(1);
+    let env = envs.create(1).await;
     let http_client = reqwest::Client::new();
 
     let (distributed_state, control_client, node_id) =
