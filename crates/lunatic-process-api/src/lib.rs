@@ -2,7 +2,7 @@ use std::{
     convert::{TryFrom, TryInto},
     future::Future,
     sync::Arc,
-    time::{Duration, Instant},
+    time::{Duration, Instant}, io::Write,
 };
 
 use anyhow::{anyhow, Result};
@@ -39,6 +39,7 @@ pub trait ProcessCtx<S: ProcessState> {
     fn module_resources(&self) -> &ModuleResources<S>;
     fn module_resources_mut(&mut self) -> &mut ModuleResources<S>;
     fn environment(&self) -> Arc<dyn Environment>;
+    fn traces(&mut self) -> &mut HashMapId<String>;
 }
 
 // Register the process APIs to the linker
@@ -166,7 +167,10 @@ where
     linker.func_wrap("lunatic::process", "link", link)?;
     linker.func_wrap("lunatic::process", "unlink", unlink)?;
     linker.func_wrap("lunatic::process", "kill", kill)?;
-
+    linker.func_wrap("lunatic::process", "trace_get", trace_get)?;
+    linker.func_wrap("lunatic::process", "trace_get_size", trace_get_size)?;
+    linker.func_wrap("lunatic::process", "trace_read", trace_read)?;
+    linker.func_wrap("lunatic::process", "drop_trace", drop_trace)?;
     Ok(())
 }
 
@@ -794,3 +798,84 @@ fn kill<T: ProcessState + ProcessCtx<T>>(caller: Caller<T>, process_id: u64) -> 
     }
     Ok(())
 }
+
+// Obtain a stack trace and store it as a String on the hashmap id
+//
+// Traps:
+// * If we cannot obtain a stack trace
+// * If the referenced memory is out of range
+fn trace_get<T: ProcessState + ProcessCtx<T>>(mut caller: Caller<T>, ptr: u32) -> Result<(), Trap> {
+    // obtain a trap to get the stack trace frames
+    let some_trap = Trap::new("Obtain stack trace.");
+
+    // obtain the stack frames, or ironically trap here
+    let frames = some_trap.trace().or_trap("lunatic::process::trace_get::get_trap")?;
+
+    let mut output = String::new();
+    // for each frame, generate a str
+    for frame in frames {
+        let name = frame.func_name().or_trap("lunatic::process::trace_get::get_trap_frame")?;
+        let offset = frame.func_offset().or_trap("lunatic::process::trace_get::get_trap_frame")?;
+        output.push_str(format!("  <{}> {}\n", offset, name).as_str());
+    }
+
+    let id = caller.data_mut().traces().add(output);
+
+    let memory = get_memory(&mut caller)?;
+
+    memory.write(&mut caller, ptr as usize, &id.to_le_bytes())
+        .or_trap("lunatic::proces::trace_get::write_id")?;
+
+    Ok(())
+}
+
+// Obtain a stack trace and return it's length
+//
+// Traps:
+// * If the referenced string cannot be found
+fn trace_get_size<T: ProcessState + ProcessCtx<T>>(mut caller: Caller<T>, id: u64) -> Result<u32, Trap> {
+    let result = caller.data_mut()
+        .traces()
+        .get(id)
+        .or_trap("lunatic::process::trace_get_size::get_trace_by_id")?;
+
+    Ok(result.len() as u32)
+}
+
+// Obtain a stack trace and return it's length
+//
+// Traps:
+// * If the referenced string cannot be found
+fn trace_read<T: ProcessState + ProcessCtx<T>>(mut caller: Caller<T>, id: u64, data_ptr: u32, data_len: u32) -> Result<u32, Trap> {
+    let memory = get_memory(&mut caller)?;
+    let string = caller
+        .data_mut()
+        .traces()
+        .get(id)
+        .or_trap("lunatic::process::trace_read::get_trace")?
+        .to_owned();
+    let bytes = string.as_bytes();
+        
+    let mut buffer = memory
+        .data_mut(&mut caller)
+        .get_mut(data_ptr as usize..(data_ptr as usize + data_len as usize))
+        .or_trap("lunatic::process::trace_read::get_memory_slice")?;
+    
+    let written = buffer.write(bytes)
+        .or_trap("lunatic::process:trace_read::write_into_memory")?;
+
+    Ok(written as u32)
+}
+
+// Drop a stack trace
+//
+// Traps:
+// * If the referenced trace cannot be found
+fn drop_trace<T: ProcessState + ProcessCtx<T>>(mut caller: Caller<T>, id: u64) -> Result<(), Trap> {
+    caller.data_mut()
+        .traces()
+        .remove(id)
+        .or_trap("lunatic::process::drop_trace::remove_trace")?;
+    Ok(())
+}
+
