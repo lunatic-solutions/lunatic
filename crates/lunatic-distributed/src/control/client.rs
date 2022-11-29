@@ -65,14 +65,13 @@ impl Client {
     }
 
     pub async fn register(
+        http_client: &HttpClient,
+        control_url: Url,
         node_name: uuid::Uuid,
         csr_pem: String,
-        control_url: Url,
-        http_client: HttpClient,
     ) -> Result<Registration> {
         let reg = Register { node_name, csr_pem };
-
-        Self::send_registration(&http_client, control_url, reg).await
+        Self::send_registration(http_client, control_url, reg).await
     }
 
     pub fn reg(&self) -> Registration {
@@ -108,6 +107,11 @@ impl Client {
         let resp: NodeStarted = client
             .post(&reg.urls.node_started)
             .json(&start)
+            .bearer_auth(&reg.authentication_token)
+            .header(
+                "x-lunatic-node-name",
+                &reg.node_name.hyphenated().to_string(),
+            )
             .send()
             .await?
             .json()

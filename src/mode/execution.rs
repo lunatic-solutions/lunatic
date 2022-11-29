@@ -96,10 +96,10 @@ pub(crate) async fn execute() -> Result<()> {
         log::info!("Generate CSR for node name {node_name_str}");
 
         let reg = control::Client::register(
+            &http_client,
+            control_url,
             node_name,
             node_cert.serialize_request_pem()?,
-            control_url,
-            http_client.clone(),
         )
         .await?;
 
