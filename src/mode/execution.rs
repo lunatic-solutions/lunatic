@@ -95,18 +95,23 @@ pub(crate) async fn execute() -> Result<()> {
             lunatic_distributed::distributed::server::gen_node_cert(&node_name_str).unwrap();
         log::info!("Generate CSR for node name {node_name_str}");
 
-        let control_client = control::Client::register(
-            node_address,
+        let reg = control::Client::register(
             node_name,
-            node_attributes,
+            node_cert.serialize_request_pem()?,
             control_url,
             http_client.clone(),
-            node_cert.serialize_request_pem()?,
         )
         .await?;
 
-        let reg = control_client.reg();
-        let node_id = reg.node_id as u64;
+        let control_client = control::Client::new(
+            http_client.clone(),
+            reg.clone(),
+            node_address,
+            node_attributes,
+        )
+        .await?;
+
+        let node_id = control_client.node_id();
 
         log::info!("Registration successful, node id {}", node_id);
 

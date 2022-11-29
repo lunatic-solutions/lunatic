@@ -18,7 +18,8 @@ pub struct Client {
 }
 
 pub struct InnerClient {
-    reg: RegisterResponse,
+    reg: Registration,
+    node_id: u64,
     http_client: HttpClient,
     next_message_id: AtomicU64,
     next_query_id: AtomicU64,
@@ -28,10 +29,26 @@ pub struct InnerClient {
 }
 
 impl Client {
-    pub async fn from_registration(reg: RegisterResponse, http_client: HttpClient) -> Result<Self> {
+    pub async fn new(
+        http_client: HttpClient,
+        reg: Registration,
+        node_address: SocketAddr,
+        attributes: HashMap<String, String>,
+    ) -> Result<Self> {
+        let node_id = Self::start(
+            &http_client,
+            &reg,
+            NodeStart {
+                node_address,
+                attributes,
+            },
+        )
+        .await?;
+
         let client = Client {
             inner: Arc::new(InnerClient {
                 reg,
+                node_id,
                 http_client,
                 next_message_id: AtomicU64::new(1),
                 node_queries: DashMap::new(),
@@ -48,26 +65,22 @@ impl Client {
     }
 
     pub async fn register(
-        node_address: SocketAddr,
         node_name: uuid::Uuid,
-        attributes: HashMap<String, String>,
+        csr_pem: String,
         control_url: Url,
         http_client: HttpClient,
-        csr_pem: String,
-    ) -> Result<Self> {
-        let reg = Register {
-            node_address,
-            node_name,
-            attributes,
-            csr_pem,
-        };
+    ) -> Result<Registration> {
+        let reg = Register { node_name, csr_pem };
 
-        let reg = Self::send_registration(control_url, &http_client, reg).await?;
-        Self::from_registration(reg, http_client).await
+        Self::send_registration(&http_client, control_url, reg).await
     }
 
-    pub fn reg(&self) -> RegisterResponse {
+    pub fn reg(&self) -> Registration {
         self.inner.reg.clone()
+    }
+
+    pub fn node_id(&self) -> u64 {
+        self.inner.node_id
     }
 
     pub fn next_message_id(&self) -> u64 {
@@ -83,12 +96,23 @@ impl Client {
     }
 
     async fn send_registration(
-        url: Url,
         client: &HttpClient,
+        url: Url,
         reg: Register,
-    ) -> Result<RegisterResponse> {
-        let resp: RegisterResponse = client.post(url).json(&reg).send().await?.json().await?;
+    ) -> Result<Registration> {
+        let resp: Registration = client.post(url).json(&reg).send().await?.json().await?;
         Ok(resp)
+    }
+
+    async fn start(client: &HttpClient, reg: &Registration, start: NodeStart) -> Result<u64> {
+        let resp: NodeStarted = client
+            .post(&reg.urls.node_started)
+            .json(&start)
+            .send()
+            .await?
+            .json()
+            .await?;
+        Ok(resp.node_id as u64)
     }
 
     pub async fn get<T: DeserializeOwned>(&self, url: &str, query: Option<&str>) -> Result<T> {
@@ -132,7 +156,7 @@ impl Client {
     }
 
     pub async fn refresh_nodes(&self) -> Result<()> {
-        let resp: NodesResponse = self.get(&self.inner.reg.urls.nodes, None).await?;
+        let resp: NodesList = self.get(&self.inner.reg.urls.nodes, None).await?;
         let mut node_ids = vec![];
         for node in resp.nodes {
             let id = node.id;
@@ -161,7 +185,7 @@ impl Client {
     }
 
     pub async fn lookup_nodes(&self, query: &str) -> Result<(u64, usize)> {
-        let resp: NodesResponse = self
+        let resp: NodesList = self
             .get(&self.inner.reg.urls.get_nodes, Some(query))
             .await?;
         let nodes: Vec<u64> = resp.nodes.into_iter().map(move |v| v.id).collect();
@@ -187,13 +211,13 @@ impl Client {
             .get_module
             .replace("{id}", &module_id.to_string())
             .parse()?;
-        let resp: ModuleResponse = self.inner.http_client.get(url).send().await?.json().await?;
+        let resp: ModuleBytes = self.inner.http_client.get(url).send().await?.json().await?;
         Ok(resp.bytes)
     }
 
     pub async fn add_module(&self, module: Vec<u8>) -> Result<RawWasm> {
         let url: Url = self.inner.reg.urls.add_module.parse()?;
-        let resp: AddModuleResponse = self
+        let resp: ModuleId = self
             .inner
             .http_client
             .post(url)
