@@ -43,6 +43,7 @@ tokio = { version = "1.20", features = [
     "time",
 ] }
 wasmtime = "2.0"
+wasmtime-runtime = "2.0"
 wasmtime-wasi = "2.0"
 wasi-common = "2.0"
 wasmparser = "0.94"

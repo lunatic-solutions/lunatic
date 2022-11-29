@@ -2,7 +2,7 @@ use std::{
     convert::{TryFrom, TryInto},
     future::Future,
     sync::Arc,
-    time::{Duration, Instant}, io::Write,
+    time::{Duration, Instant}, io::Write
 };
 
 use anyhow::{anyhow, Result};
@@ -20,6 +20,7 @@ use lunatic_process::{
 };
 use lunatic_wasi_api::LunaticWasiCtx;
 use wasmtime::{Caller, Linker, ResourceLimiter, Trap, Val};
+use backtrace::{ Backtrace };
 
 pub type ProcessResources = HashMapId<Arc<dyn Process>>;
 pub type ModuleResources<S> = HashMapId<Arc<WasmtimeCompiledModule<S>>>;
@@ -805,19 +806,36 @@ fn kill<T: ProcessState + ProcessCtx<T>>(caller: Caller<T>, process_id: u64) -> 
 // * If we cannot obtain a stack trace
 // * If the referenced memory is out of range
 fn trace_get<T: ProcessState + ProcessCtx<T>>(mut caller: Caller<T>, ptr: u32) -> Result<(), Trap> {
-    // obtain a trap to get the stack trace frames
-    let some_trap = Trap::new("Obtain stack trace.");
-
-    // obtain the stack frames, or ironically trap here
-    let frames = some_trap.trace().or_trap("lunatic::process::trace_get::get_trap")?;
+    let backtrace = Backtrace::new();
 
     let mut output = String::new();
-    // for each frame, generate a str
-    for frame in frames {
-        let name = frame.func_name().or_trap("lunatic::process::trace_get::get_trap_frame")?;
-        let offset = frame.func_offset().or_trap("lunatic::process::trace_get::get_trap_frame")?;
-        output.push_str(format!("  <{}> {}\n", offset, name).as_str());
-    }
+    for frame in backtrace.frames() {
+        let symbols = frame.symbols();
+        for symbol in symbols {
+            if let Some(line) = symbol.lineno() {
+                if let Some(col) = symbol.colno() {
+                    output.push_str("<");
+                    output.push_str(line.to_string().as_str());
+                    output.push_str(":");
+                    output.push_str(col.to_string().as_str());
+                    output.push_str(">");
+                }
+            }
+            if let Some(file_name) = symbol.filename() {
+                if let Some(file_name_str) = file_name.to_str() {
+                    output.push_str(file_name_str);
+                    output.push_str(": ");
+                }
+            }
+            if let Some(name) = symbol.name() {
+                if let Some(name_str) = name.as_str() {
+                    output.push_str(name_str);
+                }
+                output.push_str("\n");
+            }
+        }
+    } 
+    let output = format!(" Stack Trace: {backtrace:?}");
 
     let id = caller.data_mut().traces().add(output);
 
