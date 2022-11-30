@@ -151,7 +151,7 @@ where
         config,
     } = spawn;
 
-    let config: T::Config = bincode::deserialize(&config[..])?;
+    let config: T::Config = rmp_serde::from_slice(&config[..])?;
     let config = Arc::new(config);
 
     let module = match ctx.modules.get(module_id) {

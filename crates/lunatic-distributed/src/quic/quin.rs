@@ -155,7 +155,7 @@ async fn handle_quic_stream_node<T, E>(
 {
     while let Ok(bytes) = recv.receive().await {
         if let Ok((msg_id, request)) =
-            bincode::deserialize::<(u64, distributed::message::Request)>(&bytes)
+            rmp_serde::from_slice::<(u64, distributed::message::Request)>(&bytes)
         {
             distributed::server::handle_message(ctx.clone(), &mut send, msg_id, request).await;
         } else {
