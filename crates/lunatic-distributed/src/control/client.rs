@@ -228,29 +228,26 @@ impl Client {
     }
 
     pub async fn get_module(&self, module_id: u64) -> Result<Vec<u8>> {
-        let url: Url = self
+        log::info!("Get module {module_id}");
+        let url = self
             .inner
             .reg
             .urls
             .get_module
-            .replace("{id}", &module_id.to_string())
-            .parse()?;
-        let resp: ModuleBytes = self.inner.http_client.get(url).send().await?.json().await?;
+            .replace("{id}", &module_id.to_string());
+        let resp: ModuleBytes = self.get(&url, None).await?;
         Ok(resp.bytes)
     }
 
     pub async fn add_module(&self, module: Vec<u8>) -> Result<RawWasm> {
-        let url: Url = self.inner.reg.urls.add_module.parse()?;
+        let url = &self.inner.reg.urls.add_module;
         let resp: ModuleId = self
-            .inner
-            .http_client
-            .post(url)
-            .json(&AddModule {
-                bytes: module.clone(),
-            })
-            .send()
-            .await?
-            .json()
+            .post(
+                &url,
+                &AddModule {
+                    bytes: module.clone(),
+                },
+            )
             .await?;
         Ok(RawWasm::new(Some(resp.module_id), module))
     }
