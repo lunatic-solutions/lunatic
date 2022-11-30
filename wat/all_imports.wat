@@ -76,6 +76,7 @@
     (import "lunatic::process" "link" (func (param i64 i64)))
     (import "lunatic::process" "unlink" (func (param i64)))
     (import "lunatic::process" "kill" (func (param i64)))
+    (import "lunatic::process" "exists" (func (param i64) (result i32)))
 
     (import "lunatic::version" "major" (func (result i32)))
     (import "lunatic::version" "minor" (func (result i32)))

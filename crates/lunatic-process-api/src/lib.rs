@@ -166,7 +166,7 @@ where
     linker.func_wrap("lunatic::process", "link", link)?;
     linker.func_wrap("lunatic::process", "unlink", unlink)?;
     linker.func_wrap("lunatic::process", "kill", kill)?;
-
+    linker.func_wrap("lunatic::process", "exists", exists)?;
     Ok(())
 }
 
@@ -793,4 +793,12 @@ fn kill<T: ProcessState + ProcessCtx<T>>(caller: Caller<T>, process_id: u64) -> 
         process.send(Signal::Kill);
     }
     Ok(())
+}
+
+// Checks to see if a process exists
+fn exists<T: ProcessState + ProcessCtx<T>>(caller: Caller<T>, process_id: u64) -> i32 {
+    if let Some(_) = caller.data().environment().get_process(process_id) {
+        return true as i32;
+    }
+    false as i32
 }
