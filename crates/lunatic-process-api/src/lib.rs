@@ -797,5 +797,9 @@ fn kill<T: ProcessState + ProcessCtx<T>>(caller: Caller<T>, process_id: u64) -> 
 
 // Checks to see if a process exists
 fn exists<T: ProcessState + ProcessCtx<T>>(caller: Caller<T>, process_id: u64) -> i32 {
-    caller.data().environment().get_process(process_id).is_some() as i32
+    caller
+        .data()
+        .environment()
+        .get_process(process_id)
+        .is_some() as i32
 }
