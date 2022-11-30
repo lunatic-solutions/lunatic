@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use dashmap::DashMap;
 use lunatic_process::runtimes::RawWasm;
 use reqwest::{Client as HttpClient, Url};
@@ -99,7 +99,17 @@ impl Client {
         url: Url,
         reg: Register,
     ) -> Result<Registration> {
-        let resp: Registration = client.post(url).json(&reg).send().await?.json().await?;
+        let resp: Registration = client
+            .post(url)
+            .json(&reg)
+            .send()
+            .await
+            .with_context(|| "Error sending HTTP registration request.")?
+            .error_for_status()
+            .with_context(|| "HTTP registration request returned an error response.")?
+            .json()
+            .await
+            .with_context(|| "Error parsing the registration request JSON.")?;
         Ok(resp)
     }
 
@@ -126,26 +136,31 @@ impl Client {
         let resp: T = self
             .inner
             .http_client
-            .get(url)
+            .get(url.clone())
             .bearer_auth(&self.inner.reg.authentication_token)
             .header(
                 "x-lunatic-node-name",
                 &self.inner.reg.node_name.hyphenated().to_string(),
             )
             .send()
-            .await?
+            .await
+            .with_context(|| format!("Error sending HTTP GET request: {}.", &url))?
+            .error_for_status()
+            .with_context(|| format!("HTTP GET request returned an error response: {}", &url))?
             .json()
-            .await?;
+            .await
+            .with_context(|| format!("Error parsing the HTTP GET request JSON: {}", &url))?;
+
         Ok(resp)
     }
 
-    // TODO handle HTTP codes and errors with a proper message/result
     pub async fn post<T: Serialize, R: DeserializeOwned>(&self, url: &str, data: T) -> Result<R> {
         let url: Url = url.parse()?;
+
         let resp: R = self
             .inner
             .http_client
-            .post(url)
+            .post(url.clone())
             .json(&data)
             .bearer_auth(&self.inner.reg.authentication_token)
             .header(
@@ -153,9 +168,14 @@ impl Client {
                 &self.inner.reg.node_name.hyphenated().to_string(),
             )
             .send()
-            .await?
+            .await
+            .with_context(|| format!("Error sending HTTP POST request: {}.", &url))?
+            .error_for_status()
+            .with_context(|| format!("HTTP POST request returned an error response: {}", &url))?
             .json()
-            .await?;
+            .await
+            .with_context(|| format!("Error parsing the HTTP POST request JSON: {}", &url))?;
+
         Ok(resp)
     }
 
@@ -208,29 +228,26 @@ impl Client {
     }
 
     pub async fn get_module(&self, module_id: u64) -> Result<Vec<u8>> {
-        let url: Url = self
+        log::info!("Get module {module_id}");
+        let url = self
             .inner
             .reg
             .urls
             .get_module
-            .replace("{id}", &module_id.to_string())
-            .parse()?;
-        let resp: ModuleBytes = self.inner.http_client.get(url).send().await?.json().await?;
+            .replace("{id}", &module_id.to_string());
+        let resp: ModuleBytes = self.get(&url, None).await?;
         Ok(resp.bytes)
     }
 
     pub async fn add_module(&self, module: Vec<u8>) -> Result<RawWasm> {
-        let url: Url = self.inner.reg.urls.add_module.parse()?;
+        let url = &self.inner.reg.urls.add_module;
         let resp: ModuleId = self
-            .inner
-            .http_client
-            .post(url)
-            .json(&AddModule {
-                bytes: module.clone(),
-            })
-            .send()
-            .await?
-            .json()
+            .post(
+                &url,
+                &AddModule {
+                    bytes: module.clone(),
+                },
+            )
             .await?;
         Ok(RawWasm::new(Some(resp.module_id), module))
     }
