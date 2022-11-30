@@ -243,7 +243,7 @@ impl Client {
         let url = &self.inner.reg.urls.add_module;
         let resp: ModuleId = self
             .post(
-                &url,
+                url,
                 &AddModule {
                     bytes: module.clone(),
                 },
