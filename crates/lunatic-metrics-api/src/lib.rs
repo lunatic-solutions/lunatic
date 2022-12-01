@@ -86,7 +86,7 @@ fn gauge<T>(
         &mut caller,
         name_str_ptr,
         name_str_len,
-        "lunatic::metrics::increment_counter",
+        "lunatic::metrics::gauge",
     )?;
 
     gauge!(name, value);
