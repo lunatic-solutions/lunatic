@@ -1176,6 +1176,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "lunatic-metrics-api"
+version = "0.12.0"
+dependencies = [
+ "anyhow",
+ "log",
+ "lunatic-common-api",
+ "metrics",
+ "wasmtime",
+]
+
+[[package]]
 name = "lunatic-networking-api"
 version = "0.12.0"
 dependencies = [
@@ -1247,6 +1258,7 @@ dependencies = [
  "lunatic-distributed-api",
  "lunatic-error-api",
  "lunatic-messaging-api",
+ "lunatic-metrics-api",
  "lunatic-networking-api",
  "lunatic-process",
  "lunatic-process-api",

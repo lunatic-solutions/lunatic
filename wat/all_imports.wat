@@ -97,5 +97,12 @@
     (import "lunatic::distributed" "send" (func (param i64 i64) (result i32)))
     (import "lunatic::distributed" "send_receive_skip_search" (func (param i64 i64 i64) (result i32)))
 
+    (import "lunatic::metrics" "counter" (func (param i32 i32 i64)))
+    (import "lunatic::metrics" "increment_counter" (func (param i32 i32)))
+    (import "lunatic::metrics" "gauge" (func (param i32 i32 f64)))
+    (import "lunatic::metrics" "increment_gauge" (func (param i32 i32 f64)))
+    (import "lunatic::metrics" "decrement_gauge" (func (param i32 i32 f64)))
+    (import "lunatic::metrics" "histogram" (func (param i32 i32 f64)))
+
     (func (export "hello") nop)
 )

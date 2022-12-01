@@ -174,6 +174,8 @@ impl ProcessState for DefaultProcessState {
         lunatic_wasi_api::register(linker)?;
         lunatic_registry_api::register(linker)?;
         lunatic_distributed_api::register(linker)?;
+        #[cfg(feature = "metrics")]
+        lunatic_metrics_api::register(linker)?;
         Ok(())
     }
 
