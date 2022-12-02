@@ -18,6 +18,10 @@ path = "src/lib.rs"
 name = "lunatic"
 path = "src/main.rs"
 
+[[bin]]
+name = "cargo-lunatic"
+path = "src/cargo_lunatic.rs"
+
 [features]
 default = ["metrics"]
 metrics = [
