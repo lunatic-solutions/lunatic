@@ -40,7 +40,7 @@ pub fn register<T: ProcessState + ProcessCtx<T> + 'static>(linker: &mut Linker<T
 
 // Registers process with ID under `name`.
 //
-// s:
+// Traps:
 // * If the process ID doesn't exist.
 // * If any memory outside the guest heap space is referenced.
 fn put<T: ProcessState + ProcessCtx<T>>(
