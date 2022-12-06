@@ -1252,6 +1252,7 @@ dependencies = [
  "serde",
  "tokio",
  "wasmtime",
+ "wasmtime-wasi",
 ]
 
 [[package]]
