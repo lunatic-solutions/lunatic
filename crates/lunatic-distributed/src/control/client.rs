@@ -234,9 +234,9 @@ impl Client {
             .reg
             .urls
             .get_module
-            .replace("{module_id}", &module_id.to_string())
-            .replace("{env_id}", &environment_id.to_string());
-        let resp: ModuleBytes = self.get(&url, None).await?;
+            .replace("{id}", &module_id.to_string());
+        let query = format!("env_id={environment_id}");
+        let resp: ModuleBytes = self.get(&url, Some(&query)).await?;
         Ok(resp.bytes)
     }
 
