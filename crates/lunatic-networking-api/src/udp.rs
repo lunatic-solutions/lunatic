@@ -5,7 +5,6 @@ use std::time::Duration;
 use anyhow::Result;
 use tokio::net::UdpSocket;
 use tokio::time::timeout;
-use wasmtime::Trap;
 use wasmtime::{Caller, Linker};
 
 use crate::dns::DnsIterator;
@@ -70,7 +69,7 @@ fn udp_bind<T: NetworkingCtx + ErrorCtx + Send>(
     flow_info: u32,
     scope_id: u32,
     id_u64_ptr: u32,
-) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_> {
+) -> Box<dyn Future<Output = Result<u32>> + Send + '_> {
     Box::new(async move {
         let memory = get_memory(&mut caller)?;
         let socket_addr = socket_address(
@@ -108,10 +107,7 @@ fn udp_bind<T: NetworkingCtx + ErrorCtx + Send>(
 //
 // Traps:
 // * If the UDP socket ID doesn't exist.
-fn drop_udp_socket<T: NetworkingCtx>(
-    mut caller: Caller<T>,
-    udp_socket_id: u64,
-) -> Result<(), Trap> {
+fn drop_udp_socket<T: NetworkingCtx>(mut caller: Caller<T>, udp_socket_id: u64) -> Result<()> {
     caller
         .data_mut()
         .udp_resources_mut()
@@ -136,7 +132,7 @@ fn udp_receive<T: NetworkingCtx + ErrorCtx + Send>(
     buffer_ptr: u32,
     buffer_len: u32,
     opaque_ptr: u32,
-) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_> {
+) -> Box<dyn Future<Output = Result<u32>> + Send + '_> {
     Box::new(async move {
         let memory = get_memory(&mut caller)?;
         let (memory_slice, state) = memory.data_and_store_mut(&mut caller);
@@ -181,7 +177,7 @@ fn udp_receive_from<T: NetworkingCtx + ErrorCtx + Send>(
     buffer_len: u32,
     opaque_ptr: u32,
     dns_iter_ptr: u32,
-) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_> {
+) -> Box<dyn Future<Output = Result<u32>> + Send + '_> {
     Box::new(async move {
         let memory = get_memory(&mut caller)?;
         let (memory_slice, state) = memory.data_and_store_mut(&mut caller);
@@ -250,7 +246,7 @@ fn udp_connect<T: NetworkingCtx + ErrorCtx + Send>(
     scope_id: u32,
     timeout_duration: u64,
     id_u64_ptr: u32,
-) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_> {
+) -> Box<dyn Future<Output = Result<u32>> + Send + '_> {
     Box::new(async move {
         // Get the memory and the socket being connected to
         let memory = get_memory(&mut caller)?;
@@ -296,10 +292,7 @@ fn udp_connect<T: NetworkingCtx + ErrorCtx + Send>(
 //
 // Traps:
 // * If the stream ID doesn't exist.
-fn clone_udp_socket<T: NetworkingCtx>(
-    mut caller: Caller<T>,
-    udp_socket_id: u64,
-) -> Result<u64, Trap> {
+fn clone_udp_socket<T: NetworkingCtx>(mut caller: Caller<T>, udp_socket_id: u64) -> Result<u64> {
     let stream = caller
         .data()
         .udp_resources()
@@ -319,7 +312,7 @@ fn set_udp_socket_broadcast<T: NetworkingCtx>(
     caller: Caller<T>,
     udp_socket_id: u64,
     broadcast: u32,
-) -> Result<(), Trap> {
+) -> Result<()> {
     caller
         .data()
         .udp_resources()
@@ -338,7 +331,7 @@ fn set_udp_socket_broadcast<T: NetworkingCtx>(
 fn get_udp_socket_broadcast<T: NetworkingCtx>(
     caller: Caller<T>,
     udp_socket_id: u64,
-) -> Result<i32, Trap> {
+) -> Result<i32> {
     let socket = caller
         .data()
         .udp_resources()
@@ -362,7 +355,7 @@ fn set_udp_socket_ttl<T: NetworkingCtx>(
     caller: Caller<T>,
     udp_socket_id: u64,
     ttl: u32,
-) -> Result<(), Trap> {
+) -> Result<()> {
     caller
         .data()
         .udp_resources()
@@ -378,10 +371,7 @@ fn set_udp_socket_ttl<T: NetworkingCtx>(
 // Traps:
 // * If the socket ID doesn't exist.
 // * If ttl() traps.
-fn get_udp_socket_ttl<T: NetworkingCtx>(
-    caller: Caller<T>,
-    udp_socket_id: u64,
-) -> Result<u32, Trap> {
+fn get_udp_socket_ttl<T: NetworkingCtx>(caller: Caller<T>, udp_socket_id: u64) -> Result<u32> {
     let result = caller
         .data()
         .udp_resources()
@@ -414,7 +404,7 @@ fn udp_send_to<T: NetworkingCtx + ErrorCtx + Send>(
     flow_info: u32,
     scope_id: u32,
     opaque_ptr: u32,
-) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_> {
+) -> Box<dyn Future<Output = Result<u32>> + Send + '_> {
     Box::new(async move {
         let memory = get_memory(&mut caller)?;
         let socket_addr = socket_address(
@@ -469,7 +459,7 @@ fn udp_send<T: NetworkingCtx + ErrorCtx + Send>(
     buffer_ptr: u32,
     buffer_len: u32,
     opaque_ptr: u32,
-) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_> {
+) -> Box<dyn Future<Output = Result<u32>> + Send + '_> {
     Box::new(async move {
         let memory = get_memory(&mut caller)?;
 
@@ -512,7 +502,7 @@ fn udp_local_addr<T: NetworkingCtx + ErrorCtx + Send>(
     mut caller: Caller<T>,
     udp_socket_id: u64,
     id_u64_ptr: u32,
-) -> Result<u32, Trap> {
+) -> Result<u32> {
     let udp_socket = caller
         .data()
         .udp_resources()

@@ -1,6 +1,7 @@
+use anyhow::Result;
 use lunatic_common_api::{get_memory, IntoTrap};
 use metrics::{counter, decrement_gauge, gauge, histogram, increment_counter, increment_gauge};
-use wasmtime::{Caller, Linker, Trap};
+use wasmtime::{Caller, Linker};
 
 /// Links the [Metrics](https://crates.io/crates/metrics) APIs
 pub fn register<T: 'static>(linker: &mut Linker<T>) -> anyhow::Result<()> {
@@ -18,7 +19,7 @@ fn get_string_arg<T>(
     name_str_ptr: u32,
     name_str_len: u32,
     func_name: &str,
-) -> Result<String, Trap> {
+) -> Result<String> {
     let memory = get_memory(caller)?;
     let memory_slice = memory.data(caller);
     let name = memory_slice
@@ -38,7 +39,7 @@ fn counter<T>(
     name_str_ptr: u32,
     name_str_len: u32,
     value: u64,
-) -> Result<(), Trap> {
+) -> Result<()> {
     let name = get_string_arg(
         &mut caller,
         name_str_ptr,
@@ -59,7 +60,7 @@ fn increment_counter<T>(
     mut caller: Caller<'_, T>,
     name_str_ptr: u32,
     name_str_len: u32,
-) -> Result<(), Trap> {
+) -> Result<()> {
     let name = get_string_arg(
         &mut caller,
         name_str_ptr,
@@ -81,7 +82,7 @@ fn gauge<T>(
     name_str_ptr: u32,
     name_str_len: u32,
     value: f64,
-) -> Result<(), Trap> {
+) -> Result<()> {
     let name = get_string_arg(
         &mut caller,
         name_str_ptr,
@@ -103,7 +104,7 @@ fn increment_gauge<T>(
     name_str_ptr: u32,
     name_str_len: u32,
     value: f64,
-) -> Result<(), Trap> {
+) -> Result<()> {
     let name = get_string_arg(
         &mut caller,
         name_str_ptr,
@@ -125,7 +126,7 @@ fn decrement_gauge<T>(
     name_str_ptr: u32,
     name_str_len: u32,
     value: f64,
-) -> Result<(), Trap> {
+) -> Result<()> {
     let name = get_string_arg(
         &mut caller,
         name_str_ptr,
@@ -147,7 +148,7 @@ fn histogram<T>(
     name_str_ptr: u32,
     name_str_len: u32,
     value: f64,
-) -> Result<(), Trap> {
+) -> Result<()> {
     let name = get_string_arg(
         &mut caller,
         name_str_ptr,

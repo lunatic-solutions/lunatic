@@ -10,7 +10,6 @@ use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
 };
-use wasmtime::Trap;
 use wasmtime::{Caller, Linker};
 
 use lunatic_common_api::{get_memory, IntoTrap};
@@ -80,7 +79,7 @@ fn tls_local_addr<T: NetworkingCtx + ErrorCtx>(
     mut caller: Caller<T>,
     tls_listener_id: u64,
     id_u64_ptr: u32,
-) -> Result<u32, Trap> {
+) -> Result<u32> {
     let tls_listener = caller
         .data()
         .tls_listener_resources()
@@ -134,7 +133,7 @@ fn tls_bind<T: NetworkingCtx + ErrorCtx + Send>(
     certs_array_len: u32,
     keys_array_ptr: u32,
     keys_array_len: u32,
-) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_> {
+) -> Box<dyn Future<Output = Result<u32>> + Send + '_> {
     Box::new(async move {
         let memory = get_memory(&mut caller)?;
         let certs = memory
@@ -191,10 +190,7 @@ fn tls_bind<T: NetworkingCtx + ErrorCtx + Send>(
 //
 // Traps:
 // * If the TLS listener ID doesn't exist.
-fn drop_tls_listener<T: NetworkingCtx>(
-    mut caller: Caller<T>,
-    tls_listener_id: u64,
-) -> Result<(), Trap> {
+fn drop_tls_listener<T: NetworkingCtx>(mut caller: Caller<T>, tls_listener_id: u64) -> Result<()> {
     caller
         .data_mut()
         .tls_listener_resources_mut()
@@ -217,7 +213,7 @@ fn tls_accept<T: NetworkingCtx + ErrorCtx + Send>(
     listener_id: u64,
     id_u64_ptr: u32,
     socket_addr_id_ptr: u32,
-) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_> {
+) -> Box<dyn Future<Output = Result<u32>> + Send + '_> {
     Box::new(async move {
         let tls_listener = caller
             .data()
@@ -328,7 +324,7 @@ fn tls_connect<T: NetworkingCtx + ErrorCtx + Send>(
     id_u64_ptr: u32,
     certs_array_ptr: u32,
     certs_array_len: u32,
-) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_> {
+) -> Box<dyn Future<Output = Result<u32>> + Send + '_> {
     Box::new(async move {
         let memory = get_memory(&mut caller)?;
 
@@ -389,7 +385,7 @@ fn tls_connect<T: NetworkingCtx + ErrorCtx + Send>(
                         ta.name_constraints,
                     ))
                 })
-                .filter_map(|r: Result<OwnedTrustAnchor, Trap>| r.ok());
+                .filter_map(|r: Result<OwnedTrustAnchor>| r.ok());
             root_cert_store.add_server_trust_anchors(trust_anchors);
         } else {
             root_cert_store.add_server_trust_anchors(webpki_roots::TLS_SERVER_ROOTS.0.iter().map(
@@ -456,10 +452,7 @@ fn tls_connect<T: NetworkingCtx + ErrorCtx + Send>(
 //
 // Traps:
 // * If the DNS iterator ID doesn't exist.
-fn drop_tls_stream<T: NetworkingCtx>(
-    mut caller: Caller<T>,
-    tls_stream_id: u64,
-) -> Result<(), Trap> {
+fn drop_tls_stream<T: NetworkingCtx>(mut caller: Caller<T>, tls_stream_id: u64) -> Result<()> {
     caller
         .data_mut()
         .tls_stream_resources_mut()
@@ -472,10 +465,7 @@ fn drop_tls_stream<T: NetworkingCtx>(
 //
 // Traps:
 // * If the stream ID doesn't exist.
-fn clone_tls_stream<T: NetworkingCtx>(
-    mut caller: Caller<T>,
-    tls_stream_id: u64,
-) -> Result<u64, Trap> {
+fn clone_tls_stream<T: NetworkingCtx>(mut caller: Caller<T>, tls_stream_id: u64) -> Result<u64> {
     let stream = caller
         .data()
         .tls_stream_resources()
@@ -502,7 +492,7 @@ fn tls_write_vectored<T: NetworkingCtx + ErrorCtx + Send>(
     ciovec_array_ptr: u32,
     ciovec_array_len: u32,
     opaque_ptr: u32,
-) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_> {
+) -> Box<dyn Future<Output = Result<u32>> + Send + '_> {
     Box::new(async move {
         let memory = get_memory(&mut caller)?;
         let buffer = memory
@@ -577,7 +567,7 @@ fn set_tls_write_timeout<T: NetworkingCtx + ErrorCtx + Send>(
     mut caller: Caller<T>,
     stream_id: u64,
     duration: u64,
-) -> Box<dyn Future<Output = Result<(), Trap>> + Send + '_> {
+) -> Box<dyn Future<Output = Result<()>> + Send + '_> {
     Box::new(async move {
         let stream = caller
             .data_mut()
@@ -606,7 +596,7 @@ fn set_tls_write_timeout<T: NetworkingCtx + ErrorCtx + Send>(
 fn get_tls_write_timeout<T: NetworkingCtx + ErrorCtx + Send>(
     caller: Caller<T>,
     stream_id: u64,
-) -> Box<dyn Future<Output = Result<u64, Trap>> + Send + '_> {
+) -> Box<dyn Future<Output = Result<u64>> + Send + '_> {
     Box::new(async move {
         let stream = caller
             .data()
@@ -631,7 +621,7 @@ pub fn set_tls_read_timeout<T: NetworkingCtx + ErrorCtx + Send>(
     mut caller: Caller<T>,
     stream_id: u64,
     duration: u64,
-) -> Box<dyn Future<Output = Result<(), Trap>> + Send + '_> {
+) -> Box<dyn Future<Output = Result<()>> + Send + '_> {
     Box::new(async move {
         let stream = caller
             .data_mut()
@@ -660,7 +650,7 @@ pub fn set_tls_read_timeout<T: NetworkingCtx + ErrorCtx + Send>(
 fn get_tls_read_timeout<T: NetworkingCtx + ErrorCtx + Send>(
     caller: Caller<T>,
     stream_id: u64,
-) -> Box<dyn Future<Output = Result<u64, Trap>> + Send + '_> {
+) -> Box<dyn Future<Output = Result<u64>> + Send + '_> {
     Box::new(async move {
         let stream = caller
             .data()
@@ -691,7 +681,7 @@ fn tls_read<T: NetworkingCtx + ErrorCtx + Send>(
     buffer_ptr: u32,
     buffer_len: u32,
     opaque_ptr: u32,
-) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_> {
+) -> Box<dyn Future<Output = Result<u32>> + Send + '_> {
     Box::new(async move {
         let stream = caller
             .data()
@@ -743,7 +733,7 @@ fn tls_flush<T: NetworkingCtx + ErrorCtx + Send>(
     mut caller: Caller<T>,
     stream_id: u64,
     error_id_ptr: u32,
-) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_> {
+) -> Box<dyn Future<Output = Result<u32>> + Send + '_> {
     Box::new(async move {
         let stream = caller
             .data()

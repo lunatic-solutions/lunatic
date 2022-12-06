@@ -15,11 +15,12 @@ use tokio::io::{split, ReadHalf, WriteHalf};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::sync::Mutex;
 
+use anyhow::anyhow;
 use tokio::net::{TcpListener, TcpStream, UdpSocket};
 use tokio_rustls::rustls::{Certificate, PrivateKey};
 use tokio_rustls::TlsStream;
+use wasmtime::Memory;
 use wasmtime::{Caller, Linker};
-use wasmtime::{Memory, Trap};
 
 use lunatic_common_api::IntoTrap;
 
@@ -120,7 +121,7 @@ fn socket_address<T: NetworkingCtx>(
     port: u32,
     flow_info: u32,
     scope_id: u32,
-) -> Result<SocketAddr, Trap> {
+) -> Result<SocketAddr> {
     Ok(match addr_type {
         4 => {
             let ip = memory
@@ -138,6 +139,6 @@ fn socket_address<T: NetworkingCtx>(
             let addr = <Ipv6Addr as From<[u8; 16]>>::from(ip.try_into().expect("exactly 16 bytes"));
             SocketAddrV6::new(addr, port as u16, flow_info, scope_id).into()
         }
-        _ => return Err(Trap::new("Unsupported address type in socket_address*")),
+        _ => return Err(anyhow!("Unsupported address type in socket_address*")),
     })
 }
