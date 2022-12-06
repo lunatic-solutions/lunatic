@@ -8,5 +8,5 @@ repository = "https://github.com/lunatic-solutions/lunatic/tree/main/crates/luna
 license = "Apache-2.0/MIT"
 
 [dependencies]
-wasi-common = "3"
-wiggle = "3"
+wasi-common = { workspace = true }
+wiggle = { workspace = true }
