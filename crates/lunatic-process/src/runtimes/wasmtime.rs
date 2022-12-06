@@ -155,15 +155,7 @@ where
                 Err(err) => {
                     // If the trap is a result of calling `proc_exit(0)`, treat it as an no-error finish.
                     match err.downcast_ref::<wasmtime::Trap>() {
-                        Some(trap) => {
-                            if trap.i32_exit_status().is_some()
-                                && trap.i32_exit_status().unwrap() == 0
-                            {
-                                ResultValue::Ok
-                            } else {
-                                ResultValue::Failed(trap.to_string())
-                            }
-                        }
+                        Some(trap) => ResultValue::Failed(trap.to_string()),
                         None => ResultValue::Failed(format!(
                             "Can't downcast trap ({}) to wasmtime::Trap",
                             err

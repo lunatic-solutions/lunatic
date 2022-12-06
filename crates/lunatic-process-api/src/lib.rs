@@ -19,7 +19,7 @@ use lunatic_process::{
     DeathReason, Process, Signal, WasmProcess,
 };
 use lunatic_wasi_api::LunaticWasiCtx;
-use wasmtime::{Caller, Linker, ResourceLimiter, Trap, Val};
+use wasmtime::{Caller, Linker, ResourceLimiter, Val};
 
 pub type ProcessResources = HashMapId<Arc<dyn Process>>;
 pub type ModuleResources<S> = HashMapId<Arc<WasmtimeCompiledModule<S>>>;
@@ -184,7 +184,7 @@ fn compile_module<T>(
     module_data_ptr: u32,
     module_data_len: u32,
     id_ptr: u32,
-) -> Result<i32, Trap>
+) -> Result<i32>
 where
     T: ProcessState + ProcessCtx<T> + ErrorCtx,
     T::Config: ProcessConfigCtx,
@@ -238,7 +238,7 @@ where
 fn drop_module<T: ProcessState + ProcessCtx<T>>(
     mut caller: Caller<T>,
     module_id: u64,
-) -> Result<(), Trap> {
+) -> Result<()> {
     #[cfg(feature = "metrics")]
     metrics::increment_counter!("lunatic.process.modules.dropped");
 
@@ -283,7 +283,7 @@ where
 fn drop_config<T: ProcessState + ProcessCtx<T>>(
     mut caller: Caller<T>,
     config_id: u64,
-) -> Result<(), Trap> {
+) -> Result<()> {
     caller
         .data_mut()
         .config_resources_mut()
@@ -305,7 +305,7 @@ fn config_set_max_memory<T: ProcessState + ProcessCtx<T>>(
     mut caller: Caller<T>,
     config_id: u64,
     max_memory: u64,
-) -> Result<(), Trap> {
+) -> Result<()> {
     let max_memory = usize::try_from(max_memory)
         .or_trap("lunatic::process::config_set_max_memory: max_memory exceeds platform max")?;
     caller
@@ -324,7 +324,7 @@ fn config_set_max_memory<T: ProcessState + ProcessCtx<T>>(
 fn config_get_max_memory<T: ProcessState + ProcessCtx<T>>(
     caller: Caller<T>,
     config_id: u64,
-) -> Result<u64, Trap> {
+) -> Result<u64> {
     let max_memory = caller
         .data()
         .config_resources()
@@ -344,7 +344,7 @@ fn config_set_max_fuel<T: ProcessState + ProcessCtx<T>>(
     mut caller: Caller<T>,
     config_id: u64,
     max_fuel: u64,
-) -> Result<(), Trap> {
+) -> Result<()> {
     let max_fuel = match max_fuel {
         0 => None,
         max_fuel => Some(max_fuel),
@@ -368,7 +368,7 @@ fn config_set_max_fuel<T: ProcessState + ProcessCtx<T>>(
 fn config_get_max_fuel<T: ProcessState + ProcessCtx<T>>(
     caller: Caller<T>,
     config_id: u64,
-) -> Result<u64, Trap> {
+) -> Result<u64> {
     let max_fuel = caller
         .data()
         .config_resources()
@@ -385,7 +385,7 @@ fn config_get_max_fuel<T: ProcessState + ProcessCtx<T>>(
 //
 // Traps:
 // * If the config ID doesn't exist.
-fn config_can_compile_modules<T>(caller: Caller<T>, config_id: u64) -> Result<u32, Trap>
+fn config_can_compile_modules<T>(caller: Caller<T>, config_id: u64) -> Result<u32>
 where
     T: ProcessState + ProcessCtx<T>,
     T::Config: ProcessConfigCtx,
@@ -404,11 +404,7 @@ where
 //
 // Traps:
 // * If the config ID doesn't exist.
-fn config_set_can_compile_modules<T>(
-    mut caller: Caller<T>,
-    config_id: u64,
-    can: u32,
-) -> Result<(), Trap>
+fn config_set_can_compile_modules<T>(mut caller: Caller<T>, config_id: u64, can: u32) -> Result<()>
 where
     T: ProcessState + ProcessCtx<T>,
     T::Config: ProcessConfigCtx,
@@ -427,7 +423,7 @@ where
 //
 // Traps:
 // * If the config ID doesn't exist.
-fn config_can_create_configs<T>(caller: Caller<T>, config_id: u64) -> Result<u32, Trap>
+fn config_can_create_configs<T>(caller: Caller<T>, config_id: u64) -> Result<u32>
 where
     T: ProcessState + ProcessCtx<T>,
     T::Config: ProcessConfigCtx,
@@ -446,11 +442,7 @@ where
 //
 // Traps:
 // * If the config ID doesn't exist.
-fn config_set_can_create_configs<T>(
-    mut caller: Caller<T>,
-    config_id: u64,
-    can: u32,
-) -> Result<(), Trap>
+fn config_set_can_create_configs<T>(mut caller: Caller<T>, config_id: u64, can: u32) -> Result<()>
 where
     T: ProcessState + ProcessCtx<T>,
     T::Config: ProcessConfigCtx,
@@ -468,7 +460,7 @@ where
 //
 // Traps:
 // * If the config ID doesn't exist.
-fn config_can_spawn_processes<T>(caller: Caller<T>, config_id: u64) -> Result<u32, Trap>
+fn config_can_spawn_processes<T>(caller: Caller<T>, config_id: u64) -> Result<u32>
 where
     T: ProcessState + ProcessCtx<T>,
     T::Config: ProcessConfigCtx,
@@ -487,11 +479,7 @@ where
 //
 // Traps:
 // * If the config ID doesn't exist.
-fn config_set_can_spawn_processes<T>(
-    mut caller: Caller<T>,
-    config_id: u64,
-    can: u32,
-) -> Result<(), Trap>
+fn config_set_can_spawn_processes<T>(mut caller: Caller<T>, config_id: u64, can: u32) -> Result<()>
 where
     T: ProcessState + ProcessCtx<T>,
     T::Config: ProcessConfigCtx,
@@ -542,7 +530,7 @@ fn spawn<T>(
     params_ptr: u32,
     params_len: u32,
     id_ptr: u32,
-) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_>
+) -> Box<dyn Future<Output = Result<u32>> + Send + '_>
 where
     T: ProcessState + ProcessCtx<T> + ErrorCtx + LunaticWasiCtx + ResourceLimiter + Send + 'static,
     for<'a> &'a T: Send,
@@ -550,13 +538,15 @@ where
 {
     Box::new(async move {
         if !caller.data().config().can_spawn_processes() {
-            return Err(anyhow!("Process doesn't have permissions to spawn sub-processes").into());
+            return Err(anyhow!(
+                "Process doesn't have permissions to spawn sub-processes"
+            ));
         }
 
         let state = caller.data();
 
         if !state.is_initialized() {
-            return Err(anyhow!("Cannot spawn process during module initialization").into());
+            return Err(anyhow!("Cannot spawn process during module initialization"));
         }
 
         let config = match config_id {
@@ -610,8 +600,7 @@ where
             return Err(anyhow!(
                 "Params array must be in chunks of 17 bytes, but {} bytes remained",
                 params_chunks.remainder().len()
-            )
-            .into());
+            ));
         }
         // Should processes be linked together?
         let link: Option<(Option<i64>, Arc<dyn Process>)> = match link {
@@ -716,7 +705,7 @@ fn link<T: ProcessState + ProcessCtx<T>>(
     mut caller: Caller<T>,
     tag: i64,
     process_id: u64,
-) -> Result<(), Trap> {
+) -> Result<()> {
     let tag = match tag {
         0 => None,
         tag => Some(tag),
@@ -756,10 +745,7 @@ fn link<T: ProcessState + ProcessCtx<T>>(
 //
 // Traps:
 // * If the process ID doesn't exist.
-fn unlink<T: ProcessState + ProcessCtx<T>>(
-    mut caller: Caller<T>,
-    process_id: u64,
-) -> Result<(), Trap> {
+fn unlink<T: ProcessState + ProcessCtx<T>>(mut caller: Caller<T>, process_id: u64) -> Result<()> {
     // Create handle to itself
     let this_process_id = caller.data().id();
 
@@ -787,7 +773,7 @@ fn unlink<T: ProcessState + ProcessCtx<T>>(
 //
 // Traps:
 // * If the process ID doesn't exist.
-fn kill<T: ProcessState + ProcessCtx<T>>(caller: Caller<T>, process_id: u64) -> Result<(), Trap> {
+fn kill<T: ProcessState + ProcessCtx<T>>(caller: Caller<T>, process_id: u64) -> Result<()> {
     // Send kill signal to process
     if let Some(process) = caller.data().environment().get_process(process_id) {
         process.send(Signal::Kill);

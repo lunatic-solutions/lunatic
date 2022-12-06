@@ -2,7 +2,7 @@ use anyhow::Result;
 use lunatic_common_api::{get_memory, IntoTrap};
 use lunatic_process::state::ProcessState;
 use lunatic_stdout_capture::StdoutCapture;
-use wasmtime::{Caller, Linker, Trap};
+use wasmtime::{Caller, Linker};
 use wasmtime_wasi::{ambient_authority, Dir, WasiCtx, WasiCtxBuilder};
 
 /// Create a `WasiCtx` from configuration settings.
@@ -81,7 +81,7 @@ fn add_environment_variable<T>(
     key_len: u32,
     value_ptr: u32,
     value_len: u32,
-) -> Result<(), Trap>
+) -> Result<()>
 where
     T: ProcessState,
     T::Config: LunaticWasiConfigCtx,
@@ -122,7 +122,7 @@ fn add_command_line_argument<T>(
     config_id: u64,
     argument_ptr: u32,
     argument_len: u32,
-) -> Result<(), Trap>
+) -> Result<()>
 where
     T: ProcessState,
     T::Config: LunaticWasiConfigCtx,
@@ -151,12 +151,7 @@ where
 // * If the config ID doesn't exist.
 // * If the directory string is not a valid utf8 string.
 // * If any of the memory slices falls outside the memory.
-fn preopen_dir<T>(
-    mut caller: Caller<T>,
-    config_id: u64,
-    dir_ptr: u32,
-    dir_len: u32,
-) -> Result<(), Trap>
+fn preopen_dir<T>(mut caller: Caller<T>, config_id: u64, dir_ptr: u32, dir_len: u32) -> Result<()>
 where
     T: ProcessState,
     T::Config: LunaticWasiConfigCtx,
