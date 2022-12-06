@@ -1,7 +1,6 @@
 use anyhow::Result;
 use hash_map_id::HashMapId;
 use lunatic_common_api::{get_memory, IntoTrap};
-
 use wasmtime::{Caller, Linker};
 
 pub type ErrorResource = HashMapId<anyhow::Error>;
