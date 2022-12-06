@@ -227,14 +227,15 @@ impl Client {
         self.inner.node_ids.read().unwrap().len()
     }
 
-    pub async fn get_module(&self, module_id: u64) -> Result<Vec<u8>> {
+    pub async fn get_module(&self, module_id: u64, environment_id: u64) -> Result<Vec<u8>> {
         log::info!("Get module {module_id}");
         let url = self
             .inner
             .reg
             .urls
             .get_module
-            .replace("{id}", &module_id.to_string());
+            .replace("{id}", &module_id.to_string())
+            .replace("{env}", &environment_id.to_string());
         let resp: ModuleBytes = self.get(&url, None).await?;
         Ok(resp.bytes)
     }
