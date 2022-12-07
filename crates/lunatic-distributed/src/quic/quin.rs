@@ -1,6 +1,6 @@
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use bytes::Bytes;
 use lunatic_process::{env::Environment, state::ProcessState};
 use quinn::{ClientConfig, Connecting, ConnectionError, Endpoint, ServerConfig};
@@ -51,14 +51,22 @@ impl Client {
         name: &str,
         retry: u32,
     ) -> Result<(SendStream, RecvStream)> {
-        for _ in 0..retry {
-            let conn = self.inner.connect(addr, name)?.await?;
-            if let Ok((send, recv)) = conn.open_bi().await {
-                return Ok((SendStream { stream: send }, RecvStream { stream: recv }));
+        for try_num in 1..(retry + 1) {
+            match self.connect_once(addr, name).await {
+                Ok(r) => return Ok(r),
+                Err(e) => {
+                    log::error!("Error connecting to {name} at {addr}, try {try_num}. Error: {e}")
+                }
             }
             tokio::time::sleep(Duration::from_secs(2)).await;
         }
-        Err(anyhow!("Failed to connect to {addr}"))
+        Err(anyhow!("Failed to connect to {name} at {addr}"))
+    }
+
+    async fn connect_once(&self, addr: SocketAddr, name: &str) -> Result<(SendStream, RecvStream)> {
+        let conn = self.inner.connect(addr, name)?.await?;
+        let (send, recv) = conn.open_bi().await?;
+        Ok((SendStream { stream: send }, RecvStream { stream: recv }))
     }
 }
 
