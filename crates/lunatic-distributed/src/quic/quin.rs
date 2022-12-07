@@ -1,6 +1,6 @@
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, Result};
 use bytes::Bytes;
 use lunatic_process::{env::Environment, state::ProcessState};
 use quinn::{ClientConfig, Connecting, ConnectionError, Endpoint, ServerConfig};
@@ -126,7 +126,7 @@ where
     while let Some(conn) = quic_server.accept().await {
         tokio::spawn(handle_quic_connection_node(ctx.clone(), conn));
     }
-    Ok(())
+    Err(anyhow!("Node server exited"))
 }
 
 async fn handle_quic_connection_node<T, E>(
@@ -137,9 +137,16 @@ where
     T: ProcessState + ResourceLimiter + DistributedCtx<E> + Send + 'static,
     E: Environment + 'static,
 {
+    log::info!("New node connection");
     let conn = conn.await?;
+    log::info!("Remote {} connected", conn.remote_address());
     loop {
+        if let Some(reason) = conn.close_reason() {
+            log::info!("Connection {} is closed: {reason}", conn.remote_address());
+            break;
+        }
         let stream = conn.accept_bi().await;
+        log::info!("Stream from remote {} accepted", conn.remote_address());
         match stream {
             Ok((s, r)) => {
                 let send = SendStream { stream: s };
@@ -150,6 +157,7 @@ where
             Err(_) => {}
         }
     }
+    log::info!("Connection from remote {} closed", conn.remote_address());
     Ok(())
 }
 
