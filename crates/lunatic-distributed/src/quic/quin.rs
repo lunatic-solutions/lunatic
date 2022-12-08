@@ -51,14 +51,22 @@ impl Client {
         name: &str,
         retry: u32,
     ) -> Result<(SendStream, RecvStream)> {
-        for _ in 0..retry {
-            let conn = self.inner.connect(addr, name)?.await?;
-            if let Ok((send, recv)) = conn.open_bi().await {
-                return Ok((SendStream { stream: send }, RecvStream { stream: recv }));
+        for try_num in 1..(retry + 1) {
+            match self.connect_once(addr, name).await {
+                Ok(r) => return Ok(r),
+                Err(e) => {
+                    log::error!("Error connecting to {name} at {addr}, try {try_num}. Error: {e}")
+                }
             }
             tokio::time::sleep(Duration::from_secs(2)).await;
         }
-        Err(anyhow!("Failed to connect to {addr}"))
+        Err(anyhow!("Failed to connect to {name} at {addr}"))
+    }
+
+    async fn connect_once(&self, addr: SocketAddr, name: &str) -> Result<(SendStream, RecvStream)> {
+        let conn = self.inner.connect(addr, name)?.await?;
+        let (send, recv) = conn.open_bi().await?;
+        Ok((SendStream { stream: send }, RecvStream { stream: recv }))
     }
 }
 
@@ -118,7 +126,7 @@ where
     while let Some(conn) = quic_server.accept().await {
         tokio::spawn(handle_quic_connection_node(ctx.clone(), conn));
     }
-    Ok(())
+    Err(anyhow!("Node server exited"))
 }
 
 async fn handle_quic_connection_node<T, E>(
@@ -129,9 +137,16 @@ where
     T: ProcessState + ResourceLimiter + DistributedCtx<E> + Send + 'static,
     E: Environment + 'static,
 {
+    log::info!("New node connection");
     let conn = conn.await?;
+    log::info!("Remote {} connected", conn.remote_address());
     loop {
+        if let Some(reason) = conn.close_reason() {
+            log::info!("Connection {} is closed: {reason}", conn.remote_address());
+            break;
+        }
         let stream = conn.accept_bi().await;
+        log::info!("Stream from remote {} accepted", conn.remote_address());
         match stream {
             Ok((s, r)) => {
                 let send = SendStream { stream: s };
@@ -142,6 +157,7 @@ where
             Err(_) => {}
         }
     }
+    log::info!("Connection from remote {} closed", conn.remote_address());
     Ok(())
 }
 
