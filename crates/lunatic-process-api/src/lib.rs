@@ -2,7 +2,7 @@ use std::{
     convert::{TryFrom, TryInto},
     future::Future,
     sync::Arc,
-    time::{Duration, Instant},
+    time::{Duration, Instant}, io::Write
 };
 
 use anyhow::{anyhow, Result};
@@ -19,7 +19,8 @@ use lunatic_process::{
     DeathReason, Process, Signal, WasmProcess,
 };
 use lunatic_wasi_api::LunaticWasiCtx;
-use wasmtime::{Caller, Linker, ResourceLimiter, Val};
+use wasmtime::{Caller, Linker, ResourceLimiter, Val, WasmBacktrace};
+use wasmtime_runtime::{ Backtrace };
 
 pub type ProcessResources = HashMapId<Arc<dyn Process>>;
 pub type ModuleResources<S> = HashMapId<Arc<WasmtimeCompiledModule<S>>>;
@@ -39,6 +40,7 @@ pub trait ProcessCtx<S: ProcessState> {
     fn module_resources(&self) -> &ModuleResources<S>;
     fn module_resources_mut(&mut self) -> &mut ModuleResources<S>;
     fn environment(&self) -> Arc<dyn Environment>;
+    fn traces(&mut self) -> &mut HashMapId<String>;
 }
 
 // Register the process APIs to the linker
@@ -167,6 +169,10 @@ where
     linker.func_wrap("lunatic::process", "unlink", unlink)?;
     linker.func_wrap("lunatic::process", "kill", kill)?;
     linker.func_wrap("lunatic::process", "exists", exists)?;
+    linker.func_wrap("lunatic::process", "trace_get", trace_get)?;
+    linker.func_wrap("lunatic::process", "trace_get_size", trace_get_size)?;
+    linker.func_wrap("lunatic::process", "trace_read", trace_read)?;
+    linker.func_wrap("lunatic::process", "drop_trace", drop_trace)?;
     Ok(())
 }
 
@@ -788,4 +794,75 @@ fn exists<T: ProcessState + ProcessCtx<T>>(caller: Caller<T>, process_id: u64) -
         .environment()
         .get_process(process_id)
         .is_some() as i32
+}
+
+// Obtain a stack trace and store it as a String on the hashmap id
+//
+// Traps:
+// * If we cannot obtain a stack trace
+// * If the referenced memory is out of range
+fn trace_get<T: ProcessState + ProcessCtx<T>>(mut caller: Caller<T>, ptr: u32) -> Result<()> {
+
+    // let output = format!(" Stack Trace: {backtrace:?}");
+    let output = "Not implemented.".to_string();
+    
+
+    let id = caller.data_mut().traces().add(output);
+
+    let memory = get_memory(&mut caller)?;
+
+    memory.write(&mut caller, ptr as usize, &id.to_le_bytes())
+        .or_trap("lunatic::proces::trace_get::write_id")?;
+
+    Ok(())
+}
+
+// Obtain a stack trace and return it's length
+//
+// Traps:
+// * If the referenced string cannot be found
+fn trace_get_size<T: ProcessState + ProcessCtx<T>>(mut caller: Caller<T>, id: u64) -> Result<u32> {
+    let result = caller.data_mut()
+        .traces()
+        .get(id)
+        .or_trap("lunatic::process::trace_get_size::get_trace_by_id")?;
+
+    Ok(result.len() as u32)
+}
+
+// Obtain a stack trace and return it's length
+//
+// Traps:
+// * If the referenced string cannot be found
+fn trace_read<T: ProcessState + ProcessCtx<T>>(mut caller: Caller<T>, id: u64, data_ptr: u32, data_len: u32) -> Result<u32> {
+    let memory = get_memory(&mut caller)?;
+    let string = caller
+        .data_mut()
+        .traces()
+        .get(id)
+        .or_trap("lunatic::process::trace_read::get_trace")?
+        .to_owned();
+    let bytes = string.as_bytes();
+        
+    let mut buffer = memory
+        .data_mut(&mut caller)
+        .get_mut(data_ptr as usize..(data_ptr as usize + data_len as usize))
+        .or_trap("lunatic::process::trace_read::get_memory_slice")?;
+    
+    let written = buffer.write(bytes)
+        .or_trap("lunatic::process:trace_read::write_into_memory")?;
+
+    Ok(written as u32)
+}
+
+// Drop a stack trace
+//
+// Traps:
+// * If the referenced trace cannot be found
+fn drop_trace<T: ProcessState + ProcessCtx<T>>(mut caller: Caller<T>, id: u64) -> Result<()> {
+    caller.data_mut()
+        .traces()
+        .remove(id)
+        .or_trap("lunatic::process::drop_trace::remove_trace")?;
+    Ok(())
 }
