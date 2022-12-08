@@ -24,7 +24,7 @@ pub struct Registered {
     pub authentication_token: String,
 }
 
-pub struct NodeInfo {
+pub struct NodeDetails {
     pub registration_id: u64,
     pub status: i16,
     pub created_at: DateTime<Utc>,
@@ -37,7 +37,7 @@ pub struct ControlServer {
     pub ca_cert: Certificate,
     pub quic_client: lunatic_distributed::quic::Client,
     pub registrations: DashMap<u64, Registered>,
-    pub nodes: DashMap<u64, NodeInfo>,
+    pub nodes: DashMap<u64, NodeDetails>,
     pub modules: DashMap<u64, Vec<u8>>,
     next_registration_id: AtomicU64,
     next_node_id: AtomicU64,
@@ -71,9 +71,9 @@ impl ControlServer {
         self.registrations.insert(id, registered);
     }
 
-    pub fn start_node(&self, registration_id: u64, data: NodeStart) -> u64 {
+    pub fn start_node(&self, registration_id: u64, data: NodeStart) -> (u64, String) {
         let id = self.next_node_id.fetch_add(1, atomic::Ordering::Relaxed);
-        let info = NodeInfo {
+        let details = NodeDetails {
             registration_id,
             status: 0,
             created_at: Utc::now(),
@@ -81,8 +81,8 @@ impl ControlServer {
             node_address: data.node_address.to_string(),
             attributes: serde_json::json!(data.attributes),
         };
-        self.nodes.insert(id, info);
-        id
+        self.nodes.insert(id, details);
+        (id, data.node_address.to_string())
     }
 
     pub fn stop_node(&self, reg_id: u64) {

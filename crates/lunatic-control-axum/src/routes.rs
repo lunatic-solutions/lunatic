@@ -29,7 +29,7 @@ pub async fn register(
 
     let mut authentication_token = [0u8; 32];
     getrandom::getrandom(&mut authentication_token)
-        .map_err(|e| ApiError::log_internal("Error generating random token fin registration", e))?;
+        .map_err(|e| ApiError::log_internal("Error generating random token for registration", e))?;
     let authentication_token = base64_url::encode(&authentication_token);
 
     control.register(&reg, &cert_pem, &authentication_token);
@@ -71,9 +71,11 @@ pub async fn node_started(
     let control = control.as_ref();
     control.stop_node(node_auth.registration_id as u64);
 
-    let node_id = control.start_node(node_auth.registration_id as u64, data);
+    let (node_id, _node_address) = control.start_node(node_auth.registration_id as u64, data);
 
     log::info!("Node {} started with id {}", node_auth.node_name, node_id);
+
+    // TODO spawn all modules on node
 
     ok(NodeStarted {
         node_id: node_id as i64,
