@@ -159,7 +159,12 @@ where
     let module = match ctx.modules.get(module_id) {
         Some(module) => module,
         None => {
-            if let Ok(bytes) = ctx.distributed.control.get_module(module_id).await {
+            if let Ok(bytes) = ctx
+                .distributed
+                .control
+                .get_module(module_id, environment_id)
+                .await
+            {
                 let wasm = RawWasm::new(Some(module_id), bytes);
                 ctx.modules.compile(ctx.runtime.clone(), wasm).await??
             } else {

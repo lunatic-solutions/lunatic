@@ -30,6 +30,7 @@ prometheus = ["dep:metrics-exporter-prometheus", "metrics"]
 
 [dependencies]
 hash-map-id = { workspace = true }
+lunatic-control-axum = { workspace = true }
 lunatic-distributed = { workspace = true }
 lunatic-distributed-api = { workspace = true }
 lunatic-error-api = { workspace = true }
@@ -53,7 +54,7 @@ regex = "1.5"
 reqwest = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "net"] }
-uuid = { version = "1.1", features = ["v4"] }
+uuid = { workspace = true }
 wasmtime = { workspace = true }
 wasmtime-wasi = { workspace = true }
 
@@ -70,6 +71,7 @@ harness = false
 members = [
     "crates/hash-map-id",
     "crates/lunatic-common-api",
+    "crates/lunatic-control-axum",
     "crates/lunatic-distributed-api",
     "crates/lunatic-distributed",
     "crates/lunatic-error-api",
@@ -86,6 +88,7 @@ members = [
 [workspace.dependencies]
 hash-map-id = { path = "crates/hash-map-id", version = "0.12" }
 lunatic-common-api = { path = "crates/lunatic-common-api", version = "0.12" }
+lunatic-control-axum = { path = "crates/lunatic-control-axum", version = "0.12" }
 lunatic-distributed = { path = "crates/lunatic-distributed", version = "0.12" }
 lunatic-distributed-api = { path = "crates/lunatic-distributed-api", version = "0.12" }
 lunatic-error-api = { path = "crates/lunatic-error-api", version = "0.12" }
@@ -103,9 +106,10 @@ anyhow = "1.0"
 dashmap = "5.4"
 log = "0.4"
 metrics = "0.20.1"
-rustls-pemfile = "1.0"
 reqwest = "0.11"
+rustls-pemfile = "1.0"
 serde = "1.0"
 tokio = "1.20"
+uuid = { version = "1.1", features = ["v4"] }
 wasmtime = "2.0"
 wasmtime-wasi = "2.0"

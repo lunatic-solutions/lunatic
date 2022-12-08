@@ -1,4 +1,4 @@
-use std::{collections::HashMap, env, fs, path::Path, sync::Arc};
+use std::{collections::HashMap, env, fs, net::SocketAddr, path::Path, sync::Arc};
 
 use anyhow::{anyhow, Context, Ok, Result};
 use clap::Parser;
@@ -32,6 +32,9 @@ struct Args {
     /// URL of a control server
     #[arg(long, value_name = "CONTROL_URL")]
     control: Option<Url>,
+
+    #[arg(long, value_name = "LOCAL_CONTROL")]
+    local: Option<SocketAddr>,
 
     /// Define key=value variable to store as node information
     /// TODO: parse with URL query string parser?
@@ -82,6 +85,11 @@ pub(crate) async fn execute() -> Result<()> {
 
     let env = envs.create(1).await;
     let http_client = reqwest::Client::new();
+
+    if let Some(socket) = args.local {
+        tokio::task::spawn(lunatic_control_axum::server::control_server(socket));
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    }
 
     let (distributed_state, control_client) = if let (Some(node_address), Some(control_url)) =
         (args.node, args.control)
