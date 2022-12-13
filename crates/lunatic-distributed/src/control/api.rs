@@ -47,16 +47,6 @@ pub struct NodesList {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ModuleBytes {
-    pub bytes: Vec<u8>,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct AddModule {
-    pub bytes: Vec<u8>,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ModuleId {
     pub module_id: u64,
 }

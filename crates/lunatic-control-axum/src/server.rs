@@ -102,9 +102,12 @@ impl ControlServer {
 pub async fn control_server(http_socket: SocketAddr) -> Result<()> {
     let ca_cert_str = lunatic_distributed::distributed::server::root_cert(true, None)?;
 
-    let ca_cert = lunatic_distributed::control::cert::root_cert(true, None, None).unwrap();
+    let ca_cert = lunatic_distributed::control::cert::root_cert(true, None, None)?;
+    let (ctrl_cert, ctrl_pk) =
+        lunatic_distributed::control::cert::default_server_certificates(&ca_cert)?;
 
-    let quic_client = lunatic_distributed::quic::new_quic_client(&ca_cert_str)?;
+    let quic_client =
+        lunatic_distributed::quic::new_quic_client(&ca_cert_str, &ctrl_cert, &ctrl_pk)?;
 
     let control = Arc::new(ControlServer::new(ca_cert, quic_client));
 

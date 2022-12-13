@@ -62,6 +62,7 @@ pub fn gen_node_cert(node_name: &str) -> Result<Certificate> {
 pub async fn node_server<T, E>(
     ctx: ServerCtx<T, E>,
     socket: SocketAddr,
+    ca_cert: String,
     cert: String,
     key: String,
 ) -> Result<()>
@@ -69,7 +70,7 @@ where
     T: ProcessState + ResourceLimiter + DistributedCtx<E> + Send + 'static,
     E: Environment + 'static,
 {
-    let mut quic_server = quic::new_quic_server(socket, &cert, &key)?;
+    let mut quic_server = quic::new_quic_server(socket, &cert, &key, &ca_cert)?;
     if let Err(e) = quic::handle_node_server(&mut quic_server, ctx.clone()).await {
         log::error!("Node server stopped {e}")
     };

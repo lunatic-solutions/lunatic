@@ -154,6 +154,31 @@ impl Client {
         Ok(resp)
     }
 
+    pub async fn get_body_bytes(&self, url: &str, query: Option<&str>) -> Result<Vec<u8>> {
+        let mut url: Url = url.parse()?;
+        url.set_query(query);
+
+        let resp = self
+            .inner
+            .http_client
+            .get(url.clone())
+            .bearer_auth(&self.inner.reg.authentication_token)
+            .header(
+                "x-lunatic-node-name",
+                &self.inner.reg.node_name.hyphenated().to_string(),
+            )
+            .send()
+            .await
+            .with_context(|| format!("Error sending HTTP GET request: {}.", &url))?
+            .error_for_status()
+            .with_context(|| format!("HTTP GET request returned an error response: {}", &url))?
+            .bytes()
+            .await
+            .with_context(|| format!("Error getting body as bytes: {}", &url))?;
+
+        Ok(resp.to_vec())
+    }
+
     pub async fn post<T: Serialize, R: DeserializeOwned>(&self, url: &str, data: T) -> Result<R> {
         let url: Url = url.parse()?;
 
@@ -172,6 +197,32 @@ impl Client {
             .with_context(|| format!("Error sending HTTP POST request: {}.", &url))?
             .error_for_status()
             .with_context(|| format!("HTTP POST request returned an error response: {}", &url))?
+            .json()
+            .await
+            .with_context(|| format!("Error parsing the HTTP POST request JSON: {}", &url))?;
+
+        Ok(resp)
+    }
+
+    pub async fn upload<R: DeserializeOwned>(&self, url: &str, body: Vec<u8>) -> Result<R> {
+        let url: Url = url.parse()?;
+
+        let resp: R = self
+            .inner
+            .http_client
+            .post(url.clone())
+            .body(body)
+            .bearer_auth(&self.inner.reg.authentication_token)
+            .header(
+                "x-lunatic-node-name",
+                &self.inner.reg.node_name.hyphenated().to_string(),
+            )
+            .send()
+            .await
+            .with_context(|| format!("Error sending HTTP POST request: {}.", &url))?
+            .error_for_status()
+            .with_context(|| format!("HTTP POST request returned an error response: {}", &url))
+            .map_err(|e| dbg!(e))?
             .json()
             .await
             .with_context(|| format!("Error parsing the HTTP POST request JSON: {}", &url))?;
@@ -236,20 +287,13 @@ impl Client {
             .get_module
             .replace("{id}", &module_id.to_string());
         let query = format!("env_id={environment_id}");
-        let resp: ModuleBytes = self.get(&url, Some(&query)).await?;
-        Ok(resp.bytes)
+        let resp = self.get_body_bytes(&url, Some(&query)).await?;
+        Ok(resp)
     }
 
     pub async fn add_module(&self, module: Vec<u8>) -> Result<RawWasm> {
         let url = &self.inner.reg.urls.add_module;
-        let resp: ModuleId = self
-            .post(
-                url,
-                &AddModule {
-                    bytes: module.clone(),
-                },
-            )
-            .await?;
+        let resp: ModuleId = self.upload(url, module.clone()).await?;
         Ok(RawWasm::new(Some(resp.module_id), module))
     }
 }

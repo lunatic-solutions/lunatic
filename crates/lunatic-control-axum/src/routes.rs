@@ -1,14 +1,18 @@
 use std::sync::Arc;
 
 use axum::{
+    body::{self, Bytes},
+    extract::DefaultBodyLimit,
     routing::{get, post},
     Extension, Json, Router,
 };
+use http::StatusCode;
 use lunatic_distributed::{
     control::{api::*, cert::TEST_ROOT_CERT},
     NodeInfo,
 };
 use rcgen::CertificateSigningRequest;
+use tower_http::limit::RequestBodyLimitLayer;
 
 use crate::{
     api::{ok, ApiError, ApiResponse, HostExtractor, JsonExtractor, NodeAuth, PathExtractor},
@@ -114,21 +118,18 @@ pub async fn list_nodes(
 pub async fn add_module(
     node_auth: NodeAuth,
     control: Extension<Arc<ControlServer>>,
-    Json(data): Json<AddModule>,
-) -> ApiResponse<()> {
+    body: Bytes,
+) -> ApiResponse<ModuleId> {
     log::info!("Node {} add_module", node_auth.node_name);
-
-    let control = control.as_ref();
-    control.add_module(data.bytes);
-
-    ok(())
+    let module_id = control.as_ref().add_module(body.to_vec());
+    ok(ModuleId { module_id })
 }
 
 pub async fn get_module(
     node_auth: NodeAuth,
     PathExtractor(id): PathExtractor<u64>,
     control: Extension<Arc<ControlServer>>,
-) -> ApiResponse<ModuleBytes> {
+) -> Result<body::Bytes, StatusCode> {
     log::info!("Node {} get_module {}", node_auth.node_name, id);
 
     let bytes = control
@@ -136,9 +137,10 @@ pub async fn get_module(
         .iter()
         .find(|m| m.key() == &id)
         .map(|m| m.value().clone())
-        .ok_or_else(|| ApiError::custom_code("error_reading_bytes"))?;
+        .ok_or(StatusCode::NOT_FOUND)?;
 
-    ok(ModuleBytes { bytes })
+    let body = body::Bytes::copy_from_slice(&bytes[..]);
+    Ok(body)
 }
 
 async fn okay() -> ApiResponse<String> {
@@ -154,4 +156,6 @@ pub fn init_routes() -> Router {
         .route("/nodes", get(list_nodes))
         .route("/module", post(add_module))
         .route("/module/:id", get(get_module))
+        .layer(DefaultBodyLimit::disable())
+        .layer(RequestBodyLimitLayer::new(50 * 1024 * 1024)) // 50 mb
 }
