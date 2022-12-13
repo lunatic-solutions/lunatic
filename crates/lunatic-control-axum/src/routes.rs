@@ -41,12 +41,12 @@ pub async fn register(
         root_cert: TEST_ROOT_CERT.into(),
         urls: ControlUrls {
             api_base: format!("http://{host}/"),
-            nodes: format!("http://{host}/api/control/nodes"),
-            node_started: format!("http://{host}/api/control/started"),
-            node_stopped: format!("http://{host}/api/control/stopped"),
-            get_module: format!("http://{host}/api/control/module/{{id}}"),
-            add_module: format!("http://{host}/api/control/module"),
-            get_nodes: format!("http://{host}/api/control/nodes"),
+            nodes: format!("http://{host}/nodes"),
+            node_started: format!("http://{host}/started"),
+            node_stopped: format!("http://{host}/stopped"),
+            get_module: format!("http://{host}/module/{{id}}"),
+            add_module: format!("http://{host}/module"),
+            get_nodes: format!("http://{host}/nodes"),
         },
     })
 }
@@ -141,14 +141,9 @@ pub async fn get_module(
     ok(ModuleBytes { bytes })
 }
 
-async fn okay() -> ApiResponse<String> {
-    ok("ok".to_string())
-}
-
 pub fn init_routes() -> Router {
     Router::new()
-        .route("/ok", get(okay))
-        .route("/register", post(register))
+        .route("/", post(register))
         .route("/stopped", post(node_stopped))
         .route("/started", post(node_started))
         .route("/nodes", get(list_nodes))

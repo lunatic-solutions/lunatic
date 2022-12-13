@@ -1,5 +1,5 @@
 use std::{
-    net::SocketAddr,
+    net::{SocketAddr, TcpListener},
     sync::{
         atomic::{self, AtomicU64},
         Arc,
@@ -99,21 +99,25 @@ impl ControlServer {
     }
 }
 
-pub async fn control_server(http_socket: SocketAddr) -> Result<()> {
+fn prepare_app() -> Result<Router> {
     let ca_cert_str = lunatic_distributed::distributed::server::root_cert(true, None)?;
-
     let ca_cert = lunatic_distributed::control::cert::root_cert(true, None, None).unwrap();
-
     let quic_client = lunatic_distributed::quic::new_quic_client(&ca_cert_str)?;
-
     let control = Arc::new(ControlServer::new(ca_cert, quic_client));
-
     let app = Router::new()
-        .nest("/api/control", routes::init_routes())
+        .nest("/", routes::init_routes())
         .layer(Extension(control));
+    Ok(app)
+}
 
-    log::info!("Starting axum server");
-    axum::Server::bind(&http_socket)
+pub async fn control_server(http_socket: SocketAddr) -> Result<()> {
+    control_server_from_tcp(TcpListener::bind(http_socket)?).await
+}
+
+pub async fn control_server_from_tcp(listener: TcpListener) -> Result<()> {
+    let app = prepare_app()?;
+
+    axum::Server::from_tcp(listener)?
         .serve(app.into_make_service())
         .await?;
     Ok(())

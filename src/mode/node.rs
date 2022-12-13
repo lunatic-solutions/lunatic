@@ -1,0 +1,122 @@
+use std::net::{SocketAddr, UdpSocket};
+
+use clap::Parser;
+
+use std::{collections::HashMap, sync::Arc};
+
+use anyhow::{anyhow, Context, Result};
+use lunatic_distributed::{
+    control::{self},
+    distributed::{self, server::ServerCtx},
+    quic,
+};
+use lunatic_process::{
+    env::LunaticEnvironments,
+    runtimes::{self, Modules},
+};
+use lunatic_runtime::DefaultProcessState;
+use uuid::Uuid;
+
+use super::common::WasmArgs;
+
+#[derive(Parser, Debug)]
+pub(crate) struct Args {
+    /// Control server register URL
+    #[arg(index = 1, value_name = "CONTROL_URL")]
+    control: String,
+
+    #[arg(long, value_name = "NODE_SOCKET")]
+    bind_socket: Option<SocketAddr>,
+
+    /// Define key=value variable to store as node information
+    #[arg(long, value_parser = parse_key_val, action = clap::ArgAction::Append)]
+    tag: Vec<(String, String)>,
+}
+
+pub(crate) async fn start(args: Args, _wasm: WasmArgs) -> Result<()> {
+    let socket = args
+        .bind_socket
+        .or_else(get_available_localhost)
+        .ok_or_else(|| anyhow!("No available localhost UDP port"))?;
+    let http_client = reqwest::Client::new();
+
+    // TODO unwrap, better message
+    let node_name = Uuid::new_v4();
+    let node_name_str = node_name.as_hyphenated().to_string();
+    let node_attributes: HashMap<String, String> = Default::default(); //args.tag.into_iter().collect(); TODO
+    let node_cert =
+        lunatic_distributed::distributed::server::gen_node_cert(&node_name_str).unwrap();
+    log::info!("Generate CSR for node name {node_name_str}");
+
+    let reg = control::Client::register(
+        &http_client,
+        args.control
+            .parse()
+            .with_context(|| "Parsing control URL")?,
+        node_name,
+        node_cert.serialize_request_pem()?,
+    )
+    .await?;
+
+    let control_client =
+        control::Client::new(http_client.clone(), reg.clone(), socket, node_attributes).await?;
+
+    let node_id = control_client.node_id();
+
+    log::info!("Registration successful, node id {}", node_id);
+
+    let quic_client = quic::new_quic_client(&reg.root_cert).unwrap();
+
+    let distributed_client =
+        distributed::Client::new(node_id, control_client.clone(), quic_client.clone()).await?;
+
+    let dist = lunatic_distributed::DistributedProcessState::new(
+        node_id,
+        control_client.clone(),
+        distributed_client,
+    )
+    .await?;
+
+    let wasmtime_config = runtimes::wasmtime::default_config();
+    let runtime = runtimes::wasmtime::WasmtimeRuntime::new(&wasmtime_config)?;
+    let envs = Arc::new(LunaticEnvironments::default());
+
+    let node = tokio::task::spawn(lunatic_distributed::distributed::server::node_server(
+        ServerCtx {
+            envs,
+            modules: Modules::<DefaultProcessState>::default(),
+            distributed: dist.clone(),
+            runtime: runtime.clone(),
+        },
+        socket,
+        reg.cert_pem,
+        node_cert.serialize_private_key_pem(),
+    ));
+
+    // TODO: start wasm??
+
+    node.await.ok();
+
+    control_client.notify_node_stopped().await.ok();
+
+    Ok(())
+}
+
+fn get_available_localhost() -> Option<SocketAddr> {
+    for port in 1025..65535u16 {
+        let addr = SocketAddr::new("127.0.0.1".parse().unwrap(), port);
+        if UdpSocket::bind(addr).is_ok() {
+            return Some(addr);
+        }
+    }
+
+    None
+}
+
+fn parse_key_val(s: &str) -> Result<(String, String)> {
+    if let Some((key, value)) = s.split_once('=') {
+        Ok((key.to_string(), value.to_string()))
+    } else {
+        Err(anyhow!(format!("Tag '{s}' is not formatted as key=value")))
+    }
+}
