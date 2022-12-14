@@ -1271,10 +1271,12 @@ name = "lunatic-sqlite-api"
 version = "0.12.0"
 dependencies = [
  "anyhow",
+ "bincode",
  "hash-map-id",
  "lunatic-common-api",
  "lunatic-error-api",
  "lunatic-process",
+ "serde",
  "sqlite",
  "wasmtime",
 ]
@@ -2136,9 +2138,7 @@ checksum = "6e63cff320ae2c57904679ba7cb63280a3dc4613885beafb148ee7bf9aa9042d"
 
 [[package]]
 name = "sqlite"
-version = "0.27.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e66cb949f931ece6201d72bffad3f3601b94998a345793713dd13af70a77c185"
+version = "0.30.1"
 dependencies = [
  "libc",
  "sqlite3-sys",

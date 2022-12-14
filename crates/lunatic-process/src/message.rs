@@ -25,7 +25,7 @@ pub type Resource = dyn Any + Send + Sync;
 /// * LinkDied - A `LinkDied` signal that was turned into a message.
 ///
 /// [0]: crate::Signal
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Message {
     Data(DataMessage),
     LinkDied(Option<i64>),
@@ -53,7 +53,7 @@ impl Message {
 /// A variant of a [`Message`] that has a buffer of data and resources attached to it.
 ///
 /// It implements the [`Read`](std::io::Read) and [`Write`](std::io::Write) traits.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct DataMessage {
     // TODO: Only the Node implementation depends on these fields being public.
     pub tag: Option<i64>,

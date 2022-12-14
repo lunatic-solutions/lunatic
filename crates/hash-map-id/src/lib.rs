@@ -1,6 +1,7 @@
 use std::{any::type_name, collections::HashMap, fmt::Debug};
 
 /// HashMap wrapper with incremental ID (u64) assignment.
+#[derive(Clone)]
 pub struct HashMapId<T> {
     id_seed: u64,
     store: HashMap<u64, T>,

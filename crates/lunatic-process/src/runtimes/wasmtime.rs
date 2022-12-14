@@ -143,15 +143,16 @@ where
             };
         }
 
+        let mut res_vec = Vec::new();
         let result = entry
             .unwrap()
-            .call_async(&mut self.store, &params, &mut [])
+            .call_async(&mut self.store, &params, &mut res_vec)
             .await;
 
         ExecutionResult {
             state: self.store.into_data(),
             result: match result {
-                Ok(()) => ResultValue::Ok,
+                Ok(_) => ResultValue::Ok(res_vec),
                 Err(err) => {
                     // If the trap is a result of calling `proc_exit(0)`, treat it as an no-error finish.
                     match err.downcast_ref::<wasmtime::Trap>() {
@@ -159,7 +160,7 @@ where
                             if trap.i32_exit_status().is_some()
                                 && trap.i32_exit_status().unwrap() == 0
                             {
-                                ResultValue::Ok
+                                ResultValue::Ok(vec![])
                             } else {
                                 ResultValue::Failed(trap.to_string())
                             }
