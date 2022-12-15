@@ -2138,7 +2138,7 @@ checksum = "6e63cff320ae2c57904679ba7cb63280a3dc4613885beafb148ee7bf9aa9042d"
 
 [[package]]
 name = "sqlite"
-version = "0.30.1"
+version = "0.30.3"
 dependencies = [
  "libc",
  "sqlite3-sys",

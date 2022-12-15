@@ -68,7 +68,6 @@ pub enum BindValue {
 #[cfg(any(unix, windows))]
 impl BindPair {
     pub fn bind(&self, statement: &mut Statement) -> Result<(), Trap> {
-        println!("BINDPAIR TRYING TO BIND {:?}", self);
         if let BindKey::Numeric(idx) = self.0 {
             return match self.1.clone() {
                 BindValue::Null => todo!(),

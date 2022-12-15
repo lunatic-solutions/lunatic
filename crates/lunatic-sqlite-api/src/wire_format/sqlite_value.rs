@@ -31,8 +31,7 @@ impl SqliteRow {
     pub fn read_row(statement: &mut Statement) -> Result<SqliteRow, Trap> {
         let mut row = SqliteRow::default();
         for column_idx in 0..statement.column_count() {
-            row.0
-                .push(SqliteValue::read_column(&statement, column_idx)?);
+            row.0.push(SqliteValue::read_column(statement, column_idx)?);
         }
         Ok(row)
     }
@@ -78,30 +77,12 @@ impl SqliteRow {
 #[cfg(not(target_arch = "wasm32"))]
 impl<'stmt> SqliteValue {
     pub fn read_column(statement: &'stmt Statement, col_idx: usize) -> Result<SqliteValue, Trap> {
-        // let row = statement.
-        // let value = match &*row {
-        //     PrivateSqliteRow::Direct(stmt) => stmt.column_value(col_idx)?,
-        //     PrivateSqliteRow::Duplicated { values, .. } => {
-        //         values.get(col_idx as usize).and_then(|v| v.as_ref())?.value
-        //     }
-        // };
-
-        // let ret = Self { _row: row, value };
-        // if ret.value_type().is_none() {
-        //     None
-        // } else {
-        //     Some(ret)
-        // }
         match statement.column_type(col_idx).or_trap("read_column")? {
             sqlite::Type::Binary => {
                 let bytes = statement
                     .read::<Vec<u8>, usize>(col_idx)
                     .or_trap("lunatic::sqlite::query_prepare::read_binary")?;
 
-                // let len = bytes.len();
-                // return_value.append(&mut vec![ColumnType::Binary as u8]);
-                // return_value.append(&mut (len as u32).to_le_bytes().to_vec());
-                // return_value.append(&mut bytes);
                 Ok(SqliteValue::Blob(bytes))
             }
             sqlite::Type::Float => Ok(SqliteValue::Double(
@@ -124,43 +105,12 @@ impl<'stmt> SqliteValue {
             sqlite::Type::Null => Ok(SqliteValue::Null),
         }
     }
-
-    // /// Get the type of the value as returned by sqlite
-    // pub fn value_type(&self) -> Option<SqliteType> {
-    //     let tpe = unsafe { ffi::sqlite3_value_type(self.value.as_ptr()) };
-    //     match tpe {
-    //         ffi::SQLITE_TEXT => Some(SqliteType::Text),
-    //         ffi::SQLITE_INTEGER => Some(SqliteType::Long),
-    //         ffi::SQLITE_FLOAT => Some(SqliteType::Double),
-    //         ffi::SQLITE_BLOB => Some(SqliteType::Binary),
-    //         ffi::SQLITE_NULL => None,
-    //         _ => unreachable!(
-    //             "Sqlite's documentation state that this case ({}) is not reachable. \
-    //              If you ever see this error message please open an issue at \
-    //              https://github.com/diesel-rs/diesel.",
-    //             tpe
-    //         ),
-    //     }
-    // }
 }
 
 #[cfg(target_arch = "wasm32")]
 impl SqliteValue {
-    // pub(crate) fn parse_string(&self) {
-    //     let s = unsafe {
-    //         let ptr = ffi::sqlite3_value_text(self.value.as_ptr());
-    //         let len = ffi::sqlite3_value_bytes(self.value.as_ptr());
-    //         let bytes = slice::from_raw_parts(ptr as *const u8, len as usize);
-    //         // The string is guaranteed to be utf8 according to
-    //         // https://www.sqlite.org/c3ref/value_blob.html
-    //         str::from_utf8_unchecked(bytes)
-    //     };
-    //     f(s)
-    // }
-
     pub fn read_text(&self) -> &str {
         if let SqliteValue::Text(text) = self {
-            println!("READING TEXT {:?} | as_str {:?}", self, text.as_str());
             return text.as_str();
         }
         panic!("Trying to read non-text value as text");
@@ -181,7 +131,6 @@ impl SqliteValue {
     }
 
     pub fn read_integer(&self) -> i32 {
-        println!("TRYING READ INTEGER {:?}", self);
         if let SqliteValue::Integer(int) = self {
             return *int as i32;
         }
@@ -202,27 +151,3 @@ impl SqliteValue {
         panic!("Trying to read non-double value as double");
     }
 }
-
-// impl OwnedSqliteValue {
-//     pub(super) fn copy_from_ptr(ptr: NonNull<ffi::sqlite3_value>) -> Option<OwnedSqliteValue> {
-//         let tpe = unsafe { ffi::sqlite3_value_type(ptr.as_ptr()) };
-//         if ffi::SQLITE_NULL == tpe {
-//             return None;
-//         }
-//         let value = unsafe { ffi::sqlite3_value_dup(ptr.as_ptr()) };
-//         Some(Self {
-//             value: NonNull::new(value)?,
-//         })
-//     }
-
-//     pub(super) fn duplicate(&self) -> OwnedSqliteValue {
-//         // self.value is a `NonNull` ptr so this cannot be null
-//         let value = unsafe { ffi::sqlite3_value_dup(self.value.as_ptr()) };
-//         let value = NonNull::new(value).expect(
-//             "Sqlite documentation states this returns only null if value is null \
-//                  or OOM. If you ever see this panic message please open an issue at \
-//                  https://github.com/diesel-rs/diesel.",
-//         );
-//         OwnedSqliteValue { value }
-//     }
-// }

@@ -27,7 +27,7 @@ impl Encode for SqliteValue {
             SqliteValue::Blob(v) => {
                 output.write_single(constants::SQL_KIND_BLOB);
                 output.write_bytes(&(v.len() as u32).to_le_bytes());
-                output.write_bytes(&v);
+                output.write_bytes(v);
             }
             SqliteValue::Null => output.write_single(constants::SQL_KIND_NULL),
             SqliteValue::Text(t) => {

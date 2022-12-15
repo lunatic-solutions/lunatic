@@ -18,8 +18,7 @@ type ParseResult<T> = Result<T, ParseError>;
 impl Parse for SqliteValue {
     fn parse(input: &mut ParseStream<'_>) -> ParseResult<Self> {
         let byte = input.read_byte()?;
-        println!("parse value -> GOT NEXT BYTE {}", byte);
-        return match byte {
+        match byte {
             constants::SQL_KIND_NULL => Ok(SqliteValue::Null),
             constants::SQL_KIND_DOUBLE | constants::SQL_KIND_INT64 => {
                 let bytes = input.read(8)?;
@@ -59,7 +58,7 @@ impl Parse for SqliteValue {
                 "Invalid type value for BindValue {:?}",
                 byte
             ))),
-        };
+        }
     }
 }
 
@@ -68,7 +67,6 @@ impl Parse for SqliteRow {
         // read the first 4 bytes to get the length of columns
         let val_len = input.read_u32()?;
         // try to parse a BindValue for val_len items
-        println!("GOING TO READ {} columns", val_len);
         let mut items = SqliteRow::default();
         for _ in 0..val_len {
             items.0.push(SqliteValue::parse(input)?);

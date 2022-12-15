@@ -23,15 +23,15 @@ pub mod sqlite_guest_bindings {
             query_str_len: u32,
             len_ptr: *mut u32,
             resource_id: *mut u32,
-        ) -> ();
-        pub fn query_result_get(resource_id: u64, write_buf: *const u8, write_buf_len: u32) -> ();
-        pub fn drop_query_result(resource_id: u64) -> ();
+        );
+        pub fn query_result_get(resource_id: u64, write_buf: *const u8, write_buf_len: u32);
+        pub fn drop_query_result(resource_id: u64);
         pub fn execute(conn_id: u64, exec_str: *const u8, exec_str_len: u32) -> u32;
-        pub fn bind_value(statement_id: u64, bind_data_ptr: u32, bind_data_len: u32) -> ();
+        pub fn bind_value(statement_id: u64, bind_data_ptr: u32, bind_data_len: u32);
         pub fn sqlite3_changes(conn_id: u64) -> u32;
-        pub fn statement_reset(statement_id: u64) -> ();
+        pub fn statement_reset(statement_id: u64);
         pub fn last_error(conn_id: u64) -> u64;
-        pub fn sqlite3_finalize(conn_id: u64) -> ();
+        pub fn sqlite3_finalize(conn_id: u64);
         pub fn sqlite3_step(conn_id: u64) -> u32;
         pub fn read_column(statement_id: u64, col_idx: u32) -> u64;
         pub fn read_row(statement_id: u64) -> u64;
