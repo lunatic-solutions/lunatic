@@ -12,7 +12,7 @@ use std::{
 use wasmtime::{Caller, Linker, Memory, ResourceLimiter, Trap};
 
 use crate::{
-    wire_format::{encode_value, BindList, SqliteError, SqliteRow, SqliteValue},
+    wire_format::{BindList, SqliteError, SqliteRow, SqliteValue},
     SQLITE_DONE, SQLITE_ROW,
 };
 
@@ -186,21 +186,6 @@ macro_rules! get_conn {
     }};
 }
 
-// fn get_statement_by_id<T: ProcessState + ErrorCtx + SQLiteCtx>(
-//     mut caller: Caller<T>,
-//     conn_id: u64,
-//     statement_id: u64,
-// ) -> Result<(MutexGuard<Connection>, StorableStatement), Trap> {
-//     // get the memory
-//     let memory = get_memory(&mut caller)?;
-//     let (_, state) = memory.data_and_store_mut(&mut caller);
-
-//     let statement = get_statement!(state, statement_id);
-//     let conn = get_conn!(state, conn_id, "get_statement");
-
-//     Ok((conn, statement))
-// }
-
 fn bind_value<T: ProcessState + ErrorCtx + SQLiteCtx>(
     mut caller: Caller<T>,
     statement_id: u64,
@@ -234,8 +219,7 @@ fn query_prepare_and_consume<T: ProcessState + ErrorCtx + SQLiteCtx>(
     query_str_ptr: u32,
     query_str_len: u32,
     len_ptr: u32,
-    resource_ptr: u32,
-) -> Result<(), Trap> {
+) -> Result<u64, Trap> {
     // get the memory
     let memory = get_memory(&mut caller)?;
     let (memory_slice, state) = memory.data_and_store_mut(&mut caller);
@@ -328,16 +312,7 @@ fn query_prepare_and_consume<T: ProcessState + ErrorCtx + SQLiteCtx>(
     // store the result of the query
     let result_id = state.sqlite_results_mut().add(return_value);
 
-    // write the result_id into memory
-    let mut slice = memory_slice
-        .get_mut(resource_ptr as usize..(resource_ptr as usize + 8))
-        .or_trap("lunatic::sqlite::query_prepare::write_memory")?;
-
-    slice
-        .write(&result_id.to_le_bytes())
-        .or_trap("lunatic::sqlite::query_prepare::write_memory")?;
-
-    Ok(())
+    Ok(result_id)
 }
 
 fn query_result_get<T: ProcessState + ErrorCtx + SQLiteCtx>(
@@ -483,9 +458,9 @@ fn read_row<T: ProcessState + ErrorCtx + SQLiteCtx + Send + Sync>(
 
         let read_row = SqliteRow::read_row(stmt)?;
 
-        let row = encode_value(&read_row).or_trap("lunatic::sqlite::read_row")?;
+        let row = bincode::serialize(&read_row).or_trap("lunatic::sqlite::read_row")?;
 
-        write_to_guest_vec(caller, memory, row.0).await
+        write_to_guest_vec(caller, memory, row).await
     })
 }
 

@@ -1,6 +1,10 @@
 [package]
+description = "Lunatic host functions for sqlite."
 edition = "2021"
+homepage = "https://lunatic.solutions"
+license = "Apache-2.0/MIT"
 name = "lunatic-sqlite-api"
+repository = "https://github.com/lunatic-solutions/lunatic/tree/main/crates/lunatic-sqlite-api"
 version = "0.12.0"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -9,11 +13,11 @@ version = "0.12.0"
 bincode = "1.3"
 serde = {version = "1.0", features = ["derive"]}
 
-[target.'cfg(any(unix, windows))'.dependencies]
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 anyhow = "^1.0"
-hash-map-id = {version = "^0.12", path = "../hash-map-id"}
-lunatic-common-api = {version = "^0.12", path = "../lunatic-common-api"}
-lunatic-error-api = {version = "^0.12", path = "../lunatic-error-api"}
-lunatic-process = {version = "^0.12", path = "../lunatic-process"}
-sqlite = {path = "../../../sqlite"}
+hash-map-id = {workspace = true}
+lunatic-common-api = {workspace = true}
+lunatic-error-api = {workspace = true}
+lunatic-process = {workspace = true}
+sqlite = {version = "0.30.3", package = "sqlite-bindings-lunatic"}
 wasmtime = {workspace = true}

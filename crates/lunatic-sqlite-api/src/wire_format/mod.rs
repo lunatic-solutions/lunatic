@@ -1,39 +1,19 @@
 use std::ops::Deref;
 
-#[cfg(any(unix, windows))]
+#[cfg(not(target_arch = "wasm32"))]
 use lunatic_common_api::IntoTrap;
 use serde::{Deserialize, Serialize};
-#[cfg(any(unix, windows))]
+#[cfg(not(target_arch = "wasm32"))]
 use sqlite::Statement;
-#[cfg(any(unix, windows))]
+#[cfg(not(target_arch = "wasm32"))]
 use wasmtime::Trap;
 
 mod sqlite_value;
 
 pub use sqlite_value::*;
 
-pub mod constants {
-    pub const SQL_KIND_NULL: u8 = 0x00;
-    pub const SQL_KIND_BLOB: u8 = 0x01;
-    pub const SQL_KIND_TEXT: u8 = 0x02;
-    pub const SQL_KIND_DOUBLE: u8 = 0x03;
-    pub const SQL_KIND_INT: u8 = 0x04;
-    pub const SQL_KIND_INT64: u8 = 0x05;
-}
-
-#[cfg(target_arch = "wasm32")]
-mod parse;
-
-#[cfg(target_arch = "wasm32")]
-pub use parse::*;
-
-#[cfg(not(target_arch = "wasm32"))]
-mod encode;
-
-#[cfg(not(target_arch = "wasm32"))]
-pub use encode::*;
-
-#[repr(u8)]
+/// Struct used for binding a certain `BindValue` to either
+/// a numeric key or a named key in a prepared statement
 #[derive(Debug, Serialize, Deserialize)]
 pub enum BindKey {
     /// Is encoded as 0x00
@@ -48,13 +28,15 @@ pub enum BindKey {
     String(String),
 }
 
+/// Represents a pair of BindKey and BindValue
+/// that are used to bind certain data to a prepared statement
+/// where BindKey is usually either a numeric index
+/// starting with 1 or a string.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct BindPair(pub BindKey, pub BindValue);
 
-// pub trait SqliteBindable {
-//     fn bind(&self)
-// }
-
+/// Enum that represents possible different
+/// types of values that can be bound to a prepared statements
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum BindValue {
     Null,
@@ -65,7 +47,7 @@ pub enum BindValue {
     Int64(i64),
 }
 
-#[cfg(any(unix, windows))]
+#[cfg(not(target_arch = "wasm32"))]
 impl BindPair {
     pub fn bind(&self, statement: &mut Statement) -> Result<(), Trap> {
         if let BindKey::Numeric(idx) = self.0 {
@@ -91,27 +73,6 @@ impl BindPair {
     }
 }
 
-/// BindList is the main low-level structure that is used to encode one or more bind values
-/// in the guest and the same structure is used in the host to parse the values
-///
-/// binary format:
-/// B0: 0x01    - amount of bind values
-///
-/// Content:
-/// B1:         - kind of sql type
-/// If fixed size type read fixed bytes  - content of fixed data (not blob and not text)
-/// If flexible size, read 4 bytes for size (LE encoded)
-/// Read $size bytes into Vec<u8> or String
-///
-/// Bind key - Byte After content (BA):
-/// BA0: 0x00 OR 0x01 OR 0x02             - has key or no key
-/// if previous is 0x10 = No key, just use next
-/// if previous is 0x20 = idx as u32
-///     BA1: read 4 bytes le_encoded as u32, numeric index
-/// if previous is 0x30 = &str index
-///     BA2-BA5: take 4 more bytes for key $len
-///     BA5->BA5+$len: read $len bytes from stream
-///
 #[derive(Debug, Serialize, Deserialize)]
 pub struct BindList(pub Vec<BindPair>);
 
@@ -127,28 +88,13 @@ impl Deref for BindList {
 // Error structure
 // ============================
 /// Error structure that carries data from sqlite_errmsg and sqlite_errcode
-/// and is transported in the following layout:
-///
-/// B0:
-/// if 0x00:
-///     no code available, continue with message
-/// if 0x10:
-///     read 4 bytes as little-endian encoded u32
-///
-/// Next byte after code:
-/// if 0x00:
-///     no message available, done
-/// if 0x10:
-///     read 4 bytes as little-endian encoded u32 = length of message string
-///     read $len bytes and transform into String
-///
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct SqliteError {
     pub code: Option<u32>,
     pub message: Option<String>,
 }
 
-#[cfg(any(unix, windows))]
+#[cfg(not(target_arch = "wasm32"))]
 impl From<sqlite::Error> for SqliteError {
     fn from(err: sqlite::Error) -> Self {
         Self {
