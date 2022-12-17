@@ -145,6 +145,15 @@ pub mod sqlite_guest_bindings {
         /// looks up the value of the last error, encodes a `Vec<String>` via bincode
         /// and writes it into a guest allocated Vec<u8>
         pub fn column_names(statement_id: u64) -> u64;
+
+        /// sets a custom guest allocator for a connection identified by connection_id
+        /// this should not be used unless using the library outside out lunatic-sql which
+        /// would mean that the allocator function is missing and you need to provide your own
+        pub fn set_custom_guest_allocator(
+            connection_id: u64,
+            allocator_name_ptr: u32,
+            allocator_name_len: u32,
+        );
     }
 }
 

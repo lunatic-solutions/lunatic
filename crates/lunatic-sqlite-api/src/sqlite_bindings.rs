@@ -5,6 +5,7 @@ use lunatic_error_api::ErrorCtx;
 use lunatic_process::state::ProcessState;
 use sqlite::{Connection, State, Statement};
 use std::{
+    collections::HashMap,
     future::Future,
     io::Write,
     sync::{Arc, Mutex},
@@ -18,13 +19,19 @@ use crate::{
 
 pub type SQLiteConnections = HashMapId<Arc<Mutex<Connection>>>;
 pub type SQLiteResults = HashMapId<Vec<u8>>;
-pub type SQLiteStatements = HashMapId<Statement>;
+// sometimes we need to lookup the connection_id for the statement
+pub type SQLiteStatements = HashMapId<(u64, Statement)>;
+// maps connection_id to name of allocation function
+pub type SQLiteGuestAllocators = HashMap<u64, String>;
 pub trait SQLiteCtx {
     fn sqlite_results(&self) -> &SQLiteResults;
     fn sqlite_results_mut(&mut self) -> &mut SQLiteResults;
 
     fn sqlite_connections(&self) -> &SQLiteConnections;
     fn sqlite_connections_mut(&mut self) -> &mut SQLiteConnections;
+
+    fn sqlite_guest_allocator(&self) -> &SQLiteGuestAllocators;
+    fn sqlite_guest_allocator_mut(&mut self) -> &mut SQLiteGuestAllocators;
 
     fn sqlite_statements(&self) -> &SQLiteStatements;
     fn sqlite_statements_mut(&mut self) -> &mut SQLiteStatements;
@@ -56,6 +63,11 @@ pub fn register<
     linker.func_wrap1_async("lunatic::sqlite", "column_names", column_names)?;
     linker.func_wrap1_async("lunatic::sqlite", "read_row", read_row)?;
     linker.func_wrap("lunatic::sqlite", "column_count", column_count)?;
+    linker.func_wrap(
+        "lunatic::sqlite",
+        "set_custom_guest_allocator",
+        set_custom_guest_allocator,
+    )?;
     linker.func_wrap2_async("lunatic::sqlite", "column_name", column_name)?;
     Ok(())
 }
@@ -98,6 +110,28 @@ fn open<T: ProcessState + ErrorCtx + SQLiteCtx>(
         )
         .or_trap("lunatic::sqlite::open")?;
     Ok(return_code)
+}
+
+fn set_custom_guest_allocator<T: ProcessState + ErrorCtx + SQLiteCtx>(
+    mut caller: Caller<T>,
+    connection_id: u64,
+    allocator_str_ptr: u32,
+    allocator_str_len: u32,
+) -> Result<()> {
+    let memory = get_memory(&mut caller)?;
+    let (memory_slice, state) = memory.data_and_store_mut(&mut caller);
+
+    let allocator_function_name = memory_slice
+        .get(allocator_str_ptr as usize..(allocator_str_ptr + allocator_str_len) as usize)
+        .or_trap("lunatic::sqlite::set_custom_guest_allocator")?;
+    let allocator_function_name = String::from_utf8(allocator_function_name.to_vec())
+        .or_trap("lunatic::sqlite::set_custom_guest_allocator")?;
+
+    state
+        .sqlite_guest_allocator_mut()
+        .insert(connection_id, allocator_function_name);
+
+    Ok(())
 }
 
 fn execute<T: ProcessState + ErrorCtx + SQLiteCtx>(
@@ -159,7 +193,7 @@ fn query_prepare<T: ProcessState + ErrorCtx + SQLiteCtx>(
             .or_trap("lunatic::sqlite::query_prepare::prepare_statement")?
     };
 
-    let statement_id = state.sqlite_statements_mut().add(statement);
+    let statement_id = state.sqlite_statements_mut().add((conn_id, statement));
 
     Ok(statement_id)
 }
@@ -169,6 +203,7 @@ macro_rules! get_statement {
         $state
             .sqlite_statements_mut()
             .get_mut($statement_id)
+            .map(|(connection_id, statement)| (*connection_id, statement))
             .or_trap("lunatic::sqlite::get_statement_by_id")?
     };
 }
@@ -196,7 +231,7 @@ fn bind_value<T: ProcessState + ErrorCtx + SQLiteCtx>(
     let memory = get_memory(&mut caller)?;
     let (memory_slice, state) = memory.data_and_store_mut(&mut caller);
 
-    let statement = get_statement!(state, statement_id);
+    let (_, statement) = get_statement!(state, statement_id);
 
     // get the query
     let bind_data = memory_slice
@@ -375,7 +410,7 @@ fn statement_reset<T: ProcessState + ErrorCtx + SQLiteCtx>(
     // get state
     let memory = get_memory(&mut caller)?;
     let (_, state) = memory.data_and_store_mut(&mut caller);
-    let stmt = get_statement!(state, statement_id);
+    let (_, stmt) = get_statement!(state, statement_id);
 
     stmt.reset().or_trap("lunatic::sqlite::statement_reset")?;
 
@@ -385,12 +420,27 @@ fn statement_reset<T: ProcessState + ErrorCtx + SQLiteCtx>(
 // return a u64 which contains both the length of the pointer (usize=u32) and the pointer itself (u32)
 async fn write_to_guest_vec<T: ProcessState + ErrorCtx + SQLiteCtx + Send + Sync>(
     mut caller: Caller<'_, T>,
+    connection_id: u64,
     memory: Memory,
     encoded_vec: Vec<u8>,
 ) -> Result<u64> {
-    let alloc_ptr = allocate_guest_memory(&mut caller, encoded_vec.len() as u32)
-        .await
-        .or_trap("lunatic::sqlite::write_to_guest_vec::alloc_response_vec")?;
+    // alloc is the default allocator that is provided by the `lunatic-sql` crate
+    let default_allocator = "alloc".to_string();
+
+    let (_, state) = memory.data_and_store_mut(&mut caller);
+    let allocator_function_name = state
+        .sqlite_guest_allocator()
+        .get(&connection_id)
+        .unwrap_or(&default_allocator)
+        .clone();
+
+    let alloc_ptr = allocate_guest_memory(
+        &mut caller,
+        encoded_vec.len() as u32,
+        allocator_function_name.as_str(),
+    )
+    .await
+    .or_trap("lunatic::sqlite::write_to_guest_vec::alloc_response_vec")?;
 
     let (memory_slice, _) = memory.data_and_store_mut(&mut caller);
     let mut alloc_vec = memory_slice
@@ -416,12 +466,12 @@ fn read_column<T: ProcessState + ErrorCtx + SQLiteCtx + Send + Sync>(
         // get state
         let memory = get_memory(&mut caller)?;
         let (_, state) = memory.data_and_store_mut(&mut caller);
-        let stmt = get_statement!(state, statement_id);
+        let (connection_id, stmt) = get_statement!(state, statement_id);
 
         let column = bincode::serialize(&SqliteValue::read_column(stmt, col_idx as usize)?)
             .or_trap("lunatic::sqlite::read_column")?;
 
-        write_to_guest_vec(caller, memory, column).await
+        write_to_guest_vec(caller, connection_id, memory, column).await
     })
 }
 
@@ -433,14 +483,14 @@ fn column_names<T: ProcessState + ErrorCtx + SQLiteCtx + Send + Sync>(
         // get state
         let memory = get_memory(&mut caller)?;
         let (_, state) = memory.data_and_store_mut(&mut caller);
-        let stmt = get_statement!(state, statement_id);
+        let (connection_id, stmt) = get_statement!(state, statement_id);
 
         let column_names = stmt.column_names().to_vec();
 
         let column_names =
             bincode::serialize(&column_names).or_trap("lunatic::sqlite::column_names")?;
 
-        write_to_guest_vec(caller, memory, column_names).await
+        write_to_guest_vec(caller, connection_id, memory, column_names).await
     })
 }
 
@@ -454,13 +504,13 @@ fn read_row<T: ProcessState + ErrorCtx + SQLiteCtx + Send + Sync>(
         // get state
         let memory = get_memory(&mut caller)?;
         let (_, state) = memory.data_and_store_mut(&mut caller);
-        let stmt = get_statement!(state, statement_id);
+        let (connection_id, stmt) = get_statement!(state, statement_id);
 
         let read_row = SqliteRow::read_row(stmt)?;
 
         let row = bincode::serialize(&read_row).or_trap("lunatic::sqlite::read_row")?;
 
-        write_to_guest_vec(caller, memory, row).await
+        write_to_guest_vec(caller, connection_id, memory, row).await
     })
 }
 
@@ -480,7 +530,7 @@ fn last_error<T: ProcessState + ErrorCtx + SQLiteCtx + ResourceLimiter + Send + 
                 .or_trap("lunatic::sqlite::last_error::encode_error_wire_format")?
         };
 
-        write_to_guest_vec(caller, memory, err).await
+        write_to_guest_vec(caller, conn_id, memory, err).await
     })
 }
 
@@ -508,7 +558,7 @@ fn sqlite3_step<T: ProcessState + ErrorCtx + SQLiteCtx>(
     // get state
     let memory = get_memory(&mut caller)?;
     let (_, state) = memory.data_and_store_mut(&mut caller);
-    let statement = get_statement!(state, statement_id);
+    let (_, statement) = get_statement!(state, statement_id);
 
     match statement.next().or_trap("lunatic::sqlite::sqlite3_step")? {
         State::Done => Ok(SQLITE_DONE),
@@ -523,7 +573,7 @@ fn column_count<T: ProcessState + ErrorCtx + SQLiteCtx>(
     // get state
     let memory = get_memory(&mut caller)?;
     let (_, state) = memory.data_and_store_mut(&mut caller);
-    let statement = get_statement!(state, statement_id);
+    let (_, statement) = get_statement!(state, statement_id);
 
     Ok(statement.column_count() as u32)
 }
@@ -536,17 +586,20 @@ fn column_name<T: ProcessState + ErrorCtx + SQLiteCtx + Send + Sync>(
     Box::new(async move {
         // get state
         let memory = get_memory(&mut caller)?;
-        let column_name = {
+        let (connection_id, column_name) = {
             let (_, state) = memory.data_and_store_mut(&mut caller);
-            let statement = get_statement!(state, statement_id);
+            let (connection_id, statement) = get_statement!(state, statement_id);
 
-            statement
-                .column_name(column_idx as usize)
-                .or_trap("lunatic::sqlite::column_name")?
-                .to_owned()
+            (
+                connection_id,
+                statement
+                    .column_name(column_idx as usize)
+                    .or_trap("lunatic::sqlite::column_name")?
+                    .to_owned(),
+            )
         };
 
-        write_to_guest_vec(caller, memory, column_name.into_bytes()).await
+        write_to_guest_vec(caller, connection_id, memory, column_name.into_bytes()).await
     })
 }
 

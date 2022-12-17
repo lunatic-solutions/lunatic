@@ -15,11 +15,12 @@ pub fn get_memory<T>(caller: &mut Caller<T>) -> Result<Memory> {
 pub fn allocate_guest_memory<'a, T: Send>(
     caller: &'a mut Caller<T>,
     size: u32,
+    allocator_function_name: &'a str,
 ) -> Pin<Box<dyn Future<Output = Result<u32>> + Send + 'a>> {
     Box::pin(async move {
         let mut results = [Val::I32(0)];
         let result = caller
-            .get_export("alloc")
+            .get_export(allocator_function_name)
             .or_trap("no export named alloc found")?
             .into_func()
             .or_trap("cannot turn export into func")?

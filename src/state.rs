@@ -17,7 +17,9 @@ use lunatic_process::{
 };
 use lunatic_process::{mailbox::MessageMailbox, message::Message};
 use lunatic_process_api::{ProcessConfigCtx, ProcessCtx};
-use lunatic_sqlite_api::{SQLiteConnections, SQLiteCtx, SQLiteResults, SQLiteStatements};
+use lunatic_sqlite_api::{
+    SQLiteConnections, SQLiteCtx, SQLiteGuestAllocators, SQLiteResults, SQLiteStatements,
+};
 use lunatic_stdout_capture::StdoutCapture;
 use lunatic_timer_api::{TimerCtx, TimerResources};
 use lunatic_wasi_api::{build_wasi, LunaticWasiCtx};
@@ -35,6 +37,7 @@ pub struct DbResources {
     sqlite_connections: SQLiteConnections,
     sqlite_results: SQLiteResults,
     sqlite_statements: SQLiteStatements,
+    sqlite_guest_allocator: SQLiteGuestAllocators,
 }
 
 pub struct DefaultProcessState {
@@ -422,6 +425,13 @@ impl SQLiteCtx for DefaultProcessState {
 
     fn sqlite_statements(&self) -> &SQLiteStatements {
         &self.db_resources.sqlite_statements
+    }
+
+    fn sqlite_guest_allocator(&self) -> &SQLiteGuestAllocators {
+        &self.db_resources.sqlite_guest_allocator
+    }
+    fn sqlite_guest_allocator_mut(&mut self) -> &mut SQLiteGuestAllocators {
+        &mut self.db_resources.sqlite_guest_allocator
     }
 }
 
