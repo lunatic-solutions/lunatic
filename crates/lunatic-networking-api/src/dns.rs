@@ -5,7 +5,6 @@ use std::vec::IntoIter;
 
 use anyhow::Result;
 use tokio::time::timeout;
-use wasmtime::Trap;
 use wasmtime::{Caller, Linker};
 
 use lunatic_common_api::{get_memory, IntoTrap};
@@ -65,7 +64,7 @@ fn resolve<T: NetworkingCtx + ErrorCtx + Send>(
     name_str_len: u32,
     timeout_duration: u64,
     id_u64_ptr: u32,
-) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_> {
+) -> Box<dyn Future<Output = Result<u32>> + Send + '_> {
     Box::new(async move {
         let memory = get_memory(&mut caller)?;
         let (memory_slice, state) = memory.data_and_store_mut(&mut caller);
@@ -118,10 +117,7 @@ fn resolve<T: NetworkingCtx + ErrorCtx + Send>(
 //
 // Traps:
 // * If the DNS iterator ID doesn't exist.
-fn drop_dns_iterator<T: NetworkingCtx>(
-    mut caller: Caller<T>,
-    dns_iter_id: u64,
-) -> Result<(), Trap> {
+fn drop_dns_iterator<T: NetworkingCtx>(mut caller: Caller<T>, dns_iter_id: u64) -> Result<()> {
     caller
         .data_mut()
         .dns_resources_mut()
@@ -151,7 +147,7 @@ fn resolve_next<T: NetworkingCtx>(
     port_u16_ptr: u32,
     flow_info_u32_ptr: u32,
     scope_id_u32_ptr: u32,
-) -> Result<u32, Trap> {
+) -> Result<u32> {
     let memory = get_memory(&mut caller)?;
     let dns_iter = caller
         .data_mut()

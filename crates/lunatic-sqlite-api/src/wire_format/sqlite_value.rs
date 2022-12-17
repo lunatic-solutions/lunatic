@@ -1,10 +1,10 @@
 #[cfg(not(target_arch = "wasm32"))]
+use anyhow::Result;
+#[cfg(not(target_arch = "wasm32"))]
 use lunatic_common_api::IntoTrap;
 use serde::{Deserialize, Serialize};
 #[cfg(not(target_arch = "wasm32"))]
 use sqlite::Statement;
-#[cfg(not(target_arch = "wasm32"))]
-use wasmtime::Trap;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum SqliteValue {
@@ -28,7 +28,7 @@ impl SqliteRow {
 
 #[cfg(not(target_arch = "wasm32"))]
 impl SqliteRow {
-    pub fn read_row(statement: &mut Statement) -> Result<SqliteRow, Trap> {
+    pub fn read_row(statement: &mut Statement) -> Result<SqliteRow> {
         let mut row = SqliteRow::default();
         for column_idx in 0..statement.column_count() {
             row.0.push(SqliteValue::read_column(statement, column_idx)?);
@@ -76,7 +76,7 @@ impl SqliteRow {
 
 #[cfg(not(target_arch = "wasm32"))]
 impl<'stmt> SqliteValue {
-    pub fn read_column(statement: &'stmt Statement, col_idx: usize) -> Result<SqliteValue, Trap> {
+    pub fn read_column(statement: &'stmt Statement, col_idx: usize) -> Result<SqliteValue> {
         match statement.column_type(col_idx).or_trap("read_column")? {
             sqlite::Type::Binary => {
                 let bytes = statement

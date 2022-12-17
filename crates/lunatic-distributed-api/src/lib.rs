@@ -13,7 +13,7 @@ use lunatic_process::{
 };
 use lunatic_process_api::ProcessCtx;
 use tokio::time::timeout;
-use wasmtime::{Caller, Linker, ResourceLimiter, Trap};
+use wasmtime::{Caller, Linker, ResourceLimiter};
 
 // Register the lunatic distributed APIs to the linker
 pub fn register<T, E>(linker: &mut Linker<T>) -> Result<()>
@@ -63,7 +63,7 @@ where
 //
 // Traps:
 // * If any memory outside the guest heap space is referenced.
-fn get_nodes<T, E>(mut caller: Caller<T>, nodes_ptr: u32, nodes_len: u32) -> Result<u32, Trap>
+fn get_nodes<T, E>(mut caller: Caller<T>, nodes_ptr: u32, nodes_len: u32) -> Result<u32>
 where
     T: DistributedCtx<E>,
     E: Environment,
@@ -78,8 +78,7 @@ where
     memory
         .data_mut(&mut caller)
         .get_mut(
-            nodes_ptr as usize
-                ..(nodes_ptr as usize + std::mem::size_of::<u64>() * copy_nodes_len as usize),
+            nodes_ptr as usize..(nodes_ptr as usize + std::mem::size_of::<u64>() * copy_nodes_len),
         )
         .or_trap("lunatic::distributed::get_nodes::memory")?
         .copy_from_slice(unsafe { node_ids[..copy_nodes_len].align_to::<u8>().1 });
@@ -101,7 +100,7 @@ fn exec_lookup_nodes<T, E>(
     query_id_ptr: u32,
     nodes_len_ptr: u32,
     error_ptr: u32,
-) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_>
+) -> Box<dyn Future<Output = Result<u32>> + Send + '_>
 where
     T: DistributedCtx<E> + ErrorCtx + Send + 'static,
     E: Environment + 'static,
@@ -151,7 +150,7 @@ fn copy_lookup_nodes_results<T, E>(
     nodes_ptr: u32,
     nodes_len: u32,
     error_ptr: u32,
-) -> Result<i32, Trap>
+) -> Result<i32>
 where
     T: DistributedCtx<E> + ErrorCtx,
     E: Environment,
@@ -169,7 +168,7 @@ where
             .data_mut(&mut caller)
             .get_mut(
                 nodes_ptr as usize
-                    ..(nodes_ptr as usize + std::mem::size_of::<u64>() * copy_nodes_len as usize),
+                    ..(nodes_ptr as usize + std::mem::size_of::<u64>() * copy_nodes_len),
             )
             .or_trap("lunatic::distributed::copy_lookup_nodes_results::memory")?
             .copy_from_slice(unsafe { nodes[..copy_nodes_len].align_to::<u8>().1 });
@@ -220,7 +219,7 @@ fn spawn<T, E>(
     params_ptr: u32,
     params_len: u32,
     id_ptr: u32,
-) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_>
+) -> Box<dyn Future<Output = Result<u32>> + Send + '_>
 where
     T: DistributedCtx<E> + ResourceLimiter + Send + ErrorCtx + 'static,
     E: Environment,
@@ -228,7 +227,9 @@ where
 {
     Box::new(async move {
         if !caller.data().can_spawn() {
-            return Err(anyhow!("Process doesn't have permissions to spawn sub-processes").into());
+            return Err(anyhow!(
+                "Process doesn't have permissions to spawn sub-processes"
+            ));
         }
         let memory = get_memory(&mut caller)?;
         let func_str = memory
@@ -293,11 +294,11 @@ where
             Ok(process_id) => (process_id, 0),
             Err(error) => {
                 let (code, message): (u32, String) = match error {
-                    ClientError::Unexpected(cause) => Err(Trap::new(cause)),
+                    ClientError::Unexpected(cause) => Err(anyhow!(cause)),
                     ClientError::NodeNotFound => Ok((1, "Node does not exist.".to_string())),
                     ClientError::ModuleNotFound => Ok((2, "Module does not exist.".to_string())),
                     ClientError::Connection(cause) => Ok((9027, cause)),
-                    _ => Err(Trap::new("unreachable")),
+                    _ => Err(anyhow!("unreachable")),
                 }?;
                 (
                     caller
@@ -338,7 +339,7 @@ fn send<T, E>(
     mut caller: Caller<T>,
     node_id: u64,
     process_id: u64,
-) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_>
+) -> Box<dyn Future<Output = Result<u32>> + Send + '_>
 where
     T: DistributedCtx<E> + ProcessCtx<T> + Send + ErrorCtx + 'static,
     E: Environment,
@@ -359,7 +360,7 @@ where
         }) = message
         {
             if !resources.is_empty() {
-                return Err(Trap::new("Cannot send resources to remote nodes."));
+                return Err(anyhow!("Cannot send resources to remote nodes."));
             }
 
             let state = caller.data();
@@ -371,15 +372,15 @@ where
             {
                 Ok(_) => Ok(0),
                 Err(error) => match error {
-                    ClientError::Unexpected(cause) => Err(Trap::new(cause)),
+                    ClientError::Unexpected(cause) => Err(anyhow!(cause)),
                     ClientError::ProcessNotFound => Ok(1),
                     ClientError::NodeNotFound => Ok(2),
                     ClientError::Connection(_) => Ok(9027),
-                    _ => Err(Trap::new("unreachable")),
+                    _ => Err(anyhow!("unreachable")),
                 },
             }
         } else {
-            Err(Trap::new("Only Message::Data can be sent across nodes."))
+            Err(anyhow!("Only Message::Data can be sent across nodes."))
         }
     })
 }
@@ -410,7 +411,7 @@ fn send_receive_skip_search<T, E>(
     node_id: u64,
     process_id: u64,
     timeout_duration: u64,
-) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_>
+) -> Box<dyn Future<Output = Result<u32>> + Send + '_>
 where
     T: DistributedCtx<E> + ProcessCtx<T> + Send + 'static,
     E: Environment,
@@ -439,7 +440,7 @@ where
         }) = message
         {
             if !resources.is_empty() {
-                return Err(Trap::new("Cannot send resources to remote nodes."));
+                return Err(anyhow!("Cannot send resources to remote nodes."));
             }
 
             let state = caller.data();
@@ -453,8 +454,8 @@ where
                 Err(error) => match error {
                     ClientError::ProcessNotFound => Ok(1),
                     ClientError::NodeNotFound => Ok(2),
-                    ClientError::Unexpected(cause) => Err(Trap::new(cause)),
-                    _ => Err(Trap::new("unreachable")),
+                    ClientError::Unexpected(cause) => Err(anyhow!(cause)),
+                    _ => Err(anyhow!("unreachable")),
                 },
             }?;
 
@@ -476,7 +477,7 @@ where
                 Ok(9027)
             }
         } else {
-            Err(Trap::new("Only Message::Data can be sent across nodes."))
+            Err(anyhow!("Only Message::Data can be sent across nodes."))
         }
     })
 }

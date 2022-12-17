@@ -1,12 +1,12 @@
 use std::ops::Deref;
 
 #[cfg(not(target_arch = "wasm32"))]
+use anyhow::Result;
+#[cfg(not(target_arch = "wasm32"))]
 use lunatic_common_api::IntoTrap;
 use serde::{Deserialize, Serialize};
 #[cfg(not(target_arch = "wasm32"))]
 use sqlite::Statement;
-#[cfg(not(target_arch = "wasm32"))]
-use wasmtime::Trap;
 
 mod sqlite_value;
 
@@ -49,7 +49,7 @@ pub enum BindValue {
 
 #[cfg(not(target_arch = "wasm32"))]
 impl BindPair {
-    pub fn bind(&self, statement: &mut Statement) -> Result<(), Trap> {
+    pub fn bind(&self, statement: &mut Statement) -> Result<()> {
         if let BindKey::Numeric(idx) = self.0 {
             return match self.1.clone() {
                 BindValue::Null => todo!(),

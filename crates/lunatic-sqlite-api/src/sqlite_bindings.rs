@@ -9,7 +9,7 @@ use std::{
     io::Write,
     sync::{Arc, Mutex},
 };
-use wasmtime::{Caller, Linker, Memory, ResourceLimiter, Trap};
+use wasmtime::{Caller, Linker, Memory, ResourceLimiter};
 
 use crate::{
     wire_format::{BindList, SqliteError, SqliteRow, SqliteValue},
@@ -65,7 +65,7 @@ fn open<T: ProcessState + ErrorCtx + SQLiteCtx>(
     path_str_ptr: u32,
     path_str_len: u32,
     connection_id_ptr: u32,
-) -> Result<u64, Trap> {
+) -> Result<u64> {
     // obtain the memory and the state
     let memory = get_memory(&mut caller)?;
     let (memory_slice, _state) = memory.data_and_store_mut(&mut caller);
@@ -105,7 +105,7 @@ fn execute<T: ProcessState + ErrorCtx + SQLiteCtx>(
     conn_id: u64,
     exec_str_ptr: u32,
     exec_str_len: u32,
-) -> Result<u32, Trap> {
+) -> Result<u32> {
     let memory = get_memory(&mut caller)?;
     let (memory_slice, state) = memory.data_and_store_mut(&mut caller);
     let exec = memory_slice
@@ -133,7 +133,7 @@ fn query_prepare<T: ProcessState + ErrorCtx + SQLiteCtx>(
     conn_id: u64,
     query_str_ptr: u32,
     query_str_len: u32,
-) -> Result<u64, Trap> {
+) -> Result<u64> {
     // get the memory
     let memory = get_memory(&mut caller)?;
     let (memory_slice, state) = memory.data_and_store_mut(&mut caller);
@@ -191,7 +191,7 @@ fn bind_value<T: ProcessState + ErrorCtx + SQLiteCtx>(
     statement_id: u64,
     bind_data_ptr: u32,
     bind_data_len: u32,
-) -> Result<(), Trap> {
+) -> Result<()> {
     // get the memory
     let memory = get_memory(&mut caller)?;
     let (memory_slice, state) = memory.data_and_store_mut(&mut caller);
@@ -219,7 +219,7 @@ fn query_prepare_and_consume<T: ProcessState + ErrorCtx + SQLiteCtx>(
     query_str_ptr: u32,
     query_str_len: u32,
     len_ptr: u32,
-) -> Result<u64, Trap> {
+) -> Result<u64> {
     // get the memory
     let memory = get_memory(&mut caller)?;
     let (memory_slice, state) = memory.data_and_store_mut(&mut caller);
@@ -320,7 +320,7 @@ fn query_result_get<T: ProcessState + ErrorCtx + SQLiteCtx>(
     resource_id: u64,
     data_ptr: u32,
     data_len: u32,
-) -> Result<(), Trap> {
+) -> Result<()> {
     // get the memory and the state
     let memory = get_memory(&mut caller)?;
     let (memory_slice, state) = memory.data_and_store_mut(&mut caller);
@@ -343,7 +343,7 @@ fn query_result_get<T: ProcessState + ErrorCtx + SQLiteCtx>(
 fn drop_query_result<T: ProcessState + ErrorCtx + SQLiteCtx>(
     mut caller: Caller<T>,
     result_id: u64,
-) -> Result<(), Trap> {
+) -> Result<()> {
     // get state
     let memory = get_memory(&mut caller)?;
     let (_, state) = memory.data_and_store_mut(&mut caller);
@@ -359,7 +359,7 @@ fn drop_query_result<T: ProcessState + ErrorCtx + SQLiteCtx>(
 fn sqlite3_changes<T: ProcessState + ErrorCtx + SQLiteCtx>(
     mut caller: Caller<T>,
     conn_id: u64,
-) -> Result<u32, Trap> {
+) -> Result<u32> {
     // get state
     let memory = get_memory(&mut caller)?;
     let (_, state) = memory.data_and_store_mut(&mut caller);
@@ -371,7 +371,7 @@ fn sqlite3_changes<T: ProcessState + ErrorCtx + SQLiteCtx>(
 fn statement_reset<T: ProcessState + ErrorCtx + SQLiteCtx>(
     mut caller: Caller<T>,
     statement_id: u64,
-) -> Result<(), Trap> {
+) -> Result<()> {
     // get state
     let memory = get_memory(&mut caller)?;
     let (_, state) = memory.data_and_store_mut(&mut caller);
@@ -387,7 +387,7 @@ async fn write_to_guest_vec<T: ProcessState + ErrorCtx + SQLiteCtx + Send + Sync
     mut caller: Caller<'_, T>,
     memory: Memory,
     encoded_vec: Vec<u8>,
-) -> Result<u64, Trap> {
+) -> Result<u64> {
     let alloc_ptr = allocate_guest_memory(&mut caller, encoded_vec.len() as u32)
         .await
         .or_trap("lunatic::sqlite::write_to_guest_vec::alloc_response_vec")?;
@@ -411,7 +411,7 @@ fn read_column<T: ProcessState + ErrorCtx + SQLiteCtx + Send + Sync>(
     mut caller: Caller<T>,
     statement_id: u64,
     col_idx: u32,
-) -> Box<dyn Future<Output = Result<u64, Trap>> + Send + '_> {
+) -> Box<dyn Future<Output = Result<u64>> + Send + '_> {
     Box::new(async move {
         // get state
         let memory = get_memory(&mut caller)?;
@@ -428,7 +428,7 @@ fn read_column<T: ProcessState + ErrorCtx + SQLiteCtx + Send + Sync>(
 fn column_names<T: ProcessState + ErrorCtx + SQLiteCtx + Send + Sync>(
     mut caller: Caller<T>,
     statement_id: u64,
-) -> Box<dyn Future<Output = Result<u64, Trap>> + Send + '_> {
+) -> Box<dyn Future<Output = Result<u64>> + Send + '_> {
     Box::new(async move {
         // get state
         let memory = get_memory(&mut caller)?;
@@ -449,7 +449,7 @@ fn column_names<T: ProcessState + ErrorCtx + SQLiteCtx + Send + Sync>(
 fn read_row<T: ProcessState + ErrorCtx + SQLiteCtx + Send + Sync>(
     mut caller: Caller<T>,
     statement_id: u64,
-) -> Box<dyn Future<Output = Result<u64, Trap>> + Send + '_> {
+) -> Box<dyn Future<Output = Result<u64>> + Send + '_> {
     Box::new(async move {
         // get state
         let memory = get_memory(&mut caller)?;
@@ -467,7 +467,7 @@ fn read_row<T: ProcessState + ErrorCtx + SQLiteCtx + Send + Sync>(
 fn last_error<T: ProcessState + ErrorCtx + SQLiteCtx + ResourceLimiter + Send + Sync>(
     mut caller: Caller<T>,
     conn_id: u64,
-) -> Box<dyn Future<Output = Result<u64, Trap>> + Send + '_> {
+) -> Box<dyn Future<Output = Result<u64>> + Send + '_> {
     Box::new(async move {
         // get state
         let memory = get_memory(&mut caller)?;
@@ -487,7 +487,7 @@ fn last_error<T: ProcessState + ErrorCtx + SQLiteCtx + ResourceLimiter + Send + 
 fn sqlite3_finalize<T: ProcessState + ErrorCtx + SQLiteCtx>(
     mut caller: Caller<T>,
     statement_id: u64,
-) -> Result<(), Trap> {
+) -> Result<()> {
     // get state
     let memory = get_memory(&mut caller)?;
     let (_, state) = memory.data_and_store_mut(&mut caller);
@@ -504,7 +504,7 @@ fn sqlite3_finalize<T: ProcessState + ErrorCtx + SQLiteCtx>(
 fn sqlite3_step<T: ProcessState + ErrorCtx + SQLiteCtx>(
     mut caller: Caller<T>,
     statement_id: u64,
-) -> Result<u32, Trap> {
+) -> Result<u32> {
     // get state
     let memory = get_memory(&mut caller)?;
     let (_, state) = memory.data_and_store_mut(&mut caller);
@@ -519,7 +519,7 @@ fn sqlite3_step<T: ProcessState + ErrorCtx + SQLiteCtx>(
 fn column_count<T: ProcessState + ErrorCtx + SQLiteCtx>(
     mut caller: Caller<T>,
     statement_id: u64,
-) -> Result<u32, Trap> {
+) -> Result<u32> {
     // get state
     let memory = get_memory(&mut caller)?;
     let (_, state) = memory.data_and_store_mut(&mut caller);
@@ -532,7 +532,7 @@ fn column_name<T: ProcessState + ErrorCtx + SQLiteCtx + Send + Sync>(
     mut caller: Caller<T>,
     statement_id: u64,
     column_idx: u32,
-) -> Box<dyn Future<Output = Result<u64, Trap>> + Send + '_> {
+) -> Box<dyn Future<Output = Result<u64>> + Send + '_> {
     Box::new(async move {
         // get state
         let memory = get_memory(&mut caller)?;

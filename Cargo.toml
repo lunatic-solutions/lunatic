@@ -18,6 +18,10 @@ path = "src/lib.rs"
 name = "lunatic"
 path = "src/main.rs"
 
+[[bin]]
+name = "cargo-lunatic"
+path = "src/cargo_lunatic.rs"
+
 [features]
 default = ["metrics"]
 metrics = [
@@ -25,6 +29,7 @@ metrics = [
   "lunatic-process/metrics",
   "lunatic-registry-api/metrics",
   "lunatic-timer-api/metrics",
+  "dep:lunatic-metrics-api",
 ]
 prometheus = ["dep:metrics-exporter-prometheus", "metrics"]
 
@@ -34,6 +39,7 @@ lunatic-distributed = {workspace = true}
 lunatic-distributed-api = {workspace = true}
 lunatic-error-api = {workspace = true}
 lunatic-messaging-api = {workspace = true}
+lunatic-metrics-api = {workspace = true, optional = true}
 lunatic-networking-api = {workspace = true}
 lunatic-process = {workspace = true}
 lunatic-process-api = {workspace = true}
@@ -91,6 +97,7 @@ lunatic-distributed = {path = "crates/lunatic-distributed", version = "0.12"}
 lunatic-distributed-api = {path = "crates/lunatic-distributed-api", version = "0.12"}
 lunatic-error-api = {path = "crates/lunatic-error-api", version = "0.12"}
 lunatic-messaging-api = {path = "crates/lunatic-messaging-api", version = "0.12"}
+lunatic-metrics-api = {path = "crates/lunatic-metrics-api", version = "0.12"}
 lunatic-networking-api = {path = "crates/lunatic-networking-api", version = "0.12"}
 lunatic-process = {path = "crates/lunatic-process", version = "0.12"}
 lunatic-process-api = {path = "crates/lunatic-process-api", version = "0.12"}
@@ -108,5 +115,7 @@ metrics = "0.20.1"
 rustls-pemfile = "1.0"
 serde = "1.0"
 tokio = "1.20"
-wasmtime = "2.0"
-wasmtime-wasi = "2.0"
+wasi-common = "3"
+wasmtime = "3.0"
+wasmtime-wasi = "3.0"
+wiggle = "3"

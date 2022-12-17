@@ -79,7 +79,7 @@ struct Args {
         long,
         value_name = "PROMETHEUS_HTTP_ADDRESS",
         requires = "prometheus",
-        default_value_t = "0.0.0.0:9927"
+        default_value_t = String::from("0.0.0.0:9927")
     )]
     prometheus_http: String,
 }
@@ -172,13 +172,13 @@ pub(crate) async fn execute() -> Result<()> {
         };
 
     #[cfg(feature = "prometheus")]
-    if args.is_present("prometheus") {
+    if args.prometheus {
         let builder = metrics_exporter_prometheus::PrometheusBuilder::new();
-        let builder = if let Some(addr) = args.value_of("prometheus_http") {
-            builder.with_http_listener(addr.parse::<std::net::SocketAddr>().unwrap())
-        } else {
-            builder
-        };
+        let builder = builder.with_http_listener(
+            args.prometheus_http
+                .parse::<std::net::SocketAddr>()
+                .unwrap(),
+        );
 
         let builder = if let Some(node_id) = node_id {
             builder.add_global_label("node_id", node_id.to_string())

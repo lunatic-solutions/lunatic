@@ -2,7 +2,6 @@ use anyhow::Result;
 use lunatic_common_api::{get_memory, IntoTrap};
 use lunatic_process::state::ProcessState;
 use lunatic_process_api::ProcessCtx;
-use wasmtime::Trap;
 use wasmtime::{Caller, Linker};
 
 // Register the registry APIs to the linker
@@ -50,7 +49,7 @@ fn put<T: ProcessState + ProcessCtx<T>>(
     name_str_len: u32,
     node_id: u64,
     process_id: u64,
-) -> Result<(), Trap> {
+) -> Result<()> {
     let memory = get_memory(&mut caller)?;
     let (memory_slice, state) = memory.data_and_store_mut(&mut caller);
     let name = memory_slice
@@ -80,7 +79,7 @@ fn get<T: ProcessState + ProcessCtx<T>>(
     name_str_len: u32,
     node_id_ptr: u32,
     process_id_ptr: u32,
-) -> Result<u32, Trap> {
+) -> Result<u32> {
     let memory = get_memory(&mut caller)?;
     let (memory_slice, state) = memory.data_and_store_mut(&mut caller);
     let name = memory_slice
@@ -119,7 +118,7 @@ fn remove<T: ProcessState + ProcessCtx<T>>(
     mut caller: Caller<T>,
     name_str_ptr: u32,
     name_str_len: u32,
-) -> Result<(), Trap> {
+) -> Result<()> {
     let memory = get_memory(&mut caller)?;
     let (memory_slice, state) = memory.data_and_store_mut(&mut caller);
     let name = memory_slice
