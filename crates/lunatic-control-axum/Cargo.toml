@@ -12,6 +12,7 @@ lunatic-distributed = { workspace = true }
 
 anyhow = { workspace = true }
 axum = { version = "0.6", features = ["json", "query", "macros" ] }
+tower-http = { version = "0.3.0", features = ["limit"] }
 base64-url = "1.4.13"
 chrono = "0.4.23"
 dashmap = { workspace = true }

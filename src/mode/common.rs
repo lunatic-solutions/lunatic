@@ -76,6 +76,7 @@ pub async fn run_wasm(args: RunWasm) -> Result<()> {
     } else {
         module.into()
     };
+
     let module = Arc::new(args.runtime.compile_module::<DefaultProcessState>(module)?);
     let state = DefaultProcessState::new(
         args.env.clone(),

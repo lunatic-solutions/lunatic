@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
 use axum::{
+    body::Bytes,
+    extract::DefaultBodyLimit,
     routing::{get, post},
     Extension, Json, Router,
 };
@@ -9,6 +11,7 @@ use lunatic_distributed::{
     NodeInfo,
 };
 use rcgen::CertificateSigningRequest;
+use tower_http::limit::RequestBodyLimitLayer;
 
 use crate::{
     api::{ok, ApiError, ApiResponse, HostExtractor, JsonExtractor, NodeAuth, PathExtractor},
@@ -83,11 +86,9 @@ pub async fn node_started(
 }
 
 pub async fn list_nodes(
-    node_auth: NodeAuth,
+    _node_auth: NodeAuth,
     control: Extension<Arc<ControlServer>>,
 ) -> ApiResponse<NodesList> {
-    log::info!("Node {} list nodes", node_auth.node_name);
-
     let control = control.as_ref();
     let nds: Vec<_> = control
         .nodes
@@ -114,14 +115,13 @@ pub async fn list_nodes(
 pub async fn add_module(
     node_auth: NodeAuth,
     control: Extension<Arc<ControlServer>>,
-    Json(data): Json<AddModule>,
-) -> ApiResponse<()> {
+    body: Bytes,
+) -> ApiResponse<ModuleId> {
     log::info!("Node {} add_module", node_auth.node_name);
 
     let control = control.as_ref();
-    control.add_module(data.bytes);
-
-    ok(())
+    let module_id = control.add_module(body.to_vec());
+    ok(ModuleId { module_id })
 }
 
 pub async fn get_module(
@@ -149,4 +149,6 @@ pub fn init_routes() -> Router {
         .route("/nodes", get(list_nodes))
         .route("/module", post(add_module))
         .route("/module/:id", get(get_module))
+        .layer(DefaultBodyLimit::disable())
+        .layer(RequestBodyLimitLayer::new(50 * 1024 * 1024)) // 50 mb
 }

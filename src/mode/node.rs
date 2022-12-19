@@ -11,18 +11,24 @@ use lunatic_distributed::{
     quic,
 };
 use lunatic_process::{
-    env::LunaticEnvironments,
+    env::{Environments, LunaticEnvironments},
     runtimes::{self, Modules},
 };
 use lunatic_runtime::DefaultProcessState;
 use uuid::Uuid;
+
+use crate::mode::common::{run_wasm, RunWasm};
 
 use super::common::WasmArgs;
 
 #[derive(Parser, Debug)]
 pub(crate) struct Args {
     /// Control server register URL
-    #[arg(index = 1, value_name = "CONTROL_URL")]
+    #[arg(
+        index = 1,
+        value_name = "CONTROL_URL",
+        default_value = "http://127.0.0.1:3030/"
+    )]
     control: String,
 
     #[arg(long, value_name = "NODE_SOCKET")]
@@ -33,7 +39,7 @@ pub(crate) struct Args {
     tag: Vec<(String, String)>,
 }
 
-pub(crate) async fn start(args: Args, _wasm: WasmArgs) -> Result<()> {
+pub(crate) async fn start(args: Args, wasm_args: WasmArgs) -> Result<()> {
     let socket = args
         .bind_socket
         .or_else(get_available_localhost)
@@ -83,7 +89,7 @@ pub(crate) async fn start(args: Args, _wasm: WasmArgs) -> Result<()> {
 
     let node = tokio::task::spawn(lunatic_distributed::distributed::server::node_server(
         ServerCtx {
-            envs,
+            envs: envs.clone(),
             modules: Modules::<DefaultProcessState>::default(),
             distributed: dist.clone(),
             runtime: runtime.clone(),
@@ -93,7 +99,30 @@ pub(crate) async fn start(args: Args, _wasm: WasmArgs) -> Result<()> {
         node_cert.serialize_private_key_pem(),
     ));
 
-    // TODO: start wasm??
+    if wasm_args.path.is_some() {
+        let env = envs.create(1).await;
+        tokio::task::spawn(async {
+            if let Err(e) = run_wasm(RunWasm {
+                cli: wasm_args,
+                runtime,
+                envs,
+                env,
+                distributed: Some(dist),
+            })
+            .await
+            {
+                log::error!("Error running wasm: {e:?}");
+            }
+        });
+    }
+
+    let ctrl = control_client.clone();
+    tokio::task::spawn(async move {
+        async_ctrlc::CtrlC::new().unwrap().await;
+        log::info!("Shutting down node");
+        ctrl.notify_node_stopped().await.ok();
+        std::process::exit(0);
+    });
 
     node.await.ok();
 
