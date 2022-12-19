@@ -31,6 +31,7 @@ pub fn register<T: NetworkingCtx + ErrorCtx + Send + 'static>(
     linker.func_wrap("lunatic::networking", "tcp_local_addr", tcp_local_addr)?;
     linker.func_wrap3_async("lunatic::networking", "tcp_accept", tcp_accept)?;
     linker.func_wrap7_async("lunatic::networking", "tcp_connect", tcp_connect)?;
+    linker.func_wrap2_async("lunatic::networking", "tcp_peer_addr", tcp_peer_addr)?;
     linker.func_wrap("lunatic::networking", "drop_tcp_stream", drop_tcp_stream)?;
     linker.func_wrap("lunatic::networking", "clone_tcp_stream", clone_tcp_stream)?;
     linker.func_wrap4_async(
@@ -318,6 +319,52 @@ fn clone_tcp_stream<T: NetworkingCtx>(mut caller: Caller<T>, tcp_stream_id: u64)
         .clone();
     let id = caller.data_mut().tcp_stream_resources_mut().add(stream);
     Ok(id)
+}
+
+// Returns the remote address this tcp socket is connected to, bound to a DNS
+// iterator with just one element.
+//
+// * 0 on success - The peer address that this socket is bound to, returned as a DNS
+//                  iterator with just one element and written to **id_ptr**.
+// * 1 on error   - The error ID is written to **id_u64_ptr**.
+//
+// Traps:
+// * If the tcp socket ID doesn't exist.
+// * If any memory outside the guest heap space is referenced.
+fn tcp_peer_addr<T: NetworkingCtx + ErrorCtx + Send>(
+    mut caller: Caller<T>,
+    tcp_stream_id: u64,
+    id_u64_ptr: u32,
+) -> Box<dyn Future<Output = Result<u32>> + Send + '_> {
+    Box::new(async move {
+        let tcp_stream = caller
+            .data()
+            .tcp_stream_resources()
+            .get(tcp_stream_id)
+            .or_trap("lunatic::network::tcp_peer_addr: stream ID doesn't exist")?;
+        let peer_addr = tcp_stream.writer.lock().await.peer_addr();
+        let (dns_iter_or_error_id, result) = match peer_addr {
+            Ok(socket_addr) => {
+                let dns_iter_id = caller
+                    .data_mut()
+                    .dns_resources_mut()
+                    .add(DnsIterator::new(vec![socket_addr].into_iter()));
+                (dns_iter_id, 0)
+            }
+            Err(error) => (caller.data_mut().error_resources_mut().add(error.into()), 1),
+        };
+
+        let memory = get_memory(&mut caller)?;
+        memory
+            .write(
+                &mut caller,
+                id_u64_ptr as usize,
+                &dns_iter_or_error_id.to_le_bytes(),
+            )
+            .or_trap("lunatic::network::tcp_peer_addr")?;
+
+        Ok(result)
+    })
 }
 
 // Gathers data from the vector buffers and writes them to the stream. **ciovec_array_ptr** points
