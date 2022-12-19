@@ -37,43 +37,6 @@ impl SqliteRow {
     }
 }
 
-// use std::cell::Ref;
-// use std::ptr::NonNull;
-// use std::{slice, str};
-
-// use super::row::PrivateSqliteRow;
-
-// /// Raw sqlite value as received from the database
-// ///
-// /// Use existing `FromSql` implementations to convert this into
-// /// rust values
-// #[allow(missing_debug_implementations, missing_copy_implementations)]
-// pub struct SqliteValue<'row, 'stmt, 'query> {
-//     // This field exists to ensure that nobody
-//     // can modify the underlying row while we are
-//     // holding a reference to some row value here
-//     _row: Ref<'row, PrivateSqliteRow<'stmt, 'query>>,
-//     // // we extract the raw value pointer as part of the constructor
-//     // // to safe the match statements for each method
-//     // // According to benchmarks this leads to a ~20-30% speedup
-//     // //
-//     // // This is sound as long as nobody calls `stmt.step()`
-//     // // while holding this value. We ensure this by including
-//     // // a reference to the row above.
-//     // value: NonNull<ffi::sqlite3_value>,
-// }
-
-// #[repr(transparent)]
-// pub(super) struct OwnedSqliteValue {
-//     pub(super) value: NonNull<ffi::sqlite3_value>,
-// }
-
-// impl Drop for OwnedSqliteValue {
-//     fn drop(&mut self) {
-//         unsafe { ffi::sqlite3_value_free(self.value.as_ptr()) }
-//     }
-// }
-
 #[cfg(not(target_arch = "wasm32"))]
 impl<'stmt> SqliteValue {
     pub fn read_column(statement: &'stmt Statement, col_idx: usize) -> Result<SqliteValue> {

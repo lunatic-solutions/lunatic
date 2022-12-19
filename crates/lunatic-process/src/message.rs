@@ -25,7 +25,7 @@ pub type Resource = dyn Any + Send + Sync;
 /// * LinkDied - A `LinkDied` signal that was turned into a message.
 ///
 /// [0]: crate::Signal
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum Message {
     Data(DataMessage),
     LinkDied(Option<i64>),

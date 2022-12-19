@@ -21,14 +21,17 @@ pub fn allocate_guest_memory<'a, T: Send>(
         let mut results = [Val::I32(0)];
         let result = caller
             .get_export(allocator_function_name)
-            .or_trap("no export named alloc found")?
+            .or_trap(format!("no export named {} found", allocator_function_name))?
             .into_func()
             .or_trap("cannot turn export into func")?
             .call_async(caller, &[Val::I32(size as i32)], &mut results)
             .await;
 
-        result.or_trap("failed to call alloc")?;
-        Ok(results[0].unwrap_i32() as u32)
+        result.or_trap(format!("failed to call {}", allocator_function_name))?;
+        Ok(results[0]
+            .i32()
+            .or_trap(format!("result of {} is not i32", allocator_function_name))?
+            as u32)
     })
 }
 

@@ -152,11 +152,11 @@ where
         ExecutionResult {
             state: self.store.into_data(),
             result: match result {
-                Ok(_) => ResultValue::Ok(res_vec),
+                Ok(()) => ResultValue::Ok,
                 Err(err) => {
                     // If the trap is a result of calling `proc_exit(0)`, treat it as an no-error finish.
                     match err.downcast_ref::<wasmtime_wasi::I32Exit>() {
-                        Some(wasmtime_wasi::I32Exit(0)) => ResultValue::Ok(vec![]),
+                        Some(wasmtime_wasi::I32Exit(0)) => ResultValue::Ok,
                         _ => ResultValue::Failed(err.to_string()),
                     }
                 }

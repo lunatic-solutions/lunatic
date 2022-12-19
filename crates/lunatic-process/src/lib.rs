@@ -472,13 +472,6 @@ impl<T> ExecutionResult<T> {
     pub fn state(self) -> T {
         self.state
     }
-
-    pub fn result(&self) -> Option<Vec<wasmtime::Val>> {
-        if let ResultValue::Ok(v) = &self.result {
-            return Some(v.clone());
-        }
-        None
-    }
 }
 
 // It's more convinient to return a `Result<T,E>` in a `NativeProcess`.
@@ -490,7 +483,7 @@ where
         match result {
             Ok(t) => ExecutionResult {
                 state: t,
-                result: ResultValue::Ok(vec![]),
+                result: ResultValue::Ok,
             },
             Err(e) => ExecutionResult {
                 state: T::default(),
@@ -500,9 +493,8 @@ where
     }
 }
 
-// #[derive(PartialEq, Eq)]
 pub enum ResultValue {
-    Ok(Vec<wasmtime::Val>),
+    Ok,
     Failed(String),
     SpawnError(String),
 }
