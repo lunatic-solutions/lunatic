@@ -1,4 +1,5 @@
 use std::future::Future;
+use std::io::ErrorKind;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -18,6 +19,7 @@ pub fn register<T: NetworkingCtx + ErrorCtx + Send + 'static>(
 ) -> Result<()> {
     linker.func_wrap6_async("lunatic::networking", "udp_bind", udp_bind)?;
     linker.func_wrap("lunatic::networking", "udp_local_addr", udp_local_addr)?;
+    linker.func_wrap("lunatic::networking", "udp_peer_addr", udp_peer_addr)?;
     linker.func_wrap("lunatic::networking", "drop_udp_socket", drop_udp_socket)?;
     linker.func_wrap4_async("lunatic::networking", "udp_receive", udp_receive)?;
     linker.func_wrap5_async("lunatic::networking", "udp_receive_from", udp_receive_from)?;
@@ -527,6 +529,56 @@ fn udp_local_addr<T: NetworkingCtx + ErrorCtx + Send>(
             &dns_iter_or_error_id.to_le_bytes(),
         )
         .or_trap("lunatic::network::udp_local_addr")?;
+
+    Ok(result)
+}
+
+// Returns the remote address this udp socket was connected to, bound to a DNS
+// iterator with just one element.
+//
+// * 0 on success              - The peer address that this socket is bound to, returned as a DNS
+//                               iterator with just one element and written to **id_ptr**.
+// * 1 on NotConnected error   - The error ID is written to **id_u64_ptr**.
+// * 2 on Other errors         - The error ID is written to **id_u64_ptr**.
+//
+// Traps:
+// * If the udp socket ID doesn't exist.
+// * If any memory outside the guest heap space is referenced.
+fn udp_peer_addr<T: NetworkingCtx + ErrorCtx + Send>(
+    mut caller: Caller<T>,
+    udp_socket_id: u64,
+    id_u64_ptr: u32,
+) -> Result<u32> {
+    let udp_socket = caller
+        .data()
+        .udp_resources()
+        .get(udp_socket_id)
+        .or_trap("lunatic::network::udp_peer_addr: listener ID doesn't exist")?;
+    let (dns_iter_or_error_id, result) = match udp_socket.peer_addr() {
+        Ok(socket_addr) => {
+            let dns_iter_id = caller
+                .data_mut()
+                .dns_resources_mut()
+                .add(DnsIterator::new(vec![socket_addr].into_iter()));
+            (dns_iter_id, 0)
+        }
+        Err(error) => {
+            if error.kind() == ErrorKind::NotConnected {
+                (caller.data_mut().error_resources_mut().add(error.into()), 1)
+            } else {
+                (caller.data_mut().error_resources_mut().add(error.into()), 2)
+            }
+        }
+    };
+
+    let memory = get_memory(&mut caller)?;
+    memory
+        .write(
+            &mut caller,
+            id_u64_ptr as usize,
+            &dns_iter_or_error_id.to_le_bytes(),
+        )
+        .or_trap("lunatic::network::udp_peer_addr")?;
 
     Ok(result)
 }
