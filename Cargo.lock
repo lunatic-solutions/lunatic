@@ -1268,6 +1268,7 @@ dependencies = [
  "metrics",
  "tokio",
  "wasmtime",
+ "wasmtime-runtime",
 ]
 
 [[package]]

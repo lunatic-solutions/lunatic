@@ -21,3 +21,4 @@ anyhow = { workspace = true }
 metrics = { workspace = true, optional = true }
 tokio = { workspace = true, features = ["time"] }
 wasmtime = { workspace = true }
+wasmtime-runtime = { workspace = true }

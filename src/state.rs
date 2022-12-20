@@ -61,6 +61,7 @@ pub struct DefaultProcessState {
     initialized: bool,
     // Shared process registry
     registry: Arc<DashMap<String, (u64, u64)>>,
+    // stored stack traces
 }
 
 impl DefaultProcessState {
@@ -292,6 +293,10 @@ impl ProcessCtx<DefaultProcessState> for DefaultProcessState {
     fn environment(&self) -> Arc<dyn Environment> {
         self.environment.clone()
     }
+
+    fn traces(&mut self) -> &mut HashMapId<String> {
+        &mut self.resources.traces
+    }
 }
 
 impl NetworkingCtx for DefaultProcessState {
@@ -396,6 +401,7 @@ pub(crate) struct Resources {
     pub(crate) tls_streams: HashMapId<Arc<TlsConnection>>,
     pub(crate) udp_sockets: HashMapId<Arc<UdpSocket>>,
     pub(crate) errors: HashMapId<anyhow::Error>,
+    pub(crate) traces: HashMapId<String>,
 }
 
 impl DistributedCtx<LunaticEnvironment> for DefaultProcessState {
