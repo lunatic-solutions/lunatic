@@ -10,7 +10,6 @@ use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
 };
-use wasmtime::Trap;
 use wasmtime::{Caller, Linker};
 
 use lunatic_common_api::{get_memory, IntoTrap};
@@ -32,6 +31,7 @@ pub fn register<T: NetworkingCtx + ErrorCtx + Send + 'static>(
     linker.func_wrap("lunatic::networking", "tcp_local_addr", tcp_local_addr)?;
     linker.func_wrap3_async("lunatic::networking", "tcp_accept", tcp_accept)?;
     linker.func_wrap7_async("lunatic::networking", "tcp_connect", tcp_connect)?;
+    linker.func_wrap2_async("lunatic::networking", "tcp_peer_addr", tcp_peer_addr)?;
     linker.func_wrap("lunatic::networking", "drop_tcp_stream", drop_tcp_stream)?;
     linker.func_wrap("lunatic::networking", "clone_tcp_stream", clone_tcp_stream)?;
     linker.func_wrap4_async(
@@ -79,7 +79,7 @@ fn tcp_bind<T: NetworkingCtx + ErrorCtx + Send>(
     flow_info: u32,
     scope_id: u32,
     id_u64_ptr: u32,
-) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_> {
+) -> Box<dyn Future<Output = Result<u32>> + Send + '_> {
     Box::new(async move {
         let memory = get_memory(&mut caller)?;
         let socket_addr = socket_address(
@@ -114,10 +114,7 @@ fn tcp_bind<T: NetworkingCtx + ErrorCtx + Send>(
 //
 // Traps:
 // * If the TCP listener ID doesn't exist.
-fn drop_tcp_listener<T: NetworkingCtx>(
-    mut caller: Caller<T>,
-    tcp_listener_id: u64,
-) -> Result<(), Trap> {
+fn drop_tcp_listener<T: NetworkingCtx>(mut caller: Caller<T>, tcp_listener_id: u64) -> Result<()> {
     caller
         .data_mut()
         .tcp_listener_resources_mut()
@@ -140,7 +137,7 @@ fn tcp_local_addr<T: NetworkingCtx + ErrorCtx>(
     mut caller: Caller<T>,
     tcp_listener_id: u64,
     id_u64_ptr: u32,
-) -> Result<u32, Trap> {
+) -> Result<u32> {
     let tcp_listener = caller
         .data()
         .tcp_listener_resources()
@@ -183,7 +180,7 @@ fn tcp_accept<T: NetworkingCtx + ErrorCtx + Send>(
     listener_id: u64,
     id_u64_ptr: u32,
     socket_addr_id_ptr: u32,
-) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_> {
+) -> Box<dyn Future<Output = Result<u32>> + Send + '_> {
     Box::new(async move {
         let tcp_listener = caller
             .data()
@@ -250,7 +247,7 @@ fn tcp_connect<T: NetworkingCtx + ErrorCtx + Send>(
     scope_id: u32,
     timeout_duration: u64,
     id_u64_ptr: u32,
-) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_> {
+) -> Box<dyn Future<Output = Result<u32>> + Send + '_> {
     Box::new(async move {
         let memory = get_memory(&mut caller)?;
         let socket_addr = socket_address(
@@ -300,10 +297,7 @@ fn tcp_connect<T: NetworkingCtx + ErrorCtx + Send>(
 //
 // Traps:
 // * If the DNS iterator ID doesn't exist.
-fn drop_tcp_stream<T: NetworkingCtx>(
-    mut caller: Caller<T>,
-    tcp_stream_id: u64,
-) -> Result<(), Trap> {
+fn drop_tcp_stream<T: NetworkingCtx>(mut caller: Caller<T>, tcp_stream_id: u64) -> Result<()> {
     caller
         .data_mut()
         .tcp_stream_resources_mut()
@@ -316,10 +310,7 @@ fn drop_tcp_stream<T: NetworkingCtx>(
 //
 // Traps:
 // * If the stream ID doesn't exist.
-fn clone_tcp_stream<T: NetworkingCtx>(
-    mut caller: Caller<T>,
-    tcp_stream_id: u64,
-) -> Result<u64, Trap> {
+fn clone_tcp_stream<T: NetworkingCtx>(mut caller: Caller<T>, tcp_stream_id: u64) -> Result<u64> {
     let stream = caller
         .data()
         .tcp_stream_resources()
@@ -328,6 +319,52 @@ fn clone_tcp_stream<T: NetworkingCtx>(
         .clone();
     let id = caller.data_mut().tcp_stream_resources_mut().add(stream);
     Ok(id)
+}
+
+// Returns the remote address this tcp socket is connected to, bound to a DNS
+// iterator with just one element.
+//
+// * 0 on success - The peer address that this socket is bound to, returned as a DNS
+//                  iterator with just one element and written to **id_ptr**.
+// * 1 on error   - The error ID is written to **id_u64_ptr**.
+//
+// Traps:
+// * If the tcp socket ID doesn't exist.
+// * If any memory outside the guest heap space is referenced.
+fn tcp_peer_addr<T: NetworkingCtx + ErrorCtx + Send>(
+    mut caller: Caller<T>,
+    tcp_stream_id: u64,
+    id_u64_ptr: u32,
+) -> Box<dyn Future<Output = Result<u32>> + Send + '_> {
+    Box::new(async move {
+        let tcp_stream = caller
+            .data()
+            .tcp_stream_resources()
+            .get(tcp_stream_id)
+            .or_trap("lunatic::network::tcp_peer_addr: stream ID doesn't exist")?;
+        let peer_addr = tcp_stream.writer.lock().await.peer_addr();
+        let (dns_iter_or_error_id, result) = match peer_addr {
+            Ok(socket_addr) => {
+                let dns_iter_id = caller
+                    .data_mut()
+                    .dns_resources_mut()
+                    .add(DnsIterator::new(vec![socket_addr].into_iter()));
+                (dns_iter_id, 0)
+            }
+            Err(error) => (caller.data_mut().error_resources_mut().add(error.into()), 1),
+        };
+
+        let memory = get_memory(&mut caller)?;
+        memory
+            .write(
+                &mut caller,
+                id_u64_ptr as usize,
+                &dns_iter_or_error_id.to_le_bytes(),
+            )
+            .or_trap("lunatic::network::tcp_peer_addr")?;
+
+        Ok(result)
+    })
 }
 
 // Gathers data from the vector buffers and writes them to the stream. **ciovec_array_ptr** points
@@ -346,7 +383,7 @@ fn tcp_write_vectored<T: NetworkingCtx + ErrorCtx + Send>(
     ciovec_array_ptr: u32,
     ciovec_array_len: u32,
     opaque_ptr: u32,
-) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_> {
+) -> Box<dyn Future<Output = Result<u32>> + Send + '_> {
     Box::new(async move {
         let memory = get_memory(&mut caller)?;
         let buffer = memory
@@ -415,7 +452,7 @@ fn set_write_timeout<T: NetworkingCtx + ErrorCtx + Send>(
     mut caller: Caller<T>,
     stream_id: u64,
     duration: u64,
-) -> Box<dyn Future<Output = Result<(), Trap>> + Send + '_> {
+) -> Box<dyn Future<Output = Result<()>> + Send + '_> {
     Box::new(async move {
         let stream = caller
             .data_mut()
@@ -444,7 +481,7 @@ fn set_write_timeout<T: NetworkingCtx + ErrorCtx + Send>(
 fn get_write_timeout<T: NetworkingCtx + ErrorCtx + Send>(
     caller: Caller<T>,
     stream_id: u64,
-) -> Box<dyn Future<Output = Result<u64, Trap>> + Send + '_> {
+) -> Box<dyn Future<Output = Result<u64>> + Send + '_> {
     Box::new(async move {
         let stream = caller
             .data()
@@ -469,7 +506,7 @@ pub fn set_read_timeout<T: NetworkingCtx + ErrorCtx + Send>(
     mut caller: Caller<T>,
     stream_id: u64,
     duration: u64,
-) -> Box<dyn Future<Output = Result<(), Trap>> + Send + '_> {
+) -> Box<dyn Future<Output = Result<()>> + Send + '_> {
     Box::new(async move {
         let stream = caller
             .data_mut()
@@ -498,7 +535,7 @@ pub fn set_read_timeout<T: NetworkingCtx + ErrorCtx + Send>(
 fn get_read_timeout<T: NetworkingCtx + ErrorCtx + Send>(
     caller: Caller<T>,
     stream_id: u64,
-) -> Box<dyn Future<Output = Result<u64, Trap>> + Send + '_> {
+) -> Box<dyn Future<Output = Result<u64>> + Send + '_> {
     Box::new(async move {
         let stream = caller
             .data()
@@ -523,7 +560,7 @@ pub fn set_peek_timeout<T: NetworkingCtx + ErrorCtx + Send>(
     mut caller: Caller<T>,
     stream_id: u64,
     duration: u64,
-) -> Box<dyn Future<Output = Result<(), Trap>> + Send + '_> {
+) -> Box<dyn Future<Output = Result<()>> + Send + '_> {
     Box::new(async move {
         let stream = caller
             .data_mut()
@@ -552,7 +589,7 @@ pub fn set_peek_timeout<T: NetworkingCtx + ErrorCtx + Send>(
 fn get_peek_timeout<T: NetworkingCtx + ErrorCtx + Send>(
     caller: Caller<T>,
     stream_id: u64,
-) -> Box<dyn Future<Output = Result<u64, Trap>> + Send + '_> {
+) -> Box<dyn Future<Output = Result<u64>> + Send + '_> {
     Box::new(async move {
         let stream = caller
             .data()
@@ -583,7 +620,7 @@ fn tcp_read<T: NetworkingCtx + ErrorCtx + Send>(
     buffer_ptr: u32,
     buffer_len: u32,
     opaque_ptr: u32,
-) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_> {
+) -> Box<dyn Future<Output = Result<u32>> + Send + '_> {
     Box::new(async move {
         let stream = caller
             .data()
@@ -639,7 +676,7 @@ fn tcp_peek<T: NetworkingCtx + ErrorCtx + Send>(
     buffer_ptr: u32,
     buffer_len: u32,
     opaque_ptr: u32,
-) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_> {
+) -> Box<dyn Future<Output = Result<u32>> + Send + '_> {
     Box::new(async move {
         let stream = caller
             .data()
@@ -691,7 +728,7 @@ fn tcp_flush<T: NetworkingCtx + ErrorCtx + Send>(
     mut caller: Caller<T>,
     stream_id: u64,
     error_id_ptr: u32,
-) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_> {
+) -> Box<dyn Future<Output = Result<u32>> + Send + '_> {
     Box::new(async move {
         let stream = caller
             .data()

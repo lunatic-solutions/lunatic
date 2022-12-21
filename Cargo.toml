@@ -9,6 +9,7 @@ repository = "https://github.com/lunatic-solutions/lunatic"
 categories = ["wasm"]
 license = "Apache-2.0/MIT"
 readme = "README.md"
+default-run = "lunatic"
 
 [lib]
 name = "lunatic_runtime"
@@ -18,6 +19,10 @@ path = "src/lib.rs"
 name = "lunatic"
 path = "src/main.rs"
 
+[[bin]]
+name = "cargo-lunatic"
+path = "src/cargo_lunatic.rs"
+
 [features]
 default = ["metrics"]
 metrics = [
@@ -25,6 +30,7 @@ metrics = [
     "lunatic-process/metrics",
     "lunatic-registry-api/metrics",
     "lunatic-timer-api/metrics",
+    "dep:lunatic-metrics-api",
 ]
 prometheus = ["dep:metrics-exporter-prometheus", "metrics"]
 
@@ -42,6 +48,7 @@ lunatic-registry-api = { workspace = true }
 lunatic-stdout-capture = { workspace = true }
 lunatic-timer-api = { workspace = true }
 lunatic-version-api = { workspace = true }
+lunatic-metrics-api = { workspace = true, optional = true }
 lunatic-wasi-api = { workspace = true }
 
 anyhow = { workspace = true }
@@ -101,6 +108,7 @@ lunatic-registry-api = { path = "crates/lunatic-registry-api", version = "0.12" 
 lunatic-stdout-capture = { path = "crates/lunatic-stdout-capture", version = "0.12" }
 lunatic-timer-api = { path = "crates/lunatic-timer-api", version = "0.12" }
 lunatic-version-api = { path = "crates/lunatic-version-api", version = "0.12" }
+lunatic-metrics-api = { path = "crates/lunatic-metrics-api", version = "0.12" }
 lunatic-wasi-api = { path = "crates/lunatic-wasi-api", version = "0.12" }
 
 anyhow = "1.0"
@@ -112,5 +120,7 @@ rustls-pemfile = "1.0"
 serde = "1.0"
 tokio = "1.20"
 uuid = { version = "1.1", features = ["v4"] }
-wasmtime = "2.0"
-wasmtime-wasi = "2.0"
+wasmtime = "3.0"
+wasmtime-wasi = "3.0"
+wasi-common = "3"
+wiggle = "3"

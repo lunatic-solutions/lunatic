@@ -1,9 +1,9 @@
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use std::fmt::Display;
-use wasmtime::{Caller, Memory, Trap};
+use wasmtime::{Caller, Memory};
 
 // Get exported memory
-pub fn get_memory<T>(caller: &mut Caller<T>) -> std::result::Result<Memory, Trap> {
+pub fn get_memory<T>(caller: &mut Caller<T>) -> Result<Memory> {
     caller
         .get_export("memory")
         .or_trap("No export `memory` found")?
@@ -12,30 +12,31 @@ pub fn get_memory<T>(caller: &mut Caller<T>) -> std::result::Result<Memory, Trap
 }
 
 pub trait IntoTrap<T> {
-    fn or_trap<S: Display>(self, info: S) -> Result<T, Trap>;
+    fn or_trap<S: Display>(self, info: S) -> Result<T>;
 }
 
 impl<T, E: Display> IntoTrap<T> for Result<T, E> {
-    fn or_trap<S: Display>(self, info: S) -> Result<T, Trap> {
+    fn or_trap<S: Display>(self, info: S) -> Result<T> {
         match self {
             Ok(result) => Ok(result),
-            Err(error) => Err(Trap::new(format!(
+            Err(error) => Err(anyhow!(
                 "Trap raised during host call: {} ({}).",
-                error, info
-            ))),
+                error,
+                info
+            )),
         }
     }
 }
 
 impl<T> IntoTrap<T> for Option<T> {
-    fn or_trap<S: Display>(self, info: S) -> Result<T, Trap> {
+    fn or_trap<S: Display>(self, info: S) -> Result<T> {
         match self {
             Some(result) => Ok(result),
-            None => Err(Trap::new(format!(
+            None => Err(anyhow!(
                 "Trap raised during host call: Expected `Some({})` got `None` ({}).",
                 std::any::type_name::<T>(),
                 info
-            ))),
+            )),
         }
     }
 }

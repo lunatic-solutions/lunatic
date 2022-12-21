@@ -1,7 +1,6 @@
 use anyhow::Result;
 use hash_map_id::HashMapId;
 use lunatic_common_api::{get_memory, IntoTrap};
-use wasmtime::Trap;
 use wasmtime::{Caller, Linker};
 
 pub type ErrorResource = HashMapId<anyhow::Error>;
@@ -23,7 +22,7 @@ pub fn register<T: ErrorCtx + 'static>(linker: &mut Linker<T>) -> Result<()> {
 //
 // Traps:
 // * If the error ID doesn't exist.
-fn string_size<T: ErrorCtx>(caller: Caller<T>, error_id: u64) -> Result<u32, Trap> {
+fn string_size<T: ErrorCtx>(caller: Caller<T>, error_id: u64) -> Result<u32> {
     let error = caller
         .data()
         .error_resources()
@@ -38,11 +37,7 @@ fn string_size<T: ErrorCtx>(caller: Caller<T>, error_id: u64) -> Result<u32, Tra
 // Traps:
 // * If the error ID doesn't exist.
 // * If any memory outside the guest heap space is referenced.
-fn to_string<T: ErrorCtx>(
-    mut caller: Caller<T>,
-    error_id: u64,
-    error_str_ptr: u32,
-) -> Result<(), Trap> {
+fn to_string<T: ErrorCtx>(mut caller: Caller<T>, error_id: u64, error_str_ptr: u32) -> Result<()> {
     let error = caller
         .data()
         .error_resources()
@@ -60,7 +55,7 @@ fn to_string<T: ErrorCtx>(
 //
 // Traps:
 // * If the error ID doesn't exist.
-fn drop<T: ErrorCtx>(mut caller: Caller<T>, error_id: u64) -> Result<(), Trap> {
+fn drop<T: ErrorCtx>(mut caller: Caller<T>, error_id: u64) -> Result<()> {
     caller
         .data_mut()
         .error_resources_mut()

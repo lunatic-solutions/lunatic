@@ -11,7 +11,7 @@ use lunatic_common_api::IntoTrap;
 use lunatic_process::{state::ProcessState, Signal};
 use lunatic_process_api::ProcessCtx;
 use tokio::task::JoinHandle;
-use wasmtime::{Caller, Linker, Trap};
+use wasmtime::{Caller, Linker};
 
 #[derive(Debug)]
 struct HeapValue {
@@ -129,7 +129,7 @@ fn send_after<T: ProcessState + ProcessCtx<T> + TimerCtx>(
     mut caller: Caller<T>,
     process_id: u64,
     delay: u64,
-) -> Result<u64, Trap> {
+) -> Result<u64> {
     let message = caller
         .data_mut()
         .message_scratch_area()
@@ -175,7 +175,7 @@ fn send_after<T: ProcessState + ProcessCtx<T> + TimerCtx>(
 fn cancel_timer<T: ProcessState + TimerCtx + Send>(
     mut caller: Caller<T>,
     timer_id: u64,
-) -> Box<dyn Future<Output = Result<u32, Trap>> + Send + '_> {
+) -> Box<dyn Future<Output = Result<u32>> + Send + '_> {
     Box::new(async move {
         let timer_handle = caller.data_mut().timer_resources_mut().remove(timer_id);
         match timer_handle {
