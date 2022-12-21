@@ -78,8 +78,7 @@ where
     memory
         .data_mut(&mut caller)
         .get_mut(
-            nodes_ptr as usize
-                ..(nodes_ptr as usize + std::mem::size_of::<u64>() * copy_nodes_len as usize),
+            nodes_ptr as usize..(nodes_ptr as usize + std::mem::size_of::<u64>() * copy_nodes_len),
         )
         .or_trap("lunatic::distributed::get_nodes::memory")?
         .copy_from_slice(unsafe { node_ids[..copy_nodes_len].align_to::<u8>().1 });
@@ -169,7 +168,7 @@ where
             .data_mut(&mut caller)
             .get_mut(
                 nodes_ptr as usize
-                    ..(nodes_ptr as usize + std::mem::size_of::<u64>() * copy_nodes_len as usize),
+                    ..(nodes_ptr as usize + std::mem::size_of::<u64>() * copy_nodes_len),
             )
             .or_trap("lunatic::distributed::copy_lookup_nodes_results::memory")?
             .copy_from_slice(unsafe { nodes[..copy_nodes_len].align_to::<u8>().1 });

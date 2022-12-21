@@ -154,31 +154,6 @@ impl Client {
         Ok(resp)
     }
 
-    pub async fn get_body_bytes(&self, url: &str, query: Option<&str>) -> Result<Vec<u8>> {
-        let mut url: Url = url.parse()?;
-        url.set_query(query);
-
-        let resp = self
-            .inner
-            .http_client
-            .get(url.clone())
-            .bearer_auth(&self.inner.reg.authentication_token)
-            .header(
-                "x-lunatic-node-name",
-                &self.inner.reg.node_name.hyphenated().to_string(),
-            )
-            .send()
-            .await
-            .with_context(|| format!("Error sending HTTP GET request: {}.", &url))?
-            .error_for_status()
-            .with_context(|| format!("HTTP GET request returned an error response: {}", &url))?
-            .bytes()
-            .await
-            .with_context(|| format!("Error getting body as bytes: {}", &url))?;
-
-        Ok(resp.to_vec())
-    }
-
     pub async fn post<T: Serialize, R: DeserializeOwned>(&self, url: &str, data: T) -> Result<R> {
         let url: Url = url.parse()?;
 
@@ -287,8 +262,8 @@ impl Client {
             .get_module
             .replace("{id}", &module_id.to_string());
         let query = format!("env_id={environment_id}");
-        let resp = self.get_body_bytes(&url, Some(&query)).await?;
-        Ok(resp)
+        let resp: ModuleBytes = self.get(&url, Some(&query)).await?;
+        Ok(resp.bytes)
     }
 
     pub async fn add_module(&self, module: Vec<u8>) -> Result<RawWasm> {

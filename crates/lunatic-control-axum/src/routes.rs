@@ -1,12 +1,11 @@
 use std::sync::Arc;
 
 use axum::{
-    body::{self, Bytes},
+    body::Bytes,
     extract::DefaultBodyLimit,
     routing::{get, post},
     Extension, Json, Router,
 };
-use http::StatusCode;
 use lunatic_distributed::{
     control::{api::*, cert::TEST_ROOT_CERT},
     NodeInfo,
@@ -45,12 +44,12 @@ pub async fn register(
         root_cert: TEST_ROOT_CERT.into(),
         urls: ControlUrls {
             api_base: format!("http://{host}/"),
-            nodes: format!("http://{host}/api/control/nodes"),
-            node_started: format!("http://{host}/api/control/started"),
-            node_stopped: format!("http://{host}/api/control/stopped"),
-            get_module: format!("http://{host}/api/control/module/{{id}}"),
-            add_module: format!("http://{host}/api/control/module"),
-            get_nodes: format!("http://{host}/api/control/nodes"),
+            nodes: format!("http://{host}/nodes"),
+            node_started: format!("http://{host}/started"),
+            node_stopped: format!("http://{host}/stopped"),
+            get_module: format!("http://{host}/module/{{id}}"),
+            add_module: format!("http://{host}/module"),
+            get_nodes: format!("http://{host}/nodes"),
         },
     })
 }
@@ -87,11 +86,9 @@ pub async fn node_started(
 }
 
 pub async fn list_nodes(
-    node_auth: NodeAuth,
+    _node_auth: NodeAuth,
     control: Extension<Arc<ControlServer>>,
 ) -> ApiResponse<NodesList> {
-    log::info!("Node {} list nodes", node_auth.node_name);
-
     let control = control.as_ref();
     let nds: Vec<_> = control
         .nodes
@@ -121,7 +118,9 @@ pub async fn add_module(
     body: Bytes,
 ) -> ApiResponse<ModuleId> {
     log::info!("Node {} add_module", node_auth.node_name);
-    let module_id = control.as_ref().add_module(body.to_vec());
+
+    let control = control.as_ref();
+    let module_id = control.add_module(body.to_vec());
     ok(ModuleId { module_id })
 }
 
@@ -129,7 +128,7 @@ pub async fn get_module(
     node_auth: NodeAuth,
     PathExtractor(id): PathExtractor<u64>,
     control: Extension<Arc<ControlServer>>,
-) -> Result<body::Bytes, StatusCode> {
+) -> ApiResponse<ModuleBytes> {
     log::info!("Node {} get_module {}", node_auth.node_name, id);
 
     let bytes = control
@@ -137,20 +136,14 @@ pub async fn get_module(
         .iter()
         .find(|m| m.key() == &id)
         .map(|m| m.value().clone())
-        .ok_or(StatusCode::NOT_FOUND)?;
+        .ok_or_else(|| ApiError::custom_code("error_reading_bytes"))?;
 
-    let body = body::Bytes::copy_from_slice(&bytes[..]);
-    Ok(body)
-}
-
-async fn okay() -> ApiResponse<String> {
-    ok("ok".to_string())
+    ok(ModuleBytes { bytes })
 }
 
 pub fn init_routes() -> Router {
     Router::new()
-        .route("/ok", get(okay))
-        .route("/register", post(register))
+        .route("/", post(register))
         .route("/stopped", post(node_stopped))
         .route("/started", post(node_started))
         .route("/nodes", get(list_nodes))
