@@ -51,20 +51,20 @@ pub fn root_cert(
     }
 }
 
-//fn ctrl_cert() -> Result<Certificate> {
-//    let mut ctrl_params = CertificateParams::new(vec![CTRL_SERVER_NAME.into()]);
-//    ctrl_params
-//        .distinguished_name
-//        .push(DnType::OrganizationName, "Lunatic Inc.");
-//    ctrl_params
-//        .distinguished_name
-//        .push(DnType::CommonName, "Control CA");
-//    Ok(Certificate::from_params(ctrl_params)?)
-//}
-//
-//fn default_server_certificates(root_cert: &Certificate) -> Result<(String, String)> {
-//    let ctrl_cert = ctrl_cert()?;
-//    let cert_pem = ctrl_cert.serialize_pem_with_signer(root_cert)?;
-//    let key_pem = ctrl_cert.serialize_private_key_pem();
-//    Ok((cert_pem, key_pem))
-//}
+fn ctrl_cert() -> Result<Certificate> {
+    let mut ctrl_params = CertificateParams::new(vec![CTRL_SERVER_NAME.into()]);
+    ctrl_params
+        .distinguished_name
+        .push(DnType::OrganizationName, "Lunatic Inc.");
+    ctrl_params
+        .distinguished_name
+        .push(DnType::CommonName, "Control CA");
+    Ok(Certificate::from_params(ctrl_params)?)
+}
+
+pub fn default_server_certificates(root_cert: &Certificate) -> Result<(String, String)> {
+    let ctrl_cert = ctrl_cert()?;
+    let cert_pem = ctrl_cert.serialize_pem_with_signer(root_cert)?;
+    let key_pem = ctrl_cert.serialize_private_key_pem();
+    Ok((cert_pem, key_pem))
+}
