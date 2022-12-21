@@ -1,4 +1,7 @@
-use std::net::{SocketAddr, UdpSocket};
+use std::{
+    net::{SocketAddr, UdpSocket},
+    path::PathBuf,
+};
 
 use clap::Parser;
 
@@ -19,8 +22,6 @@ use uuid::Uuid;
 
 use crate::mode::common::{run_wasm, RunWasm};
 
-use super::common::WasmArgs;
-
 #[derive(Parser, Debug)]
 pub(crate) struct Args {
     /// Control server register URL
@@ -34,12 +35,24 @@ pub(crate) struct Args {
     #[arg(long, value_name = "NODE_SOCKET")]
     bind_socket: Option<SocketAddr>,
 
+    #[arg(long, value_name = "WASM_MODULE")]
+    wasm: Option<PathBuf>,
+
     /// Define key=value variable to store as node information
     #[arg(long, value_parser = parse_key_val, action = clap::ArgAction::Append)]
     tag: Vec<(String, String)>,
+
+    #[cfg(feature = "prometheus")]
+    #[command(flatten)]
+    prometheus: super::common::PrometheusArgs,
 }
 
-pub(crate) async fn start(args: Args, wasm_args: WasmArgs) -> Result<()> {
+pub(crate) async fn start(args: Args) -> Result<()> {
+    #[cfg(feature = "prometheus")]
+    if args.prometheus.prometheus {
+        super::common::prometheus(args.prometheus.prometheus_http, None)?;
+    }
+
     let socket = args
         .bind_socket
         .or_else(get_available_localhost)
@@ -99,11 +112,13 @@ pub(crate) async fn start(args: Args, wasm_args: WasmArgs) -> Result<()> {
         node_cert.serialize_private_key_pem(),
     ));
 
-    if wasm_args.path.is_some() {
+    if args.wasm.is_some() {
         let env = envs.create(1).await;
         tokio::task::spawn(async {
             if let Err(e) = run_wasm(RunWasm {
-                cli: wasm_args,
+                path: args.wasm.unwrap(),
+                wasm_args: vec![],
+                dir: vec![],
                 runtime,
                 envs,
                 env,

@@ -13,26 +13,13 @@ use lunatic_process_api::ProcessConfigCtx;
 use lunatic_runtime::{DefaultProcessConfig, DefaultProcessState};
 
 #[derive(Args, Debug)]
-pub struct WasmArgs {
-    /// Grant access to the given host directories
-    #[arg(long, value_name = "DIRECTORY")]
-    pub dir: Vec<PathBuf>,
-
-    /// Indicate that a benchmark is running
-    #[arg(long)]
-    pub bench: bool,
-
-    /// Entry .wasm file
-    #[arg(index = 1)]
-    pub path: Option<PathBuf>,
-
-    /// Arguments passed to the guest
-    #[arg(index = 2)]
-    pub wasm_args: Vec<String>,
-}
+pub struct WasmArgs {}
 
 pub struct RunWasm {
-    pub cli: WasmArgs,
+    pub path: PathBuf,
+    pub wasm_args: Vec<String>,
+    pub dir: Vec<PathBuf>,
+
     pub runtime: WasmtimeRuntime,
     pub envs: Arc<LunaticEnvironments>,
     pub env: Arc<LunaticEnvironment>,
@@ -47,15 +34,12 @@ pub async fn run_wasm(args: RunWasm) -> Result<()> {
     config.set_can_spawn_processes(true);
 
     // Path to wasm file
-    let path = args.cli.path.unwrap();
+    let path = args.path;
 
     // Set correct command line arguments for the guest
     let filename = path.file_name().unwrap().to_string_lossy().to_string();
     let mut wasi_args = vec![filename];
-    wasi_args.extend(args.cli.wasm_args);
-    if args.cli.bench {
-        wasi_args.push("--bench".to_owned());
-    }
+    wasi_args.extend(args.wasm_args);
     config.set_command_line_arguments(wasi_args);
 
     // Inherit environment variables
@@ -63,7 +47,7 @@ pub async fn run_wasm(args: RunWasm) -> Result<()> {
 
     // Always preopen the current dir
     config.preopen_dir(".");
-    for dir in args.cli.dir {
+    for dir in args.dir {
         if let Some(s) = dir.as_os_str().to_str() {
             config.preopen_dir(s);
         }
