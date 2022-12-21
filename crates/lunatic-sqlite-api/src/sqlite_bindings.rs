@@ -12,10 +12,10 @@ use std::{
 };
 use wasmtime::{Caller, Linker, Memory, ResourceLimiter};
 
-use crate::{
-    wire_format::{BindList, SqliteError, SqliteRow, SqliteValue},
-    SQLITE_DONE, SQLITE_ROW,
-};
+use crate::wire_format::{BindList, SqliteError, SqliteRow, SqliteValue};
+
+pub const SQLITE_ROW: u32 = 100;
+pub const SQLITE_DONE: u32 = 101;
 
 pub type SQLiteConnections = HashMapId<Arc<Mutex<Connection>>>;
 pub type SQLiteResults = HashMapId<Vec<u8>>;
