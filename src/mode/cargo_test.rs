@@ -12,6 +12,11 @@ use lunatic_wasi_api::LunaticWasiCtx;
 #[derive(Parser, Debug)]
 #[command(version)]
 struct Args {
+    /// The `_command` argument is always `run`, from `lunatic run`.
+    /// When running in testing mode, commands can be ignored.
+    #[arg()]
+    _command: String,
+
     /// Entry .wasm file
     #[arg()]
     wasm: String,
@@ -32,7 +37,7 @@ struct Args {
     #[arg(long)]
     nocapture: bool,
 
-    /// Show also the output of successfull tests
+    /// Show also the output of successful tests
     #[arg(long)]
     show_output: bool,
 

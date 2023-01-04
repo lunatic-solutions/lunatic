@@ -1610,6 +1610,7 @@ dependencies = [
  "reqwest",
  "serde",
  "tokio",
+ "toml",
  "uuid",
  "wasmtime",
  "wasmtime-wasi",

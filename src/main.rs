@@ -28,13 +28,14 @@ async fn main() -> Result<()> {
             let test_regex = format!("{separator}{test_path_matcher}{separator}.*\\.wasm$");
             let test_regex = regex::Regex::new(&test_regex).unwrap();
 
-            let mut arguments = env::args().skip(1);
+            // Check if the 3rd argument is a rust wasm build in the `deps` directory
+            // && none of the other arguments indicate a benchmark
+            let mut arguments = env::args().skip(2);
             match arguments.next() {
                 Some(wasm_file) => {
-                    // Check if the second argument is a rust wasm build in the `deps` directory
-                    // && none of the other arguments indicate a benchmark
                     test_regex.is_match(&wasm_file) && !arguments.any(|arg| arg == "--bench")
                 }
+
                 None => false,
             }
         }

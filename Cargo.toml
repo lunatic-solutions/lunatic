@@ -65,6 +65,7 @@ uuid = { workspace = true }
 wasmtime = { workspace = true }
 wasmtime-wasi = { workspace = true }
 async-ctrlc = "1.2.0"
+toml = "0.5"
 
 [dev-dependencies]
 criterion = { version = "0.4", features = ["async_tokio"] }
