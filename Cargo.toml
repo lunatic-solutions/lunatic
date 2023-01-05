@@ -50,6 +50,7 @@ lunatic-timer-api = { workspace = true }
 lunatic-version-api = { workspace = true }
 lunatic-metrics-api = { workspace = true, optional = true }
 lunatic-wasi-api = { workspace = true }
+lunatic-trap-api = { workspace = true }
 
 anyhow = { workspace = true }
 clap = { version = "4.0", features = ["cargo", "derive"] }
@@ -92,6 +93,7 @@ members = [
     "crates/lunatic-timer-api",
     "crates/lunatic-version-api",
     "crates/lunatic-wasi-api",
+    "crates/lunatic-trap-api",
 ]
 
 [workspace.dependencies]
@@ -111,6 +113,7 @@ lunatic-timer-api = { path = "crates/lunatic-timer-api", version = "0.12" }
 lunatic-version-api = { path = "crates/lunatic-version-api", version = "0.12" }
 lunatic-metrics-api = { path = "crates/lunatic-metrics-api", version = "0.12" }
 lunatic-wasi-api = { path = "crates/lunatic-wasi-api", version = "0.12" }
+lunatic-trap-api = { path = "crates/lunatic-trap-api", version = "0.12" }
 
 anyhow = "1.0"
 dashmap = "5.4"

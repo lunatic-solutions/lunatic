@@ -1603,6 +1603,7 @@ dependencies = [
  "lunatic-registry-api",
  "lunatic-stdout-capture",
  "lunatic-timer-api",
+ "lunatic-trap-api",
  "lunatic-version-api",
  "lunatic-wasi-api",
  "metrics-exporter-prometheus",
@@ -1636,6 +1637,15 @@ dependencies = [
  "lunatic-process-api",
  "metrics",
  "tokio",
+ "wasmtime",
+]
+
+[[package]]
+name = "lunatic-trap-api"
+version = "0.12.0"
+dependencies = [
+ "anyhow",
+ "lunatic-common-api",
  "wasmtime",
 ]
 

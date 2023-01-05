@@ -176,6 +176,7 @@ impl ProcessState for DefaultProcessState {
         lunatic_distributed_api::register(linker)?;
         #[cfg(feature = "metrics")]
         lunatic_metrics_api::register(linker)?;
+        lunatic_trap_api::register(linker)?;
         Ok(())
     }
 
