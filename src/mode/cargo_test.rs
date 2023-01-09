@@ -1,13 +1,13 @@
-use std::{env, fs, path::Path, sync::Arc, time::Instant};
+use std::{collections::HashMap, env, fs, path::Path, sync::Arc, time::Instant};
 
 use anyhow::{Context, Result};
 use clap::Parser;
-use dashmap::DashMap;
 use lunatic_process::{env::LunaticEnvironment, runtimes, wasm::spawn_wasm};
 use lunatic_process_api::ProcessConfigCtx;
 use lunatic_runtime::{DefaultProcessConfig, DefaultProcessState};
 use lunatic_stdout_capture::StdoutCapture;
 use lunatic_wasi_api::LunaticWasiCtx;
+use tokio::sync::RwLock;
 
 #[derive(Parser, Debug)]
 #[command(version)]
@@ -221,7 +221,7 @@ pub(crate) async fn test() -> Result<()> {
         }
 
         let env = Arc::new(LunaticEnvironment::new(0));
-        let registry = Arc::new(DashMap::new());
+        let registry = Arc::new(RwLock::new(HashMap::new()));
         let mut state = DefaultProcessState::new(
             env.clone(),
             None,

@@ -1,11 +1,10 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use anyhow::Result;
-use dashmap::DashMap;
 use hash_map_id::HashMapId;
 use tokio::sync::{
     mpsc::{UnboundedReceiver, UnboundedSender},
-    Mutex,
+    Mutex, RwLock, RwLockWriteGuard,
 };
 use wasmtime::Linker;
 
@@ -65,5 +64,8 @@ pub trait ProcessState: Sized {
     fn config_resources_mut(&mut self) -> &mut ConfigResources<Self::Config>;
 
     // Registry
-    fn registry(&self) -> &Arc<DashMap<String, (u64, u64)>>;
+    fn registry(&self) -> &Arc<RwLock<HashMap<String, (u64, u64)>>>;
+    fn registry_atomic_put(
+        &mut self,
+    ) -> &mut Option<RwLockWriteGuard<'static, HashMap<String, (u64, u64)>>>;
 }
