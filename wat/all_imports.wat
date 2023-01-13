@@ -54,6 +54,8 @@
     (import "lunatic::networking" "get_udp_socket_ttl" (func (param i64) (result i32)))
     (import "lunatic::networking" "udp_send_to" (func (param i64 i32 i32 i32 i32 i32 i32 i32 i32) (result i32)))
     (import "lunatic::networking" "udp_send" (func (param i64 i32 i32 i32) (result i32)))
+    (import "lunatic::networking" "tcp_peer_addr" (func (param i64 i32) (result i32)))
+    (import "lunatic::networking" "udp_peer_addr" (func (param i64 i32) (result i32)))
 
     (import "lunatic::process" "compile_module" (func (param i32 i32 i32) (result i32)))
     (import "lunatic::process" "drop_module" (func (param i64)))
