@@ -47,7 +47,7 @@ jobs:
           override: true
           components: rustfmt, clippy
       # Rust builds can take some time, cache them.
-      - uses: Swatinem/rust-cache@v1
+      - uses: Swatinem/rust-cache@v2
       - name: "Run tests"
         run: cargo test --all
       - name: "Run clippy check"
