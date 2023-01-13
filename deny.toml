@@ -48,7 +48,14 @@ notice = "warn"
 # A list of advisory IDs to ignore. Note that ignored advisories will still
 # output a note when they are encountered.
 ignore = [
-    #"RUSTSEC-0000-0000",
+    # time is not threadsafe - chrono default-features = false will fix this
+    "RUSTSEC-2020-0071",
+    # atty advisory Windows - TBD
+    "RUSTSEC-2021-0145"
+    # This is tokio pipeserver related config - lunatic doesn't use this
+    # Also there is SemVer compatible backport meaning people will get it
+    # tokio 1.24.0 bump means we don't need to ignore this
+    #"RUSTSEC-2023-0001"
 ]
 # Threshold for security vulnerabilities, any vulnerability with a CVSS score
 # lower than the range specified will be ignored. Note that ignored advisories
@@ -83,6 +90,12 @@ allow = [
     "Unicode-DFS-2016",
     "MPL-2.0",
     "ISC",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    # OpenSSL is Apache License v2.0 (ASL v2)
+    # https://www.openssl.org/blog/blog/2017/03/22/license/
+    # ring crate is ISC & MIT
+    "OpenSSL",
 ]
 # List of explicitly disallowed licenses
 # See https://spdx.org/licenses/ for list of possible licenses
@@ -112,30 +125,15 @@ confidence-threshold = 0.8
 # Allow 1 or more licenses on a per-crate basis, so that particular licenses
 # aren't accepted for every possible crate as with the normal allow list
 exceptions = [
-    # Each entry is the crate and version constraint, and its specific allow
-    # list
-    #{ allow = ["Zlib"], name = "adler32", version = "*" },
 ]
 
 # Some crates don't have (easily) machine readable licensing information,
 # adding a clarification entry for it allows you to manually specify the
 # licensing information
-#[[licenses.clarify]]
-# The name of the crate the clarification applies to
-#name = "ring"
-# The optional version constraint for the crate
-#version = "*"
-# The SPDX expression for the license requirements of the crate
-#expression = "MIT AND ISC AND OpenSSL"
-# One or more files in the crate's source used as the "source of truth" for
-# the license expression. If the contents match, the clarification will be used
-# when running the license check, otherwise the clarification will be ignored
-# and the crate will be checked normally, which may produce warnings or errors
-# depending on the rest of your configuration
-#license-files = [
-    # Each entry is a crate relative path, and the (opaque) hash of its contents
-    #{ path = "LICENSE", hash = 0xbd0eed23 }
-#]
+[[licenses.clarify]]
+name = "ring"
+expression = "ISC AND MIT AND OpenSSL"
+license-files = [{ path = "LICENSE", hash = 0xbd0eed23 }]
 
 [licenses.private]
 # If true, ignores workspace crates that aren't published, or are only
