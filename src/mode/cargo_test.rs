@@ -1,7 +1,7 @@
 use std::{collections::HashMap, env, fs, path::Path, sync::Arc, time::Instant};
 
 use anyhow::{Context, Result};
-use clap::Parser;
+use clap::{Subcommand, Parser};
 use lunatic_process::{env::LunaticEnvironment, runtimes, wasm::spawn_wasm};
 use lunatic_process_api::ProcessConfigCtx;
 use lunatic_runtime::{DefaultProcessConfig, DefaultProcessState};
@@ -11,11 +11,12 @@ use tokio::sync::RwLock;
 
 #[derive(Parser, Debug)]
 #[command(version)]
+#[command(allow_external_subcommands(true))]
 struct Args {
     /// The `_command` argument is always `run`, from `lunatic run`.
     /// When running in testing mode, commands can be ignored.
-    #[arg()]
-    _command: String,
+    #[command(subcommand)]
+    _command: Option<Commands>,
 
     /// Entry .wasm file
     #[arg()]
@@ -56,6 +57,11 @@ struct Args {
     /// Arguments passed to the guest
     #[arg()]
     wasm_args: Vec<String>,
+}
+
+#[derive(Debug, Subcommand)]
+enum Commands {
+    Run,
 }
 
 pub(crate) async fn test() -> Result<()> {
