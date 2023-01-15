@@ -54,9 +54,7 @@ pub(crate) async fn execute() -> Result<()> {
     // Run is implied from lunatic 0.12
     let args = if is_run_implied() {
         let mut augmented_args: VecDeque<String> = std::env::args().collect();
-        let first_arg = augmented_args.pop_front().unwrap();
-        augmented_args.push_front("run".to_owned());
-        augmented_args.push_front(first_arg);
+        augmented_args.insert(1, "run".to_owned());
         Args::parse_from(augmented_args)
     } else {
         Args::parse()
