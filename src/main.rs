@@ -25,6 +25,15 @@ fn is_run_implied() -> bool {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Run is implied from lunatic 0.12
+    let augmented_args = if is_run_implied() {
+        let mut augmented_args: VecDeque<String> = std::env::args().collect();
+        augmented_args.insert(1, "run".to_owned());
+        Some(augmented_args.into())
+    } else {
+        None
+    };
+
     // Detect if `cargo test` is running
     // https://internals.rust-lang.org/t/cargo-config-tom-different-runner-for-tests/16342/
     let cargo_test = match env::var("CARGO_MANIFEST_DIR") {
@@ -46,9 +55,14 @@ async fn main() -> Result<()> {
             let test_regex = format!("{separator}{test_path_matcher}{separator}.*\\.wasm$");
             let test_regex = regex::Regex::new(&test_regex).unwrap();
 
+            let skip_positions = match is_run_implied() {
+                true => 1,
+                false => 2,
+            };
+
             // Check if the 3rd argument is a rust wasm build in the `deps` directory
             // && none of the other arguments indicate a benchmark
-            let mut arguments = env::args().skip(2);
+            let mut arguments = env::args().skip(skip_positions);
             match arguments.next() {
                 Some(wasm_file) => {
                     test_regex.is_match(&wasm_file) && !arguments.any(|arg| arg == "--bench")
@@ -58,19 +72,6 @@ async fn main() -> Result<()> {
             }
         }
         Err(_) => false,
-    };
-
-    println!("args: {:?}", std::env::args());
-
-    // Run is implied from lunatic 0.12
-    let augmented_args = if is_run_implied() {
-        let mut augmented_args: VecDeque<String> = std::env::args().collect();
-        println!("Augmented args before: {:?}", &augmented_args);
-        augmented_args.insert(1, "run".to_owned());
-        println!("Augmented args after: {:?}", &augmented_args);
-        Some(augmented_args.into())
-    } else {
-        None
     };
 
     if cargo_test {
