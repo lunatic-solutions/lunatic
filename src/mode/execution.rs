@@ -27,6 +27,8 @@ enum Commands {
     Control(super::control::Args),
     /// Starts a node
     Node(super::node::Args),
+    /// Create a new project
+    New(super::new::Args)
 }
 
 pub(crate) async fn execute() -> Result<()> {
@@ -39,5 +41,6 @@ pub(crate) async fn execute() -> Result<()> {
         Commands::Run(a) => super::run::start(a).await,
         Commands::Control(a) => super::control::start(a).await,
         Commands::Node(a) => super::node::start(a).await,
+        Commands::New(a) => super::new::start(a),
     }
 }
