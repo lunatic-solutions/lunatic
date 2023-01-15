@@ -1,7 +1,7 @@
 use std::{collections::HashMap, env, fs, path::Path, sync::Arc, time::Instant};
 
 use anyhow::{Context, Result};
-use clap::{Subcommand, Parser};
+use clap::{Parser, Subcommand};
 use lunatic_process::{env::LunaticEnvironment, runtimes, wasm::spawn_wasm};
 use lunatic_process_api::ProcessConfigCtx;
 use lunatic_runtime::{DefaultProcessConfig, DefaultProcessState};
