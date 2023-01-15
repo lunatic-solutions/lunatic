@@ -59,7 +59,6 @@ pub(crate) async fn execute() -> Result<()> {
         augmented_args.push_front(first_arg);
         Args::parse_from(augmented_args)
     } else {
-        println!("Run is NOT implied!");
         Args::parse()
     };
 
