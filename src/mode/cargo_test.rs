@@ -1,7 +1,7 @@
 use std::{collections::HashMap, env, fs, path::Path, sync::Arc, time::Instant};
 
 use anyhow::{Context, Result};
-use clap::{Parser, Subcommand};
+use clap::Parser;
 use lunatic_process::{env::LunaticEnvironment, runtimes, wasm::spawn_wasm};
 use lunatic_process_api::ProcessConfigCtx;
 use lunatic_runtime::{DefaultProcessConfig, DefaultProcessState};
@@ -11,12 +11,11 @@ use tokio::sync::RwLock;
 
 #[derive(Parser, Debug)]
 #[command(version)]
-#[command(allow_external_subcommands(true))]
 struct Args {
     /// The `_command` argument is always `run`, from `lunatic run`.
     /// When running in testing mode, commands can be ignored.
-    #[command(subcommand)]
-    _command: Option<Commands>,
+    #[arg()]
+    _command: String,
 
     /// Entry .wasm file
     #[arg()]
@@ -59,19 +58,17 @@ struct Args {
     wasm_args: Vec<String>,
 }
 
-#[derive(Debug, Subcommand)]
-enum Commands {
-    Run,
-}
-
-pub(crate) async fn test() -> Result<()> {
+pub(crate) async fn test(augmented_args: Option<Vec<String>>) -> Result<()> {
     // Set logger level to "error" to avoid printing process failures warnings during tests.
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("error")).init();
     // Measure test duration
     let now = Instant::now();
 
     // Parse command line arguments
-    let args = Args::parse();
+    let args = match augmented_args {
+        Some(a) => Args::parse_from(a),
+        None => Args::parse(),
+    };
 
     let mut config = DefaultProcessConfig::default();
     // Allow initial process to compile modules, create configurations and spawn sub-processes

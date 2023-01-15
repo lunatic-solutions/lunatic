@@ -3,7 +3,25 @@ mod mode;
 use mode::{cargo_test, execution};
 
 use anyhow::Result;
+use regex::Regex;
+use std::collections::VecDeque;
 use std::{env, path::PathBuf};
+
+// Lunatic versions under 0.13 implied run
+// This checks whether the 0.12 behaviour is wanted with a regex
+fn is_run_implied() -> bool {
+    if std::env::args().count() < 2 {
+        return false;
+    }
+
+    // lunatic <foo.wasm> -> Implied run
+    // lunatic run <foo.wasm> -> Explicit run
+    // lunatic fdskl <foo.wasm> -> Not implied run
+    let test_re = Regex::new(r"^(--bench|--dir|[^\s]+\.wasm)")
+        .expect("BUG: Regex error with lunatic::mode::execution::is_run_implied()");
+
+    test_re.is_match(&std::env::args().nth(1).unwrap())
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -42,9 +60,22 @@ async fn main() -> Result<()> {
         Err(_) => false,
     };
 
-    if cargo_test {
-        cargo_test::test().await
+    println!("args: {:?}", std::env::args());
+
+    // Run is implied from lunatic 0.12
+    let augmented_args = if is_run_implied() {
+        let mut augmented_args: VecDeque<String> = std::env::args().collect();
+        println!("Augmented args before: {:?}", &augmented_args);
+        augmented_args.insert(1, "run".to_owned());
+        println!("Augmented args after: {:?}", &augmented_args);
+        Some(augmented_args.into())
     } else {
-        execution::execute().await
+        None
+    };
+
+    if cargo_test {
+        cargo_test::test(augmented_args).await
+    } else {
+        execution::execute(augmented_args).await
     }
 }

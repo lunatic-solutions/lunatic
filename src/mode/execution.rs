@@ -1,7 +1,5 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use regex::Regex;
-use std::collections::VecDeque;
 
 #[derive(Parser, Debug)]
 #[command(version)]
@@ -32,32 +30,12 @@ enum Commands {
     Node(super::node::Args),
 }
 
-// Lunatic versions under 0.13 implied run
-// This checks whether the 0.12 behaviour is wanted with a regex
-fn is_run_implied() -> bool {
-    if std::env::args().count() < 2 {
-        return false;
-    }
-
-    // lunatic <foo.wasm> -> Implied run
-    // lunatic run <foo.wasm> -> Explicit run
-    // lunatic fdskl <foo.wasm> -> Not implied run
-    let test_re = Regex::new(r"^(--bench|--dir|[^\s]+\.wasm)")
-        .expect("BUG: Regex error with lunatic::mode::execution::is_run_implied()");
-
-    test_re.is_match(&std::env::args().nth(1).unwrap())
-}
-
-pub(crate) async fn execute() -> Result<()> {
+pub(crate) async fn execute(augmented_args: Option<Vec<String>>) -> Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
-    // Run is implied from lunatic 0.12
-    let args = if is_run_implied() {
-        let mut augmented_args: VecDeque<String> = std::env::args().collect();
-        augmented_args.insert(1, "run".to_owned());
-        Args::parse_from(augmented_args)
-    } else {
-        Args::parse()
+    let args = match augmented_args {
+        Some(a) => Args::parse_from(a),
+        None => Args::parse(),
     };
 
     match args.command {
