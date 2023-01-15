@@ -3,9 +3,10 @@ use clap::{Parser, Subcommand};
 
 #[derive(Parser, Debug)]
 #[command(version)]
+#[command(allow_external_subcommands(true))]
 pub struct Args {
     #[command(subcommand)]
-    command: Commands,
+    command: Option<Commands>,
 
     #[cfg(feature = "prometheus")]
     #[command(flatten)]
@@ -35,9 +36,11 @@ pub(crate) async fn execute() -> Result<()> {
     let args = Args::parse();
 
     match args.command {
-        Commands::Init => super::init::start(),
-        Commands::Run(a) => super::run::start(a).await,
-        Commands::Control(a) => super::control::start(a).await,
-        Commands::Node(a) => super::node::start(a).await,
+        Some(Commands::Init) => super::init::start(),
+        Some(Commands::Run(a)) => super::run::start(a).await,
+        Some(Commands::Control(a)) => super::control::start(a).await,
+        Some(Commands::Node(a)) => super::node::start(a).await,
+        // Run with sole .wasm argument
+        None => super::run::start(super::run::Args::parse()).await,
     }
 }
