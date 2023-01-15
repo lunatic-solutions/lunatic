@@ -1,7 +1,7 @@
-use std::{process::Command, env, path::Path, io::Write};
+use std::{process::Command, env, path::Path, fs::File, io::Write};
 
 use clap::Parser;
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 
 use crate::mode;
 
@@ -12,27 +12,35 @@ pub struct Args {
     pub new_args: Vec<String>,
 }
 
-pub(crate) fn start(args: Args) -> Result<()> {
-    Command::new("cargo").args(["new", &args.new_args[0]]).status().expect(format!("failed to create {} project", &args.new_args[0].as_str()).as_str());
-
-    let new_directory = Path::new(&args.new_args[0]);
-    env::set_current_dir(&new_directory).expect(format!("failed to change to the {} directory", &args.new_args[0].as_str()).as_str());
-
-    Command::new("cargo").args(["add", "lunatic"]).status().expect("failed to add lunatic dependency");
-
-    mode::init::start();
-
-    let src_directory = Path::new("src");
-    env::set_current_dir(&src_directory).expect("failed to change to the \"src\" directory");
-
-    let mut f = std::fs::OpenOptions::new().write(true).truncate(true).open("./main.rs")?;
-    f.write_all(b"use std::time::Duration;\n\n\
+fn add_lunatic_main_file() {
+    let mut file = File::create("src/main.rs").expect("Could not open src/main.rs");
+    file.write_all(b"use std::time::Duration;\n\n\
     use lunatic::{sleep, spawn_link};\n\n\
     fn main() {\n\
         spawn_link!(|| println!(\"Hello, world! I'm a process.\"));\n\
         sleep(Duration::from_millis(100));\n\
-    }\n")?;
-    f.flush()?;
+    }\n").expect("Could not write to src/main.rs");
+}
 
-    Ok(())
+pub(crate) fn start(args: Args) -> Result<()> {
+    let project_name = &args.new_args[0];
+
+    Command::new("cargo").args(["new", project_name]).status().expect(format!("Failed to create {} project", project_name.as_str()).as_str());
+
+    let project_path = Path::new(project_name);
+    env::set_current_dir(&project_path).expect(format!("Failed to change to the {} directory", project_name.as_str()).as_str());
+
+    Command::new("cargo").args(["add", "lunatic"]).status().expect("Failed to add the lunatic dependency");
+
+    match mode::init::start() {
+        Ok(result) => {
+            add_lunatic_main_file();
+            Ok(result)
+        }
+        Err(error) => Err(anyhow!(
+            "Could not initialize a lunatic project in {}: {}.",
+            &project_name,
+            error
+        ))
+    }
 }
