@@ -17,7 +17,7 @@ fn is_run_implied() -> bool {
     // lunatic <foo.wasm> -> Implied run
     // lunatic run <foo.wasm> -> Explicit run
     // lunatic fdskl <foo.wasm> -> Not implied run
-    let test_re = Regex::new(r"^(--bench|--dir|[^\s]+\.wasm)")
+    let test_re = Regex::new(r"^(--bench|--dir|.+\.wasm)")
         .expect("BUG: Regex error with lunatic::mode::execution::is_run_implied()");
 
     test_re.is_match(&std::env::args().nth(1).unwrap())
