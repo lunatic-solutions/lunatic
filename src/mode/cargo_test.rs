@@ -58,14 +58,17 @@ struct Args {
     wasm_args: Vec<String>,
 }
 
-pub(crate) async fn test() -> Result<()> {
+pub(crate) async fn test(augmented_args: Option<Vec<String>>) -> Result<()> {
     // Set logger level to "error" to avoid printing process failures warnings during tests.
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("error")).init();
     // Measure test duration
     let now = Instant::now();
 
     // Parse command line arguments
-    let args = Args::parse();
+    let args = match augmented_args {
+        Some(a) => Args::parse_from(a),
+        None => Args::parse(),
+    };
 
     let mut config = DefaultProcessConfig::default();
     // Allow initial process to compile modules, create configurations and spawn sub-processes

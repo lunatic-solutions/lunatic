@@ -29,10 +29,13 @@ enum Commands {
     Node(super::node::Args),
 }
 
-pub(crate) async fn execute() -> Result<()> {
+pub(crate) async fn execute(augmented_args: Option<Vec<String>>) -> Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
-    let args = Args::parse();
+    let args = match augmented_args {
+        Some(a) => Args::parse_from(a),
+        None => Args::parse(),
+    };
 
     match args.command {
         Commands::Init => super::init::start(),
