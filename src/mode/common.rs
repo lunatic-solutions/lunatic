@@ -54,7 +54,10 @@ pub async fn run_wasm(args: RunWasm) -> Result<()> {
     }
 
     // Spawn main process
-    let module = std::fs::read(&path)?;
+    let module = std::fs::read(&path).map_err(|err| match err.kind() {
+        std::io::ErrorKind::NotFound => anyhow!("Module '{}' not found", path.display()),
+        _ => err.into(),
+    })?;
     let module: RawWasm = if let Some(dist) = args.distributed.as_ref() {
         dist.control.add_module(module).await?
     } else {
