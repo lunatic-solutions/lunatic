@@ -1,5 +1,13 @@
 # Lunatic Changelog
 
+## v0.12.1
+
+Released 2023-01-17.
+
+### Changes
+
+- CI workflow refactored
+
 ## v0.12.0
 
 Released 2022-11-15.
