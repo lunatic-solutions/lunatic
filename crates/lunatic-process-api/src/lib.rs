@@ -158,7 +158,7 @@ where
     linker.func_wrap8_async(
         "lunatic::process",
         "spawn",
-        |caller,
+        |mut caller,
          link,
          config_id,
          module_id,
@@ -169,7 +169,7 @@ where
          id_ptr| {
             Box::new(async move {
                 spawn(
-                    caller,
+                    &mut caller,
                     link,
                     config_id,
                     module_id,
@@ -560,7 +560,7 @@ where
 // * If any memory outside the guest heap space is referenced.
 #[allow(clippy::too_many_arguments)]
 pub async fn spawn<T>(
-    mut caller: Caller<'_, T>,
+    caller: &mut Caller<'_, T>,
     link: i64,
     config_id: i64,
     module_id: i64,
@@ -611,7 +611,7 @@ where
 
     let mut state = state.new_state(module.clone(), config)?;
 
-    let memory = get_memory(&mut caller)?;
+    let memory = get_memory(caller)?;
     let func_str = memory
         .data(&caller)
         .get(func_str_ptr as usize..(func_str_ptr + func_str_len) as usize)
@@ -686,11 +686,7 @@ where
     };
 
     memory
-        .write(
-            &mut caller,
-            id_ptr as usize,
-            &proc_or_error_id.to_le_bytes(),
-        )
+        .write(caller, id_ptr as usize, &proc_or_error_id.to_le_bytes())
         .or_trap("lunatic::process::spawn")?;
     Ok(result)
 }
