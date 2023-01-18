@@ -84,10 +84,10 @@ jobs:
       - name: Generate release notes
         if: startsWith(github.ref, 'refs/tags/')
         run: |
-          awk '/## v[0-9]+\.[0-9]+.[0-9]+/ && STATE=="show" { exit }
+          awk '/^## v[0-9]+\.[0-9]+\.[0-9]+/ && STATE=="show" { exit }
               STATE=="show";
-              /## ${{ steps.getReleaseName.outputs.RELEASE_NAME }}/ { STATE="catch" }
-              /Released [0-9]+-[0-9]+-[0-9]+/ && STATE=="catch" { STATE="show" }' CHANGELOG.md \
+              /^## ${{ steps.getReleaseName.outputs.RELEASE_NAME }}/ { STATE="catch" }
+              /^Released [0-9]+-[0-9]+-[0-9]+/ && STATE=="catch" { STATE="show" }' CHANGELOG.md \
           | awk 'NF { SHOW=1 } SHOW' > RELEASE_NOTES.md
       - name: Release
         if: startsWith(github.ref, 'refs/tags/')
