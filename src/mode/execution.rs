@@ -28,7 +28,7 @@ enum Commands {
     /// Starts a node
     Node(super::node::Args),
     /// Create a new project
-    New(super::new::Args)
+    New(super::new::Args),
 }
 
 pub(crate) async fn execute() -> Result<()> {

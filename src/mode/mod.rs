@@ -9,6 +9,6 @@ pub(crate) mod execution;
 mod common;
 mod control;
 mod init;
+mod new;
 mod node;
 mod run;
-mod new;
