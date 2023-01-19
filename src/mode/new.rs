@@ -8,8 +8,9 @@ use crate::mode;
 #[derive(Parser, Debug)]
 #[command(version)]
 pub struct Args {
+    /// Name of new Lunatic project
     #[arg(index = 1)]
-    pub new_args: Vec<String>,
+    pub name: String,
 }
 
 fn add_lunatic_main_file() {
@@ -28,7 +29,7 @@ fn main() {{
 }
 
 pub(crate) fn start(args: Args) -> Result<()> {
-    let project_name = &args.new_args[0];
+    let project_name = &args.name;
 
     Command::new("cargo")
         .args(["new", project_name])
@@ -40,13 +41,15 @@ pub(crate) fn start(args: Args) -> Result<()> {
         .unwrap_or_else(|_| panic!("Current directory changed to {}", project_name.as_str()));
 
     Command::new("cargo")
-        .args(["add", "lunatic"])
+        .args(["add", "-q", "lunatic"])
         .status()
         .expect("Cargo added the lunatic dependency");
 
     match mode::init::start() {
         Ok(result) => {
             add_lunatic_main_file();
+
+            println!("\nLunatic is ready 🚀");
             Ok(result)
         }
         Err(error) => Err(anyhow!(

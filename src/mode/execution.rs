@@ -27,7 +27,7 @@ enum Commands {
     Control(super::control::Args),
     /// Starts a node
     Node(super::node::Args),
-    /// Create a new project
+    /// Create a new Lunatic project
     New(super::new::Args),
 }
 
