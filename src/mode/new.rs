@@ -31,29 +31,36 @@ fn main() {{
 pub(crate) fn start(args: Args) -> Result<()> {
     let project_name = &args.name;
 
-    Command::new("cargo")
+    let new_status = Command::new("cargo")
         .args(["new", project_name])
         .status()
-        .unwrap_or_else(|_| panic!("Cargo created the {} project", project_name.as_str()));
+        .expect("'cargo new' should execute");
+
+    if !new_status.success() {
+        return Err(anyhow!("Could not create a new Lunatic project"));
+    }
 
     let project_path = Path::new(project_name);
-    env::set_current_dir(project_path)
-        .unwrap_or_else(|_| panic!("Current directory changed to {}", project_name.as_str()));
+    env::set_current_dir(project_path).expect("Current directory is changed to the new project");
 
-    Command::new("cargo")
+    let add_status = Command::new("cargo")
         .args(["add", "-q", "lunatic"])
         .status()
-        .expect("Cargo added the lunatic dependency");
+        .expect("'cargo add' should execute");
+
+    if !add_status.success() {
+        return Err(anyhow!("Could not add the Lunatic dependency"));
+    }
 
     match mode::init::start() {
         Ok(result) => {
             add_lunatic_main_file();
 
-            println!("\nLunatic is ready 🚀");
+            println!("\nYour Lunatic project is ready 🚀");
             Ok(result)
         }
         Err(error) => Err(anyhow!(
-            "Could not initialize a lunatic project in {}: {}.",
+            "Could not initialize a Lunatic project in {}: {}",
             &project_name,
             error
         )),
