@@ -479,6 +479,7 @@ impl DistributedCtx<LunaticEnvironment> for DefaultProcessState {
 }
 
 mod tests {
+
     #[tokio::test]
     async fn import_filter_signature_matches() {
         use std::collections::HashMap;
@@ -486,6 +487,7 @@ mod tests {
 
         use crate::state::DefaultProcessState;
         use crate::DefaultProcessConfig;
+        use lunatic_process::env::Environment;
         use lunatic_process::runtimes::wasmtime::WasmtimeRuntime;
         use lunatic_process::wasm::spawn_wasm;
         use std::sync::Arc;
@@ -512,8 +514,19 @@ mod tests {
         )
         .unwrap();
 
-        spawn_wasm(env, runtime, &module, state, "hello", Vec::new(), None)
-            .await
-            .unwrap();
+        let spawn_permit = env.can_spawn_next_process().await.unwrap();
+
+        spawn_wasm(
+            env,
+            runtime,
+            &module,
+            state,
+            "hello",
+            Vec::new(),
+            None,
+            spawn_permit,
+        )
+        .await
+        .unwrap();
     }
 }

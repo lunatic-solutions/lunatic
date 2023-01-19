@@ -5,7 +5,7 @@ use clap::Args;
 
 use lunatic_distributed::DistributedProcessState;
 use lunatic_process::{
-    env::{LunaticEnvironment, LunaticEnvironments},
+    env::{Environment, LunaticEnvironment, LunaticEnvironments},
     runtimes::{wasmtime::WasmtimeRuntime, RawWasm},
     wasm::spawn_wasm,
 };
@@ -75,6 +75,7 @@ pub async fn run_wasm(args: RunWasm) -> Result<()> {
     )
     .unwrap();
 
+    let spawn_permit = args.env.can_spawn_next_process().await?;
     let (task, _) = spawn_wasm(
         args.env,
         args.runtime,
@@ -83,6 +84,7 @@ pub async fn run_wasm(args: RunWasm) -> Result<()> {
         "_start",
         Vec::new(),
         None,
+        spawn_permit,
     )
     .await
     .context(format!(

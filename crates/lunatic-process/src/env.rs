@@ -1,19 +1,23 @@
+use anyhow::Result;
 use async_trait::async_trait;
 use dashmap::DashMap;
 use std::sync::{
     atomic::{AtomicU64, Ordering},
     Arc,
 };
+use tokio::sync::OwnedSemaphorePermit;
 
 use crate::{Process, Signal};
 
+#[async_trait]
 pub trait Environment: Send + Sync {
     fn id(&self) -> u64;
     fn get_next_process_id(&self) -> u64;
     fn get_process(&self, id: u64) -> Option<Arc<dyn Process>>;
-    fn add_process(&self, id: u64, proc: Arc<dyn Process>);
+    fn add_process(&self, id: u64, proc: Arc<dyn Process>, permit: Option<OwnedSemaphorePermit>);
     fn remove_process(&self, id: u64);
     fn process_count(&self) -> usize;
+    async fn can_spawn_next_process(&self) -> Result<Option<OwnedSemaphorePermit>>;
     fn send(&self, id: u64, signal: Signal);
 }
 
@@ -25,11 +29,13 @@ pub trait Environments: Send + Sync {
     async fn get(&self, id: u64) -> Option<Arc<Self::Env>>;
 }
 
+type ProcessEntry = (Arc<dyn Process>, Option<OwnedSemaphorePermit>);
+
 #[derive(Clone)]
 pub struct LunaticEnvironment {
     environment_id: u64,
     next_process_id: Arc<AtomicU64>,
-    processes: Arc<DashMap<u64, Arc<dyn Process>>>,
+    processes: Arc<DashMap<u64, ProcessEntry>>,
 }
 
 impl LunaticEnvironment {
@@ -42,13 +48,14 @@ impl LunaticEnvironment {
     }
 }
 
+#[async_trait]
 impl Environment for LunaticEnvironment {
     fn get_process(&self, id: u64) -> Option<Arc<dyn Process>> {
-        self.processes.get(&id).map(|x| x.clone())
+        self.processes.get(&id).map(|x| x.0.clone())
     }
 
-    fn add_process(&self, id: u64, proc: Arc<dyn Process>) {
-        self.processes.insert(id, proc);
+    fn add_process(&self, id: u64, proc: Arc<dyn Process>, permit: Option<OwnedSemaphorePermit>) {
+        self.processes.insert(id, (proc, permit));
         #[cfg(all(feature = "metrics", not(feature = "detailed_metrics")))]
         let labels: [(String, String); 0] = [];
         #[cfg(all(feature = "metrics", feature = "detailed_metrics"))]
@@ -81,7 +88,7 @@ impl Environment for LunaticEnvironment {
 
     fn send(&self, id: u64, signal: Signal) {
         if let Some(proc) = self.processes.get(&id) {
-            proc.send(signal);
+            proc.0.send(signal);
         }
     }
 
@@ -91,6 +98,11 @@ impl Environment for LunaticEnvironment {
 
     fn id(&self) -> u64 {
         self.environment_id
+    }
+
+    async fn can_spawn_next_process(&self) -> Result<Option<OwnedSemaphorePermit>> {
+        // Don't impose any limits to process spawning
+        Ok(None)
     }
 }
 

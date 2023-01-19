@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use log::trace;
+use tokio::sync::OwnedSemaphorePermit;
 use tokio::task::JoinHandle;
 use wasmtime::{ResourceLimiter, Val};
 
@@ -19,6 +20,7 @@ use crate::{Process, Signal, WasmProcess};
 /// After it's spawned the process will keep running in the background. A process can be killed
 /// with `Signal::Kill` signal. If you would like to block until the process is finished you can
 /// `.await` on the returned `JoinHandle<()>`.
+#[allow(clippy::too_many_arguments)]
 pub async fn spawn_wasm<S>(
     env: Arc<dyn Environment>,
     runtime: WasmtimeRuntime,
@@ -27,6 +29,7 @@ pub async fn spawn_wasm<S>(
     function: &str,
     params: Vec<Val>,
     link: Option<(Option<i64>, Arc<dyn Process>)>,
+    permit: Option<OwnedSemaphorePermit>,
 ) -> Result<(JoinHandle<Result<S>>, Arc<dyn Process>)>
 where
     S: ProcessState + Send + ResourceLimiter + 'static,
@@ -42,7 +45,7 @@ where
     let child_process = crate::new(fut, id, env.clone(), signal_mailbox.1, message_mailbox);
     let child_process_handle = Arc::new(WasmProcess::new(id, signal_mailbox.0.clone()));
 
-    env.add_process(id, child_process_handle.clone());
+    env.add_process(id, child_process_handle.clone(), permit);
 
     // **Child link guarantees**:
     // The link signal is going to be put inside of the child's mailbox and is going to be

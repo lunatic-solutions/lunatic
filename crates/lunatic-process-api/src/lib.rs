@@ -581,6 +581,12 @@ where
         ));
     }
 
+    let env = caller.data().environment();
+    let spawn_permit = env
+        .can_spawn_next_process()
+        .await
+        .or_trap("lunatic::process:spawn: Process spawn limit reached.")?;
+
     let state = caller.data();
 
     if !state.is_initialized() {
@@ -677,7 +683,14 @@ where
     // set state instead of config TODO
     let env = caller.data().environment();
     let (proc_or_error_id, result) = match lunatic_process::wasm::spawn_wasm(
-        env, runtime, &module, state, function, params, link,
+        env,
+        runtime,
+        &module,
+        state,
+        function,
+        params,
+        link,
+        spawn_permit,
     )
     .await
     {
