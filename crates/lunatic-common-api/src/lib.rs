@@ -2,6 +2,9 @@ use anyhow::{anyhow, Result};
 use std::{fmt::Display, future::Future, pin::Pin};
 use wasmtime::{Caller, Memory, Val};
 
+const ALLOCATOR_FUNCTION_NAME: &str = "lunatic_alloc";
+const FREEING_FUNCTION_NAME: &str = "lunatic_free";
+
 // Get exported memory
 pub fn get_memory<T>(caller: &mut Caller<T>) -> Result<Memory> {
     caller
@@ -15,23 +18,44 @@ pub fn get_memory<T>(caller: &mut Caller<T>) -> Result<Memory> {
 pub fn allocate_guest_memory<'a, T: Send>(
     caller: &'a mut Caller<T>,
     size: u32,
-    allocator_function_name: &'a str,
 ) -> Pin<Box<dyn Future<Output = Result<u32>> + Send + 'a>> {
     Box::pin(async move {
+        println!("[vm] starting to allocate guest memory");
         let mut results = [Val::I32(0)];
-        let result = caller
-            .get_export(allocator_function_name)
-            .or_trap(format!("no export named {} found", allocator_function_name))?
+        caller
+            .get_export(ALLOCATOR_FUNCTION_NAME)
+            .or_trap(format!("no export named {} found", ALLOCATOR_FUNCTION_NAME))?
             .into_func()
             .or_trap("cannot turn export into func")?
             .call_async(caller, &[Val::I32(size as i32)], &mut results)
-            .await;
+            .await
+            .or_trap(format!("failed to call {}", ALLOCATOR_FUNCTION_NAME))?;
 
-        result.or_trap(format!("failed to call {}", allocator_function_name))?;
+        println!("[vm] allocation succeeded {:?}", results);
         Ok(results[0]
             .i32()
-            .or_trap(format!("result of {} is not i32", allocator_function_name))?
+            .or_trap(format!("result of {} is not i32", ALLOCATOR_FUNCTION_NAME))?
             as u32)
+    })
+}
+
+// Call guest to free a slice of memory at location ptr
+pub fn free_guest_memory<'a, T: Send>(
+    caller: &'a mut Caller<T>,
+    ptr: u32,
+) -> Pin<Box<dyn Future<Output = Result<()>> + Send + 'a>> {
+    Box::pin(async move {
+        let mut results = [];
+        let result = caller
+            .get_export(FREEING_FUNCTION_NAME)
+            .or_trap(format!("no export named {} found", FREEING_FUNCTION_NAME))?
+            .into_func()
+            .or_trap("cannot turn export into func")?
+            .call_async(caller, &[Val::I32(ptr as i32)], &mut results)
+            .await;
+
+        result.or_trap(format!("failed to call {}", FREEING_FUNCTION_NAME))?;
+        Ok(())
     })
 }
 

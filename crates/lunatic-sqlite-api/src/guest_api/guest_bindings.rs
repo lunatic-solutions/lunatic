@@ -1,10 +1,8 @@
-#[cfg(target_arch = "wasm32")]
-pub use wire_format::{
+pub use crate::wire_format::{
     BindKey, BindList, BindPair, BindValue, SqliteError, SqliteRow, SqliteValue,
 };
 
 pub mod sqlite_guest_bindings {
-    #[cfg(target_arch = "wasm32")]
     #[link(wasm_import_module = "lunatic::sqlite")]
     extern "C" {
         /// opens a new connection and stores a reference to the resource
@@ -119,32 +117,23 @@ pub mod sqlite_guest_bindings {
         /// looks up the value of the last error, encodes an `SqliteError` via bincode
         /// and writes it into a guest allocated Vec<u8>
         /// Returns a composite length + pointer to the data (see explanation above)
-        pub fn last_error(connection_id: u64) -> u64;
+        pub fn last_error(connection_id: u64, opaque_ptr: *mut u32) -> u32;
 
         /// reads the column under index `col_idx` encodes a `SqliteValue` via bincode
         /// and writes it into a guest allocated Vec<u8>
         /// Returns a composite length + pointer to the data (see explanation above)
-        pub fn read_column(statement_id: u64, col_idx: u32) -> u64;
+        pub fn read_column(statement_id: u64, col_idx: u32, opaque_ptr: *mut u32) -> u32;
 
         /// reads the next row, encodes a `SqliteRow` via bincode
         /// and writes it into a guest allocated Vec<u8>
-        pub fn read_row(statement_id: u64) -> u64;
+        pub fn read_row(statement_id: u64, opaque_ptr: *mut u32) -> u32;
 
         /// looks up the name of the column under index `col_idx`, encodes a `String` via bincode
         /// and writes it into a guest allocated Vec<u8>
-        pub fn column_name(statement_id: u64, col_idx: u32) -> u64;
+        pub fn column_name(statement_id: u64, col_idx: u32, opaque_ptr: *mut u32) -> u32;
 
         /// looks up the value of the last error, encodes a `Vec<String>` via bincode
         /// and writes it into a guest allocated Vec<u8>
-        pub fn column_names(statement_id: u64) -> u64;
-
-        /// sets a custom guest allocator for a connection identified by connection_id
-        /// this should not be used unless using the library outside out lunatic-sql which
-        /// would mean that the allocator function is missing and you need to provide your own
-        pub fn set_custom_guest_allocator(
-            connection_id: u64,
-            allocator_name_ptr: u32,
-            allocator_name_len: u32,
-        );
+        pub fn column_names(statement_id: u64, opaque_ptr: *mut u32) -> u32;
     }
 }

@@ -72,7 +72,6 @@
     (import "lunatic::sqlite" "column_name" (func (param i64 i32) (result i64)))
     (import "lunatic::sqlite" "column_names" (func (param i64) (result i64)))
     (import "lunatic::sqlite" "query_prepare_and_consume" (func (param i64 i32 i32 i32) (result i64)))
-    (import "lunatic::sqlite" "set_custom_guest_allocator" (func (param i64 i32 i32)))
 
     (import "lunatic::process" "compile_module" (func (param i32 i32 i32) (result i32)))
     (import "lunatic::process" "drop_module" (func (param i64)))

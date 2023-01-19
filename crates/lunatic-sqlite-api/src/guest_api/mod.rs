@@ -1,1 +1,3 @@
-pub mod sqlite_guest_bindings;
+mod guest_bindings;
+
+pub use guest_bindings::*;

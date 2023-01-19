@@ -8,6 +8,7 @@ use sqlite::Statement;
 
 use super::{SqliteRow, SqliteValue};
 
+#[cfg(not(target_arch = "wasm32"))]
 impl SqliteRow {
     pub fn read_row(statement: &mut Statement) -> Result<SqliteRow> {
         let mut row = SqliteRow::default();
@@ -18,6 +19,7 @@ impl SqliteRow {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl<'stmt> SqliteValue {
     pub fn read_column(statement: &'stmt Statement, col_idx: usize) -> Result<SqliteValue> {
         match statement.column_type(col_idx).or_trap("read_column")? {

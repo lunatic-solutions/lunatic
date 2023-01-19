@@ -1,9 +1,13 @@
+use super::{SqliteRow, SqliteValue};
+
+#[cfg(target_arch = "wasm32")]
 impl SqliteRow {
     pub fn get_column(&self, idx: i32) -> Option<&SqliteValue> {
         self.0.get(idx as usize)
     }
 }
 
+#[cfg(target_arch = "wasm32")]
 impl SqliteValue {
     pub fn read_text(&self) -> &str {
         if let SqliteValue::Text(text) = self {
