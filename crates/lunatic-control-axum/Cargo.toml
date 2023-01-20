@@ -14,7 +14,7 @@ anyhow = { workspace = true }
 axum = { version = "0.6", features = ["json", "query", "macros" ] }
 tower-http = { version = "0.3.0", features = ["limit"] }
 base64-url = "1.4.13"
-chrono = "0.4.23"
+chrono = { version = "0.4.23", default-features = false, features = ["clock", "std" ]}
 dashmap = { workspace = true }
 getrandom = "0.2.8"
 http = "0.2.8"

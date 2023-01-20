@@ -16,7 +16,7 @@
     (import "lunatic::message" "push_udp_socket" (func (param i64) (result i64)))
     (import "lunatic::message" "take_udp_socket" (func (param i64) (result i64)))
     (import "lunatic::message" "send" (func (param i64) (result i32)))
-    (import "lunatic::message" "send_receive_skip_search" (func (param i64 i64) (result i32)))
+    (import "lunatic::message" "send_receive_skip_search" (func (param i64 i64 i64) (result i32)))
     (import "lunatic::message" "receive" (func (param i32 i32 i64) (result i32)))
 
     (import "lunatic::timer" "send_after" (func (param i64 i64) (result i64)))
@@ -98,7 +98,7 @@
     (import "lunatic::distributed" "module_id" (func (result i64)))
     (import "lunatic::distributed" "spawn" (func (param i64 i64 i64 i32 i32 i32 i32 i32) (result i32)))
     (import "lunatic::distributed" "send" (func (param i64 i64) (result i32)))
-    (import "lunatic::distributed" "send_receive_skip_search" (func (param i64 i64 i64) (result i32)))
+    (import "lunatic::distributed" "send_receive_skip_search" (func (param i64 i64 i64 i64) (result i32)))
 
     (import "lunatic::metrics" "counter" (func (param i32 i32 i64)))
     (import "lunatic::metrics" "increment_counter" (func (param i32 i32)))

@@ -34,7 +34,7 @@ pub fn register<T: ProcessState + ProcessCtx<T> + NetworkingCtx + Send + 'static
     linker.func_wrap("lunatic::message", "push_tls_stream", push_tls_stream)?;
     linker.func_wrap("lunatic::message", "take_tls_stream", take_tls_stream)?;
     linker.func_wrap("lunatic::message", "send", send)?;
-    linker.func_wrap2_async(
+    linker.func_wrap3_async(
         "lunatic::message",
         "send_receive_skip_search",
         send_receive_skip_search,
@@ -468,6 +468,7 @@ fn send<T: ProcessState + ProcessCtx<T>>(mut caller: Caller<T>, process_id: u64)
 fn send_receive_skip_search<T: ProcessState + ProcessCtx<T> + Send>(
     mut caller: Caller<T>,
     process_id: u64,
+    wait_on_tag: i64,
     timeout_duration: u64,
 ) -> Box<dyn Future<Output = Result<u32>> + Send + '_> {
     Box::new(async move {
@@ -476,19 +477,13 @@ fn send_receive_skip_search<T: ProcessState + ProcessCtx<T> + Send>(
             .message_scratch_area()
             .take()
             .or_trap("lunatic::message::send_receive_skip_search")?;
-        let mut _tags = [0; 1];
-        let tags = if let Some(tag) = message.tag() {
-            _tags = [tag];
-            Some(&_tags[..])
-        } else {
-            None
-        };
 
         if let Some(process) = caller.data_mut().environment().get_process(process_id) {
             process.send(Signal::Message(message));
         }
 
-        let pop_skip_search_tag = caller.data_mut().mailbox().pop_skip_search(tags);
+        let tags = [wait_on_tag];
+        let pop_skip_search_tag = caller.data_mut().mailbox().pop_skip_search(Some(&tags));
         if let Ok(message) = match timeout_duration {
             // Without timeout
             u64::MAX => Ok(pop_skip_search_tag.await),

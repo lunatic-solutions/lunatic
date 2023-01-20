@@ -28,7 +28,7 @@ where
     linker.func_wrap("lunatic::distributed", "module_id", module_id)?;
     linker.func_wrap8_async("lunatic::distributed", "spawn", spawn)?;
     linker.func_wrap2_async("lunatic::distributed", "send", send)?;
-    linker.func_wrap3_async(
+    linker.func_wrap4_async(
         "lunatic::distributed",
         "send_receive_skip_search",
         send_receive_skip_search,
@@ -410,6 +410,7 @@ fn send_receive_skip_search<T, E>(
     mut caller: Caller<T>,
     node_id: u64,
     process_id: u64,
+    wait_on_tag: i64,
     timeout_duration: u64,
 ) -> Box<dyn Future<Output = Result<u32>> + Send + '_>
 where
@@ -423,14 +424,6 @@ where
             .message_scratch_area()
             .take()
             .or_trap("lunatic::message::send::no_message")?;
-
-        let mut _tags = [0; 1];
-        let tags = if let Some(tag) = message.tag() {
-            _tags = [tag];
-            Some(&_tags[..])
-        } else {
-            None
-        };
 
         if let Message::Data(DataMessage {
             tag,
@@ -463,7 +456,8 @@ where
                 return Ok(code);
             }
 
-            let pop_skip_search = caller.data_mut().mailbox().pop_skip_search(tags);
+            let tags = [wait_on_tag];
+            let pop_skip_search = caller.data_mut().mailbox().pop_skip_search(Some(&tags));
             if let Ok(message) = match timeout_duration {
                 // Without timeout
                 u64::MAX => Ok(pop_skip_search.await),
