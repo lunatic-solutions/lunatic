@@ -245,7 +245,7 @@ pub(crate) async fn test(augmented_args: Option<Vec<String>>) -> Result<()> {
         state.set_stdout(stdout.clone());
         state.set_stderr(stdout.clone());
 
-        let spawn_permit = env.can_spawn_next_process().await?;
+        env.can_spawn_next_process().await?;
         let (task, _) = spawn_wasm(
             env,
             runtime.clone(),
@@ -254,7 +254,6 @@ pub(crate) async fn test(augmented_args: Option<Vec<String>>) -> Result<()> {
             &test_function.wasm_export_name,
             Vec::new(),
             None,
-            spawn_permit,
         )
         .await
         .context(format!(

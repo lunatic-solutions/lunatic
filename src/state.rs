@@ -514,19 +514,10 @@ mod tests {
         )
         .unwrap();
 
-        let spawn_permit = env.can_spawn_next_process().await.unwrap();
+        env.can_spawn_next_process().await.unwrap();
 
-        spawn_wasm(
-            env,
-            runtime,
-            &module,
-            state,
-            "hello",
-            Vec::new(),
-            None,
-            spawn_permit,
-        )
-        .await
-        .unwrap();
+        spawn_wasm(env, runtime, &module, state, "hello", Vec::new(), None)
+            .await
+            .unwrap();
     }
 }

@@ -181,7 +181,7 @@ where
         None => ctx.envs.create(environment_id).await,
     };
 
-    let spawn_permit = env.can_spawn_next_process().await?;
+    env.can_spawn_next_process().await?;
 
     let distributed = ctx.distributed.clone();
     let runtime = ctx.runtime.clone();
@@ -195,7 +195,6 @@ where
         &function,
         params,
         None,
-        spawn_permit,
     )
     .await?;
     Ok(Ok(proc.id()))

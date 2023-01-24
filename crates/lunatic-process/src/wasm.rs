@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use log::trace;
-use tokio::sync::OwnedSemaphorePermit;
 use tokio::task::JoinHandle;
 use wasmtime::{ResourceLimiter, Val};
 
@@ -29,7 +28,6 @@ pub async fn spawn_wasm<S>(
     function: &str,
     params: Vec<Val>,
     link: Option<(Option<i64>, Arc<dyn Process>)>,
-    permit: Option<OwnedSemaphorePermit>,
 ) -> Result<(JoinHandle<Result<S>>, Arc<dyn Process>)>
 where
     S: ProcessState + Send + ResourceLimiter + 'static,
@@ -45,7 +43,7 @@ where
     let child_process = crate::new(fut, id, env.clone(), signal_mailbox.1, message_mailbox);
     let child_process_handle = Arc::new(WasmProcess::new(id, signal_mailbox.0.clone()));
 
-    env.add_process(id, child_process_handle.clone(), permit);
+    env.add_process(id, child_process_handle.clone());
 
     // **Child link guarantees**:
     // The link signal is going to be put inside of the child's mailbox and is going to be
