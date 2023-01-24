@@ -20,7 +20,6 @@ pub fn allocate_guest_memory<'a, T: Send>(
     size: u32,
 ) -> Pin<Box<dyn Future<Output = Result<u32>> + Send + 'a>> {
     Box::pin(async move {
-        println!("[vm] starting to allocate guest memory");
         let mut results = [Val::I32(0)];
         caller
             .get_export(ALLOCATOR_FUNCTION_NAME)
@@ -31,7 +30,6 @@ pub fn allocate_guest_memory<'a, T: Send>(
             .await
             .or_trap(format!("failed to call {}", ALLOCATOR_FUNCTION_NAME))?;
 
-        println!("[vm] allocation succeeded {:?}", results);
         Ok(results[0]
             .i32()
             .or_trap(format!("result of {} is not i32", ALLOCATOR_FUNCTION_NAME))?

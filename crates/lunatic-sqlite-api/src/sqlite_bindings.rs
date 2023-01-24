@@ -204,7 +204,6 @@ fn bind_value<T: ProcessState + ErrorCtx + SQLiteCtx>(
     let memory = get_memory(&mut caller)?;
     let (memory_slice, state) = memory.data_and_store_mut(&mut caller);
 
-    let proc_id = state.id();
     let (_, statement) = get_statement!(state, statement_id);
 
     // get the query
@@ -215,7 +214,6 @@ fn bind_value<T: ProcessState + ErrorCtx + SQLiteCtx>(
     let values: BindList = bincode::deserialize(bind_data).unwrap();
 
     for pair in values.iter() {
-        println!("[vm {}] BINDING STMT {:?}", proc_id, pair);
         pair.bind(statement)
             .or_trap("lunatic::sqlite::bind_value")?;
     }
@@ -395,17 +393,13 @@ fn statement_reset<T: ProcessState + ErrorCtx + SQLiteCtx>(
 // return a u64 which contains both the length of the pointer (usize=u32) and the pointer itself (u32)
 async fn write_to_guest_vec<T: ProcessState + ErrorCtx + SQLiteCtx + Send + Sync>(
     mut caller: Caller<'_, T>,
-    connection_id: u64,
+    _connection_id: u64,
     memory: Memory,
     encoded_vec: Vec<u8>,
     opaque_ptr: u32,
 ) -> Result<u32> {
     let alloc_len = encoded_vec.len();
-    let mut proc_id: u64 = 0;
     let alloc_ptr = {
-        let (_, state) = memory.data_and_store_mut(&mut caller);
-        proc_id = state.id();
-
         let alloc_ptr = allocate_guest_memory(&mut caller, alloc_len as u32)
             .await
             .or_trap("lunatic::sqlite::write_to_guest_vec::alloc_response_vec")?;
@@ -414,28 +408,17 @@ async fn write_to_guest_vec<T: ProcessState + ErrorCtx + SQLiteCtx + Send + Sync
         let mut alloc_vec = memory_slice
             .get_mut(alloc_ptr as usize..(alloc_ptr as usize + alloc_len))
             .or_trap("lunatic::sqlite::write_to_guest_vec")?;
-        let mut alloc_vec = unsafe { Vec::from_raw_parts(alloc_vec.as_mut_ptr(), 0, alloc_len) };
-        println!("[vm {}] starting to write data to guest vec", proc_id);
 
         alloc_vec
             .write(&encoded_vec)
             .or_trap("lunatic::sqlite::write_to_guest_vec")?;
 
-        let ptr = alloc_vec.as_mut_ptr();
-        std::mem::forget(alloc_vec);
-
-        println!("[vm {}] done writing to guest vec", proc_id);
-        ptr
+        alloc_ptr
     };
 
-    println!(
-        "[vm {}] writing to opaque pointer {:?} | {:?} <- {}",
-        proc_id, alloc_ptr, opaque_ptr, alloc_len
-    );
     memory
         .write(&mut caller, opaque_ptr as usize, &alloc_len.to_le_bytes())
         .or_trap("lunatic::networking::tcp_read")?;
-    println!("[vm {}] done writing to opaque pointer", proc_id);
     Ok(alloc_ptr as u32)
 }
 
