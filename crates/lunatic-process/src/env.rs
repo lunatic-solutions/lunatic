@@ -15,6 +15,7 @@ pub trait Environment: Send + Sync {
     fn remove_process(&self, id: u64);
     fn process_count(&self) -> usize;
     fn send(&self, id: u64, signal: Signal);
+    fn kill_process(&self, id: u64);
 }
 
 #[async_trait]
@@ -23,6 +24,7 @@ pub trait Environments: Send + Sync {
 
     async fn create(&self, id: u64) -> Arc<Self::Env>;
     async fn get(&self, id: u64) -> Option<Arc<Self::Env>>;
+    async fn terminate(&self, id: u64);
 }
 
 #[derive(Clone)]
@@ -92,6 +94,11 @@ impl Environment for LunaticEnvironment {
     fn id(&self) -> u64 {
         self.environment_id
     }
+
+    fn kill_process(&self, id: u64) {
+        self.send(id, Signal::Kill);
+        self.remove_process(id);
+    }
 }
 
 #[derive(Clone, Default)]
@@ -112,5 +119,15 @@ impl Environments for LunaticEnvironments {
 
     async fn get(&self, id: u64) -> Option<Arc<Self::Env>> {
         self.envs.get(&id).map(|e| e.clone())
+    }
+
+    async fn terminate(&self, id: u64) {
+        if let Some(env) = self.get(id).await {
+            let process_ids: Vec<u64> = env.processes.iter().map(|p| *p.key()).collect();
+            for pid in process_ids {
+                env.kill_process(pid);
+            }
+        }
+        self.envs.remove(&id);
     }
 }
