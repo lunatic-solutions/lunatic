@@ -18,7 +18,6 @@ pub trait Environment: Send + Sync {
     fn process_count(&self) -> usize;
     async fn can_spawn_next_process(&self) -> Result<Option<()>>;
     fn send(&self, id: u64, signal: Signal);
-    fn kill_process(&self, id: u64);
 }
 
 #[async_trait]
@@ -103,11 +102,6 @@ impl Environment for LunaticEnvironment {
         // Don't impose any limits to process spawning
         Ok(None)
     }
-
-    fn kill_process(&self, id: u64) {
-        self.send(id, Signal::Kill);
-        self.remove_process(id);
-    }
 }
 
 #[derive(Clone, Default)]
@@ -134,7 +128,7 @@ impl Environments for LunaticEnvironments {
         if let Some(env) = self.get(id).await {
             let process_ids: Vec<u64> = env.processes.iter().map(|p| *p.key()).collect();
             for pid in process_ids {
-                env.kill_process(pid);
+                env.send(pid, Signal::Kill);
             }
         }
         self.envs.remove(&id);
