@@ -1,3 +1,4 @@
+use anyhow::Result;
 use async_trait::async_trait;
 use dashmap::DashMap;
 use std::sync::{
@@ -7,6 +8,7 @@ use std::sync::{
 
 use crate::{Process, Signal};
 
+#[async_trait]
 pub trait Environment: Send + Sync {
     fn id(&self) -> u64;
     fn get_next_process_id(&self) -> u64;
@@ -14,6 +16,7 @@ pub trait Environment: Send + Sync {
     fn add_process(&self, id: u64, proc: Arc<dyn Process>);
     fn remove_process(&self, id: u64);
     fn process_count(&self) -> usize;
+    async fn can_spawn_next_process(&self) -> Result<Option<()>>;
     fn send(&self, id: u64, signal: Signal);
     fn kill_process(&self, id: u64);
 }
@@ -44,6 +47,7 @@ impl LunaticEnvironment {
     }
 }
 
+#[async_trait]
 impl Environment for LunaticEnvironment {
     fn get_process(&self, id: u64) -> Option<Arc<dyn Process>> {
         self.processes.get(&id).map(|x| x.clone())
@@ -93,6 +97,11 @@ impl Environment for LunaticEnvironment {
 
     fn id(&self) -> u64 {
         self.environment_id
+    }
+
+    async fn can_spawn_next_process(&self) -> Result<Option<()>> {
+        // Don't impose any limits to process spawning
+        Ok(None)
     }
 
     fn kill_process(&self, id: u64) {

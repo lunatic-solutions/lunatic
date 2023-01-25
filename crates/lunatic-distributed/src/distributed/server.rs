@@ -181,6 +181,8 @@ where
         None => ctx.envs.create(environment_id).await,
     };
 
+    env.can_spawn_next_process().await?;
+
     let distributed = ctx.distributed.clone();
     let runtime = ctx.runtime.clone();
     let state = T::new_dist_state(env.clone(), distributed, runtime, module.clone(), config)?;

@@ -1,6 +1,5 @@
 use std::{
     convert::{TryFrom, TryInto},
-    future::Future,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -156,9 +155,37 @@ where
         config_set_can_spawn_processes,
     )?;
 
-    linker.func_wrap8_async("lunatic::process", "spawn", spawn)?;
-
-    linker.func_wrap1_async("lunatic::process", "sleep_ms", sleep_ms)?;
+    linker.func_wrap8_async(
+        "lunatic::process",
+        "spawn",
+        |mut caller,
+         link,
+         config_id,
+         module_id,
+         func_str_ptr,
+         func_str_len,
+         params_ptr,
+         params_len,
+         id_ptr| {
+            Box::new(async move {
+                spawn(
+                    &mut caller,
+                    link,
+                    config_id,
+                    module_id,
+                    func_str_ptr,
+                    func_str_len,
+                    params_ptr,
+                    params_len,
+                    id_ptr,
+                )
+                .await
+            })
+        },
+    )?;
+    linker.func_wrap1_async("lunatic::process", "sleep_ms", |caller, millis| {
+        Box::new(async move { sleep_ms(caller, millis).await })
+    })?;
     linker.func_wrap("lunatic::process", "die_when_link_dies", die_when_link_dies)?;
 
     linker.func_wrap("lunatic::process", "process_id", process_id)?;
@@ -179,7 +206,7 @@ where
 // *  0 on success - The ID of the newly created module is written to **id_ptr**
 // *  1 on error   - The error ID is written to **id_ptr**
 // * -1 in case the process doesn't have permission to compile modules.
-fn compile_module<T>(
+pub fn compile_module<T>(
     mut caller: Caller<T>,
     module_data_ptr: u32,
     module_data_len: u32,
@@ -235,7 +262,7 @@ where
 //
 // Traps:
 // * If the module ID doesn't exist.
-fn drop_module<T: ProcessState + ProcessCtx<T>>(
+pub fn drop_module<T: ProcessState + ProcessCtx<T>>(
     mut caller: Caller<T>,
     module_id: u64,
 ) -> Result<()> {
@@ -260,7 +287,7 @@ fn drop_module<T: ProcessState + ProcessCtx<T>>(
 // Returns:
 // * ID of newly created configuration in case of success
 // * -1 in case the process doesn't have permission to create new configurations
-fn create_config<T>(mut caller: Caller<T>) -> i64
+pub fn create_config<T>(mut caller: Caller<T>) -> i64
 where
     T: ProcessState + ProcessCtx<T>,
     T::Config: ProcessConfigCtx,
@@ -280,7 +307,7 @@ where
 //
 // Traps:
 // * If the config ID doesn't exist.
-fn drop_config<T: ProcessState + ProcessCtx<T>>(
+pub fn drop_config<T: ProcessState + ProcessCtx<T>>(
     mut caller: Caller<T>,
     config_id: u64,
 ) -> Result<()> {
@@ -301,7 +328,7 @@ fn drop_config<T: ProcessState + ProcessCtx<T>>(
 // Traps:
 // * If max_memory is bigger than the platform maximum.
 // * If the config ID doesn't exist.
-fn config_set_max_memory<T: ProcessState + ProcessCtx<T>>(
+pub fn config_set_max_memory<T: ProcessState + ProcessCtx<T>>(
     mut caller: Caller<T>,
     config_id: u64,
     max_memory: u64,
@@ -321,7 +348,7 @@ fn config_set_max_memory<T: ProcessState + ProcessCtx<T>>(
 //
 // Traps:
 // * If the config ID doesn't exist.
-fn config_get_max_memory<T: ProcessState + ProcessCtx<T>>(
+pub fn config_get_max_memory<T: ProcessState + ProcessCtx<T>>(
     caller: Caller<T>,
     config_id: u64,
 ) -> Result<u64> {
@@ -340,7 +367,7 @@ fn config_get_max_memory<T: ProcessState + ProcessCtx<T>>(
 //
 // Traps:
 // * If the config ID doesn't exist.
-fn config_set_max_fuel<T: ProcessState + ProcessCtx<T>>(
+pub fn config_set_max_fuel<T: ProcessState + ProcessCtx<T>>(
     mut caller: Caller<T>,
     config_id: u64,
     max_fuel: u64,
@@ -365,7 +392,7 @@ fn config_set_max_fuel<T: ProcessState + ProcessCtx<T>>(
 //
 // Traps:
 // * If the config ID doesn't exist.
-fn config_get_max_fuel<T: ProcessState + ProcessCtx<T>>(
+pub fn config_get_max_fuel<T: ProcessState + ProcessCtx<T>>(
     caller: Caller<T>,
     config_id: u64,
 ) -> Result<u64> {
@@ -385,7 +412,7 @@ fn config_get_max_fuel<T: ProcessState + ProcessCtx<T>>(
 //
 // Traps:
 // * If the config ID doesn't exist.
-fn config_can_compile_modules<T>(caller: Caller<T>, config_id: u64) -> Result<u32>
+pub fn config_can_compile_modules<T>(caller: Caller<T>, config_id: u64) -> Result<u32>
 where
     T: ProcessState + ProcessCtx<T>,
     T::Config: ProcessConfigCtx,
@@ -404,7 +431,11 @@ where
 //
 // Traps:
 // * If the config ID doesn't exist.
-fn config_set_can_compile_modules<T>(mut caller: Caller<T>, config_id: u64, can: u32) -> Result<()>
+pub fn config_set_can_compile_modules<T>(
+    mut caller: Caller<T>,
+    config_id: u64,
+    can: u32,
+) -> Result<()>
 where
     T: ProcessState + ProcessCtx<T>,
     T::Config: ProcessConfigCtx,
@@ -423,7 +454,7 @@ where
 //
 // Traps:
 // * If the config ID doesn't exist.
-fn config_can_create_configs<T>(caller: Caller<T>, config_id: u64) -> Result<u32>
+pub fn config_can_create_configs<T>(caller: Caller<T>, config_id: u64) -> Result<u32>
 where
     T: ProcessState + ProcessCtx<T>,
     T::Config: ProcessConfigCtx,
@@ -442,7 +473,11 @@ where
 //
 // Traps:
 // * If the config ID doesn't exist.
-fn config_set_can_create_configs<T>(mut caller: Caller<T>, config_id: u64, can: u32) -> Result<()>
+pub fn config_set_can_create_configs<T>(
+    mut caller: Caller<T>,
+    config_id: u64,
+    can: u32,
+) -> Result<()>
 where
     T: ProcessState + ProcessCtx<T>,
     T::Config: ProcessConfigCtx,
@@ -460,7 +495,7 @@ where
 //
 // Traps:
 // * If the config ID doesn't exist.
-fn config_can_spawn_processes<T>(caller: Caller<T>, config_id: u64) -> Result<u32>
+pub fn config_can_spawn_processes<T>(caller: Caller<T>, config_id: u64) -> Result<u32>
 where
     T: ProcessState + ProcessCtx<T>,
     T::Config: ProcessConfigCtx,
@@ -479,7 +514,11 @@ where
 //
 // Traps:
 // * If the config ID doesn't exist.
-fn config_set_can_spawn_processes<T>(mut caller: Caller<T>, config_id: u64, can: u32) -> Result<()>
+pub fn config_set_can_spawn_processes<T>(
+    mut caller: Caller<T>,
+    config_id: u64,
+    can: u32,
+) -> Result<()>
 where
     T: ProcessState + ProcessCtx<T>,
     T::Config: ProcessConfigCtx,
@@ -520,8 +559,8 @@ where
 // * If the params array is in a wrong format.
 // * If any memory outside the guest heap space is referenced.
 #[allow(clippy::too_many_arguments)]
-fn spawn<T>(
-    mut caller: Caller<T>,
+pub async fn spawn<T>(
+    caller: &mut Caller<'_, T>,
     link: i64,
     config_id: i64,
     module_id: i64,
@@ -530,144 +569,138 @@ fn spawn<T>(
     params_ptr: u32,
     params_len: u32,
     id_ptr: u32,
-) -> Box<dyn Future<Output = Result<u32>> + Send + '_>
+) -> Result<u32>
 where
     T: ProcessState + ProcessCtx<T> + ErrorCtx + LunaticWasiCtx + ResourceLimiter + Send + 'static,
     for<'a> &'a T: Send,
     T::Config: ProcessConfigCtx,
 {
-    Box::new(async move {
-        if !caller.data().config().can_spawn_processes() {
-            return Err(anyhow!(
-                "Process doesn't have permissions to spawn sub-processes"
-            ));
-        }
+    if !caller.data().config().can_spawn_processes() {
+        return Err(anyhow!(
+            "Process doesn't have permissions to spawn sub-processes"
+        ));
+    }
 
-        let state = caller.data();
+    let env = caller.data().environment();
+    env.can_spawn_next_process()
+        .await
+        .or_trap("lunatic::process:spawn: Process spawn limit reached.")?;
 
-        if !state.is_initialized() {
-            return Err(anyhow!("Cannot spawn process during module initialization"));
-        }
+    let state = caller.data();
 
-        let config = match config_id {
-            -1 => state.config().clone(),
-            config_id => Arc::new(
-                caller
-                    .data()
-                    .config_resources()
-                    .get(config_id as u64)
-                    .or_trap("lunatic::process::spawn: Config ID doesn't exist")?
-                    .clone(),
-            ),
-        };
+    if !state.is_initialized() {
+        return Err(anyhow!("Cannot spawn process during module initialization"));
+    }
 
-        let module = match module_id {
-            -1 => state.module().clone(),
-            module_id => caller
+    let config = match config_id {
+        -1 => state.config().clone(),
+        config_id => Arc::new(
+            caller
                 .data()
-                .module_resources()
-                .get(module_id as u64)
-                .or_trap("lunatic::process::spawn: Module ID doesn't exist")?
+                .config_resources()
+                .get(config_id as u64)
+                .or_trap("lunatic::process::spawn: Config ID doesn't exist")?
                 .clone(),
-        };
+        ),
+    };
 
-        let mut state = state.new_state(module.clone(), config)?;
+    let module = match module_id {
+        -1 => state.module().clone(),
+        module_id => caller
+            .data()
+            .module_resources()
+            .get(module_id as u64)
+            .or_trap("lunatic::process::spawn: Module ID doesn't exist")?
+            .clone(),
+    };
 
-        let memory = get_memory(&mut caller)?;
-        let func_str = memory
-            .data(&caller)
-            .get(func_str_ptr as usize..(func_str_ptr + func_str_len) as usize)
-            .or_trap("lunatic::process::spawn")?;
-        let function = std::str::from_utf8(func_str).or_trap("lunatic::process::spawn")?;
-        let params = memory
-            .data(&caller)
-            .get(params_ptr as usize..(params_ptr + params_len) as usize)
-            .or_trap("lunatic::process::spawn")?;
-        let params_chunks = &mut params.chunks_exact(17);
-        let params = params_chunks
-            .map(|chunk| {
-                let value = u128::from_le_bytes(chunk[1..].try_into()?);
-                let result = match chunk[0] {
-                    0x7F => Val::I32(value as i32),
-                    0x7E => Val::I64(value as i64),
-                    0x7B => Val::V128(value),
-                    _ => return Err(anyhow!("Unsupported type ID")),
-                };
-                Ok(result)
-            })
-            .collect::<Result<Vec<_>>>()?;
-        if !params_chunks.remainder().is_empty() {
-            return Err(anyhow!(
-                "Params array must be in chunks of 17 bytes, but {} bytes remained",
-                params_chunks.remainder().len()
-            ));
+    let mut state = state.new_state(module.clone(), config)?;
+
+    let memory = get_memory(caller)?;
+    let func_str = memory
+        .data(&caller)
+        .get(func_str_ptr as usize..(func_str_ptr + func_str_len) as usize)
+        .or_trap("lunatic::process::spawn")?;
+    let function = std::str::from_utf8(func_str).or_trap("lunatic::process::spawn")?;
+    let params = memory
+        .data(&caller)
+        .get(params_ptr as usize..(params_ptr + params_len) as usize)
+        .or_trap("lunatic::process::spawn")?;
+    let params_chunks = &mut params.chunks_exact(17);
+    let params = params_chunks
+        .map(|chunk| {
+            let value = u128::from_le_bytes(chunk[1..].try_into()?);
+            let result = match chunk[0] {
+                0x7F => Val::I32(value as i32),
+                0x7E => Val::I64(value as i64),
+                0x7B => Val::V128(value),
+                _ => return Err(anyhow!("Unsupported type ID")),
+            };
+            Ok(result)
+        })
+        .collect::<Result<Vec<_>>>()?;
+    if !params_chunks.remainder().is_empty() {
+        return Err(anyhow!(
+            "Params array must be in chunks of 17 bytes, but {} bytes remained",
+            params_chunks.remainder().len()
+        ));
+    }
+    // Should processes be linked together?
+    let link: Option<(Option<i64>, Arc<dyn Process>)> = match link {
+        0 => None,
+        tag => {
+            let id = caller.data().id();
+            let signal_mailbox = caller.data().signal_mailbox().clone();
+            let process = WasmProcess::new(id, signal_mailbox.0);
+            Some((Some(tag), Arc::new(process)))
         }
-        // Should processes be linked together?
-        let link: Option<(Option<i64>, Arc<dyn Process>)> = match link {
-            0 => None,
-            tag => {
-                let id = caller.data().id();
-                let signal_mailbox = caller.data().signal_mailbox().clone();
-                let process = WasmProcess::new(id, signal_mailbox.0);
-                Some((Some(tag), Arc::new(process)))
-            }
-        };
+    };
 
-        let runtime = caller.data().runtime().clone();
+    let runtime = caller.data().runtime().clone();
 
-        // Inherit stdout and stderr streams if they are redirected by the parent.
-        let stdout = if let Some(stdout) = caller.data().get_stdout() {
-            let next_stream = stdout.next();
-            state.set_stdout(next_stream.clone());
-            Some((stdout.clone(), next_stream))
-        } else {
-            None
-        };
-        if let Some(stderr) = caller.data().get_stderr() {
-            // If stderr is same as stdout, use same `next_stream`.
-            if let Some((stdout, next_stream)) = stdout {
-                if &stdout == stderr {
-                    state.set_stderr(next_stream);
-                } else {
-                    state.set_stderr(stderr.next());
-                }
+    // Inherit stdout and stderr streams if they are redirected by the parent.
+    let stdout = if let Some(stdout) = caller.data().get_stdout() {
+        let next_stream = stdout.next();
+        state.set_stdout(next_stream.clone());
+        Some((stdout.clone(), next_stream))
+    } else {
+        None
+    };
+    if let Some(stderr) = caller.data().get_stderr() {
+        // If stderr is same as stdout, use same `next_stream`.
+        if let Some((stdout, next_stream)) = stdout {
+            if &stdout == stderr {
+                state.set_stderr(next_stream);
             } else {
                 state.set_stderr(stderr.next());
             }
+        } else {
+            state.set_stderr(stderr.next());
         }
+    }
 
-        // set state instead of config TODO
-        let env = caller.data().environment();
-        let (proc_or_error_id, result) = match lunatic_process::wasm::spawn_wasm(
-            env, runtime, &module, state, function, params, link,
-        )
-        .await
-        {
-            Ok((_, process)) => (process.id(), 0),
-            Err(error) => (caller.data_mut().error_resources_mut().add(error), 1),
-        };
+    // set state instead of config TODO
+    let env = caller.data().environment();
+    let (proc_or_error_id, result) = match lunatic_process::wasm::spawn_wasm(
+        env, runtime, &module, state, function, params, link,
+    )
+    .await
+    {
+        Ok((_, process)) => (process.id(), 0),
+        Err(error) => (caller.data_mut().error_resources_mut().add(error), 1),
+    };
 
-        memory
-            .write(
-                &mut caller,
-                id_ptr as usize,
-                &proc_or_error_id.to_le_bytes(),
-            )
-            .or_trap("lunatic::process::spawn")?;
-        Ok(result)
-    })
+    memory
+        .write(caller, id_ptr as usize, &proc_or_error_id.to_le_bytes())
+        .or_trap("lunatic::process::spawn")?;
+    Ok(result)
 }
 
 // lunatic::process::sleep_ms(millis: u64)
 //
 // Suspend process for `millis`.
-fn sleep_ms<T: ProcessState + ProcessCtx<T>>(
-    _: Caller<T>,
-    millis: u64,
-) -> Box<dyn Future<Output = ()> + Send + '_> {
-    Box::new(async move {
-        tokio::time::sleep(Duration::from_millis(millis)).await;
-    })
+pub async fn sleep_ms<T: ProcessState + ProcessCtx<T>>(_: Caller<'_, T>, millis: u64) {
+    tokio::time::sleep(Duration::from_millis(millis)).await
 }
 
 // Defines what happens to this process if one of the linked processes notifies us that it died.
@@ -677,7 +710,7 @@ fn sleep_ms<T: ProcessState + ProcessCtx<T>>(
 // 2. `trap != 0` the process will die and notify all linked processes of its death.
 //
 // The default behaviour for a newly spawned process is 2.
-fn die_when_link_dies<T: ProcessState + ProcessCtx<T>>(mut caller: Caller<T>, trap: u32) {
+pub fn die_when_link_dies<T: ProcessState + ProcessCtx<T>>(mut caller: Caller<T>, trap: u32) {
     caller
         .data_mut()
         .signal_mailbox()
@@ -687,12 +720,12 @@ fn die_when_link_dies<T: ProcessState + ProcessCtx<T>>(mut caller: Caller<T>, tr
 }
 
 // Returns ID of the process currently running
-fn process_id<T: ProcessState + ProcessCtx<T>>(caller: Caller<T>) -> u64 {
+pub fn process_id<T: ProcessState + ProcessCtx<T>>(caller: Caller<T>) -> u64 {
     caller.data().id()
 }
 
 // Returns ID of the environment in which the process is currently running
-fn environment_id<T: ProcessState + ProcessCtx<T>>(caller: Caller<T>) -> u64 {
+pub fn environment_id<T: ProcessState + ProcessCtx<T>>(caller: Caller<T>) -> u64 {
     caller.data().environment().id()
 }
 
@@ -701,7 +734,7 @@ fn environment_id<T: ProcessState + ProcessCtx<T>>(caller: Caller<T>) -> u64 {
 //
 // Traps:
 // * If the process ID doesn't exist.
-fn link<T: ProcessState + ProcessCtx<T>>(
+pub fn link<T: ProcessState + ProcessCtx<T>>(
     mut caller: Caller<T>,
     tag: i64,
     process_id: u64,
@@ -745,7 +778,10 @@ fn link<T: ProcessState + ProcessCtx<T>>(
 //
 // Traps:
 // * If the process ID doesn't exist.
-fn unlink<T: ProcessState + ProcessCtx<T>>(mut caller: Caller<T>, process_id: u64) -> Result<()> {
+pub fn unlink<T: ProcessState + ProcessCtx<T>>(
+    mut caller: Caller<T>,
+    process_id: u64,
+) -> Result<()> {
     // Create handle to itself
     let this_process_id = caller.data().id();
 
@@ -773,7 +809,7 @@ fn unlink<T: ProcessState + ProcessCtx<T>>(mut caller: Caller<T>, process_id: u6
 //
 // Traps:
 // * If the process ID doesn't exist.
-fn kill<T: ProcessState + ProcessCtx<T>>(caller: Caller<T>, process_id: u64) -> Result<()> {
+pub fn kill<T: ProcessState + ProcessCtx<T>>(caller: Caller<T>, process_id: u64) -> Result<()> {
     // Send kill signal to process
     if let Some(process) = caller.data().environment().get_process(process_id) {
         process.send(Signal::Kill);
@@ -782,7 +818,7 @@ fn kill<T: ProcessState + ProcessCtx<T>>(caller: Caller<T>, process_id: u64) -> 
 }
 
 // Checks to see if a process exists
-fn exists<T: ProcessState + ProcessCtx<T>>(caller: Caller<T>, process_id: u64) -> i32 {
+pub fn exists<T: ProcessState + ProcessCtx<T>>(caller: Caller<T>, process_id: u64) -> i32 {
     caller
         .data()
         .environment()
