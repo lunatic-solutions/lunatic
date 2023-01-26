@@ -157,7 +157,6 @@ where
     )?;
 
     linker.func_wrap8_async("lunatic::process", "spawn", spawn)?;
-
     linker.func_wrap1_async("lunatic::process", "sleep_ms", sleep_ms)?;
     linker.func_wrap("lunatic::process", "die_when_link_dies", die_when_link_dies)?;
 
@@ -543,6 +542,11 @@ where
             ));
         }
 
+        let env = caller.data().environment();
+        env.can_spawn_next_process()
+            .await
+            .or_trap("lunatic::process:spawn: Process spawn limit reached.")?;
+
         let state = caller.data();
 
         if !state.is_initialized() {
@@ -648,11 +652,7 @@ where
         };
 
         memory
-            .write(
-                &mut caller,
-                id_ptr as usize,
-                &proc_or_error_id.to_le_bytes(),
-            )
+            .write(caller, id_ptr as usize, &proc_or_error_id.to_le_bytes())
             .or_trap("lunatic::process::spawn")?;
         Ok(result)
     })

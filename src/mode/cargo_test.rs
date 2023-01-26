@@ -2,7 +2,11 @@ use std::{collections::HashMap, env, fs, path::Path, sync::Arc, time::Instant};
 
 use anyhow::{Context, Result};
 use clap::Parser;
-use lunatic_process::{env::LunaticEnvironment, runtimes, wasm::spawn_wasm};
+use lunatic_process::{
+    env::{Environment, LunaticEnvironment},
+    runtimes,
+    wasm::spawn_wasm,
+};
 use lunatic_process_api::ProcessConfigCtx;
 use lunatic_runtime::{DefaultProcessConfig, DefaultProcessState};
 use lunatic_stdout_capture::StdoutCapture;
@@ -241,6 +245,7 @@ pub(crate) async fn test(augmented_args: Option<Vec<String>>) -> Result<()> {
         state.set_stdout(stdout.clone());
         state.set_stderr(stdout.clone());
 
+        env.can_spawn_next_process().await?;
         let (task, _) = spawn_wasm(
             env,
             runtime.clone(),
