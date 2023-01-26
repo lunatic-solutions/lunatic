@@ -19,7 +19,6 @@ use crate::{Process, Signal, WasmProcess};
 /// After it's spawned the process will keep running in the background. A process can be killed
 /// with `Signal::Kill` signal. If you would like to block until the process is finished you can
 /// `.await` on the returned `JoinHandle<()>`.
-#[allow(clippy::too_many_arguments)]
 pub async fn spawn_wasm<S>(
     env: Arc<dyn Environment>,
     runtime: WasmtimeRuntime,

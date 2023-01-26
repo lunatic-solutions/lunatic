@@ -99,7 +99,7 @@ impl Environment for LunaticEnvironment {
 
     async fn can_spawn_next_process(&self) -> Result<Option<()>> {
         // Don't impose any limits to process spawning
-        Ok(None)
+        Ok(Some(()))
     }
 }
 
