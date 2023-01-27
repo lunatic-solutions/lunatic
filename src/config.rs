@@ -1,4 +1,4 @@
-use std::fmt::Debug;
+use std::{fmt::Debug, path::Path};
 
 use lunatic_process::config::ProcessConfig;
 use lunatic_process_api::ProcessConfigCtx;
@@ -117,6 +117,19 @@ impl ProcessConfigCtx for DefaultProcessConfig {
 
     fn set_can_spawn_processes(&mut self, can: bool) {
         self.can_spawn_processes = can
+    }
+
+    fn can_access_fs_location(&self, path: &std::path::Path) -> bool {
+        if path.is_relative() {
+            return false;
+        }
+        self.preopened_dirs()
+            .iter()
+            .filter_map(|dir| match Path::new(dir).canonicalize() {
+                Ok(d) => Some(d),
+                Err(e) => None,
+            })
+            .any(|dir| dir.exists() && path.ancestors().any(|ancestor| ancestor.eq(&dir)))
     }
 }
 

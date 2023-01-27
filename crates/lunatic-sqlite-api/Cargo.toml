@@ -19,5 +19,6 @@ hash-map-id = {workspace = true}
 lunatic-common-api = {workspace = true}
 lunatic-error-api = {workspace = true}
 lunatic-process = {workspace = true}
+lunatic-process-api = {workspace = true}
 sqlite = {version = "0.30.3", package = "sqlite-bindings-lunatic"}
 wasmtime = {workspace = true}

@@ -1327,6 +1327,7 @@ dependencies = [
  "lunatic-common-api",
  "lunatic-error-api",
  "lunatic-process",
+ "lunatic-process-api",
  "serde",
  "sqlite-bindings-lunatic",
  "wasmtime",

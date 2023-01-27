@@ -1,18 +1,20 @@
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use hash_map_id::HashMapId;
 use lunatic_common_api::{allocate_guest_memory, get_memory, IntoTrap};
 use lunatic_error_api::ErrorCtx;
 use lunatic_process::state::ProcessState;
+use lunatic_process_api::ProcessConfigCtx;
 use sqlite::{Connection, State, Statement};
 use std::{
     collections::HashMap,
     future::Future,
     io::Write,
+    path::Path,
     sync::{Arc, Mutex},
 };
 use wasmtime::{Caller, Linker, Memory, ResourceLimiter};
 
-use crate::wire_format::{BindList, SqliteError, SqliteRow, SqliteValue};
+use crate::wire_format::{BindList, DbError, SqliteError, SqliteRow, SqliteValue};
 
 pub const SQLITE_ROW: u32 = 100;
 pub const SQLITE_DONE: u32 = 101;
@@ -38,11 +40,12 @@ pub trait SQLiteCtx {
 }
 
 // Register the SqlLite apis
-pub fn register<
-    T: SQLiteCtx + ProcessState + Send + ErrorCtx + ResourceLimiter + Sync + 'static,
->(
+pub fn register<T: SQLiteCtx + ProcessState + Send + ErrorCtx + ResourceLimiter + Sync + 'static>(
     linker: &mut Linker<T>,
-) -> Result<()> {
+) -> Result<()>
+where
+    T::Config: lunatic_process_api::ProcessConfigCtx,
+{
     linker.func_wrap("lunatic::sqlite", "open", open)?;
     linker.func_wrap("lunatic::sqlite", "query_prepare", query_prepare)?;
     linker.func_wrap(
@@ -67,21 +70,38 @@ pub fn register<
     Ok(())
 }
 
-fn open<T: ProcessState + ErrorCtx + SQLiteCtx>(
+fn open<T>(
     mut caller: Caller<T>,
     path_str_ptr: u32,
     path_str_len: u32,
     connection_id_ptr: u32,
-) -> Result<u64> {
+) -> Result<u64>
+where
+    T: ProcessState + ErrorCtx + SQLiteCtx,
+    T::Config: lunatic_process_api::ProcessConfigCtx,
+{
     // obtain the memory and the state
     let memory = get_memory(&mut caller)?;
-    let (memory_slice, _state) = memory.data_and_store_mut(&mut caller);
+    let (memory_slice, state) = memory.data_and_store_mut(&mut caller);
 
     // obtain the path as a byte slice reference
     let path = memory_slice
         .get(path_str_ptr as usize..(path_str_ptr + path_str_len) as usize)
         .or_trap("lunatic::sqlite::open")?;
     let path = std::str::from_utf8(path).or_trap("lunatic::sqlite::open")?;
+    if !state.config().can_access_fs_location(Path::new(path)) {
+        let error_id = state.error_resources_mut().add(
+            anyhow::Error::msg("Permission denied").context(format!("Failed to access '{}'", path)),
+        );
+        memory
+            .write(
+                &mut caller,
+                connection_id_ptr as usize,
+                &error_id.to_le_bytes(),
+            )
+            .or_trap("lunatic::sqlite::open")?;
+        return Ok(1);
+    }
 
     // call the open function, and define the return code
     let (conn_or_err_id, return_code) = match sqlite::open(path) {
@@ -96,7 +116,6 @@ fn open<T: ProcessState + ErrorCtx + SQLiteCtx>(
     };
 
     // write the result into memory and return the return code
-    let memory = get_memory(&mut caller)?;
     memory
         .write(
             &mut caller,
