@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use hash_map_id::HashMapId;
 use lunatic_common_api::{allocate_guest_memory, get_memory, IntoTrap};
 use lunatic_error_api::ErrorCtx;
@@ -14,7 +14,7 @@ use std::{
 };
 use wasmtime::{Caller, Linker, Memory, ResourceLimiter};
 
-use crate::wire_format::{BindList, DbError, SqliteError, SqliteRow, SqliteValue};
+use crate::wire_format::{BindList, SqliteError, SqliteRow, SqliteValue};
 
 pub const SQLITE_ROW: u32 = 100;
 pub const SQLITE_DONE: u32 = 101;
@@ -26,9 +26,6 @@ pub type SQLiteStatements = HashMapId<(u64, Statement)>;
 // maps connection_id to name of allocation function
 pub type SQLiteGuestAllocators = HashMap<u64, String>;
 pub trait SQLiteCtx {
-    fn sqlite_results(&self) -> &SQLiteResults;
-    fn sqlite_results_mut(&mut self) -> &mut SQLiteResults;
-
     fn sqlite_connections(&self) -> &SQLiteConnections;
     fn sqlite_connections_mut(&mut self) -> &mut SQLiteConnections;
 
@@ -48,13 +45,6 @@ where
 {
     linker.func_wrap("lunatic::sqlite", "open", open)?;
     linker.func_wrap("lunatic::sqlite", "query_prepare", query_prepare)?;
-    linker.func_wrap(
-        "lunatic::sqlite",
-        "query_prepare_and_consume",
-        query_prepare_and_consume,
-    )?;
-    linker.func_wrap("lunatic::sqlite", "query_result_get", query_result_get)?;
-    linker.func_wrap("lunatic::sqlite", "drop_query_result", drop_query_result)?;
     linker.func_wrap("lunatic::sqlite", "execute", execute)?;
     linker.func_wrap("lunatic::sqlite", "bind_value", bind_value)?;
     linker.func_wrap("lunatic::sqlite", "sqlite3_changes", sqlite3_changes)?;
@@ -89,10 +79,10 @@ where
         .get(path_str_ptr as usize..(path_str_ptr + path_str_len) as usize)
         .or_trap("lunatic::sqlite::open")?;
     let path = std::str::from_utf8(path).or_trap("lunatic::sqlite::open")?;
-    if !state.config().can_access_fs_location(Path::new(path)) {
-        let error_id = state.error_resources_mut().add(
-            anyhow::Error::msg("Permission denied").context(format!("Failed to access '{}'", path)),
-        );
+    if let Err(error_message) = state.config().can_access_fs_location(Path::new(path)) {
+        let error_id = state
+            .error_resources_mut()
+            .add(anyhow::Error::msg(error_message).context(format!("Failed to access '{}'", path)));
         memory
             .write(
                 &mut caller,
@@ -236,149 +226,6 @@ fn bind_value<T: ProcessState + ErrorCtx + SQLiteCtx>(
         pair.bind(statement)
             .or_trap("lunatic::sqlite::bind_value")?;
     }
-
-    Ok(())
-}
-
-fn query_prepare_and_consume<T: ProcessState + ErrorCtx + SQLiteCtx>(
-    mut caller: Caller<T>,
-    conn_id: u64,
-    query_str_ptr: u32,
-    query_str_len: u32,
-    len_ptr: u32,
-) -> Result<u64> {
-    // get the memory
-    let memory = get_memory(&mut caller)?;
-    let (memory_slice, state) = memory.data_and_store_mut(&mut caller);
-
-    // get the query
-    let query = memory_slice
-        .get(query_str_ptr as usize..(query_str_ptr + query_str_len) as usize)
-        .or_trap("lunatic::sqlite::query_prepare::get_query")?;
-    let query = std::str::from_utf8(query).or_trap("lunatic::sqlite::query_prepare::from_utf8")?;
-
-    // allocate a vec to return some bytes back to the module
-    let mut return_value = Vec::new();
-    {
-        // obtain the sqlite connection
-        let conn = state
-            .sqlite_connections()
-            .get(conn_id)
-            .or_trap("lunatic::sqlite::query_prepare::obtain_conn")?
-            .lock()
-            .or_trap("lunatic::sqlite::query_prepare::obtain_conn")?;
-
-        // prepare the statement
-        let mut statement = conn
-            .prepare(query)
-            .or_trap("lunatic::sqlite::query_prepare::prepare_statement")?;
-
-        while let Ok(sqlite::State::Row) = statement.next() {
-            let count = statement.column_count();
-            for i in 0..count {
-                match statement.column_type(i) {
-                    Ok(sqlite::Type::Binary) => {
-                        let mut bytes = statement
-                            .read::<Vec<u8>, usize>(i)
-                            .or_trap("lunatic::sqlite::query_prepare::read_binary")?;
-
-                        let len = bytes.len();
-                        return_value.append(&mut vec![ColumnType::Binary as u8]);
-                        return_value.append(&mut (len as u32).to_le_bytes().to_vec());
-                        return_value.append(&mut bytes);
-                    }
-                    Ok(sqlite::Type::Float) => {
-                        return_value.append(&mut vec![ColumnType::Float as u8]);
-                        return_value.append(
-                            &mut statement
-                                .read::<f64, usize>(i)
-                                .or_trap("lunatic::sqlite::query_prepare::read_float")?
-                                .to_le_bytes()
-                                .to_vec(),
-                        );
-                    }
-                    Ok(sqlite::Type::Integer) => {
-                        return_value.append(&mut vec![ColumnType::Integer as u8]);
-                        return_value.append(
-                            &mut statement
-                                .read::<i64, usize>(i)
-                                .or_trap("lunatic::sqlite::query_prepare::read_integer")?
-                                .to_le_bytes()
-                                .to_vec(),
-                        );
-                    }
-                    Ok(sqlite::Type::String) => {
-                        let bytes = statement
-                            .read::<String, usize>(i)
-                            .or_trap("lunatic::sqlite::query_prepare::read_string")?;
-
-                        let len = bytes.len();
-                        return_value.append(&mut vec![ColumnType::String as u8]);
-                        return_value.append(&mut (len as u32).to_le_bytes().to_vec());
-                        return_value.append(&mut bytes.as_bytes().to_vec());
-                    }
-                    Ok(sqlite::Type::Null) => {
-                        return_value.append(&mut vec![ColumnType::Null as u8])
-                    }
-                    Err(_e) => {}
-                };
-            }
-
-            return_value.push(ColumnType::NewRow as u8);
-        }
-    }
-
-    // write length into memory
-    let mut slice = memory_slice
-        .get_mut(len_ptr as usize..(len_ptr as usize + 8))
-        .or_trap("lunatic::sqlite::query_prepare::write_memory")?;
-    slice
-        .write(&(return_value.len() as u64).to_le_bytes())
-        .or_trap("lunatic::sqlite::query_prepare::write_memory")?;
-
-    // store the result of the query
-    let result_id = state.sqlite_results_mut().add(return_value);
-
-    Ok(result_id)
-}
-
-fn query_result_get<T: ProcessState + ErrorCtx + SQLiteCtx>(
-    mut caller: Caller<T>,
-    resource_id: u64,
-    data_ptr: u32,
-    data_len: u32,
-) -> Result<()> {
-    // get the memory and the state
-    let memory = get_memory(&mut caller)?;
-    let (memory_slice, state) = memory.data_and_store_mut(&mut caller);
-
-    // get the vector
-    let result = state
-        .sqlite_results()
-        .get(resource_id)
-        .or_trap("lunatic::sqlite::query_result_get::get_result")?;
-
-    memory_slice
-        .get_mut(data_ptr as usize..(data_ptr + data_len) as usize)
-        .or_trap("lunatic::sqlite::query_result_get::write_result")?
-        .write(result)
-        .or_trap("lunatic::sqlite::query_result_get::write_result")?;
-
-    Ok(())
-}
-
-fn drop_query_result<T: ProcessState + ErrorCtx + SQLiteCtx>(
-    mut caller: Caller<T>,
-    result_id: u64,
-) -> Result<()> {
-    // get state
-    let memory = get_memory(&mut caller)?;
-    let (_, state) = memory.data_and_store_mut(&mut caller);
-
-    let results = state.sqlite_results_mut();
-    results
-        .remove(result_id)
-        .or_trap("lunatic::sqlite::drop_query_result")?;
 
     Ok(())
 }
@@ -597,14 +444,4 @@ fn column_name<T: ProcessState + ErrorCtx + SQLiteCtx + Send + Sync>(
         )
         .await
     })
-}
-
-#[repr(u8)]
-enum ColumnType {
-    Binary = 0x00,  // has 4 bytes of length header, followed by the bytes
-    Float = 0x01,   // occupies 8 bytes f64
-    Integer = 0x02, // occupies 8 bytes i64
-    String = 0x03,  // has 4 bytes of length header, followed by the bytes
-    Null = 0x04,    // has no variable header, in fact occupies only single byte
-    NewRow = 0x05,  // indicates end of the row
 }

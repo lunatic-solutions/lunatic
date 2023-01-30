@@ -16,28 +16,6 @@ pub mod sqlite_guest_bindings {
         /// to the guest so that values can be bound to the statement at a later point
         pub fn query_prepare(connection_id: u64, query_str: *const u8, query_str_len: u32) -> u64;
 
-        /// Creates a new statement and immediately reads the rows and keeps them in the
-        /// host.
-        /// The length of data is written into `len_ptr` so that it's possible to allocate
-        /// the correct amount of memory in the guest for further reading of results.
-        ///
-        /// Returns a resource_id that can be used to read the results with
-        /// `query_results_get` as well as dropped with `drop_query_result`
-        pub fn query_prepare_and_consume(
-            connection_id: u64,
-            query_str: *const u8,
-            query_str_len: u32,
-            len_ptr: *mut u32,
-        ) -> u64;
-
-        /// Writes data from a previous query result (identified by `resource_id`)
-        /// into the provided buffer
-        pub fn query_result_get(resource_id: u64, write_buf: *const u8, write_buf_len: u32);
-
-        /// Drops the results of a previous query result (identified by `resource_id`)
-        /// from the host
-        pub fn drop_query_result(resource_id: u64);
-
         /// Executes the passed query and returns the SQLite response code
         pub fn execute(connection_id: u64, exec_str: *const u8, exec_str_len: u32) -> u32;
 
