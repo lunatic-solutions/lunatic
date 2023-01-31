@@ -82,7 +82,7 @@ where
     if let Err(error_message) = state.config().can_access_fs_location(Path::new(path)) {
         let error_id = state
             .error_resources_mut()
-            .add(anyhow::Error::msg(error_message).context(format!("Failed to access '{}'", path)));
+            .add(anyhow::Error::msg(error_message).context(format!("Failed to access '{path}'")));
         memory
             .write(
                 &mut caller,

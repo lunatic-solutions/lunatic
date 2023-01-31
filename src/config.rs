@@ -140,7 +140,7 @@ impl ProcessConfigCtx for DefaultProcessConfig {
 
         match has_access {
             true => Ok(()),
-            false => Err(format!("Permission to '{:?}' denied", file_path)),
+            false => Err(format!("Permission to '{file_path:?}' denied")),
         }
     }
 }

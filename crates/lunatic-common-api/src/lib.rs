@@ -23,17 +23,16 @@ pub fn allocate_guest_memory<'a, T: Send>(
         let mut results = [Val::I32(0)];
         caller
             .get_export(ALLOCATOR_FUNCTION_NAME)
-            .or_trap(format!("no export named {} found", ALLOCATOR_FUNCTION_NAME))?
+            .or_trap(format!("no export named {ALLOCATOR_FUNCTION_NAME} found"))?
             .into_func()
             .or_trap("cannot turn export into func")?
             .call_async(caller, &[Val::I32(size as i32)], &mut results)
             .await
-            .or_trap(format!("failed to call {}", ALLOCATOR_FUNCTION_NAME))?;
+            .or_trap(format!("failed to call {ALLOCATOR_FUNCTION_NAME}"))?;
 
         Ok(results[0]
             .i32()
-            .or_trap(format!("result of {} is not i32", ALLOCATOR_FUNCTION_NAME))?
-            as u32)
+            .or_trap(format!("result of {ALLOCATOR_FUNCTION_NAME} is not i32"))? as u32)
     })
 }
 
@@ -46,13 +45,13 @@ pub fn free_guest_memory<'a, T: Send>(
         let mut results = [];
         let result = caller
             .get_export(FREEING_FUNCTION_NAME)
-            .or_trap(format!("no export named {} found", FREEING_FUNCTION_NAME))?
+            .or_trap(format!("no export named {FREEING_FUNCTION_NAME} found"))?
             .into_func()
             .or_trap("cannot turn export into func")?
             .call_async(caller, &[Val::I32(ptr as i32)], &mut results)
             .await;
 
-        result.or_trap(format!("failed to call {}", FREEING_FUNCTION_NAME))?;
+        result.or_trap(format!("failed to call {FREEING_FUNCTION_NAME}"))?;
         Ok(())
     })
 }
