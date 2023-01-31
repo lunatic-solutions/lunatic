@@ -53,7 +53,7 @@ impl Message {
 /// A variant of a [`Message`] that has a buffer of data and resources attached to it.
 ///
 /// It implements the [`Read`](std::io::Read) and [`Write`](std::io::Write) traits.
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default)]
 pub struct DataMessage {
     // TODO: Only the Node implementation depends on these fields being public.
     pub tag: Option<i64>,

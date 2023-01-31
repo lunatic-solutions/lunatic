@@ -143,10 +143,9 @@ where
             };
         }
 
-        let mut res_vec = Vec::new();
         let result = entry
             .unwrap()
-            .call_async(&mut self.store, &params, &mut res_vec)
+            .call_async(&mut self.store, &params, &mut [])
             .await;
 
         ExecutionResult {
