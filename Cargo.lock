@@ -2692,9 +2692,9 @@ checksum = "6e63cff320ae2c57904679ba7cb63280a3dc4613885beafb148ee7bf9aa9042d"
 
 [[package]]
 name = "sqlite-bindings-lunatic"
-version = "0.30.3"
+version = "0.30.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fdde31dcd0402c6876bc32d53e4fa3bc5cb792fb130e6a91e4ee51d2a966c563"
+checksum = "4280b6cc832984930555237163be0e6fd2d68c5448fed89224f7f88c6d114cc0"
 dependencies = [
  "libc",
  "sqlite3-sys",
