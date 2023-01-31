@@ -139,7 +139,7 @@ where
         if entry.is_none() {
             return ExecutionResult {
                 state: self.store.into_data(),
-                result: ResultValue::SpawnError(format!("Function '{}' not found", function)),
+                result: ResultValue::SpawnError(format!("Function '{function}' not found")),
             };
         }
 

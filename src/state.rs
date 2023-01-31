@@ -17,6 +17,7 @@ use lunatic_process::{
 };
 use lunatic_process::{mailbox::MessageMailbox, message::Message};
 use lunatic_process_api::{ProcessConfigCtx, ProcessCtx};
+use lunatic_sqlite_api::{SQLiteConnections, SQLiteCtx, SQLiteGuestAllocators, SQLiteStatements};
 use lunatic_stdout_capture::StdoutCapture;
 use lunatic_timer_api::{TimerCtx, TimerResources};
 use lunatic_wasi_api::{build_wasi, LunaticWasiCtx};
@@ -27,6 +28,14 @@ use wasmtime::{Linker, ResourceLimiter};
 use wasmtime_wasi::WasiCtx;
 
 use crate::DefaultProcessConfig;
+
+#[derive(Debug, Default)]
+pub struct DbResources {
+    // sqlite data
+    sqlite_connections: SQLiteConnections,
+    sqlite_statements: SQLiteStatements,
+    sqlite_guest_allocator: SQLiteGuestAllocators,
+}
 
 pub struct DefaultProcessState {
     // Process id
@@ -59,7 +68,8 @@ pub struct DefaultProcessState {
     wasi_stderr: Option<StdoutCapture>,
     // Set to true if the WASM module has been instantiated
     initialized: bool,
-    // Shared process registry
+    // database resources
+    db_resources: DbResources,
     registry: Arc<RwLock<HashMap<String, (u64, u64)>>>,
     // Allows for atomic registry "lookup and insert" operations, by holding the write-lock of a
     // `RwLock` struct. The lifetime of the lock will need to be extended to `'static`, but this
@@ -99,6 +109,7 @@ impl DefaultProcessState {
             wasi_stderr: None,
             initialized: false,
             registry,
+            db_resources: DbResources::default(),
             registry_atomic_put: None,
         };
         Ok(state)
@@ -136,6 +147,7 @@ impl ProcessState for DefaultProcessState {
             wasi_stderr: None,
             initialized: false,
             registry: self.registry.clone(),
+            db_resources: DbResources::default(),
             registry_atomic_put: None,
         };
         Ok(state)
@@ -168,6 +180,7 @@ impl ProcessState for DefaultProcessState {
             wasi_stdout: None,
             wasi_stderr: None,
             initialized: false,
+            db_resources: DbResources::default(),
         }
     }
 
@@ -181,6 +194,7 @@ impl ProcessState for DefaultProcessState {
         lunatic_wasi_api::register(linker)?;
         lunatic_registry_api::register(linker)?;
         lunatic_distributed_api::register(linker)?;
+        lunatic_sqlite_api::register(linker)?;
         #[cfg(feature = "metrics")]
         lunatic_metrics_api::register(linker)?;
         lunatic_trap_api::register(linker)?;
@@ -398,6 +412,31 @@ impl LunaticWasiCtx for DefaultProcessState {
     }
 }
 
+impl SQLiteCtx for DefaultProcessState {
+    fn sqlite_connections(&self) -> &SQLiteConnections {
+        &self.db_resources.sqlite_connections
+    }
+
+    fn sqlite_connections_mut(&mut self) -> &mut SQLiteConnections {
+        &mut self.db_resources.sqlite_connections
+    }
+
+    fn sqlite_statements_mut(&mut self) -> &mut SQLiteStatements {
+        &mut self.db_resources.sqlite_statements
+    }
+
+    fn sqlite_statements(&self) -> &SQLiteStatements {
+        &self.db_resources.sqlite_statements
+    }
+
+    fn sqlite_guest_allocator(&self) -> &SQLiteGuestAllocators {
+        &self.db_resources.sqlite_guest_allocator
+    }
+    fn sqlite_guest_allocator_mut(&mut self) -> &mut SQLiteGuestAllocators {
+        &mut self.db_resources.sqlite_guest_allocator
+    }
+}
+
 #[derive(Default, Debug)]
 pub(crate) struct Resources {
     pub(crate) configs: HashMapId<DefaultProcessConfig>,
@@ -472,6 +511,7 @@ impl DistributedCtx<LunaticEnvironment> for DefaultProcessState {
             wasi_stderr: None,
             initialized: false,
             registry: Default::default(), // TODO move registry into env?
+            db_resources: DbResources::default(),
             registry_atomic_put: None,
         };
         Ok(state)

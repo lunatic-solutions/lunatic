@@ -146,7 +146,7 @@ impl Debug for Signal {
             Self::DieWhenLinkDies(_) => write!(f, "DieWhenLinkDies"),
             Self::Link(_, p) => write!(f, "Link {}", p.id()),
             Self::UnLink { process_id } => write!(f, "UnLink {process_id}"),
-            Self::LinkDied(_, _, reason) => write!(f, "LinkDied {:?}", reason),
+            Self::LinkDied(_, _, reason) => write!(f, "LinkDied {reason:?}"),
         }
     }
 }
@@ -493,7 +493,6 @@ where
     }
 }
 
-#[derive(PartialEq, Eq)]
 pub enum ResultValue {
     Ok,
     Failed(String),

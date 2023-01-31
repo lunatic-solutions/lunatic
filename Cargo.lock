@@ -1599,6 +1599,7 @@ dependencies = [
  "lunatic-process",
  "lunatic-process-api",
  "lunatic-registry-api",
+ "lunatic-sqlite-api",
  "lunatic-stdout-capture",
  "lunatic-timer-api",
  "lunatic-trap-api",
@@ -1614,6 +1615,22 @@ dependencies = [
  "wasmtime",
  "wasmtime-wasi",
  "wat",
+]
+
+[[package]]
+name = "lunatic-sqlite-api"
+version = "0.12.0"
+dependencies = [
+ "anyhow",
+ "bincode",
+ "hash-map-id",
+ "lunatic-common-api",
+ "lunatic-error-api",
+ "lunatic-process",
+ "lunatic-process-api",
+ "serde",
+ "sqlite-bindings-lunatic",
+ "wasmtime",
 ]
 
 [[package]]
@@ -2672,6 +2689,36 @@ name = "spin"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6e63cff320ae2c57904679ba7cb63280a3dc4613885beafb148ee7bf9aa9042d"
+
+[[package]]
+name = "sqlite-bindings-lunatic"
+version = "0.30.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4280b6cc832984930555237163be0e6fd2d68c5448fed89224f7f88c6d114cc0"
+dependencies = [
+ "libc",
+ "sqlite3-sys",
+]
+
+[[package]]
+name = "sqlite3-src"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d1815a7a02c996eb8e5c64f61fcb6fd9b12e593ce265c512c5853b2513635691"
+dependencies = [
+ "cc",
+ "pkg-config",
+]
+
+[[package]]
+name = "sqlite3-sys"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d47c99824fc55360ba00caf28de0b8a0458369b832e016a64c13af0ad9fbb9ee"
+dependencies = [
+ "libc",
+ "sqlite3-src",
+]
 
 [[package]]
 name = "stable_deref_trait"

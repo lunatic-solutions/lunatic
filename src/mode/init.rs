@@ -1,6 +1,6 @@
 use std::{
     fs::{create_dir_all, OpenOptions},
-    io::{Read, Seek, SeekFrom, Write},
+    io::{Read, Seek, Write},
     path::Path,
 };
 
@@ -126,7 +126,7 @@ pub(crate) fn start() -> Result<()> {
     let new_config = toml::to_string(table).unwrap();
     // Truncate existing config
     config_toml.set_len(0).unwrap();
-    config_toml.seek(SeekFrom::Start(0)).unwrap();
+    config_toml.rewind().unwrap();
     config_toml
         .write_all(new_config.as_bytes())
         .expect("unable to write new config to `.cargo/config.toml`");

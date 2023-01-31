@@ -48,12 +48,12 @@ jobs:
           components: rustfmt, clippy
       # Rust builds can take some time, cache them.
       - uses: Swatinem/rust-cache@v2
-      - name: "Run tests"
-        run: cargo test --all
       - name: "Run clippy check"
         run: cargo clippy -- -D warnings
       - name: "Check formatting"
         run: cargo fmt -- --check
+      - name: "Run tests"
+        run: cargo test --all
 
       # Create a release:
       # - The next steps will only run if a tag was added during the push

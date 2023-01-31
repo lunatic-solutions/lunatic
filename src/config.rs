@@ -1,4 +1,7 @@
-use std::fmt::Debug;
+use std::{
+    fmt::Debug,
+    path::{Component, Path, PathBuf},
+};
 
 use lunatic_process::config::ProcessConfig;
 use lunatic_process_api::ProcessConfigCtx;
@@ -117,6 +120,156 @@ impl ProcessConfigCtx for DefaultProcessConfig {
 
     fn set_can_spawn_processes(&mut self, can: bool) {
         self.can_spawn_processes = can
+    }
+
+    fn can_access_fs_location(&self, path: &std::path::Path) -> Result<(), String> {
+        let (file_path, parent_dir) = match strip_file(path) {
+            Ok(p) => p,
+            Err(e) => {
+                return Err(e.to_string());
+            }
+        };
+        let has_access = self
+            .preopened_dirs()
+            .iter()
+            .filter_map(|dir| match get_absolute_path(Path::new(dir)) {
+                Ok(d) => Some(d),
+                _ => None,
+            })
+            .any(|dir| dir.exists() && path_is_ancestor(&dir, &parent_dir));
+
+        match has_access {
+            true => Ok(()),
+            false => Err(format!("Permission to '{file_path:?}' denied")),
+        }
+    }
+}
+
+fn path_is_ancestor(ancestor: &Path, descendant: &Path) -> bool {
+    let ancestor_path = Path::new(ancestor);
+    let descendant_path = Path::new(descendant);
+
+    if !ancestor_path.is_dir() {
+        return false;
+    }
+
+    // If the ancestor path is root, return true
+    if ancestor_path.as_os_str() == Path::new("/").as_os_str() {
+        return true;
+    }
+
+    let descendant_components = descendant_path.ancestors();
+
+    // Check if each component of the descendant path starts with the ancestor path
+    for component in descendant_components {
+        if component.as_os_str() == ancestor_path.as_os_str() {
+            return true;
+        }
+    }
+
+    false
+}
+
+// returns a tuple of paths, where the first is the full resolved canonicalized path
+// and the second one is stripped of the file extension, pointing to the parent directory
+// of the file that a program is trying to access
+fn strip_file(path: &Path) -> std::io::Result<(PathBuf, PathBuf)> {
+    let absolute_path = get_absolute_path(path)?;
+    if absolute_path.is_file() {
+        return Ok((absolute_path.clone(), absolute_path.join("..")));
+    }
+    Ok((absolute_path.clone(), absolute_path))
+}
+
+fn get_absolute_path(path: &std::path::Path) -> std::io::Result<PathBuf> {
+    let path = if path.is_relative() {
+        Path::join(std::env::current_dir().unwrap().as_path(), path)
+    } else {
+        path.to_path_buf()
+    };
+    Ok(normalize_path(&path))
+}
+
+fn normalize_path(path: &Path) -> PathBuf {
+    let mut components = path.components().peekable();
+    let mut ret = if let Some(c @ Component::Prefix(..)) = components.peek().cloned() {
+        components.next();
+        PathBuf::from(c.as_os_str())
+    } else {
+        PathBuf::new()
+    };
+
+    for component in components {
+        match component {
+            Component::Prefix(..) => unreachable!(),
+            Component::RootDir => {
+                ret.push(component.as_os_str());
+            }
+            Component::CurDir => {}
+            Component::ParentDir => {
+                ret.pop();
+            }
+            Component::Normal(c) => {
+                ret.push(c);
+            }
+        }
+    }
+    ret
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use crate::config::{get_absolute_path, path_is_ancestor};
+
+    use super::normalize_path;
+
+    #[test]
+    fn test_accessible_paths() {
+        let crates = get_absolute_path(Path::new("crates")).unwrap();
+        let sqlite = get_absolute_path(Path::new("crates/lunatic-sqlite-api")).unwrap();
+        let src = get_absolute_path(Path::new("crates/lunatic-sqlite-api/src")).unwrap();
+        let guest_api =
+            get_absolute_path(Path::new("crates/lunatic-sqlite-api/src/guest_api")).unwrap();
+        // checks
+        assert!(path_is_ancestor(&crates, &guest_api));
+        assert!(path_is_ancestor(&sqlite, &guest_api));
+        assert!(path_is_ancestor(&src, &guest_api));
+        assert!(path_is_ancestor(&guest_api, &guest_api));
+    }
+
+    #[test]
+    fn test_forbidden_paths() {
+        let crates = get_absolute_path(Path::new("crates")).unwrap();
+        let sqlite = get_absolute_path(Path::new("crates/lunatic-sqlite-api")).unwrap();
+        let src = get_absolute_path(Path::new("crates/lunatic-sqlite-api/src")).unwrap();
+        let guest_api =
+            get_absolute_path(Path::new("crates/lunatic-sqlite-api/src/guest_api")).unwrap();
+        // checks that there's no access to any ancestor paths
+        assert_eq!(path_is_ancestor(&guest_api, &crates), false);
+        assert_eq!(path_is_ancestor(&guest_api, &sqlite), false);
+        assert_eq!(path_is_ancestor(&guest_api, &src), false);
+    }
+
+    #[test]
+    fn test_forbidden_absolute_paths() {
+        let src = get_absolute_path(Path::new("crates/lunatic-sqlite-api/src")).unwrap();
+        // checks that there's no access to any ancestor paths
+        assert_eq!(path_is_ancestor(&src, Path::new("/")), false);
+        assert_eq!(path_is_ancestor(&src, Path::new("/etc/passwd")), false);
+    }
+
+    #[test]
+    fn normalized_paths() {
+        let crates = get_absolute_path(Path::new("crates")).unwrap();
+        let src = get_absolute_path(Path::new("crates/lunatic-sqlite-api/src")).unwrap();
+        let sneaky_src =
+            get_absolute_path(Path::new("crates/lunatic-sqlite-api/src/../src/.")).unwrap();
+        let sneaky_path =
+            get_absolute_path(Path::new("crates/lunatic-sqlite-api/src/../src/../../")).unwrap();
+        assert_eq!(src, normalize_path(&sneaky_src));
+        assert_eq!(crates, normalize_path(&sneaky_path));
     }
 }
 

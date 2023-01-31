@@ -149,7 +149,7 @@ pub(crate) async fn test(augmented_args: Option<Vec<String>>) -> Result<()> {
                         })
                         .collect();
                     let panic_unescaped = panic.replace("\\#", "#");
-                    let panic_prefix = format!("{}#", panic);
+                    let panic_prefix = format!("{panic}#");
                     let function_name = name.strip_prefix(&panic_prefix).unwrap().to_string();
                     let filtered = if args.exact {
                         !function_name.eq(&filter)
@@ -322,9 +322,7 @@ pub(crate) async fn test(augmented_args: Option<Vec<String>>) -> Result<()> {
                                     }
                                 } else {
                                     let note = format!(
-                                        "note: panic did not contain expected string\n      panic message: `\"{}\"`,\n expected substring: `\"{}\"`\n",
-                                        panic_message,
-                                        expected_panic
+                                        "note: panic did not contain expected string\n      panic message: `\"{panic_message}\"`,\n expected substring: `\"{expected_panic}\"`\n",
                                     );
                                     stdout.push_str(&note);
                                     TestResult {
@@ -371,23 +369,23 @@ pub(crate) async fn test(augmented_args: Option<Vec<String>>) -> Result<()> {
         let name = result.name;
         match result.status {
             TestStatus::Ok => {
-                println!("test {} ... \x1b[92mok\x1b[0m", name); // green ok
+                println!("test {name} ... \x1b[92mok\x1b[0m"); // green ok
                 successes.push((name, result.stdout));
             }
             TestStatus::Failed => {
-                println!("test {} ... \x1b[91mFAILED\x1b[0m", name); // red FAIL
+                println!("test {name} ... \x1b[91mFAILED\x1b[0m"); // red FAIL
                 failures.push((name, result.stdout));
             }
             TestStatus::PanicOk => {
-                println!("test {} - should panic ... \x1b[92mok\x1b[0m", name); // green ok
+                println!("test {name} - should panic ... \x1b[92mok\x1b[0m"); // green ok
                 successes.push((name, result.stdout));
             }
             TestStatus::PanicFailed => {
-                println!("test {} - should panic ... \x1b[91mFAILED\x1b[0m", name); // red FAIL
+                println!("test {name} - should panic ... \x1b[91mFAILED\x1b[0m"); // red FAIL
                 failures.push((name, result.stdout));
             }
             TestStatus::Ignored => {
-                println!("test {} ... \x1b[93mignored\x1b[0m", name); // yellow ignored
+                println!("test {name} ... \x1b[93mignored\x1b[0m"); // yellow ignored
                 ignored += 1;
             }
         }
@@ -399,14 +397,14 @@ pub(crate) async fn test(augmented_args: Option<Vec<String>>) -> Result<()> {
         // Print stdout of successes
         for (success, stdout) in successes.iter() {
             if !stdout.is_empty() {
-                println!("\n---- {} stdout ----", success);
-                print!("{}", stdout);
+                println!("\n---- {success} stdout ----");
+                print!("{stdout}");
             }
         }
 
         println!("\nsuccesses:");
         for (success, _) in successes.iter() {
-            println!("    {}", success);
+            println!("    {success}");
         }
     }
 
@@ -417,8 +415,8 @@ pub(crate) async fn test(augmented_args: Option<Vec<String>>) -> Result<()> {
     // Print stdout of failures if they are not empty
     for (failure, stdout) in failures.iter() {
         if !stdout.is_empty() {
-            println!("\n---- {} stdout ----", failure);
-            print!("{}", stdout);
+            println!("\n---- {failure} stdout ----");
+            print!("{stdout}");
         }
     }
 
@@ -427,7 +425,7 @@ pub(crate) async fn test(augmented_args: Option<Vec<String>>) -> Result<()> {
         println!("\nfailures:");
     }
     for (failure, _) in failures.iter() {
-        println!("    {}", failure);
+        println!("    {failure}");
     }
 
     // List all failures

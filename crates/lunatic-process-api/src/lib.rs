@@ -1,6 +1,7 @@
 use std::{
     convert::{TryFrom, TryInto},
     future::Future,
+    path::Path,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -31,6 +32,7 @@ pub trait ProcessConfigCtx {
     fn set_can_create_configs(&mut self, can: bool);
     fn can_spawn_processes(&self) -> bool;
     fn set_can_spawn_processes(&mut self, can: bool);
+    fn can_access_fs_location(&self, path: &Path) -> Result<(), String>;
 }
 
 pub trait ProcessCtx<S: ProcessState> {
