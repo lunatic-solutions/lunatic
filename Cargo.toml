@@ -85,6 +85,7 @@ members = [
     "crates/lunatic-common-api",
     "crates/lunatic-control",
     "crates/lunatic-control-axum",
+    "crates/lunatic-control-submillisecond",
     "crates/lunatic-distributed-api",
     "crates/lunatic-distributed",
     "crates/lunatic-error-api",
@@ -105,6 +106,7 @@ hash-map-id = { path = "crates/hash-map-id", version = "0.12" }
 lunatic-common-api = { path = "crates/lunatic-common-api", version = "0.13" }
 lunatic-control = { path = "crates/lunatic-control", version = "0.12" }
 lunatic-control-axum = { path = "crates/lunatic-control-axum", version = "0.12" }
+lunatic-control-submillisecond = { path = "crates/lunatic-control-submillisecond", version = "0.12" }
 lunatic-distributed = { path = "crates/lunatic-distributed", version = "0.12" }
 lunatic-distributed-api = { path = "crates/lunatic-distributed-api", version = "0.12" }
 lunatic-error-api = { path = "crates/lunatic-error-api", version = "0.13" }
