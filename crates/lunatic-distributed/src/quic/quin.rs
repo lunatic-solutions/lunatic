@@ -4,10 +4,11 @@ use anyhow::{anyhow, Result};
 use bytes::Bytes;
 use lunatic_process::{env::Environment, state::ProcessState};
 use quinn::{ClientConfig, Connecting, ConnectionError, Endpoint, ServerConfig};
+use rustls::server::AllowAnyAuthenticatedClient;
 use rustls_pemfile::Item;
 use wasmtime::ResourceLimiter;
 
-use crate::{control, distributed, DistributedCtx};
+use crate::{distributed, DistributedCtx};
 
 pub struct SendStream {
     pub stream: quinn::SendStream,
@@ -51,37 +52,70 @@ impl Client {
         name: &str,
         retry: u32,
     ) -> Result<(SendStream, RecvStream)> {
-        for _ in 0..retry {
-            let conn = self.inner.connect(addr, name)?.await?;
-            if let Ok((send, recv)) = conn.open_bi().await {
-                return Ok((SendStream { stream: send }, RecvStream { stream: recv }));
+        for try_num in 1..(retry + 1) {
+            match self.connect_once(addr, name).await {
+                Ok(r) => return Ok(r),
+                Err(e) => {
+                    log::error!("Error connecting to {name} at {addr}, try {try_num}. Error: {e}")
+                }
             }
             tokio::time::sleep(Duration::from_secs(2)).await;
         }
-        Err(anyhow!("Failed to connect to {addr}"))
+        Err(anyhow!("Failed to connect to {name} at {addr}"))
+    }
+
+    async fn connect_once(&self, addr: SocketAddr, name: &str) -> Result<(SendStream, RecvStream)> {
+        let conn = self.inner.connect(addr, name)?.await?;
+        let (send, recv) = conn.open_bi().await?;
+        Ok((SendStream { stream: send }, RecvStream { stream: recv }))
     }
 }
 
-pub fn new_quic_client(ca_cert: &str) -> Result<Client> {
-    let mut cert = ca_cert.as_bytes();
+pub fn new_quic_client(ca_cert: &str, cert: &str, key: &str) -> Result<Client> {
+    let mut ca_cert = ca_cert.as_bytes();
+    let ca_cert = rustls_pemfile::read_one(&mut ca_cert)?.unwrap();
+    let ca_cert = match ca_cert {
+        Item::X509Certificate(ca_cert) => Ok(rustls::Certificate(ca_cert)),
+        _ => Err(anyhow!("Not a valid certificate.")),
+    }?;
+    let mut roots = rustls::RootCertStore::empty();
+    roots.add(&ca_cert)?;
+
+    let mut cert = cert.as_bytes();
+    let mut key = key.as_bytes();
+    let pk = rustls_pemfile::read_one(&mut key)?.unwrap();
+    let pk = match pk {
+        Item::PKCS8Key(key) => Ok(rustls::PrivateKey(key)),
+        _ => Err(anyhow!("Not a valid private key.")),
+    }?;
     let cert = rustls_pemfile::read_one(&mut cert)?.unwrap();
     let cert = match cert {
         Item::X509Certificate(cert) => Ok(rustls::Certificate(cert)),
-        _ => Err(anyhow!("Not a valid certificate.")),
+        _ => Err(anyhow!("Not a valid certificate")),
     }?;
-    let mut certs = rustls::RootCertStore::empty();
-    certs.add(&cert)?;
+    let cert = vec![cert];
+
     let client_crypto = rustls::ClientConfig::builder()
         .with_safe_defaults()
-        .with_root_certificates(certs)
-        .with_no_client_auth();
+        .with_root_certificates(roots)
+        .with_single_cert(cert, pk)?;
+
     let client_config = ClientConfig::new(Arc::new(client_crypto));
     let mut endpoint = Endpoint::client("[::]:0".parse().unwrap())?;
     endpoint.set_default_client_config(client_config);
     Ok(Client { inner: endpoint })
 }
 
-pub fn new_quic_server(addr: SocketAddr, cert: &str, key: &str) -> Result<Endpoint> {
+pub fn new_quic_server(addr: SocketAddr, cert: &str, key: &str, ca_cert: &str) -> Result<Endpoint> {
+    let mut ca_cert = ca_cert.as_bytes();
+    let ca_cert = rustls_pemfile::read_one(&mut ca_cert)?.unwrap();
+    let ca_cert = match ca_cert {
+        Item::X509Certificate(ca_cert) => Ok(rustls::Certificate(ca_cert)),
+        _ => Err(anyhow!("Not a valid certificate.")),
+    }?;
+    let mut roots = rustls::RootCertStore::empty();
+    roots.add(&ca_cert)?;
+
     let mut cert = cert.as_bytes();
     let mut key = key.as_bytes();
     let pk = rustls_pemfile::read_one(&mut key)?.unwrap();
@@ -97,7 +131,7 @@ pub fn new_quic_server(addr: SocketAddr, cert: &str, key: &str) -> Result<Endpoi
     let cert = vec![cert];
     let server_crypto = rustls::ServerConfig::builder()
         .with_safe_defaults()
-        .with_no_client_auth()
+        .with_client_cert_verifier(AllowAnyAuthenticatedClient::new(roots))
         .with_single_cert(cert, pk)?;
     let mut server_config = ServerConfig::with_crypto(Arc::new(server_crypto));
     Arc::get_mut(&mut server_config.transport)
@@ -105,54 +139,6 @@ pub fn new_quic_server(addr: SocketAddr, cert: &str, key: &str) -> Result<Endpoi
         .max_concurrent_uni_streams(0_u8.into());
 
     Ok(quinn::Endpoint::server(server_config, addr)?)
-}
-
-pub async fn handle_accept_control(
-    quic_server: &mut Endpoint,
-    control_server: control::server::Server,
-) -> Result<()> {
-    while let Some(conn) = quic_server.accept().await {
-        tokio::spawn(handle_quic_stream(conn, control_server.clone()));
-    }
-    Ok(())
-}
-
-async fn handle_quic_stream(
-    conn: Connecting,
-    control_server: control::server::Server,
-) -> Result<()> {
-    let conn = conn.await?;
-    loop {
-        let stream = conn.accept_bi().await;
-        match stream {
-            Ok((s, r)) => {
-                let send = SendStream { stream: s };
-                let recv = RecvStream { stream: r };
-                tokio::spawn(handle_quic_connection(send, recv, control_server.clone()));
-            }
-            Err(ConnectionError::LocallyClosed) => {
-                break;
-            }
-            Err(_) => {}
-        }
-    }
-    Ok(())
-}
-
-async fn handle_quic_connection(
-    mut send: SendStream,
-    mut recv: RecvStream,
-    control_server: control::server::Server,
-) {
-    while let Ok(bytes) = recv.receive().await {
-        if let Ok((msg_id, request)) =
-            bincode::deserialize::<(u64, control::message::Request)>(&bytes)
-        {
-            control::server::handle_request(control_server.clone(), &mut send, msg_id, request)
-                .await
-                .ok();
-        }
-    }
 }
 
 pub async fn handle_node_server<T, E>(
@@ -166,7 +152,7 @@ where
     while let Some(conn) = quic_server.accept().await {
         tokio::spawn(handle_quic_connection_node(ctx.clone(), conn));
     }
-    Ok(())
+    Err(anyhow!("Node server exited"))
 }
 
 async fn handle_quic_connection_node<T, E>(
@@ -177,9 +163,16 @@ where
     T: ProcessState + ResourceLimiter + DistributedCtx<E> + Send + 'static,
     E: Environment + 'static,
 {
+    log::info!("New node connection");
     let conn = conn.await?;
+    log::info!("Remote {} connected", conn.remote_address());
     loop {
+        if let Some(reason) = conn.close_reason() {
+            log::info!("Connection {} is closed: {reason}", conn.remote_address());
+            break;
+        }
         let stream = conn.accept_bi().await;
+        log::info!("Stream from remote {} accepted", conn.remote_address());
         match stream {
             Ok((s, r)) => {
                 let send = SendStream { stream: s };
@@ -190,6 +183,7 @@ where
             Err(_) => {}
         }
     }
+    log::info!("Connection from remote {} closed", conn.remote_address());
     Ok(())
 }
 
@@ -203,7 +197,7 @@ async fn handle_quic_stream_node<T, E>(
 {
     while let Ok(bytes) = recv.receive().await {
         if let Ok((msg_id, request)) =
-            bincode::deserialize::<(u64, distributed::message::Request)>(&bytes)
+            rmp_serde::from_slice::<(u64, distributed::message::Request)>(&bytes)
         {
             distributed::server::handle_message(ctx.clone(), &mut send, msg_id, request).await;
         } else {

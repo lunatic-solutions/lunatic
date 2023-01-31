@@ -1,8 +1,8 @@
+use std::collections::HashMap;
 use std::fmt::Debug;
 use std::sync::Arc;
 
 use anyhow::Result;
-use dashmap::DashMap;
 use hash_map_id::HashMapId;
 use lunatic_distributed::{DistributedCtx, DistributedProcessState};
 use lunatic_error_api::{ErrorCtx, ErrorResource};
@@ -23,7 +23,7 @@ use lunatic_timer_api::{TimerCtx, TimerResources};
 use lunatic_wasi_api::{build_wasi, LunaticWasiCtx};
 use tokio::net::{TcpListener, UdpSocket};
 use tokio::sync::mpsc::unbounded_channel;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, RwLock, RwLockWriteGuard};
 use wasmtime::{Linker, ResourceLimiter};
 use wasmtime_wasi::WasiCtx;
 
@@ -51,7 +51,7 @@ pub struct DefaultProcessState {
     // A space that can be used to temporarily store messages when sending or receiving them.
     // Messages can contain resources that need to be added across multiple host. Likewise,
     // receiving messages is done in two steps, first the message size is returned to allow the
-    // guest to reserve enough space and then the it's received. Both of those actions use
+    // guest to reserve enough space, and then it's received. Both of those actions use
     // `message` as a temp space to store messages across host calls.
     message: Option<Message>,
     // Signals sent to the mailbox
@@ -68,10 +68,13 @@ pub struct DefaultProcessState {
     wasi_stderr: Option<StdoutCapture>,
     // Set to true if the WASM module has been instantiated
     initialized: bool,
-    // Shared process registry
-    registry: Arc<DashMap<String, (u64, u64)>>,
     // database resources
     db_resources: DbResources,
+    registry: Arc<RwLock<HashMap<String, (u64, u64)>>>,
+    // Allows for atomic registry "lookup and insert" operations, by holding the write-lock of a
+    // `RwLock` struct. The lifetime of the lock will need to be extended to `'static`, but this
+    // is a safe operation, because it references a global registry that outlives all processes.
+    registry_atomic_put: Option<RwLockWriteGuard<'static, HashMap<String, (u64, u64)>>>,
 }
 
 impl DefaultProcessState {
@@ -81,7 +84,7 @@ impl DefaultProcessState {
         runtime: WasmtimeRuntime,
         module: Arc<WasmtimeCompiledModule<Self>>,
         config: Arc<DefaultProcessConfig>,
-        registry: Arc<DashMap<String, (u64, u64)>>,
+        registry: Arc<RwLock<HashMap<String, (u64, u64)>>>,
     ) -> Result<Self> {
         let signal_mailbox = unbounded_channel();
         let signal_mailbox = (signal_mailbox.0, Arc::new(Mutex::new(signal_mailbox.1)));
@@ -107,6 +110,7 @@ impl DefaultProcessState {
             initialized: false,
             registry,
             db_resources: DbResources::default(),
+            registry_atomic_put: None,
         };
         Ok(state)
     }
@@ -144,6 +148,7 @@ impl ProcessState for DefaultProcessState {
             initialized: false,
             registry: self.registry.clone(),
             db_resources: DbResources::default(),
+            registry_atomic_put: None,
         };
         Ok(state)
     }
@@ -160,6 +165,7 @@ impl ProcessState for DefaultProcessState {
             runtime: None,
             module: None,
             registry: Default::default(),
+            registry_atomic_put: None,
             config: Arc::new(config.clone()),
             message: None,
             signal_mailbox,
@@ -191,6 +197,7 @@ impl ProcessState for DefaultProcessState {
         lunatic_sqlite_api::register(linker)?;
         #[cfg(feature = "metrics")]
         lunatic_metrics_api::register(linker)?;
+        lunatic_trap_api::register(linker)?;
         Ok(())
     }
 
@@ -236,8 +243,14 @@ impl ProcessState for DefaultProcessState {
         &mut self.resources.configs
     }
 
-    fn registry(&self) -> &Arc<DashMap<String, (u64, u64)>> {
+    fn registry(&self) -> &Arc<RwLock<HashMap<String, (u64, u64)>>> {
         &self.registry
+    }
+
+    fn registry_atomic_put(
+        &mut self,
+    ) -> &mut Option<RwLockWriteGuard<'static, HashMap<String, (u64, u64)>>> {
+        &mut self.registry_atomic_put
     }
 }
 
@@ -499,6 +512,7 @@ impl DistributedCtx<LunaticEnvironment> for DefaultProcessState {
             initialized: false,
             registry: Default::default(), // TODO move registry into env?
             db_resources: DbResources::default(),
+            registry_atomic_put: None,
         };
         Ok(state)
     }
@@ -508,8 +522,12 @@ mod tests {
 
     #[tokio::test]
     async fn import_filter_signature_matches() {
+        use std::collections::HashMap;
+        use tokio::sync::RwLock;
+
         use crate::state::DefaultProcessState;
         use crate::DefaultProcessConfig;
+        use lunatic_process::env::Environment;
         use lunatic_process::runtimes::wasmtime::WasmtimeRuntime;
         use lunatic_process::wasm::spawn_wasm;
         use std::sync::Arc;
@@ -525,7 +543,7 @@ mod tests {
         let raw_module = wat::parse_file("./wat/all_imports.wat").unwrap();
         let module = Arc::new(runtime.compile_module(raw_module.into()).unwrap());
         let env = Arc::new(lunatic_process::env::LunaticEnvironment::new(0));
-        let registry = Arc::new(dashmap::DashMap::new());
+        let registry = Arc::new(RwLock::new(HashMap::new()));
         let state = DefaultProcessState::new(
             env.clone(),
             None,
@@ -535,6 +553,8 @@ mod tests {
             registry,
         )
         .unwrap();
+
+        env.can_spawn_next_process().await.unwrap();
 
         spawn_wasm(env, runtime, &module, state, "hello", Vec::new(), None)
             .await

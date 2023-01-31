@@ -17,6 +17,7 @@ detailed_metrics = ["metrics"]
 hash-map-id = { workspace = true }
 lunatic-networking-api = { workspace = true }
 
+async-trait = "0.1.58"
 anyhow = { workspace = true }
 dashmap = { workspace = true }
 log = { workspace = true }

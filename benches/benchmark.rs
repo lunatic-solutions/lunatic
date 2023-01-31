@@ -1,13 +1,13 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use criterion::{criterion_group, criterion_main, Criterion};
-use dashmap::DashMap;
 // TODO: Re-export this under lunatic_runtime
 use lunatic_process::{
     env::LunaticEnvironment,
     runtimes::wasmtime::{default_config, WasmtimeRuntime},
 };
 use lunatic_runtime::{state::DefaultProcessState, DefaultProcessConfig};
+use tokio::sync::RwLock;
 
 fn criterion_benchmark(c: &mut Criterion) {
     let rt = tokio::runtime::Runtime::new().unwrap();
@@ -26,7 +26,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     let env = Arc::new(LunaticEnvironment::new(0));
     c.bench_function("spawn process", |b| {
         b.to_async(&rt).iter(|| async {
-            let registry = Arc::new(DashMap::new());
+            let registry = Arc::new(RwLock::new(HashMap::new()));
             let state = DefaultProcessState::new(
                 env.clone(),
                 None,

@@ -285,7 +285,7 @@ async fn write_to_guest_vec<T: ProcessState + ErrorCtx + SQLiteCtx + Send + Sync
     memory
         .write(&mut caller, opaque_ptr as usize, &alloc_len.to_le_bytes())
         .or_trap("lunatic::networking::tcp_read")?;
-    Ok(alloc_ptr as u32)
+    Ok(alloc_ptr)
 }
 
 fn read_column<T: ProcessState + ErrorCtx + SQLiteCtx + Send + Sync>(

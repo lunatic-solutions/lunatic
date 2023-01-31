@@ -1,3 +1,5 @@
+use anyhow::Result;
+use async_trait::async_trait;
 use dashmap::DashMap;
 use std::sync::{
     atomic::{AtomicU64, Ordering},
@@ -6,6 +8,7 @@ use std::sync::{
 
 use crate::{Process, Signal};
 
+#[async_trait]
 pub trait Environment: Send + Sync {
     fn id(&self) -> u64;
     fn get_next_process_id(&self) -> u64;
@@ -13,13 +16,16 @@ pub trait Environment: Send + Sync {
     fn add_process(&self, id: u64, proc: Arc<dyn Process>);
     fn remove_process(&self, id: u64);
     fn process_count(&self) -> usize;
+    async fn can_spawn_next_process(&self) -> Result<Option<()>>;
     fn send(&self, id: u64, signal: Signal);
 }
 
+#[async_trait]
 pub trait Environments: Send + Sync {
     type Env: Environment;
-    fn create(&self, id: u64) -> Arc<Self::Env>;
-    fn get(&self, id: u64) -> Option<Arc<Self::Env>>;
+
+    async fn create(&self, id: u64) -> Arc<Self::Env>;
+    async fn get(&self, id: u64) -> Option<Arc<Self::Env>>;
 }
 
 #[derive(Clone)]
@@ -39,6 +45,7 @@ impl LunaticEnvironment {
     }
 }
 
+#[async_trait]
 impl Environment for LunaticEnvironment {
     fn get_process(&self, id: u64) -> Option<Arc<dyn Process>> {
         self.processes.get(&id).map(|x| x.clone())
@@ -89,6 +96,11 @@ impl Environment for LunaticEnvironment {
     fn id(&self) -> u64 {
         self.environment_id
     }
+
+    async fn can_spawn_next_process(&self) -> Result<Option<()>> {
+        // Don't impose any limits to process spawning
+        Ok(Some(()))
+    }
 }
 
 #[derive(Clone, Default)]
@@ -96,16 +108,18 @@ pub struct LunaticEnvironments {
     envs: Arc<DashMap<u64, Arc<LunaticEnvironment>>>,
 }
 
+#[async_trait]
 impl Environments for LunaticEnvironments {
     type Env = LunaticEnvironment;
-    fn create(&self, id: u64) -> Arc<Self::Env> {
+    async fn create(&self, id: u64) -> Arc<Self::Env> {
         let env = Arc::new(LunaticEnvironment::new(id));
         self.envs.insert(id, env.clone());
         #[cfg(feature = "metrics")]
         metrics::gauge!("lunatic.process.environment.count", self.envs.len() as f64);
         env
     }
-    fn get(&self, id: u64) -> Option<Arc<Self::Env>> {
+
+    async fn get(&self, id: u64) -> Option<Arc<Self::Env>> {
         self.envs.get(&id).map(|e| e.clone())
     }
 }

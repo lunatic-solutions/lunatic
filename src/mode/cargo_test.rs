@@ -1,17 +1,26 @@
-use std::{env, fs, path::Path, sync::Arc, time::Instant};
+use std::{collections::HashMap, env, fs, path::Path, sync::Arc, time::Instant};
 
 use anyhow::{Context, Result};
 use clap::Parser;
-use dashmap::DashMap;
-use lunatic_process::{env::LunaticEnvironment, runtimes, wasm::spawn_wasm};
+use lunatic_process::{
+    env::{Environment, LunaticEnvironment},
+    runtimes,
+    wasm::spawn_wasm,
+};
 use lunatic_process_api::ProcessConfigCtx;
 use lunatic_runtime::{DefaultProcessConfig, DefaultProcessState};
 use lunatic_stdout_capture::StdoutCapture;
 use lunatic_wasi_api::LunaticWasiCtx;
+use tokio::sync::RwLock;
 
 #[derive(Parser, Debug)]
 #[command(version)]
 struct Args {
+    /// The `_command` argument is always `run`, from `lunatic run`.
+    /// When running in testing mode, commands can be ignored.
+    #[arg()]
+    _command: String,
+
     /// Entry .wasm file
     #[arg()]
     wasm: String,
@@ -32,7 +41,7 @@ struct Args {
     #[arg(long)]
     nocapture: bool,
 
-    /// Show also the output of successfull tests
+    /// Show also the output of successful tests
     #[arg(long)]
     show_output: bool,
 
@@ -53,14 +62,17 @@ struct Args {
     wasm_args: Vec<String>,
 }
 
-pub(crate) async fn test() -> Result<()> {
+pub(crate) async fn test(augmented_args: Option<Vec<String>>) -> Result<()> {
     // Set logger level to "error" to avoid printing process failures warnings during tests.
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("error")).init();
     // Measure test duration
     let now = Instant::now();
 
     // Parse command line arguments
-    let args = Args::parse();
+    let args = match augmented_args {
+        Some(a) => Args::parse_from(a),
+        None => Args::parse(),
+    };
 
     let mut config = DefaultProcessConfig::default();
     // Allow initial process to compile modules, create configurations and spawn sub-processes
@@ -137,7 +149,7 @@ pub(crate) async fn test() -> Result<()> {
                         })
                         .collect();
                     let panic_unescaped = panic.replace("\\#", "#");
-                    let panic_prefix = format!("{}#", panic);
+                    let panic_prefix = format!("{panic}#");
                     let function_name = name.strip_prefix(&panic_prefix).unwrap().to_string();
                     let filtered = if args.exact {
                         !function_name.eq(&filter)
@@ -216,7 +228,7 @@ pub(crate) async fn test() -> Result<()> {
         }
 
         let env = Arc::new(LunaticEnvironment::new(0));
-        let registry = Arc::new(DashMap::new());
+        let registry = Arc::new(RwLock::new(HashMap::new()));
         let mut state = DefaultProcessState::new(
             env.clone(),
             None,
@@ -233,6 +245,7 @@ pub(crate) async fn test() -> Result<()> {
         state.set_stdout(stdout.clone());
         state.set_stderr(stdout.clone());
 
+        env.can_spawn_next_process().await?;
         let (task, _) = spawn_wasm(
             env,
             runtime.clone(),
@@ -309,9 +322,7 @@ pub(crate) async fn test() -> Result<()> {
                                     }
                                 } else {
                                     let note = format!(
-                                        "note: panic did not contain expected string\n      panic message: `\"{}\"`,\n expected substring: `\"{}\"`\n",
-                                        panic_message,
-                                        expected_panic
+                                        "note: panic did not contain expected string\n      panic message: `\"{panic_message}\"`,\n expected substring: `\"{expected_panic}\"`\n",
                                     );
                                     stdout.push_str(&note);
                                     TestResult {
@@ -358,23 +369,23 @@ pub(crate) async fn test() -> Result<()> {
         let name = result.name;
         match result.status {
             TestStatus::Ok => {
-                println!("test {} ... \x1b[92mok\x1b[0m", name); // green ok
+                println!("test {name} ... \x1b[92mok\x1b[0m"); // green ok
                 successes.push((name, result.stdout));
             }
             TestStatus::Failed => {
-                println!("test {} ... \x1b[91mFAILED\x1b[0m", name); // red FAIL
+                println!("test {name} ... \x1b[91mFAILED\x1b[0m"); // red FAIL
                 failures.push((name, result.stdout));
             }
             TestStatus::PanicOk => {
-                println!("test {} - should panic ... \x1b[92mok\x1b[0m", name); // green ok
+                println!("test {name} - should panic ... \x1b[92mok\x1b[0m"); // green ok
                 successes.push((name, result.stdout));
             }
             TestStatus::PanicFailed => {
-                println!("test {} - should panic ... \x1b[91mFAILED\x1b[0m", name); // red FAIL
+                println!("test {name} - should panic ... \x1b[91mFAILED\x1b[0m"); // red FAIL
                 failures.push((name, result.stdout));
             }
             TestStatus::Ignored => {
-                println!("test {} ... \x1b[93mignored\x1b[0m", name); // yellow ignored
+                println!("test {name} ... \x1b[93mignored\x1b[0m"); // yellow ignored
                 ignored += 1;
             }
         }
@@ -386,14 +397,14 @@ pub(crate) async fn test() -> Result<()> {
         // Print stdout of successes
         for (success, stdout) in successes.iter() {
             if !stdout.is_empty() {
-                println!("\n---- {} stdout ----", success);
-                print!("{}", stdout);
+                println!("\n---- {success} stdout ----");
+                print!("{stdout}");
             }
         }
 
         println!("\nsuccesses:");
         for (success, _) in successes.iter() {
-            println!("    {}", success);
+            println!("    {success}");
         }
     }
 
@@ -404,8 +415,8 @@ pub(crate) async fn test() -> Result<()> {
     // Print stdout of failures if they are not empty
     for (failure, stdout) in failures.iter() {
         if !stdout.is_empty() {
-            println!("\n---- {} stdout ----", failure);
-            print!("{}", stdout);
+            println!("\n---- {failure} stdout ----");
+            print!("{stdout}");
         }
     }
 
@@ -414,7 +425,7 @@ pub(crate) async fn test() -> Result<()> {
         println!("\nfailures:");
     }
     for (failure, _) in failures.iter() {
-        println!("    {}", failure);
+        println!("    {failure}");
     }
 
     // List all failures

@@ -83,7 +83,7 @@ impl Into<wasmtime::Val> for Val {
 }
 
 pub fn pack_response(msg_id: u64, resp: Response) -> [Bytes; 2] {
-    let data = bincode::serialize(&(msg_id, resp)).unwrap();
+    let data = rmp_serde::to_vec(&(msg_id, resp)).unwrap();
     let size = (data.len() as u32).to_le_bytes();
     let size: Bytes = Bytes::copy_from_slice(&size[..]);
     let bytes: Bytes = data.into();

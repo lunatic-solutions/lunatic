@@ -140,6 +140,6 @@ at your option.
 [6]: https://brew.sh/
 [7]: https://rustup.rs/
 [8]: https://golangbot.com/goroutines
-[9]: https://docs.rs/smol
+[9]: https://tokio.rs
 [10]: https://wasi.dev/
 [11]: https://github.com/lunatic-solutions/as-lunatic

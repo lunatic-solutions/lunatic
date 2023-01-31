@@ -128,7 +128,7 @@ async fn reader_task(client: Client, mut recv: RecvStream) -> Result<()> {
         match recv.receive().await {
             Ok(bytes) => {
                 let (msg_id, response) =
-                    bincode::deserialize::<(u64, super::message::Response)>(&bytes)?;
+                    rmp_serde::from_slice::<(u64, super::message::Response)>(&bytes)?;
                 client.process_response(msg_id, response);
                 Ok(())
             }
@@ -179,7 +179,7 @@ async fn manage_node_connection(
     let (mut send, recv) = quic::try_connect_forever(&quic_client, address, &name).await;
     tokio::spawn(reader_task(client.clone(), recv));
     while let Some(msg) = rx.recv().await {
-        if let Ok(data) = bincode::serialize(&msg) {
+        if let Ok(data) = rmp_serde::to_vec(&msg) {
             let size = (data.len() as u32).to_le_bytes();
             let size: Bytes = Bytes::copy_from_slice(&size[..]);
             let bytes: Bytes = data.into();

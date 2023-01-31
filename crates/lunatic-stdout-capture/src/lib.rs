@@ -44,10 +44,10 @@ impl Display for StdoutCapture {
             write!(f, "{}", self.content()).unwrap();
         } else {
             for (i, stream) in streams.iter().enumerate() {
-                writeln!(f, " --- process {} stdout ---", i).unwrap();
+                writeln!(f, " --- process {i} stdout ---").unwrap();
                 let stream = stream.lock().unwrap();
                 let content = String::from_utf8_lossy(stream.get_ref()).to_string();
-                write!(f, "{}", content).unwrap();
+                write!(f, "{content}").unwrap();
             }
         }
         Ok(())
@@ -104,7 +104,7 @@ impl StdoutCapture {
     pub fn push_str(&self, content: &str) {
         let streams = RwLock::read(&self.writers).unwrap();
         let mut stream = streams[self.index].lock().unwrap();
-        write!(stream, "{}", content).unwrap();
+        write!(stream, "{content}").unwrap();
     }
 }
 
