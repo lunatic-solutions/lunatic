@@ -1,6 +1,6 @@
 [package]
 name = "lunatic-process-api"
-version = "0.12.0"
+version = "0.13.0"
 edition = "2021"
 description = "Lunatic host functions for working with processes."
 homepage = "https://lunatic.solutions"

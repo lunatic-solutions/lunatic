@@ -1,6 +1,6 @@
 [package]
 name = "lunatic-process"
-version = "0.12.0"
+version = "0.13.0"
 edition = "2021"
 description = "Lunatic's core process, mailbox and message abstraction'"
 homepage = "https://lunatic.solutions"

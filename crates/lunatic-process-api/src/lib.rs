@@ -201,6 +201,7 @@ where
     #[cfg(feature = "metrics")]
     metrics::increment_gauge!("lunatic.process.modules.active", 1.0);
 
+    #[cfg(feature = "metrics")]
     let start = Instant::now();
 
     let mut module = vec![0; module_data_len as usize];

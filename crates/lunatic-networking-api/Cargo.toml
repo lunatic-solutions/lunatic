@@ -1,6 +1,6 @@
 [package]
 name = "lunatic-networking-api"
-version = "0.12.0"
+version = "0.13.0"
 edition = "2021"
 description = "Lunatic host functions for tcp and udp networking."
 homepage = "https://lunatic.solutions"
