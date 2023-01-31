@@ -1453,6 +1453,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "lunatic-control"
+version = "0.12.0"
+dependencies = [
+ "serde",
+ "uuid",
+]
+
+[[package]]
 name = "lunatic-control-axum"
 version = "0.12.0"
 dependencies = [
@@ -1464,6 +1472,7 @@ dependencies = [
  "getrandom",
  "http",
  "log",
+ "lunatic-control",
  "lunatic-distributed",
  "rcgen",
  "serde",
@@ -1482,6 +1491,7 @@ dependencies = [
  "bytes",
  "dashmap",
  "log",
+ "lunatic-control",
  "lunatic-process",
  "quinn",
  "rcgen",
@@ -1618,6 +1628,7 @@ dependencies = [
  "env_logger 0.9.3",
  "hash-map-id",
  "log",
+ "lunatic-control",
  "lunatic-control-axum",
  "lunatic-distributed",
  "lunatic-distributed-api",
