@@ -100,8 +100,8 @@ impl ControlServer {
 }
 
 fn prepare_app() -> Result<Router> {
-    let ca_cert_str = lunatic_distributed::distributed::server::root_cert(true, None)?;
-    let ca_cert = lunatic_distributed::control::cert::root_cert(true, None, None).unwrap();
+    let ca_cert_str = lunatic_distributed::distributed::server::test_root_cert();
+    let ca_cert = lunatic_distributed::control::cert::test_root_cert()?;
     let (ctrl_cert, ctrl_pk) =
         lunatic_distributed::control::cert::default_server_certificates(&ca_cert)?;
     let quic_client =
