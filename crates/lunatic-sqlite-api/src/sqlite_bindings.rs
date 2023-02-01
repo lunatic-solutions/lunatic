@@ -192,12 +192,12 @@ macro_rules! get_statement {
 
 macro_rules! get_conn {
     ($state:ident, $conn_id:ident, $fn_name:literal) => {{
-        let trap_str = format!("lunatic::sqlite::{}::obtain_conn", $fn_name);
+        let trap_str = concat!("lunatic::sqlite::", $fn_name, "::obtain_conn");
         $state
             .sqlite_connections_mut()
             .get($conn_id)
             .take()
-            .or_trap(&trap_str)?
+            .or_trap(trap_str)?
             .lock()
             .or_trap(trap_str)?
     }};
@@ -284,7 +284,7 @@ async fn write_to_guest_vec<T: ProcessState + ErrorCtx + SQLiteCtx + Send + Sync
 
     memory
         .write(&mut caller, opaque_ptr as usize, &alloc_len.to_le_bytes())
-        .or_trap("lunatic::networking::tcp_read")?;
+        .or_trap("lunatic::sqlite::write_to_guest_vec")?;
     Ok(alloc_ptr)
 }
 
