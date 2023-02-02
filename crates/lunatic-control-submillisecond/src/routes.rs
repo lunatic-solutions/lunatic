@@ -12,7 +12,7 @@ use crate::{
         ok, ApiError, ApiResponse, ControlServerExtractor, HostExtractor, JsonExtractor, NodeAuth,
         PathExtractor,
     },
-    server::{ControlServer, ControlServerHandler},
+    server::{ControlServerMessages, ControlServerRequests},
 };
 
 pub fn register(
@@ -22,10 +22,7 @@ pub fn register(
 ) -> ApiResponse<Registration> {
     info!("Registration for node name {}", reg.node_name);
 
-    // let cert_pem = CertificateSigningRequest::from_pem(&reg.csr_pem)
-    //     .and_then(|sign_request| sign_request.serialize_pem_with_signer(&control.ca_cert))
-    //     .map_err(|e| ApiError::custom("sign_error", e.to_string()))?;
-    let cert_pem: String = todo!();
+    let cert_pem = control.sign_node(reg.csr_pem.clone());
 
     let mut authentication_token = [0u8; 32];
     getrandom::getrandom(&mut authentication_token).map_err(|err| {
@@ -33,13 +30,18 @@ pub fn register(
     })?;
     let authentication_token = base64_url::encode(&authentication_token);
 
-    control.register(reg.clone(), cert_pem.clone(), authentication_token.clone());
+    ControlServerMessages::register(
+        &control,
+        reg.clone(),
+        cert_pem.clone(),
+        authentication_token.clone(),
+    );
 
     ok(Registration {
         node_name: reg.node_name,
         cert_pem,
         authentication_token,
-        root_cert: todo!(), // TEST_ROOT_CERT.into(),
+        root_cert: control.root_cert(),
         urls: ControlUrls {
             api_base: format!("http://{host}/"),
             nodes: format!("http://{host}/nodes"),

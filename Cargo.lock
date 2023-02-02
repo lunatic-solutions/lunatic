@@ -403,7 +403,7 @@ dependencies = [
  "num-integer",
  "num-traits",
  "serde",
- "time 0.1.43",
+ "time 0.1.45",
  "wasm-bindgen",
  "winapi",
 ]
@@ -508,6 +508,15 @@ name = "convert_case"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fb4a24b1aaf0fd0ce8b45161144d6f42cd91677fd5940fd431183eb023b3a2b8"
+
+[[package]]
+name = "convert_case"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ec182b0ca2f35d8fc196cf3404988fd8b8c739a4d270ff118a398feb0cbec1ca"
+dependencies = [
+ "unicode-segmentation",
+]
 
 [[package]]
 name = "core-foundation"
@@ -1039,6 +1048,7 @@ checksum = "531ac96c6ff5fd7c62263c5e3c67a603af4fcaee2e1a0ae5565ba3a11e69e549"
 dependencies = [
  "futures-channel",
  "futures-core",
+ "futures-executor",
  "futures-io",
  "futures-sink",
  "futures-task",
@@ -1062,10 +1072,32 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "86d7a0c1aa76363dac491de0ee99faf6941128376f1cf96f07db7603b7de69dd"
 
 [[package]]
+name = "futures-executor"
+version = "0.3.27"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1997dd9df74cdac935c76252744c1ed5794fac083242ea4fe77ef3ed60ba0f83"
+dependencies = [
+ "futures-core",
+ "futures-task",
+ "futures-util",
+]
+
+[[package]]
 name = "futures-io"
 version = "0.3.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "89d422fa3cbe3b40dca574ab087abb5bc98258ea57eea3fd6f1fa7162c778b91"
+
+[[package]]
+name = "futures-macro"
+version = "0.3.27"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3eb14ed937631bd8b8b8977f2c198443447a8355b6e3ca599f38c975e5a963b6"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
 
 [[package]]
 name = "futures-sink"
@@ -1085,11 +1117,16 @@ version = "0.3.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3ef6b17e481503ec85211fed8f39d1970f128935ca1f814cd32ac4a6842e84ab"
 dependencies = [
+ "futures-channel",
  "futures-core",
+ "futures-io",
+ "futures-macro",
  "futures-sink",
  "futures-task",
+ "memchr",
  "pin-project-lite",
  "pin-utils",
+ "slab",
 ]
 
 [[package]]
@@ -1370,6 +1407,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "integer-encoding"
+version = "3.0.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8bb03732005da905c88227371639bf1ad885cc712789c011c31c5fb3ab3ccf02"
+
+[[package]]
 name = "io-extras"
 version = "0.17.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1519,11 +1562,36 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ca28bf24e13d6a921a4309768ac98efbbec1c3cb47f53b103af6e452d4370f09"
 dependencies = [
  "bincode",
- "lunatic-macros",
- "lunatic-test",
+ "lunatic-macros 0.12.0",
+ "lunatic-test 0.12.0",
+ "paste",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
+name = "lunatic"
+version = "0.13.0"
+dependencies = [
+ "bincode",
+ "lunatic-macros 0.13.0",
+ "lunatic-sys",
+ "lunatic-test 0.13.0",
  "paste",
  "serde",
  "thiserror",
+]
+
+[[package]]
+name = "lunatic-cached-process"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "85e4f861c45ab9f37ae63dec6bcea1edbe2815d6ed13f3f836ee7dce5db79100"
+dependencies = [
+ "lunatic 0.12.1",
+ "paste",
+ "serde",
 ]
 
 [[package]]
@@ -1570,12 +1638,13 @@ version = "0.12.0"
 dependencies = [
  "anyhow",
  "base64-url",
+ "bincode",
  "chrono",
  "dashmap",
  "getrandom",
- "lunatic",
+ "lunatic 0.13.0",
  "lunatic-control",
- "lunatic-log",
+ "lunatic-log 0.3.0",
  "serde",
  "serde_json",
  "submillisecond",
@@ -1610,12 +1679,14 @@ name = "lunatic-distributed-api"
 version = "0.12.0"
 dependencies = [
  "anyhow",
+ "bincode",
  "log",
  "lunatic-common-api",
  "lunatic-distributed",
  "lunatic-error-api",
  "lunatic-process",
  "lunatic-process-api",
+ "rcgen",
  "rmp-serde",
  "tokio",
  "wasmtime",
@@ -1634,12 +1705,28 @@ dependencies = [
 [[package]]
 name = "lunatic-log"
 version = "0.3.0"
+dependencies = [
+ "ansi_term",
+ "cfg-if",
+ "chrono",
+ "lunatic 0.12.1",
+ "lunatic-cached-process",
+ "lunatic-message-request",
+ "opentelemetry",
+ "opentelemetry-jaeger",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "lunatic-log"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b108cab8f10da677082ad72c35b6824ddecd533fdbc54960f247cbfcdfca648d"
 dependencies = [
  "ansi_term",
  "chrono",
- "lunatic",
+ "lunatic 0.12.1",
  "serde",
 ]
 
@@ -1649,10 +1736,30 @@ version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "52122f17e685be82d3d938558b4f827ac0a1140adc39183af7a390298d79fd03"
 dependencies = [
- "convert_case",
+ "convert_case 0.5.0",
  "proc-macro2",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "lunatic-macros"
+version = "0.13.0"
+dependencies = [
+ "convert_case 0.6.0",
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
+name = "lunatic-message-request"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "869a446dd44d96fe289213278efd6cbdf2fb3be0863ad8e998fa0c4aebab21f4"
+dependencies = [
+ "lunatic 0.12.1",
+ "serde",
 ]
 
 [[package]]
@@ -1806,10 +1913,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "lunatic-sys"
+version = "0.13.0"
+
+[[package]]
 name = "lunatic-test"
 version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2baee76cce00a0c693983edd92fafc4bede7c4756e1e2a9346c03b77a22fbc1a"
+dependencies = [
+ "quote",
+ "syn",
+]
+
+[[package]]
+name = "lunatic-test"
+version = "0.13.0"
 dependencies = [
  "quote",
  "syn",
@@ -2163,6 +2282,89 @@ dependencies = [
 ]
 
 [[package]]
+name = "opentelemetry"
+version = "0.18.0"
+dependencies = [
+ "opentelemetry_api",
+ "opentelemetry_sdk",
+]
+
+[[package]]
+name = "opentelemetry-http"
+version = "0.7.0"
+dependencies = [
+ "async-trait",
+ "bytes",
+ "http",
+ "opentelemetry_api",
+]
+
+[[package]]
+name = "opentelemetry-jaeger"
+version = "0.17.0"
+dependencies = [
+ "async-trait",
+ "futures",
+ "futures-executor",
+ "http",
+ "lunatic 0.12.1",
+ "once_cell",
+ "opentelemetry",
+ "opentelemetry-http",
+ "opentelemetry-semantic-conventions",
+ "thiserror",
+ "thrift",
+]
+
+[[package]]
+name = "opentelemetry-semantic-conventions"
+version = "0.10.0"
+dependencies = [
+ "opentelemetry",
+]
+
+[[package]]
+name = "opentelemetry_api"
+version = "0.18.0"
+dependencies = [
+ "futures-channel",
+ "futures-util",
+ "indexmap",
+ "once_cell",
+ "pin-project-lite",
+ "serde",
+ "thiserror",
+ "urlencoding",
+]
+
+[[package]]
+name = "opentelemetry_sdk"
+version = "0.18.0"
+dependencies = [
+ "async-trait",
+ "crossbeam-channel",
+ "futures-channel",
+ "futures-executor",
+ "futures-util",
+ "lunatic 0.12.1",
+ "once_cell",
+ "opentelemetry_api",
+ "percent-encoding",
+ "rand",
+ "serde",
+ "thiserror",
+]
+
+[[package]]
+name = "ordered-float"
+version = "2.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7940cf2ca942593318d07fcf2596cdca60a85c9e7fab408a5e21a4f9dcd40d87"
+dependencies = [
+ "num-traits",
+]
+
+[[package]]
 name = "os_str_bytes"
 version = "6.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2354,7 +2556,7 @@ dependencies = [
  "mach",
  "once_cell",
  "raw-cpuid",
- "wasi 0.10.2+wasi-snapshot-preview1",
+ "wasi 0.10.0+wasi-snapshot-preview1",
  "web-sys",
  "winapi",
 ]
@@ -2961,8 +3163,8 @@ dependencies = [
  "headers",
  "http",
  "httparse",
- "lunatic",
- "lunatic-log",
+ "lunatic 0.12.1",
+ "lunatic-log 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "mime",
  "paste",
  "percent-encoding",
@@ -3087,12 +3289,35 @@ dependencies = [
 ]
 
 [[package]]
-name = "time"
-version = "0.1.43"
+name = "threadpool"
+version = "1.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ca8a50ef2360fbd1eeb0ecd46795a87a19024eb4b53c5dc916ca1fd95fe62438"
+checksum = "d050e60b33d41c19108b32cea32164033a9013fe3b46cbd4457559bfbf77afaa"
+dependencies = [
+ "num_cpus",
+]
+
+[[package]]
+name = "thrift"
+version = "0.17.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7e54bc85fc7faa8bc175c4bab5b92ba8d9a3ce893d0e9f42cc455c8ab16a9e09"
+dependencies = [
+ "byteorder",
+ "integer-encoding",
+ "log",
+ "ordered-float",
+ "threadpool",
+]
+
+[[package]]
+name = "time"
+version = "0.1.45"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1b797afad3f312d1c66a56d11d0316f916356d11bd158fbc6ca6389ff6bf805a"
 dependencies = [
  "libc",
+ "wasi 0.10.0+wasi-snapshot-preview1",
  "winapi",
 ]
 
@@ -3343,6 +3568,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "unicode-segmentation"
+version = "1.10.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1dd624098567895118886609431a7c3b8f516e41d30e0643f03d94592a147e36"
+
+[[package]]
 name = "unicode-width"
 version = "0.1.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3370,6 +3601,12 @@ dependencies = [
  "idna",
  "percent-encoding",
 ]
+
+[[package]]
+name = "urlencoding"
+version = "2.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e8db7427f936968176eaa7cdf81b7f98b980b18495ec28f1b5791ac3bfe3eea9"
 
 [[package]]
 name = "uuid"
@@ -3416,9 +3653,9 @@ dependencies = [
 
 [[package]]
 name = "wasi"
-version = "0.10.2+wasi-snapshot-preview1"
+version = "0.10.0+wasi-snapshot-preview1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fd6fbd9a79829dd1ad0cc20627bf1ed606756a7f77edff7b66b7064f9cb327c6"
+checksum = "1a143597ca7c7793eff794def352d41792a93c481eb1042423ff7ff72ba2c31f"
 
 [[package]]
 name = "wasi"

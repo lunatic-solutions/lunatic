@@ -1,27 +1,18 @@
-use std::{
-    net::{SocketAddr, TcpListener},
-    sync::{
-        atomic::{self, AtomicU64},
-        Arc,
-    },
-};
-
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use lunatic::{
     abstract_process,
-    process::{AbstractProcess, ProcessRef},
+    ap::{Config, ProcessRef},
 };
 use lunatic_control::api::{NodeStart, Register};
 use serde::{Deserialize, Serialize};
-// use rcgen::Certificate;
 use uuid::Uuid;
 
-// use crate::routes;
+use crate::host::{self, CertPk};
 
 pub struct ControlServer {
-    // pub ca_cert: Certificate,
+    pub ca_cert: CertPk,
     // pub quic_client: lunatic_distributed::quic::Client,
     registrations: DashMap<u64, Registered>,
     nodes: DashMap<u64, NodeDetails>,
@@ -58,14 +49,14 @@ impl ControlServer {
 #[abstract_process(visibility = pub)]
 impl ControlServer {
     #[init]
-    fn init(_: ProcessRef<Self>, _: ()) -> Self {
-        Self::new()
+    fn init(_: Config<Self>, ca_cert: CertPk) -> Result<Self, ()> {
+        Ok(Self::new(ca_cert))
     }
 
-    pub fn new(// ca_cert: Certificate, quic_client: lunatic_distributed::quic::Client
+    pub fn new(ca_cert: CertPk, // quic_client: lunatic_distributed::quic::Client
     ) -> Self {
         Self {
-            // ca_cert,
+            ca_cert,
             // quic_client,
             registrations: DashMap::new(),
             nodes: DashMap::new(),
@@ -134,5 +125,15 @@ impl ControlServer {
     #[handle_request]
     pub fn get_modules(&self) -> DashMap<u64, Vec<u8>> {
         self.modules.clone()
+    }
+
+    #[handle_request]
+    pub fn root_cert(&self) -> String {
+        self.ca_cert.cert.clone()
+    }
+
+    #[handle_request]
+    pub fn sign_node(&self, csr_pem: String) -> String {
+        host::sign_node(&self.ca_cert.cert, &self.ca_cert.pk, &csr_pem)
     }
 }

@@ -1,35 +1,24 @@
 mod api;
+mod host;
 mod routes;
 mod server;
 
 use std::net::ToSocketAddrs;
 
-use lunatic::process::StartProcess;
-use submillisecond::{
-    response::Response, router, state::State, Application, Handler, RequestContext,
-};
+use api::RequestBodyLimit;
+use lunatic::AbstractProcess;
+use submillisecond::{router, Application};
 
 use crate::routes::{add_module, get_module, list_nodes, node_started, node_stopped, register};
 use crate::server::ControlServer;
 
-struct RequestBodyLimit {
-    limit: usize,
-}
-
-impl RequestBodyLimit {
-    pub fn new(limit: usize) -> Self {
-        RequestBodyLimit { limit }
-    }
-}
-
-impl Handler for RequestBodyLimit {
-    fn handle(&self, req: RequestContext) -> Response {
-        req.next_handler()
-    }
-}
-
 fn main() -> std::io::Result<()> {
-    ControlServer::start_link((), Some("ControlServer"));
+    let root_cert = host::test_root_cert();
+    let ca_cert = host::default_server_certificates(&root_cert.cert, &root_cert.pk);
+
+    ControlServer::link()
+        .start_as("ControlServer", ca_cert)
+        .unwrap();
 
     let addrs: Vec<_> = (3030..3999_u16)
         .flat_map(|port| ("127.0.0.1", port).to_socket_addrs().unwrap())

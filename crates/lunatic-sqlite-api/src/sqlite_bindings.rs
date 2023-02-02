@@ -1,6 +1,6 @@
 use anyhow::Result;
 use hash_map_id::HashMapId;
-use lunatic_common_api::{allocate_guest_memory, get_memory, IntoTrap};
+use lunatic_common_api::{get_memory, write_to_guest_vec, IntoTrap};
 use lunatic_error_api::ErrorCtx;
 use lunatic_process::state::ProcessState;
 use lunatic_process_api::ProcessConfigCtx;
@@ -8,11 +8,10 @@ use sqlite::{Connection, State, Statement};
 use std::{
     collections::HashMap,
     future::Future,
-    io::Write,
     path::Path,
     sync::{Arc, Mutex},
 };
-use wasmtime::{Caller, Linker, Memory, ResourceLimiter};
+use wasmtime::{Caller, Linker, ResourceLimiter};
 
 use crate::wire_format::{BindList, SqliteError, SqliteRow, SqliteValue};
 
@@ -256,38 +255,6 @@ fn statement_reset<T: ProcessState + ErrorCtx + SQLiteCtx>(
     Ok(())
 }
 
-// return a u64 which contains both the length of the pointer (usize=u32) and the pointer itself (u32)
-async fn write_to_guest_vec<T: ProcessState + ErrorCtx + SQLiteCtx + Send + Sync>(
-    mut caller: Caller<'_, T>,
-    _connection_id: u64,
-    memory: Memory,
-    encoded_vec: Vec<u8>,
-    opaque_ptr: u32,
-) -> Result<u32> {
-    let alloc_len = encoded_vec.len();
-    let alloc_ptr = {
-        let alloc_ptr = allocate_guest_memory(&mut caller, alloc_len as u32)
-            .await
-            .or_trap("lunatic::sqlite::write_to_guest_vec::alloc_response_vec")?;
-
-        let (memory_slice, _) = memory.data_and_store_mut(&mut caller);
-        let mut alloc_vec = memory_slice
-            .get_mut(alloc_ptr as usize..(alloc_ptr as usize + alloc_len))
-            .or_trap("lunatic::sqlite::write_to_guest_vec")?;
-
-        alloc_vec
-            .write(&encoded_vec)
-            .or_trap("lunatic::sqlite::write_to_guest_vec")?;
-
-        alloc_ptr
-    };
-
-    memory
-        .write(&mut caller, opaque_ptr as usize, &alloc_len.to_le_bytes())
-        .or_trap("lunatic::sqlite::write_to_guest_vec")?;
-    Ok(alloc_ptr)
-}
-
 fn read_column<T: ProcessState + ErrorCtx + SQLiteCtx + Send + Sync>(
     mut caller: Caller<T>,
     statement_id: u64,
@@ -298,12 +265,12 @@ fn read_column<T: ProcessState + ErrorCtx + SQLiteCtx + Send + Sync>(
         // get state
         let memory = get_memory(&mut caller)?;
         let (_, state) = memory.data_and_store_mut(&mut caller);
-        let (connection_id, stmt) = get_statement!(state, statement_id);
+        let (_, stmt) = get_statement!(state, statement_id);
 
         let column = bincode::serialize(&SqliteValue::read_column(stmt, col_idx as usize)?)
             .or_trap("lunatic::sqlite::read_column")?;
 
-        write_to_guest_vec(caller, connection_id, memory, column, opaque_ptr).await
+        write_to_guest_vec(&mut caller, &memory, &column, opaque_ptr).await
     })
 }
 
@@ -316,14 +283,14 @@ fn column_names<T: ProcessState + ErrorCtx + SQLiteCtx + Send + Sync>(
         // get state
         let memory = get_memory(&mut caller)?;
         let (_, state) = memory.data_and_store_mut(&mut caller);
-        let (connection_id, stmt) = get_statement!(state, statement_id);
+        let (_, stmt) = get_statement!(state, statement_id);
 
         let column_names = stmt.column_names().to_vec();
 
         let column_names =
             bincode::serialize(&column_names).or_trap("lunatic::sqlite::column_names")?;
 
-        write_to_guest_vec(caller, connection_id, memory, column_names, opaque_ptr).await
+        write_to_guest_vec(&mut caller, &memory, &column_names, opaque_ptr).await
     })
 }
 
@@ -338,13 +305,13 @@ fn read_row<T: ProcessState + ErrorCtx + SQLiteCtx + Send + Sync>(
         // get state
         let memory = get_memory(&mut caller)?;
         let (_, state) = memory.data_and_store_mut(&mut caller);
-        let (connection_id, stmt) = get_statement!(state, statement_id);
+        let (_, stmt) = get_statement!(state, statement_id);
 
         let read_row = SqliteRow::read_row(stmt)?;
 
         let row = bincode::serialize(&read_row).or_trap("lunatic::sqlite::read_row")?;
 
-        write_to_guest_vec(caller, connection_id, memory, row, opaque_ptr).await
+        write_to_guest_vec(&mut caller, &memory, &row, opaque_ptr).await
     })
 }
 
@@ -365,7 +332,7 @@ fn last_error<T: ProcessState + ErrorCtx + SQLiteCtx + ResourceLimiter + Send + 
                 .or_trap("lunatic::sqlite::last_error::encode_error_wire_format")?
         };
 
-        write_to_guest_vec(caller, conn_id, memory, err, opaque_ptr).await
+        write_to_guest_vec(&mut caller, &memory, &err, opaque_ptr).await
     })
 }
 
@@ -422,7 +389,7 @@ fn column_name<T: ProcessState + ErrorCtx + SQLiteCtx + Send + Sync>(
     Box::new(async move {
         // get state
         let memory = get_memory(&mut caller)?;
-        let (connection_id, column_name) = {
+        let (_, column_name) = {
             let (_, state) = memory.data_and_store_mut(&mut caller);
             let (connection_id, statement) = get_statement!(state, statement_id);
 
@@ -435,13 +402,6 @@ fn column_name<T: ProcessState + ErrorCtx + SQLiteCtx + Send + Sync>(
             )
         };
 
-        write_to_guest_vec(
-            caller,
-            connection_id,
-            memory,
-            column_name.into_bytes(),
-            opaque_ptr,
-        )
-        .await
+        write_to_guest_vec(&mut caller, &memory, column_name.as_bytes(), opaque_ptr).await
     })
 }

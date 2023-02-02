@@ -12,6 +12,7 @@ lunatic-control = { workspace = true }
 
 anyhow = { workspace = true }
 base64-url = "1.4.13"
+bincode = { workspace = true }
 chrono = { version = "0.4.23", default-features = false, features = [
   "clock",
   "serde",
@@ -19,8 +20,8 @@ chrono = { version = "0.4.23", default-features = false, features = [
 ] }
 dashmap = { workspace = true, features = ["serde"] }
 getrandom = "0.2.8"
-lunatic = "0.12"
-lunatic-log = "0.3"
+lunatic = { path = "../../../lunatic-rs" }
+lunatic-log = { path = "../../../lunatic-log-rs" }
 serde = { workspace = true }
 serde_json = "1.0.89"
 submillisecond = { git = "https://github.com/lunatic-solutions/submillisecond", features = [

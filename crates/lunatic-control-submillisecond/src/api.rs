@@ -1,7 +1,7 @@
 use std::fmt::Debug;
 use std::fmt::Display;
 
-use lunatic::process::ProcessRef;
+use lunatic::ap::ProcessRef;
 use lunatic_log::error;
 use serde::{de::DeserializeOwned, Serialize};
 use serde_json::json;
@@ -9,11 +9,10 @@ use submillisecond::{
     extract::FromRequest,
     http::{self, header},
     response::{IntoResponse, Response},
-    state::State,
-    RequestContext,
+    Handler, RequestContext,
 };
 
-use crate::server::ControlServer;
+use crate::server::{ControlServer, ControlServerRequests};
 
 pub type ApiResponse<D> = Result<submillisecond::Json<D>, ApiError>;
 
@@ -29,6 +28,7 @@ pub enum ApiError {
     InvalidData(String),
     InvalidPathArg(String),
     InvalidQueryArg(String),
+    PayloadTooLarge,
     Custom {
         code: &'static str,
         message: Option<String>,
@@ -44,6 +44,7 @@ impl ApiError {
             ApiError::InvalidData(_) => "invalid_data",
             ApiError::InvalidPathArg(_) => "invalid_path_arg",
             ApiError::InvalidQueryArg(_) => "invalid_query_arg",
+            ApiError::PayloadTooLarge => "payload_too_large",
             ApiError::Custom { code, .. } => code,
         }
     }
@@ -56,6 +57,7 @@ impl ApiError {
             ApiError::InvalidData(msg) => Some(msg),
             ApiError::InvalidPathArg(msg) => Some(msg),
             ApiError::InvalidQueryArg(msg) => Some(msg),
+            ApiError::PayloadTooLarge => Some("Payload too large"),
             ApiError::Custom { message, .. } => message.as_deref(),
         }
     }
@@ -112,6 +114,7 @@ impl IntoResponse for ApiError {
             Self::Internal => S::INTERNAL_SERVER_ERROR,
             Self::NotAuthenticated => S::UNAUTHORIZED,
             Self::NotAuthorized => S::FORBIDDEN,
+            Self::PayloadTooLarge => S::PAYLOAD_TOO_LARGE,
             InvalidData(_) | InvalidPathArg(_) | InvalidQueryArg(_) | Custom { .. } => {
                 S::BAD_REQUEST
             }
@@ -191,6 +194,8 @@ impl FromRequest for NodeAuth {
     type Rejection = ApiError;
 
     fn from_request(req: &mut RequestContext) -> Result<Self, Self::Rejection> {
+        let ControlServerExtractor(control) = ControlServerExtractor::from_request(req)?;
+
         let headers = req.headers();
         let auth_header = headers
             .get(header::AUTHORIZATION)
@@ -238,22 +243,37 @@ impl FromRequest for NodeAuth {
             )
         })?;
 
-        todo!()
+        let (registration_id, reg) = control
+            .get_registrations()
+            .iter()
+            .find(|r| r.node_name == node_name && r.authentication_token == token)
+            .map(|r| (*r.key(), r.value().clone()))
+            .ok_or(ApiError::NotAuthenticated)?;
+        let node_auth = NodeAuth {
+            registration_id: registration_id as i64,
+            node_name: reg.node_name,
+        };
 
-        // let cs: State<ControlServer> = State::from_request(req)
-        //     .map_err(|e| ApiError::log_internal("Error getting cs in registration auth", e))?;
+        Ok(node_auth)
+    }
+}
 
-        // let (registration_id, reg) = cs
-        //     .registrations
-        //     .iter()
-        //     .find(|r| r.node_name == node_name && r.authentication_token == token)
-        //     .map(|r| (*r.key(), r.value().clone()))
-        //     .ok_or(ApiError::NotAuthenticated)?;
-        // let node_auth = NodeAuth {
-        //     registration_id: registration_id as i64,
-        //     node_name: reg.node_name,
-        // };
+pub struct RequestBodyLimit {
+    limit: usize,
+}
 
-        // Ok(node_auth)
+impl RequestBodyLimit {
+    pub fn new(limit: usize) -> Self {
+        RequestBodyLimit { limit }
+    }
+}
+
+impl Handler for RequestBodyLimit {
+    fn handle(&self, req: RequestContext) -> Response {
+        if req.body().len() > self.limit {
+            return ApiError::PayloadTooLarge.into_response();
+        }
+
+        req.next_handler()
     }
 }
