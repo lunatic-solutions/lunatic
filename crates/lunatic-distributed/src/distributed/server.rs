@@ -67,7 +67,7 @@ pub async fn node_server<T, E>(
     key: String,
 ) -> Result<()>
 where
-    T: ProcessState + ResourceLimiter + DistributedCtx<E> + Send + 'static,
+    T: ProcessState + ResourceLimiter + DistributedCtx<E> + Send + Sync + 'static,
     E: Environment + 'static,
 {
     let mut quic_server = quic::new_quic_server(socket, &cert, &key, &ca_cert)?;
@@ -83,7 +83,7 @@ pub async fn handle_message<T, E>(
     msg_id: u64,
     msg: Request,
 ) where
-    T: ProcessState + DistributedCtx<E> + ResourceLimiter + Send + 'static,
+    T: ProcessState + DistributedCtx<E> + ResourceLimiter + Send + Sync + 'static,
     E: Environment + 'static,
 {
     if let Err(e) = handle_message_err(ctx, send, msg_id, msg).await {
@@ -98,7 +98,7 @@ async fn handle_message_err<T, E>(
     msg: Request,
 ) -> Result<()>
 where
-    T: ProcessState + DistributedCtx<E> + ResourceLimiter + Send + 'static,
+    T: ProcessState + DistributedCtx<E> + ResourceLimiter + Send + Sync + 'static,
     E: Environment + 'static,
 {
     match msg {
@@ -143,7 +143,7 @@ where
 
 async fn handle_spawn<T, E>(ctx: ServerCtx<T, E>, spawn: Spawn) -> Result<Result<u64, ClientError>>
 where
-    T: ProcessState + DistributedCtx<E> + ResourceLimiter + Send + 'static,
+    T: ProcessState + DistributedCtx<E> + ResourceLimiter + Send + Sync + 'static,
     E: Environment + 'static,
 {
     let Spawn {

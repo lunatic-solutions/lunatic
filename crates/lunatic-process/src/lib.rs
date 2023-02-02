@@ -12,6 +12,7 @@ use anyhow::{anyhow, Result};
 use env::Environment;
 use log::{debug, log_enabled, trace, warn, Level};
 
+use state::ProcessState;
 use tokio::{
     sync::{
         mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender},
@@ -211,6 +212,21 @@ impl Process for WasmProcess {
     }
 }
 
+/// Enum containing a process name if available, otherwise its ID.
+enum NameOrID<'a> {
+    Name(&'a str),
+    ID(u64),
+}
+
+impl<'a> std::fmt::Display for NameOrID<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            NameOrID::Name(name) => write!(f, "'{name}'"),
+            NameOrID::ID(id) => write!(f, "{id}"),
+        }
+    }
+}
+
 /// Turns a `Future` into a process, enabling signals (e.g. kill).
 ///
 /// This function represents the core execution loop of lunatic processes:
@@ -235,6 +251,7 @@ pub(crate) async fn new<F, S, R>(
     message_mailbox: MessageMailbox,
 ) -> Result<S>
 where
+    S: ProcessState,
     R: Into<ExecutionResult<S>>,
     F: Future<Output = R> + Send + 'static,
 {
@@ -339,11 +356,20 @@ where
 
     match result {
         Finished::Normal(result) => {
-            let result = result.into();
+            let result: ExecutionResult<_> = result.into();
+
             if let Some(failure) = result.failure() {
+                let registry = result.state().registry().read().await;
+                let name = registry
+                    .iter()
+                    .find(|(_, (_, process_id))| process_id == &id)
+                    .map(|(name, _)| {
+                        NameOrID::Name(name.splitn(4, '/').last().unwrap_or(name.as_str()))
+                    })
+                    .unwrap_or(NameOrID::ID(id));
                 warn!(
                     "Process {} failed, notifying: {} links {}",
-                    id,
+                    name,
                     links.len(),
                     // If the log level is WARN instruct user how to display the stacktrace
                     if !log_enabled!(Level::Debug) {
@@ -363,7 +389,7 @@ where
                 links.iter().for_each(|(_, (proc, tag))| {
                     proc.send(Signal::LinkDied(id, *tag, DeathReason::Normal));
                 });
-                Ok(result.state())
+                Ok(result.into_state())
             }
         }
         Finished::KillSignal => {
@@ -408,8 +434,8 @@ pub fn spawn<T, F, K, R>(
     func: F,
 ) -> (JoinHandle<Result<T>>, NativeProcess)
 where
-    T: Send + 'static,
-    R: Into<ExecutionResult<T>> + 'static,
+    T: ProcessState + Send + Sync + 'static,
+    R: Into<ExecutionResult<T>> + Send + 'static,
     K: Future<Output = R> + Send + 'static,
     F: FnOnce(NativeProcess, MessageMailbox) -> K,
 {
@@ -468,8 +494,13 @@ impl<T> ExecutionResult<T> {
         }
     }
 
+    // Returns the process state reference
+    pub fn state(&self) -> &T {
+        &self.state
+    }
+
     // Returns the process state
-    pub fn state(self) -> T {
+    pub fn into_state(self) -> T {
         self.state
     }
 }
