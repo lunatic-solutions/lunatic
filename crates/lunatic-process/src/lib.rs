@@ -12,6 +12,7 @@ use anyhow::{anyhow, Result};
 use env::Environment;
 use log::{debug, log_enabled, trace, warn, Level};
 
+use smallvec::SmallVec;
 use state::ProcessState;
 use tokio::{
     sync::{
@@ -214,16 +215,41 @@ impl Process for WasmProcess {
 
 /// Enum containing a process name if available, otherwise its ID.
 enum NameOrID<'a> {
-    Name(&'a str),
+    Names(SmallVec<[&'a str; 2]>),
     ID(u64),
+}
+
+impl<'a> NameOrID<'a> {
+    /// Returns names, otherwise id if names is empty.
+    fn or_id(self, id: u64) -> Self {
+        match self {
+            NameOrID::Names(ref names) if !names.is_empty() => self,
+            _ => NameOrID::ID(id),
+        }
+    }
 }
 
 impl<'a> std::fmt::Display for NameOrID<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            NameOrID::Name(name) => write!(f, "'{name}'"),
+            NameOrID::Names(names) => {
+                for (i, name) in names.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, " / ")?;
+                    }
+                    write!(f, "'{name}'")?;
+                }
+                Ok(())
+            }
             NameOrID::ID(id) => write!(f, "{id}"),
         }
+    }
+}
+
+impl<'a> FromIterator<&'a str> for NameOrID<'a> {
+    fn from_iter<T: IntoIterator<Item = &'a str>>(iter: T) -> Self {
+        let names = SmallVec::from_iter(iter);
+        NameOrID::Names(names)
     }
 }
 
@@ -362,11 +388,10 @@ where
                 let registry = result.state().registry().read().await;
                 let name = registry
                     .iter()
-                    .find(|(_, (_, process_id))| process_id == &id)
-                    .map(|(name, _)| {
-                        NameOrID::Name(name.splitn(4, '/').last().unwrap_or(name.as_str()))
-                    })
-                    .unwrap_or(NameOrID::ID(id));
+                    .filter(|(_, (_, process_id))| process_id == &id)
+                    .map(|(name, _)| name.splitn(4, '/').last().unwrap_or(name.as_str()))
+                    .collect::<NameOrID>()
+                    .or_id(id);
                 warn!(
                     "Process {} failed, notifying: {} links {}",
                     name,

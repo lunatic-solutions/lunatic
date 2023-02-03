@@ -1536,6 +1536,7 @@ dependencies = [
  "lunatic-networking-api",
  "metrics",
  "serde",
+ "smallvec",
  "tokio",
  "wasmtime",
  "wasmtime-wasi",
