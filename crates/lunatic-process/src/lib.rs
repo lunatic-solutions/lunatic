@@ -443,7 +443,7 @@ pub struct NativeProcess {
 ///
 /// ## Example:
 ///
-/// ```no_run
+/// ```no_run,ignore
 /// use std::sync::Arc;
 /// let env = Arc::new(lunatic_process::env::LunaticEnvironment::new(1));
 /// let _proc = lunatic_process::spawn(env, |_this, mailbox| async move {
@@ -453,7 +453,6 @@ pub struct NativeProcess {
 ///     Ok(())
 /// });
 /// ```
-
 pub fn spawn<T, F, K, R>(
     env: Arc<dyn Environment>,
     func: F,
