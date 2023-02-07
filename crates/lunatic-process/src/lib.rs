@@ -440,19 +440,6 @@ pub struct NativeProcess {
 }
 
 /// Spawns a process from a closure.
-///
-/// ## Example:
-///
-/// ```no_run,ignore
-/// use std::sync::Arc;
-/// let env = Arc::new(lunatic_process::env::LunaticEnvironment::new(1));
-/// let _proc = lunatic_process::spawn(env, |_this, mailbox| async move {
-///     // Wait on a message with the tag `27`.
-///     mailbox.pop(Some(&[27])).await;
-///     // TODO: Needs to return ExecutionResult. Probably the `new` function will need to be adjusted
-///     Ok(())
-/// });
-/// ```
 pub fn spawn<T, F, K, R>(
     env: Arc<dyn Environment>,
     func: F,
