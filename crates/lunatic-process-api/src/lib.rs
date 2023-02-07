@@ -46,7 +46,14 @@ pub trait ProcessCtx<S: ProcessState> {
 // Register the process APIs to the linker
 pub fn register<T>(linker: &mut Linker<T>) -> Result<()>
 where
-    T: ProcessState + ProcessCtx<T> + ErrorCtx + LunaticWasiCtx + Send + ResourceLimiter + 'static,
+    T: ProcessState
+        + ProcessCtx<T>
+        + ErrorCtx
+        + LunaticWasiCtx
+        + Send
+        + Sync
+        + ResourceLimiter
+        + 'static,
     for<'a> &'a T: Send,
     T::Config: ProcessConfigCtx,
 {
@@ -534,7 +541,14 @@ fn spawn<T>(
     id_ptr: u32,
 ) -> Box<dyn Future<Output = Result<u32>> + Send + '_>
 where
-    T: ProcessState + ProcessCtx<T> + ErrorCtx + LunaticWasiCtx + ResourceLimiter + Send + 'static,
+    T: ProcessState
+        + ProcessCtx<T>
+        + ErrorCtx
+        + LunaticWasiCtx
+        + ResourceLimiter
+        + Send
+        + Sync
+        + 'static,
     for<'a> &'a T: Send,
     T::Config: ProcessConfigCtx,
 {
