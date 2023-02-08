@@ -1,6 +1,9 @@
+mod store;
+
+use std::collections::HashMap;
+
 use anyhow::Result;
 use chrono::{DateTime, Utc};
-use dashmap::DashMap;
 use lunatic::{
     abstract_process,
     ap::{Config, ProcessRef},
@@ -11,12 +14,15 @@ use uuid::Uuid;
 
 use crate::host::{self, CertPk};
 
+use self::store::ControlServerStore;
+
+#[derive(Clone, Debug)]
 pub struct ControlServer {
-    pub ca_cert: CertPk,
-    // pub quic_client: lunatic_distributed::quic::Client,
-    registrations: DashMap<u64, Registered>,
-    nodes: DashMap<u64, NodeDetails>,
-    modules: DashMap<u64, Vec<u8>>,
+    ca_cert: CertPk,
+    store: ControlServerStore,
+    registrations: HashMap<u64, Registered>,
+    nodes: HashMap<u64, NodeDetails>,
+    modules: HashMap<u64, Vec<u8>>,
     next_registration_id: u64,
     next_node_id: u64,
     next_module_id: u64,
@@ -27,7 +33,7 @@ pub struct Registered {
     pub node_name: Uuid,
     pub csr_pem: String,
     pub cert_pem: String,
-    pub authentication_token: String,
+    pub auth_token: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -49,34 +55,46 @@ impl ControlServer {
 #[abstract_process(visibility = pub)]
 impl ControlServer {
     #[init]
-    fn init(_: Config<Self>, ca_cert: CertPk) -> Result<Self, ()> {
-        Ok(Self::new(ca_cert))
+    fn init(_: Config<Self>, ca_cert: CertPk) -> Result<Self, String> {
+        Self::init_new(ca_cert).map_err(|err| err.to_string())
     }
 
-    pub fn new(ca_cert: CertPk, // quic_client: lunatic_distributed::quic::Client
-    ) -> Self {
-        Self {
+    fn init_new(ca_cert: CertPk) -> anyhow::Result<Self> {
+        let store = ControlServerStore::connect("control_server.db")?;
+
+        store.init()?;
+
+        let registrations = store.load_registrations()?;
+        let nodes = store.load_nodes()?;
+        let modules = store.load_modules()?;
+
+        let next_registration_id = registrations.keys().fold(1, |max, k| max.max(k + 1));
+        let next_node_id = nodes.keys().fold(1, |max, k| max.max(k + 1));
+        let next_module_id = modules.keys().fold(1, |max, k| max.max(k + 1));
+
+        Ok(ControlServer {
             ca_cert,
-            // quic_client,
-            registrations: DashMap::new(),
-            nodes: DashMap::new(),
-            modules: DashMap::new(),
-            next_registration_id: 1,
-            next_node_id: 1,
-            next_module_id: 1,
-        }
+            store,
+            registrations,
+            nodes,
+            modules,
+            next_registration_id,
+            next_node_id,
+            next_module_id,
+        })
     }
 
     #[handle_message]
-    pub fn register(&mut self, reg: Register, cert_pem: String, authentication_token: String) {
+    pub fn register(&mut self, reg: Register, cert_pem: String, auth_token: String) {
         let id = self.next_registration_id;
         self.next_registration_id += 1;
         let registered = Registered {
             node_name: reg.node_name,
             csr_pem: reg.csr_pem,
             cert_pem,
-            authentication_token,
+            auth_token,
         };
+        self.store.add_registration(id, &registered);
         self.registrations.insert(id, registered);
     }
 
@@ -92,15 +110,17 @@ impl ControlServer {
             node_address: data.node_address.to_string(),
             attributes: serde_json::json!(data.attributes),
         };
+        self.store.add_node(id, &details);
         self.nodes.insert(id, details);
         (id, data.node_address.to_string())
     }
 
     #[handle_message]
-    pub fn stop_node(&self, reg_id: u64) {
+    pub fn stop_node(&mut self, reg_id: u64) {
         if let Some(mut node) = self.nodes.get_mut(&reg_id) {
             node.status = 2;
             node.stopped_at = Some(Utc::now());
+            self.store.add_node(reg_id, node);
         }
     }
 
@@ -108,22 +128,23 @@ impl ControlServer {
     pub fn add_module(&mut self, bytes: Vec<u8>) -> u64 {
         let id = self.next_module_id;
         self.next_module_id += 1;
+        self.store.add_module(id, bytes.clone());
         self.modules.insert(id, bytes);
         id
     }
 
     #[handle_request]
-    pub fn get_nodes(&self) -> DashMap<u64, NodeDetails> {
+    pub fn get_nodes(&self) -> HashMap<u64, NodeDetails> {
         self.nodes.clone()
     }
 
     #[handle_request]
-    pub fn get_registrations(&self) -> DashMap<u64, Registered> {
+    pub fn get_registrations(&self) -> HashMap<u64, Registered> {
         self.registrations.clone()
     }
 
     #[handle_request]
-    pub fn get_modules(&self) -> DashMap<u64, Vec<u8>> {
+    pub fn get_modules(&self) -> HashMap<u64, Vec<u8>> {
         self.modules.clone()
     }
 

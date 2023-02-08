@@ -245,9 +245,8 @@ impl FromRequest for NodeAuth {
 
         let (registration_id, reg) = control
             .get_registrations()
-            .iter()
-            .find(|r| r.node_name == node_name && r.authentication_token == token)
-            .map(|r| (*r.key(), r.value().clone()))
+            .into_iter()
+            .find(|(_, r)| r.node_name == node_name && r.auth_token == token)
             .ok_or(ApiError::NotAuthenticated)?;
         let node_auth = NodeAuth {
             registration_id: registration_id as i64,

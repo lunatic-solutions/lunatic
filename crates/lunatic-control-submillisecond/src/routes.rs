@@ -89,17 +89,17 @@ pub fn list_nodes(
 ) -> ApiResponse<NodesList> {
     let all_nodes = control.get_nodes();
     let nds: Vec<_> = all_nodes
-        .iter()
+        .into_values()
         .filter(|n| n.status < 2 && !n.node_address.is_empty())
         .collect();
     let nodes: Vec<_> = control
         .get_registrations()
-        .iter()
-        .filter_map(|r| {
+        .into_iter()
+        .filter_map(|(k, r)| {
             nds.iter()
-                .find(|n| n.registration_id == *r.key())
+                .find(|n| n.registration_id == k)
                 .map(|n| NodeInfo {
-                    id: *n.key(),
+                    id: k,
                     address: n.node_address.parse().unwrap(),
                     name: r.node_name.to_string(),
                 })
@@ -129,9 +129,9 @@ pub fn get_module(
 
     let all_modules = control.get_modules();
     let bytes = all_modules
-        .iter()
-        .find(|m| m.key() == &id)
-        .map(|m| m.value().clone())
+        .into_iter()
+        .find(|(k, _)| k == &id)
+        .map(|(_, m)| m)
         .ok_or_else(|| ApiError::custom_code("error_reading_bytes"))?;
 
     ok(ModuleBytes { bytes })
