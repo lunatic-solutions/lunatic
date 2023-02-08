@@ -25,8 +25,6 @@ fn main() -> anyhow::Result<()> {
         .flat_map(|port| ("127.0.0.1", port).to_socket_addrs().unwrap())
         .collect();
 
-    ControlServer::lookup().unwrap().add_module(vec![1, 2, 3]);
-
     Application::new(router! {
         with RequestBodyLimit::new(50 * 1024 * 1024); // 50 mb
 
