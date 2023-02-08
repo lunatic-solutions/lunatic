@@ -1578,6 +1578,7 @@ dependencies = [
  "clap 4.0.30",
  "criterion",
  "dashmap",
+ "dirs",
  "env_logger",
  "hash-map-id",
  "log",

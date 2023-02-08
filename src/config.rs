@@ -1,5 +1,6 @@
 use std::{
     fmt::Debug,
+    fs,
     path::{Component, Path, PathBuf},
 };
 
@@ -21,7 +22,7 @@ pub struct DefaultProcessConfig {
     // Can this process spawn sub-processes
     can_spawn_processes: bool,
     // WASI configs
-    preopened_dirs: Vec<String>,
+    preopened_dirs: Vec<(String, String)>,
     command_line_arguments: Vec<String>,
     environment_variables: Vec<(String, String)>,
 }
@@ -66,18 +67,31 @@ impl LunaticWasiConfigCtx for DefaultProcessConfig {
     }
 
     fn preopen_dir(&mut self, dir: String) {
-        self.preopened_dirs.push(dir);
+        let resolved_path = if &dir == "~" {
+            dirs::home_dir().unwrap().to_str().unwrap().to_string()
+        } else {
+            dir.clone()
+        };
+        self.preopened_dirs.push((dir, resolved_path));
     }
 }
 
 impl DefaultProcessConfig {
-    pub fn preopened_dirs(&self) -> &[String] {
+    pub fn preopened_dirs(&self) -> &[(String, String)] {
         &self.preopened_dirs
     }
 
     /// Grant access to the given directory with this config.
     pub fn preopen_dir<S: Into<String>>(&mut self, dir: S) {
-        self.preopened_dirs.push(dir.into())
+        let dir = dir.into();
+        let resolved_path = if &dir == "~" {
+            fs::canonicalize(dir.clone())
+                .map(|p| p.to_str().unwrap().to_string())
+                .unwrap_or_else(|_| dir.clone())
+        } else {
+            dir.clone()
+        };
+        self.preopened_dirs.push((dir.into(), resolved_path))
     }
 
     pub fn set_command_line_arguments(&mut self, args: Vec<String>) {
@@ -132,7 +146,7 @@ impl ProcessConfigCtx for DefaultProcessConfig {
         let has_access = self
             .preopened_dirs()
             .iter()
-            .filter_map(|dir| match get_absolute_path(Path::new(dir)) {
+            .filter_map(|(_, dir)| match get_absolute_path(Path::new(dir)) {
                 Ok(d) => Some(d),
                 _ => None,
             })
