@@ -4,7 +4,7 @@ use anyhow::anyhow;
 use chrono::{DateTime, Utc};
 use lunatic::sqlite::{Query, SqliteClient, SqliteError};
 
-use super::{NodeDetails, Registered};
+use super::{BincodeJsonValue, NodeDetails, Registered};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ControlServerStore {
@@ -118,7 +118,7 @@ impl ControlServerStore {
                         attributes: cols
                             .next()
                             .and_then(|attributes| attributes.into_blob())
-                            .and_then(|attributes| serde_json::from_slice(&attributes).ok())
+                            .and_then(|attributes| serde_json::from_slice(&attributes).ok().map(BincodeJsonValue))
                             .ok_or_else(|| anyhow!("missing or invalid attributes"))?,
                     },
                 ))

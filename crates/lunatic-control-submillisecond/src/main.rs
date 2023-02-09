@@ -7,7 +7,6 @@ use std::net::ToSocketAddrs;
 
 use api::RequestBodyLimit;
 use lunatic::AbstractProcess;
-use server::ControlServerRequests;
 use submillisecond::{router, Application};
 
 use crate::routes::{add_module, get_module, list_nodes, node_started, node_stopped, register};

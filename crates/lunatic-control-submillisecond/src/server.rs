@@ -1,6 +1,9 @@
 mod store;
 
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    ops::{Deref, DerefMut},
+};
 
 use anyhow::Result;
 use chrono::{DateTime, Utc};
@@ -43,7 +46,7 @@ pub struct NodeDetails {
     pub created_at: DateTime<Utc>,
     pub stopped_at: Option<DateTime<Utc>>,
     pub node_address: String,
-    pub attributes: serde_json::Value,
+    pub attributes: BincodeJsonValue,
 }
 
 impl ControlServer {
@@ -108,7 +111,7 @@ impl ControlServer {
             created_at: Utc::now(),
             stopped_at: None,
             node_address: data.node_address.to_string(),
-            attributes: serde_json::json!(data.attributes),
+            attributes: serde_json::json!(data.attributes).into(),
         };
         self.store.add_node(id, &details);
         self.nodes.insert(id, details);
@@ -156,5 +159,74 @@ impl ControlServer {
     #[handle_request]
     pub fn sign_node(&self, csr_pem: String) -> String {
         host::sign_node(&self.ca_cert.cert, &self.ca_cert.pk, &csr_pem)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BincodeJsonValue(pub serde_json::Value);
+
+impl From<serde_json::Value> for BincodeJsonValue {
+    fn from(value: serde_json::Value) -> Self {
+        BincodeJsonValue(value)
+    }
+}
+
+impl From<BincodeJsonValue> for serde_json::Value {
+    fn from(value: BincodeJsonValue) -> Self {
+        value.0
+    }
+}
+
+impl Deref for BincodeJsonValue {
+    type Target = serde_json::Value;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for BincodeJsonValue {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl Serialize for BincodeJsonValue {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let bytes = serde_json::to_vec(&self.0)
+            .map_err(|err| <S::Error as serde::ser::Error>::custom(err.to_string()))?;
+
+        serializer.serialize_bytes(&bytes)
+    }
+}
+
+impl<'de> Deserialize<'de> for BincodeJsonValue {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct BincodeJsonValueVisitor;
+
+        impl<'de> serde::de::Visitor<'de> for BincodeJsonValueVisitor {
+            type Value = BincodeJsonValue;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                write!(formatter, "a byte slice of json")
+            }
+
+            fn visit_bytes<E>(self, v: &[u8]) -> std::result::Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                serde_json::from_slice(v)
+                    .map(BincodeJsonValue)
+                    .map_err(|err| E::custom(err.to_string()))
+            }
+        }
+
+        deserializer.deserialize_bytes(BincodeJsonValueVisitor)
     }
 }
