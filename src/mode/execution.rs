@@ -27,6 +27,8 @@ enum Commands {
     Control(super::control::Args),
     /// Starts a node
     Node(super::node::Args),
+    /// Creates a new submillisecond project
+    NewSubMs(super::new_sub_ms::Args),
 }
 
 pub(crate) async fn execute(augmented_args: Option<Vec<String>>) -> Result<()> {
@@ -42,5 +44,6 @@ pub(crate) async fn execute(augmented_args: Option<Vec<String>>) -> Result<()> {
         Commands::Run(a) => super::run::start(a).await,
         Commands::Control(a) => super::control::start(a).await,
         Commands::Node(a) => super::node::start(a).await,
+        Commands::NewSubMs(a) => super::new_sub_ms::start(a).await,
     }
 }
