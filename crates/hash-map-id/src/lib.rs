@@ -194,7 +194,7 @@ mod tests {
     fn fmt_formats_the_hashmapid() {
         let mut hash: HashMapId<i32> = HashMapId::default();
         hash.add(10);
-        
+
         let expected = format!("HashMapId {{ id_seed: {}, type: \"i32\" }}", hash.id_seed);
         let result = format!("{:?}", hash);
 
