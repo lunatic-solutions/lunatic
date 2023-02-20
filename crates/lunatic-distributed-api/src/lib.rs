@@ -267,7 +267,7 @@ where
                     .data()
                     .config_resources()
                     .get(config_id as u64)
-                    .or_trap("lunatic::process::spawn: Config ID doesn't exist")?
+                    .or_trap("lunatic::distributed::spawn: Config ID doesn't exist")?
                     .clone(),
             ),
         };
@@ -350,7 +350,7 @@ where
             .data_mut()
             .message_scratch_area()
             .take()
-            .or_trap("lunatic::message::send::no_message")?;
+            .or_trap("lunatic::distributed::send::no_message")?;
 
         if let Message::Data(DataMessage {
             tag,
@@ -423,7 +423,7 @@ where
             .data_mut()
             .message_scratch_area()
             .take()
-            .or_trap("lunatic::message::send::no_message")?;
+            .or_trap("lunatic::distributed::send_receive_skip_search")?;
 
         if let Message::Data(DataMessage {
             tag,
