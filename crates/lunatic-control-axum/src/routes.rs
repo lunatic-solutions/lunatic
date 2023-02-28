@@ -3,7 +3,7 @@ use std::sync::Arc;
 use axum::{
     body::Bytes,
     extract::DefaultBodyLimit,
-    routing::{get, post},
+    routing::{get, post, delete},
     Extension, Json, Router,
 };
 use lunatic_distributed::{
@@ -15,7 +15,7 @@ use tower_http::limit::RequestBodyLimitLayer;
 
 use crate::{
     api::{ok, ApiError, ApiResponse, HostExtractor, JsonExtractor, NodeAuth, PathExtractor},
-    server::ControlServer,
+    server::{ControlServer, ProcessId},
 };
 
 pub async fn register(
@@ -50,6 +50,9 @@ pub async fn register(
             get_module: format!("http://{host}/module/{{id}}"),
             add_module: format!("http://{host}/module"),
             get_nodes: format!("http://{host}/nodes"),
+            get_process: format!("http://{host}/process/get/{{id}}"),
+            add_process: format!("http://{host}/process/add"),
+            remove_process: format!("http://{host}/process/remove/{{id}}"),
         },
     })
 }
@@ -141,6 +144,48 @@ pub async fn get_module(
     ok(ModuleBytes { bytes })
 }
 
+pub async fn get_process(
+    node_auth: NodeAuth,
+    PathExtractor(id): PathExtractor<ProcessId>,
+    control: Extension<Arc<ControlServer>>,
+) -> ApiResponse</* FIXME: What should we return here?*/String> {
+    log::info!("Node {} get_process {}", node_auth.node_name, id);
+
+    let process = control
+        .processes
+        .get(&id)
+        .ok_or_else(|| ApiError::custom_code("error_reading_process_name"))?;
+
+    ok(process.value().to_string())
+}
+
+pub async fn remove_process(
+    node_auth: NodeAuth,
+    PathExtractor(id): PathExtractor<ProcessId>,
+    control: Extension<Arc<ControlServer>>,
+) -> ApiResponse</* FIXME: What should we return here?*/bool> {
+    log::info!("Node {} remove_process {}", node_auth.node_name, id);
+
+    let was_removed = control.processes
+        .remove(&id)
+        .is_some();
+
+    ok(was_removed)
+}
+
+pub async fn add_process(
+    node_auth: NodeAuth,
+    control: Extension<Arc<ControlServer>>,
+    PathExtractor(id): PathExtractor<ProcessId>,
+    JsonExtractor(name): JsonExtractor<String>,
+) -> ApiResponse</* FIXME: What should we return here?*/bool> {
+    log::info!("Node {} add_process {}", node_auth.node_name, id);
+
+    let was_replaced = control.processes.insert(id, name).is_some();
+
+    ok(was_replaced)
+}
+
 pub fn init_routes() -> Router {
     Router::new()
         .route("/", post(register))
@@ -149,6 +194,9 @@ pub fn init_routes() -> Router {
         .route("/nodes", get(list_nodes))
         .route("/module", post(add_module))
         .route("/module/:id", get(get_module))
+        .route("/process/:id", get(get_process))
+        .route("/process/:id", post(add_process))
+        .route("/process/:id", delete(remove_process))
         .layer(DefaultBodyLimit::disable())
         .layer(RequestBodyLimitLayer::new(50 * 1024 * 1024)) // 50 mb
 }

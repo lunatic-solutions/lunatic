@@ -12,6 +12,7 @@ use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use lunatic_distributed::control::api::{NodeStart, Register};
 use rcgen::Certificate;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::routes;
@@ -33,12 +34,24 @@ pub struct NodeDetails {
     pub attributes: serde_json::Value,
 }
 
+/// The id of a process.
+///
+/// FIXME: Is this a global id or a local id?
+#[derive(PartialEq, Eq, Hash, Clone, Copy, Debug, Deserialize, Serialize)]
+pub struct ProcessId(u64);
+impl std::fmt::Display for ProcessId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 pub struct ControlServer {
     pub ca_cert: Certificate,
     pub quic_client: lunatic_distributed::quic::Client,
     pub registrations: DashMap<u64, Registered>,
     pub nodes: DashMap<u64, NodeDetails>,
     pub modules: DashMap<u64, Vec<u8>>,
+    pub(crate) processes: DashMap<ProcessId, /* name */ String>,
     next_registration_id: AtomicU64,
     next_node_id: AtomicU64,
     next_module_id: AtomicU64,
@@ -52,6 +65,7 @@ impl ControlServer {
             registrations: DashMap::new(),
             nodes: DashMap::new(),
             modules: DashMap::new(),
+            processes: DashMap::new(),
             next_registration_id: AtomicU64::new(1),
             next_node_id: AtomicU64::new(1),
             next_module_id: AtomicU64::new(1),
