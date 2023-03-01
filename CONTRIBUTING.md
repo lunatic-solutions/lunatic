@@ -62,6 +62,6 @@ cargo test
 ```
 
 ## Useful resources
-- [Project Loom on virtual threads](http://cr.openjdk.java.net/~rpressler/loom/loom/sol1_part1.html)
+- [Project Loom on virtual threads](https://cr.openjdk.org/~rpressler/loom/loom/sol1_part1.html)
 - [Erlang documentation](https://www.erlang.org/docs) - these explain some concepts that Lunatic implements
 - [Notes on distributed systems](http://cs-www.cs.yale.edu/homes/aspnes/classes/465/notes.pdf) - explains some distributed algorithms (possibly useful for working on distributed Lunatic)
