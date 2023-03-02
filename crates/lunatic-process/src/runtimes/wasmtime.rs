@@ -31,14 +31,7 @@ impl WasmtimeRuntime {
         let mut linker = wasmtime::Linker::new(&self.engine);
         // Register host functions to linker.
         <T as ProcessState>::register(&mut linker)?;
-        // The `default_state` and `store` are just used for resolving host functions that are not
-        // owned by any particular `Store`. The "real" instance state and store are created inside
-        // the `instantiate` function.
-        // See: https://docs.rs/wasmtime/latest/wasmtime/struct.Linker.html#method.instantiate_pre
-        // `default_state` should never be accessed and it's safe to use a "fake" state here.
-        let default_state = T::state_for_instantiation();
-        let mut store = wasmtime::Store::new(&self.engine, default_state);
-        let instance_pre = linker.instantiate_pre(&mut store, &module)?;
+        let instance_pre = linker.instantiate_pre(&module)?;
         let compiled_module = WasmtimeCompiledModule::new(data, module, instance_pre);
         Ok(compiled_module)
     }
