@@ -3,7 +3,7 @@ use std::sync::Arc;
 use axum::{
     body::Bytes,
     extract::DefaultBodyLimit,
-    routing::{get, post},
+    routing::{get, post, delete},
     Extension, Json, Router,
 };
 use lunatic_distributed::{
@@ -15,7 +15,7 @@ use tower_http::limit::RequestBodyLimitLayer;
 
 use crate::{
     api::{ok, ApiError, ApiResponse, HostExtractor, JsonExtractor, NodeAuth, PathExtractor},
-    server::ControlServer,
+    server::{ControlServer, ProcessName, ProcessRecord},
 };
 
 pub async fn register(
@@ -50,6 +50,9 @@ pub async fn register(
             get_module: format!("http://{host}/module/{{id}}"),
             add_module: format!("http://{host}/module"),
             get_nodes: format!("http://{host}/nodes"),
+            get_process: format!("http://{host}/process/get/{{id}}"),
+            add_process: format!("http://{host}/process/add"),
+            remove_process: format!("http://{host}/process/remove/{{id}}"),
         },
     })
 }
@@ -141,6 +144,49 @@ pub async fn get_module(
     ok(ModuleBytes { bytes })
 }
 
+pub async fn get_process(
+    node_auth: NodeAuth,
+    PathExtractor(name): PathExtractor<ProcessName>,
+    control: Extension<Arc<ControlServer>>,
+) -> ApiResponse<ProcessRecord> {
+    log::info!("Node {} get_process {}", node_auth.node_name, name);
+
+    let process = control
+        .processes
+        .get(&name)
+        .ok_or(ApiError::ProcessNotFound)?;
+
+    ok(process.value().clone())
+}
+
+pub async fn remove_process(
+    node_auth: NodeAuth,
+    PathExtractor(name): PathExtractor<ProcessName>,
+    control: Extension<Arc<ControlServer>>,
+) -> ApiResponse<ProcessRecord> {
+    log::info!("Node {} remove_process {}", node_auth.node_name, name);
+
+    let process = control.processes
+        .remove(&name)
+        .ok_or(ApiError::ProcessNotFound)?
+        .1;
+
+    ok(process)
+}
+
+pub async fn add_process(
+    node_auth: NodeAuth,
+    control: Extension<Arc<ControlServer>>,
+    PathExtractor(name): PathExtractor<ProcessName>,
+    JsonExtractor(details): JsonExtractor<ProcessRecord>,
+) -> ApiResponse<Option<ProcessRecord>> {
+    log::info!("Node {} add_process {}", node_auth.node_name, name);
+
+    let previous = control.processes.insert(name, details);
+
+    ok(previous)
+}
+
 pub fn init_routes() -> Router {
     Router::new()
         .route("/", post(register))
@@ -149,6 +195,9 @@ pub fn init_routes() -> Router {
         .route("/nodes", get(list_nodes))
         .route("/module", post(add_module))
         .route("/module/:id", get(get_module))
+        .route("/process/:name", get(get_process))
+        .route("/process/:name", post(add_process))
+        .route("/process/:name", delete(remove_process))
         .layer(DefaultBodyLimit::disable())
         .layer(RequestBodyLimitLayer::new(50 * 1024 * 1024)) // 50 mb
 }

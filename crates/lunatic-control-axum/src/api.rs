@@ -27,6 +27,7 @@ pub enum ApiError {
     InvalidData(String),
     InvalidPathArg(String),
     InvalidQueryArg(String),
+    ProcessNotFound,
     Custom {
         code: &'static str,
         message: Option<String>,
@@ -42,6 +43,7 @@ impl ApiError {
             ApiError::InvalidData(_) => "invalid_data",
             ApiError::InvalidPathArg(_) => "invalid_path_arg",
             ApiError::InvalidQueryArg(_) => "invalid_query_arg",
+            ApiError::ProcessNotFound => "process_not_found",
             ApiError::Custom { code, .. } => code,
         }
     }
@@ -51,6 +53,7 @@ impl ApiError {
             ApiError::Internal => "".into(),
             ApiError::NotAuthenticated => "Not authenticated".into(),
             ApiError::NotAuthorized => "Not authorized".into(),
+            ApiError::ProcessNotFound => "No such process".into(),
             ApiError::InvalidData(msg) => msg.clone(),
             ApiError::InvalidPathArg(msg) => msg.clone(),
             ApiError::InvalidQueryArg(msg) => msg.clone(),
@@ -106,6 +109,7 @@ impl IntoResponse for ApiError {
             Self::Internal => S::INTERNAL_SERVER_ERROR,
             Self::NotAuthenticated => S::UNAUTHORIZED,
             Self::NotAuthorized => S::FORBIDDEN,
+            Self::ProcessNotFound => S::NOT_FOUND,
             InvalidData(_) | InvalidPathArg(_) | InvalidQueryArg(_) | Custom { .. } => {
                 S::BAD_REQUEST
             }

@@ -27,6 +27,11 @@ pub struct ControlUrls {
     pub get_module: String,
     pub add_module: String,
     pub get_nodes: String,
+
+    /// Get a process
+    pub get_process: String,
+    pub add_process: String,
+    pub remove_process: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
