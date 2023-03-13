@@ -8,7 +8,10 @@ use rustls::server::AllowAnyAuthenticatedClient;
 use rustls_pemfile::Item;
 use wasmtime::ResourceLimiter;
 
-use crate::{distributed, DistributedCtx};
+use crate::{
+    distributed::{self},
+    DistributedCtx,
+};
 
 pub struct SendStream {
     pub stream: quinn::SendStream,
@@ -190,18 +193,87 @@ where
 async fn handle_quic_stream_node<T, E>(
     ctx: distributed::server::ServerCtx<T, E>,
     mut send: SendStream,
-    mut recv: RecvStream,
+    recv: RecvStream,
 ) where
     T: ProcessState + ResourceLimiter + DistributedCtx<E> + Send + Sync + 'static,
     E: Environment + 'static,
 {
-    while let Ok(bytes) = recv.receive().await {
-        if let Ok((msg_id, request)) =
-            rmp_serde::from_slice::<(u64, distributed::message::Request)>(&bytes)
-        {
+    let mut recv_ctx = RecvCtx {
+        recv: recv.stream,
+        chunks: Vec::new(),
+    };
+    while let Ok((msg_id, bytes)) = read_next_stream_message(&mut recv_ctx).await {
+        if let Ok(request) = rmp_serde::from_slice::<distributed::message::Request>(&bytes) {
             distributed::server::handle_message(ctx.clone(), &mut send, msg_id, request).await;
         } else {
             log::debug!("Error deserializing request");
+        }
+    }
+}
+
+struct Chunk {
+    message_id: u64,
+    message_size: usize,
+    data: Vec<u8>,
+}
+
+struct RecvCtx {
+    recv: quinn::RecvStream,
+    chunks: Vec<Chunk>,
+}
+
+async fn read_next_stream_chunk(recv: &mut quinn::RecvStream) -> Result<Chunk> {
+    // Read chunk header info
+    let mut message_id = [0u8; 8];
+    let mut message_size = [0u8; 4];
+    let mut chunk_id = [0u8; 8];
+    let mut chunk_size = [0u8; 4];
+    recv.read_exact(&mut message_id)
+        .await
+        .map_err(|e| anyhow!("{e} failed to read header message_id"))?;
+    recv.read_exact(&mut message_size)
+        .await
+        .map_err(|e| anyhow!("{e} failed to read header message_size"))?;
+    recv.read_exact(&mut chunk_id)
+        .await
+        .map_err(|e| anyhow!("{e} failed to read header chunk_id"))?;
+    recv.read_exact(&mut chunk_size)
+        .await
+        .map_err(|e| anyhow!("{e} failed to read header chunk_size"))?;
+    let message_id = u64::from_le_bytes(message_id);
+    let message_size = u32::from_le_bytes(message_size) as usize;
+    let chunk_id = u64::from_le_bytes(chunk_id);
+    let chunk_size = u32::from_le_bytes(chunk_size) as usize;
+    // Read chunk data
+    let mut data = vec![0u8; chunk_size];
+    recv.read_exact(&mut data)
+        .await
+        .map_err(|e| anyhow!("{e} failed to read message body"))?;
+    log::trace!("read message_id={message_id} chunk_id={chunk_id}");
+    Ok(Chunk {
+        message_id,
+        message_size,
+        data,
+    })
+}
+
+async fn read_next_stream_message(ctx: &mut RecvCtx) -> Result<(u64, Bytes)> {
+    loop {
+        let new_chunk = read_next_stream_chunk(&mut ctx.recv).await?;
+        if let Some(last_chunk) = ctx.chunks.last() {
+            // Check if chunks continue or message finished
+            if last_chunk.message_id == new_chunk.message_id {
+                ctx.chunks.push(new_chunk);
+            } else {
+                let message_id = last_chunk.message_id;
+                let mut data = Vec::with_capacity(last_chunk.message_size);
+                ctx.chunks.drain(..).for_each(|c| data.extend(c.data));
+                ctx.chunks.push(new_chunk);
+                log::trace!("finished reading from chunks message_id={message_id}");
+                return Ok((message_id, Bytes::from(data)));
+            }
+        } else {
+            ctx.chunks.push(new_chunk);
         }
     }
 }
