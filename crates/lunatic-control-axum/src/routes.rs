@@ -10,12 +10,13 @@ use lunatic_distributed::{
     control::{api::*, cert::TEST_ROOT_CERT},
     NodeInfo,
 };
+use lunatic_process::{ProcessName, ProcessRecord};
 use rcgen::CertificateSigningRequest;
 use tower_http::limit::RequestBodyLimitLayer;
 
 use crate::{
     api::{ok, ApiError, ApiResponse, HostExtractor, JsonExtractor, NodeAuth, PathExtractor},
-    server::{ControlServer, ProcessName, ProcessRecord},
+    server::ControlServer,
 };
 
 pub async fn register(

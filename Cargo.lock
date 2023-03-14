@@ -1429,6 +1429,7 @@ dependencies = [
  "http",
  "log",
  "lunatic-distributed",
+ "lunatic-process",
  "rcgen",
  "serde",
  "serde_json",

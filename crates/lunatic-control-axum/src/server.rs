@@ -11,8 +11,8 @@ use axum::{Extension, Router};
 use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use lunatic_distributed::control::api::{NodeStart, Register};
+use lunatic_process::{ProcessName, ProcessRecord};
 use rcgen::Certificate;
-use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::routes;

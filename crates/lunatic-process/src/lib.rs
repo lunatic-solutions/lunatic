@@ -389,7 +389,7 @@ where
                 let registry = result.state().registry().read().await;
                 let name = registry
                     .iter()
-                    .filter(|(_, (_, process_id))| process_id == &id)
+                    .filter(|(_, (_, process_id))| Into::<u64>::into(*process_id) == id)
                     .map(|(name, _)| name.splitn(4, '/').last().unwrap_or(name.as_str()))
                     .collect::<NameOrID>()
                     .or_id(id);
@@ -559,7 +559,11 @@ impl AsRef<str> for ProcessName {
         &self.0
     }
 }
-
+impl ProcessName {
+    pub fn from_utf8(bytes: Vec<u8>) -> Result<Self, std::string::FromUtf8Error> {
+        Ok(ProcessName(String::from_utf8(bytes)?))
+    }
+}
 /// The id of a process.
 ///
 /// FIXME: Is this a global id or a local id?
@@ -568,6 +572,16 @@ pub struct ProcessId(u64);
 impl std::fmt::Display for ProcessId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)
+    }
+}
+impl From<ProcessId> for u64 {
+    fn from(value: ProcessId) -> u64 {
+        value.0
+    }
+}
+impl ProcessId {
+    pub fn new(id: u64) -> Self {
+        ProcessId(id)
     }
 }
 

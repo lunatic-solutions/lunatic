@@ -303,13 +303,13 @@ impl Client {
     /// Register a process.
     ///
     /// If a process was previously registered with the same `name`, return the previous process.
-    pub async fn add_process(&self, name: ProcessName, record: ProcessRecord) -> Result<Option<ProcessRecord>> {
+    pub async fn add_process(&self, name: &str, record: ProcessRecord) -> Result<Option<ProcessRecord>> {
         let url = self
             .inner
             .reg
             .urls
             .add_process
-            .replace("{name}", name.as_ref());
+            .replace("{name}", name);
         let result = self.post(&url, record).await?;
         Ok(result)
     }
@@ -317,13 +317,13 @@ impl Client {
     /// Remove a process.
     ///
     /// Returns `ApiError::ProcessNotFound` if the process does not exist.
-    pub async fn remove_process(&self, name: ProcessName) -> Result<ProcessRecord> {
+    pub async fn remove_process(&self, name: &str) -> Result<ProcessRecord> {
         let url = self
             .inner
             .reg
             .urls
             .remove_process
-            .replace("{name}", name.as_ref());
+            .replace("{name}", name);
         let result = self.delete(&url, None).await?;
         Ok(result)
     }
@@ -331,13 +331,13 @@ impl Client {
     /// Get a process.
     ///
     /// Returns `ApiError::ProcessNotFound` if the process does not exist.
-    pub async fn get_process(&self, name: ProcessName) -> Result<ProcessRecord> {
+    pub async fn get_process(&self, name: &str) -> Result<ProcessRecord> {
         let url = self
             .inner
             .reg
             .urls
             .add_process
-            .replace("{name}", name.as_ref());
+            .replace("{name}", name);
         let result = self.get(&url, None).await?;
         Ok(result)
     }

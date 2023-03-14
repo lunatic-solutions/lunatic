@@ -18,7 +18,7 @@ use wasmtime::{Caller, Linker, ResourceLimiter};
 // Register the lunatic distributed APIs to the linker
 pub fn register<T, E>(linker: &mut Linker<T>) -> Result<()>
 where
-    T: DistributedCtx<E> + ProcessCtx<T> + Send + ResourceLimiter + ErrorCtx + 'static,
+    T: DistributedCtx<E> + ProcessCtx<T> + Send + Sync + ResourceLimiter + ErrorCtx + 'static,
     E: Environment + 'static,
     for<'a> &'a T: Send,
 {
@@ -43,6 +43,9 @@ where
         "copy_lookup_nodes_results",
         copy_lookup_nodes_results,
     )?;
+
+    linker.func_wrap4_async("lunatic::distributed", "get", get_process)?;
+
     Ok(())
 }
 
@@ -497,4 +500,70 @@ where
     E: Environment,
 {
     caller.data().module_id()
+}
+
+// Looks up process under `name` and returns 0 if it was found or 1 if not found.
+//
+// Traps:
+// * If any memory outside the guest heap space is referenced.
+fn get_process<T, E>(
+    mut caller: Caller<T>,
+    name_str_ptr: u32,
+    name_str_len: u32,
+    node_id_ptr: u32,
+    process_id_ptr: u32,
+) -> Box<dyn Future<Output = Result<u32>> + Send + '_>
+where T : DistributedCtx<E> + Send + Sync,
+      E : Environment
+{
+    Box::new(async move {
+        // Extract process name from memory.
+        let memory = get_memory(&mut caller)?;
+        let (memory_slice, state) = memory.data_and_store_mut(&mut caller);
+        let name = memory_slice
+            .get(name_str_ptr as usize..(name_str_ptr + name_str_len) as usize)
+            .or_trap("lunatic::registry::get")?;
+        let name = std::str::from_utf8(name).or_trap("lunatic::registry::get")?;
+
+        // Sanity check
+        if state.registry_atomic_put().is_some() {
+            return Err(anyhow!(
+                "calling `lunatic::registry::get` after `get_or_put_later` will deadlock"
+            ));
+        }
+
+        #[cfg(feature = "metrics")]
+        metrics::increment_counter!("lunatic.registry.read");
+
+        // Lookup in local registry.
+        let (node_id, process_id) = if let Some(process) = state.registry().read().await.get(name) {
+            *process
+        } else {
+            if let Ok(distributed) = state.distributed() {
+                // Lookup in distributed registry.
+                let record = distributed
+                    .control
+                    .get_process(name)
+                    .await
+                    .or_trap("lunatic::registry::get")?;
+                (record.node_id(), record.process_id())
+            } else {
+                return Ok(1);
+            }
+            return Ok(1);
+        };
+
+        memory
+            .write(&mut caller, node_id_ptr as usize, &node_id.to_le_bytes())
+            .or_trap("lunatic::registry::get")?;
+
+        memory
+            .write(
+                &mut caller,
+                process_id_ptr as usize,
+                &process_id.to_le_bytes(),
+            )
+            .or_trap("lunatic::registry::get")?;
+        Ok(0)
+    })
 }

@@ -9,6 +9,7 @@ license = "Apache-2.0/MIT"
 
 [dependencies]
 lunatic-distributed = { workspace = true }
+lunatic-process = { workspace = true }
 
 anyhow = { workspace = true }
 axum = { version = "0.6", features = ["json", "query", "macros" ] }

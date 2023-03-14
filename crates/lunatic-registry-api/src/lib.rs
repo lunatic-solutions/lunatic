@@ -67,7 +67,7 @@ fn put<T: ProcessState + ProcessCtx<T> + Send + Sync>(
         match state.registry_atomic_put().take() {
             // Use existing lock for writing.
             Some(mut registry_lock) => {
-                registry_lock.insert(name.to_owned(), (node_id, process_id));
+                registry_lock.insert(name.to_owned(), (node_id, ProcessId::new(process_id)));
             }
             // If no lock exists, acquire it.
             None => {
@@ -75,7 +75,7 @@ fn put<T: ProcessState + ProcessCtx<T> + Send + Sync>(
                     .registry()
                     .write()
                     .await
-                    .insert(name.to_owned(), (node_id, process_id));
+                    .insert(name.to_owned(), (node_id, ProcessId::new(process_id)));
             }
         }
 

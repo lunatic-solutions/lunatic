@@ -12,7 +12,7 @@ use crate::{
     config::ProcessConfig,
     mailbox::MessageMailbox,
     runtimes::wasmtime::{WasmtimeCompiledModule, WasmtimeRuntime},
-    Signal,
+    Signal, ProcessId,
 };
 
 pub type ConfigResources<T> = HashMapId<T>;
@@ -63,9 +63,12 @@ pub trait ProcessState: Sized {
     fn config_resources(&self) -> &ConfigResources<Self::Config>;
     fn config_resources_mut(&mut self) -> &mut ConfigResources<Self::Config>;
 
-    // Registry
-    fn registry(&self) -> &Arc<RwLock<HashMap<String, (u64, u64)>>>;
+    // Process registry
+    //
+    // Key: process name.
+    // Value: node id, process id.
+    fn registry(&self) -> &Arc<RwLock<HashMap<String, (u64, ProcessId)>>>;
     fn registry_atomic_put(
         &mut self,
-    ) -> &mut Option<RwLockWriteGuard<'static, HashMap<String, (u64, u64)>>>;
+    ) -> &mut Option<RwLockWriteGuard<'static, HashMap<String, (u64, ProcessId)>>>;
 }
