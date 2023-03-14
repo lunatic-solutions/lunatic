@@ -86,7 +86,7 @@ pub(crate) async fn start(args: Args) -> Result<()> {
 
     let quic_client = quic::new_quic_client(
         &reg.root_cert,
-        &reg.cert_pem_chain
+        reg.cert_pem_chain
             .get(0)
             .ok_or_else(|| anyhow!("No certificate available for QUIC client"))?,
         &node_cert.serialize_private_key_pem(),
