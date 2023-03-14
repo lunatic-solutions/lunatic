@@ -15,6 +15,8 @@ lunatic-process = { workspace = true }
 lunatic-process-api = { workspace = true }
 
 anyhow = { workspace = true }
+bincode = { workspace = true }
+rcgen = { version = "0.10", features = ["pem", "x509-parser"] }
 rmp-serde = "1.1.1"
 log = { workspace = true }
 tokio = { workspace = true, features = ["time"] }

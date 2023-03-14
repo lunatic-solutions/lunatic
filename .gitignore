@@ -5,3 +5,4 @@
 debug.log
 notes-*.md
 publish.sh
+control_server.db

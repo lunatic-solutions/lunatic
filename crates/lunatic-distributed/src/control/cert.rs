@@ -26,29 +26,21 @@ boMyGfdI+xwp7ewOulGvpTcvdpehRANCAARlVNxYAwsmmFNc2EMBbZZVwL8GBtnn
 u8IROdDd68ixc0VBjfrV0zAM344lKJcs9slsMTEofoYvMCpIBhnSGyAF
 -----END PRIVATE KEY-----"""#;
 
-pub fn root_cert(
-    test_ca: bool,
-    ca_cert: Option<&str>,
-    ca_keys: Option<&str>,
-) -> Result<Certificate> {
-    if test_ca {
-        let key_pair = KeyPair::from_pem(TEST_ROOT_KEYS)?;
-        let root_params = CertificateParams::from_ca_cert_pem(TEST_ROOT_CERT, key_pair)?;
-        let root_cert = Certificate::from_params(root_params)?;
-        Ok(root_cert)
-    } else {
-        let ca_cert_pem = std::fs::read(Path::new(
-            ca_cert.ok_or_else(|| anyhow::anyhow!("Missing CA certificate."))?,
-        ))?;
-        let ca_keys_pem = std::fs::read(Path::new(
-            ca_keys.ok_or_else(|| anyhow::anyhow!("Missing CA keys."))?,
-        ))?;
-        let key_pair = KeyPair::from_pem(std::str::from_utf8(&ca_keys_pem)?)?;
-        let root_params =
-            CertificateParams::from_ca_cert_pem(std::str::from_utf8(&ca_cert_pem)?, key_pair)?;
-        let root_cert = Certificate::from_params(root_params)?;
-        Ok(root_cert)
-    }
+pub fn test_root_cert() -> Result<Certificate> {
+    let key_pair = KeyPair::from_pem(TEST_ROOT_KEYS)?;
+    let root_params = CertificateParams::from_ca_cert_pem(TEST_ROOT_CERT, key_pair)?;
+    let root_cert = Certificate::from_params(root_params)?;
+    Ok(root_cert)
+}
+
+pub fn root_cert(ca_cert: &str, ca_keys: &str) -> Result<Certificate> {
+    let ca_cert_pem = std::fs::read(Path::new(ca_cert))?;
+    let ca_keys_pem = std::fs::read(Path::new(ca_keys))?;
+    let key_pair = KeyPair::from_pem(std::str::from_utf8(&ca_keys_pem)?)?;
+    let root_params =
+        CertificateParams::from_ca_cert_pem(std::str::from_utf8(&ca_cert_pem)?, key_pair)?;
+    let root_cert = Certificate::from_params(root_params)?;
+    Ok(root_cert)
 }
 
 fn ctrl_cert() -> Result<Certificate> {
