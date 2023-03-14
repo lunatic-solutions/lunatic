@@ -50,9 +50,9 @@ pub async fn register(
             get_module: format!("http://{host}/module/{{id}}"),
             add_module: format!("http://{host}/module"),
             get_nodes: format!("http://{host}/nodes"),
-            get_process: format!("http://{host}/process/get/{{id}}"),
-            add_process: format!("http://{host}/process/add"),
-            remove_process: format!("http://{host}/process/remove/{{id}}"),
+            get_process: format!("http://{host}/process/{{name}}"),
+            add_process: format!("http://{host}/process/{{name}}"),
+            remove_process: format!("http://{host}/process/{{name}}"),
         },
     })
 }

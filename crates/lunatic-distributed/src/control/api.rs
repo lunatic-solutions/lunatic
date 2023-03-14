@@ -52,6 +52,7 @@ pub struct NodesList {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+/// The binary for a wasm module.
 pub struct ModuleBytes {
     pub bytes: Vec<u8>,
 }

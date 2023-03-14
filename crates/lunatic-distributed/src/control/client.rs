@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use dashmap::DashMap;
-use lunatic_process::runtimes::RawWasm;
+use lunatic_process::{runtimes::RawWasm, ProcessName, ProcessRecord};
 use reqwest::{Client as HttpClient, Url};
 use serde::{de::DeserializeOwned, Serialize};
 use std::{
@@ -129,6 +129,7 @@ impl Client {
         Ok(resp.node_id as u64)
     }
 
+    /// Place a GET call to a url.
     pub async fn get<T: DeserializeOwned>(&self, url: &str, query: Option<&str>) -> Result<T> {
         let mut url: Url = url.parse()?;
         url.set_query(query);
@@ -154,6 +155,33 @@ impl Client {
         Ok(resp)
     }
 
+    /// Place a DELETE call to a url.
+    pub async fn delete<T: DeserializeOwned>(&self, url: &str, query: Option<&str>) -> Result<T> {
+        let mut url: Url = url.parse()?;
+        url.set_query(query);
+
+        let resp: T = self
+            .inner
+            .http_client
+            .delete(url.clone())
+            .bearer_auth(&self.inner.reg.authentication_token)
+            .header(
+                "x-lunatic-node-name",
+                &self.inner.reg.node_name.hyphenated().to_string(),
+            )
+            .send()
+            .await
+            .with_context(|| format!("Error sending HTTP DELETE request: {}.", &url))?
+            .error_for_status()
+            .with_context(|| format!("HTTP DELETE request returned an error response: {}", &url))?
+            .json()
+            .await
+            .with_context(|| format!("Error parsing the HTTP DELETE request JSON: {}", &url))?;
+
+        Ok(resp)
+    }
+
+    /// Place a POST call to a url.
     pub async fn post<T: Serialize, R: DeserializeOwned>(&self, url: &str, data: T) -> Result<R> {
         let url: Url = url.parse()?;
 
@@ -270,6 +298,48 @@ impl Client {
         let url = &self.inner.reg.urls.add_module;
         let resp: ModuleId = self.upload(url, module.clone()).await?;
         Ok(RawWasm::new(Some(resp.module_id), module))
+    }
+
+    /// Register a process.
+    ///
+    /// If a process was previously registered with the same `name`, return the previous process.
+    pub async fn add_process(&self, name: ProcessName, record: ProcessRecord) -> Result<Option<ProcessRecord>> {
+        let url = self
+            .inner
+            .reg
+            .urls
+            .add_process
+            .replace("{name}", name.as_ref());
+        let result = self.post(&url, record).await?;
+        Ok(result)
+    }
+
+    /// Remove a process.
+    ///
+    /// Returns `ApiError::ProcessNotFound` if the process does not exist.
+    pub async fn remove_process(&self, name: ProcessName) -> Result<ProcessRecord> {
+        let url = self
+            .inner
+            .reg
+            .urls
+            .remove_process
+            .replace("{name}", name.as_ref());
+        let result = self.delete(&url, None).await?;
+        Ok(result)
+    }
+
+    /// Get a process.
+    ///
+    /// Returns `ApiError::ProcessNotFound` if the process does not exist.
+    pub async fn get_process(&self, name: ProcessName) -> Result<ProcessRecord> {
+        let url = self
+            .inner
+            .reg
+            .urls
+            .add_process
+            .replace("{name}", name.as_ref());
+        let result = self.get(&url, None).await?;
+        Ok(result)
     }
 }
 

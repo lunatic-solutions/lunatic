@@ -34,50 +34,6 @@ pub struct NodeDetails {
     pub attributes: serde_json::Value,
 }
 
-/// A name for a process.
-///
-/// This name is provided by the process itself and is used for the purpose
-/// of finding the process id. There is no guarantee that the name is unique.
-#[derive(PartialEq, Eq, Hash, Clone, Debug, Deserialize, Serialize)]
-pub struct ProcessName(String);
-impl std::fmt::Display for ProcessName {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-/// The id of a process.
-///
-/// FIXME: Is this a global id or a local id?
-#[derive(PartialEq, Eq, Hash, Clone, Copy, Debug, Deserialize, Serialize)]
-pub struct ProcessId(u64);
-impl std::fmt::Display for ProcessId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-/// A record in the table of processes.
-///
-/// Records are maintained by processes themselves and should not be considered
-/// trusted by the VM.
-#[derive(Deserialize, Serialize, Clone)]
-pub struct ProcessRecord {
-    /// The id of the node hosting the process.
-    node_id: u64,
-
-    /// The id of the process itself.
-    process_id: ProcessId
-}
-impl ProcessRecord {
-    pub fn node_id(&self) -> u64 {
-        self.node_id
-    }
-
-    pub fn process_id(&self) -> ProcessId {
-        self.process_id
-    }
-}
 
 pub struct ControlServer {
     pub ca_cert: Certificate,
