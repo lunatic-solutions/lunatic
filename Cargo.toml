@@ -85,7 +85,7 @@ members = [
     "crates/lunatic-common-api",
     "crates/lunatic-control",
     "crates/lunatic-control-axum",
-    "crates/lunatic-control-submillisecond",
+    # "crates/lunatic-control-submillisecond",
     "crates/lunatic-distributed-api",
     "crates/lunatic-distributed",
     "crates/lunatic-error-api",
