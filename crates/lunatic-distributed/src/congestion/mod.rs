@@ -6,6 +6,7 @@ use std::{
     },
 };
 
+use anyhow::{anyhow, Result};
 use dashmap::DashMap;
 use tokio::{
     io::AsyncWriteExt,
@@ -15,7 +16,11 @@ use tokio::{
     },
 };
 
-use crate::distributed::message::{Request, Spawn};
+use crate::{
+    control,
+    distributed::message::{Request, Spawn},
+    quic,
+};
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
 pub struct EnvironmentId(pub u64);
@@ -72,6 +77,8 @@ pub struct Client {
 }
 
 pub struct Inner {
+    control_client: control::Client,
+    node_client: quic::Client,
     next_message_id: AtomicU64,
     buf_rx: DashMap<EnvironmentId, DashMap<ProcessId, BufRx>>,
     buf_tx: DashMap<(EnvironmentId, ProcessId), Sender<MessageCtx>>,
@@ -88,17 +95,52 @@ impl Client {
         )
     }
 
-    async fn new_message(&self, env: EnvironmentId, src: ProcessId, node: NodeId, data: Vec<u8>) {
+    async fn new_message(
+        &self,
+        env: EnvironmentId,
+        src: ProcessId,
+        node: NodeId,
+        data: Vec<u8>,
+    ) -> Result<()> {
+        // Lazy initialize process message buffers
         let tx = match self.inner.buf_tx.get(&(env, src)) {
             Some(tx) => tx,
-            None => todo!("INIT NEW BUFFER FOR PID"),
+            None => {
+                let (send, recv) = tokio::sync::mpsc::channel(100); // TODO: configuration
+                match self.inner.buf_rx.get(&env) {
+                    Some(env_queue) => {
+                        env_queue.insert(src, RwLock::new(recv));
+                    }
+                    None => {
+                        let queue = DashMap::new();
+                        queue.insert(src, RwLock::new(recv));
+                        self.inner.buf_rx.insert(env, queue);
+                    }
+                };
+                self.inner.buf_tx.insert((env, src), send);
+                self.inner.buf_tx.get(&(env, src)).unwrap()
+            }
         };
-        let conn = self
-            .inner
-            .connections
-            .get(&node)
-            .expect("SET UP CONNECTION IN GUEST CODE");
-        let (send, _) = conn.open_bi().await.expect("SET UP STREAM IN GUEST CODE");
+        // Lazy initialize remote node quic connection
+        let conn = match self.inner.connections.get(&node) {
+            Some(conn) => conn,
+            None => {
+                // Connect
+                let node_info = self
+                    .inner
+                    .control_client
+                    .node_info(node.0)
+                    .ok_or_else(|| anyhow!("Node {} does not exist.", node.0))?;
+                let conn = self
+                    .inner
+                    .node_client
+                    .try_connect(node_info.address, &node_info.name, 3)
+                    .await?;
+                self.inner.connections.insert(node, conn);
+                self.inner.connections.get(&node).unwrap()
+            }
+        };
+        let (send, _) = conn.open_bi().await?; // TODO: RecvStream part
 
         match tx
             .send(MessageCtx {
@@ -114,11 +156,16 @@ impl Client {
         {
             Ok(_) => (),
             Err(_) => log::error!("lunatic::distributed::client::send"),
-        }
+        };
+        Ok(())
+    }
+
+    pub fn remove_process_resources(&self, env: EnvironmentId, process_id: ProcessId) {
+        self.inner.buf_tx.remove(&(env, process_id));
     }
 
     // Send distributed message
-    pub async fn send(&self, params: SendParams) {
+    pub async fn send(&self, params: SendParams) -> Result<()> {
         let message = Request::Message {
             environment_id: params.env.0,
             process_id: params.dest.0,
@@ -130,18 +177,18 @@ impl Client {
             Err(_) => unreachable!("lunatic::distributed::client::send serialize_message"),
         };
         self.new_message(params.env, params.src, params.node, data)
-            .await;
+            .await
     }
 
     // Send distributed spawn message
-    pub async fn spawn(&self, params: SpawnParams) {
+    pub async fn spawn(&self, params: SpawnParams) -> Result<()> {
         let message = Request::Spawn(params.spawn);
         let data = match rmp_serde::to_vec(&message) {
             Ok(data) => data,
             Err(_) => unreachable!("lunatic::distributed::client::spawn serialize_message"),
         };
         self.new_message(params.env, params.src, params.node, data)
-            .await;
+            .await
     }
 }
 

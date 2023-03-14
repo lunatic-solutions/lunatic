@@ -49,6 +49,28 @@ pub struct Client {
 }
 
 impl Client {
+    pub async fn _connect(&self, addr: SocketAddr, name: &str) -> Result<quinn::Connection> {
+        Ok(self.inner.connect(addr, name)?.await?)
+    }
+
+    pub async fn try_connect(
+        &self,
+        addr: SocketAddr,
+        name: &str,
+        retry: u32,
+    ) -> Result<quinn::Connection> {
+        for try_num in 1..(retry + 1) {
+            match self._connect(addr, name).await {
+                Ok(conn) => return Ok(conn),
+                Err(e) => {
+                    log::error!("Error connecting to {name} at {addr}, try {try_num}. Error: {e}")
+                }
+            }
+            tokio::time::sleep(Duration::from_secs(2)).await;
+        }
+        Err(anyhow!("Failed to connect to {name} at {addr}"))
+    }
+
     pub async fn connect(
         &self,
         addr: SocketAddr,
