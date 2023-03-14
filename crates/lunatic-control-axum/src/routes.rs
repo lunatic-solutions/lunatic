@@ -39,7 +39,7 @@ pub async fn register(
 
     ok(Registration {
         node_name: reg.node_name,
-        cert_pem,
+        cert_pem_chain: vec![cert_pem],
         authentication_token,
         root_cert: TEST_ROOT_CERT.into(),
         urls: ControlUrls {

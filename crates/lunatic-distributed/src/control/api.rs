@@ -12,7 +12,7 @@ pub struct Register {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Registration {
     pub node_name: uuid::Uuid,
-    pub cert_pem: String,
+    pub cert_pem_chain: Vec<String>,
     pub authentication_token: String,
     pub root_cert: String,
     pub urls: ControlUrls,
