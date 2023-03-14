@@ -68,9 +68,10 @@ pub struct MessageChunk<'a> {
     data: &'a [u8],
 }
 
+// Receiving part of the message queue
 type BufRx = RwLock<Receiver<MessageCtx>>;
 
-// To replace distributed::Client
+// TODO: replace distributed::Client
 #[derive(Clone)]
 pub struct Client {
     inner: Arc<Inner>,
@@ -80,9 +81,13 @@ pub struct Inner {
     control_client: control::Client,
     node_client: quic::Client,
     next_message_id: AtomicU64,
+    // Across Environments and ProcessId's track message queues
     buf_rx: DashMap<EnvironmentId, DashMap<ProcessId, BufRx>>,
+    // Sending part of the message queue
     buf_tx: DashMap<(EnvironmentId, ProcessId), Sender<MessageCtx>>,
+    // Holds the message while its being chunked
     in_progress: DashMap<(EnvironmentId, ProcessId), MessageCtx>,
+    // Node to Node connections
     connections: DashMap<NodeId, quinn::Connection>,
 }
 
@@ -160,6 +165,7 @@ impl Client {
         Ok(())
     }
 
+    // TODO: how to detect process is dead?
     pub fn remove_process_resources(&self, env: EnvironmentId, process_id: ProcessId) {
         self.inner.buf_tx.remove(&(env, process_id));
     }
