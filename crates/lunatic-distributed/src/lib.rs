@@ -8,8 +8,7 @@ use lunatic_process::{
     runtimes::wasmtime::{WasmtimeCompiledModule, WasmtimeRuntime},
     state::ProcessState,
 };
-use serde::{Deserialize, Serialize};
-use std::{net::SocketAddr, sync::Arc};
+use std::sync::Arc;
 
 pub trait DistributedCtx<E: Environment>: ProcessState + Sized {
     fn new_dist_state(
@@ -49,11 +48,4 @@ impl DistributedProcessState {
     pub fn node_id(&self) -> u64 {
         self.node_id
     }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NodeInfo {
-    pub id: u64,
-    pub address: SocketAddr,
-    pub name: String,
 }

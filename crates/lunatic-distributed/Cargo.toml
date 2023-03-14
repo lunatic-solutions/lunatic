@@ -8,9 +8,9 @@ repository = "https://github.com/lunatic-solutions/lunatic/tree/main/crates"
 license = "Apache-2.0/MIT"
 
 [dependencies]
+lunatic-control = { workspace = true }
 lunatic-process = { workspace = true }
 
-uuid = { version = "1.0", features = ["serde", "v4"] }
 anyhow = { workspace = true }
 async_cell = "0.2.1"
 rmp-serde = "1.1.1"
@@ -24,4 +24,5 @@ rustls = { version = "0.20" }
 rustls-pemfile = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 tokio = { workspace = true, features = ["io-util", "rt", "sync", "time"] }
+uuid = { version = "1.0", features = ["serde", "v4"] }
 wasmtime = { workspace = true }

@@ -10,11 +10,22 @@ use anyhow::Result;
 use axum::{Extension, Router};
 use chrono::{DateTime, Utc};
 use dashmap::DashMap;
-use lunatic_distributed::control::api::{NodeStart, Register};
+use lunatic_control::api::{NodeStart, Register};
 use rcgen::Certificate;
 use uuid::Uuid;
 
 use crate::routes;
+
+pub struct ControlServer {
+    pub ca_cert: Certificate,
+    pub quic_client: lunatic_distributed::quic::Client,
+    pub registrations: DashMap<u64, Registered>,
+    pub nodes: DashMap<u64, NodeDetails>,
+    pub modules: DashMap<u64, Vec<u8>>,
+    next_registration_id: AtomicU64,
+    next_node_id: AtomicU64,
+    next_module_id: AtomicU64,
+}
 
 #[derive(Clone)]
 pub struct Registered {
@@ -31,17 +42,6 @@ pub struct NodeDetails {
     pub stopped_at: Option<DateTime<Utc>>,
     pub node_address: String,
     pub attributes: serde_json::Value,
-}
-
-pub struct ControlServer {
-    pub ca_cert: Certificate,
-    pub quic_client: lunatic_distributed::quic::Client,
-    pub registrations: DashMap<u64, Registered>,
-    pub nodes: DashMap<u64, NodeDetails>,
-    pub modules: DashMap<u64, Vec<u8>>,
-    next_registration_id: AtomicU64,
-    next_node_id: AtomicU64,
-    next_module_id: AtomicU64,
 }
 
 impl ControlServer {
@@ -100,8 +100,8 @@ impl ControlServer {
 }
 
 fn prepare_app() -> Result<Router> {
-    let ca_cert_str = lunatic_distributed::distributed::server::root_cert(true, None)?;
-    let ca_cert = lunatic_distributed::control::cert::root_cert(true, None, None).unwrap();
+    let ca_cert_str = lunatic_distributed::distributed::server::test_root_cert();
+    let ca_cert = lunatic_distributed::control::cert::test_root_cert()?;
     let (ctrl_cert, ctrl_pk) =
         lunatic_distributed::control::cert::default_server_certificates(&ca_cert)?;
     let quic_client =

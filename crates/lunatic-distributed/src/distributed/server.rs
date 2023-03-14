@@ -38,15 +38,13 @@ impl<T: 'static, E: Environment> Clone for ServerCtx<T, E> {
     }
 }
 
-pub fn root_cert(test_ca: bool, ca_cert: Option<&str>) -> Result<String> {
-    if test_ca {
-        Ok(crate::control::cert::TEST_ROOT_CERT.to_string())
-    } else {
-        let cert = std::fs::read(
-            ca_cert.ok_or_else(|| anyhow::anyhow!("Missing public root certificate."))?,
-        )?;
-        Ok(std::str::from_utf8(&cert)?.to_string())
-    }
+pub fn test_root_cert() -> String {
+    crate::control::cert::TEST_ROOT_CERT.to_string()
+}
+
+pub fn root_cert(ca_cert: &str) -> Result<String> {
+    let cert = std::fs::read(ca_cert)?;
+    Ok(std::str::from_utf8(&cert)?.to_string())
 }
 
 pub fn gen_node_cert(node_name: &str) -> Result<Certificate> {

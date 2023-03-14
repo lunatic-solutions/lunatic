@@ -2,6 +2,7 @@ use anyhow::Result;
 use async_cell::sync::AsyncCell;
 use bytes::Bytes;
 use dashmap::DashMap;
+use lunatic_control::NodeInfo;
 use std::sync::{atomic, atomic::AtomicU64, Arc};
 use tokio::sync::mpsc::{self, unbounded_channel, UnboundedReceiver, UnboundedSender};
 
@@ -9,7 +10,6 @@ use crate::{
     control,
     distributed::message::{ClientError, Request, Response},
     quic::{self, RecvStream},
-    NodeInfo,
 };
 
 use super::message::Spawn;
