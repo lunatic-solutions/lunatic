@@ -9,6 +9,7 @@ license = "Apache-2.0/MIT"
 
 [dependencies]
 lunatic-common-api = { workspace = true }
+lunatic-control-axum = { workspace = true }
 lunatic-distributed = { workspace = true }
 lunatic-error-api = { workspace = true }
 lunatic-process = { workspace = true }

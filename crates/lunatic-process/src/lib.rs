@@ -583,6 +583,9 @@ impl ProcessId {
     pub fn new(id: u64) -> Self {
         ProcessId(id)
     }
+    pub fn to_le_bytes(&self) -> [u8;8] {
+        self.0.to_le_bytes()
+    }
 }
 
 /// A record in the table of processes.
@@ -598,6 +601,10 @@ pub struct ProcessRecord {
     process_id: ProcessId
 }
 impl ProcessRecord {
+    pub fn new(node_id: u64, process_id: ProcessId) -> Self {
+        ProcessRecord { node_id, process_id }
+    }
+
     pub fn node_id(&self) -> u64 {
         self.node_id
     }

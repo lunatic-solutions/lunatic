@@ -119,6 +119,7 @@ impl IntoResponse for ApiError {
     }
 }
 
+impl std::error::Error for ApiError { }
 pub struct JsonExtractor<T>(pub T);
 
 #[async_trait]

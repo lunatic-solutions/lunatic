@@ -1467,6 +1467,7 @@ dependencies = [
  "anyhow",
  "log",
  "lunatic-common-api",
+ "lunatic-control-axum",
  "lunatic-distributed",
  "lunatic-error-api",
  "lunatic-process",

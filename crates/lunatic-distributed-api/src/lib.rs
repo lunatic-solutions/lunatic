@@ -9,7 +9,7 @@ use lunatic_distributed::{
 use lunatic_error_api::ErrorCtx;
 use lunatic_process::{
     env::Environment,
-    message::{DataMessage, Message},
+    message::{DataMessage, Message}, ProcessId, ProcessRecord,
 };
 use lunatic_process_api::ProcessCtx;
 use tokio::time::timeout;
@@ -45,6 +45,8 @@ where
     )?;
 
     linker.func_wrap4_async("lunatic::distributed", "get", get_process)?;
+    linker.func_wrap4_async("lunatic::distributed", "put", put_process)?;
+    linker.func_wrap2_async("lunatic::distributed", "remove", remove_process)?;
 
     Ok(())
 }
@@ -522,13 +524,13 @@ where T : DistributedCtx<E> + Send + Sync,
         let (memory_slice, state) = memory.data_and_store_mut(&mut caller);
         let name = memory_slice
             .get(name_str_ptr as usize..(name_str_ptr + name_str_len) as usize)
-            .or_trap("lunatic::registry::get")?;
-        let name = std::str::from_utf8(name).or_trap("lunatic::registry::get")?;
+            .or_trap("lunatic::distributed::get")?;
+        let name = std::str::from_utf8(name).or_trap("lunatic::distributed::get")?;
 
         // Sanity check
         if state.registry_atomic_put().is_some() {
             return Err(anyhow!(
-                "calling `lunatic::registry::get` after `get_or_put_later` will deadlock"
+                "calling `lunatic::distributed::get` after `get_or_put_later` will deadlock"
             ));
         }
 
@@ -536,26 +538,25 @@ where T : DistributedCtx<E> + Send + Sync,
         metrics::increment_counter!("lunatic.registry.read");
 
         // Lookup in local registry.
-        let (node_id, process_id) = if let Some(process) = state.registry().read().await.get(name) {
-            *process
-        } else {
-            if let Ok(distributed) = state.distributed() {
-                // Lookup in distributed registry.
-                let record = distributed
-                    .control
-                    .get_process(name)
-                    .await
-                    .or_trap("lunatic::registry::get")?;
-                (record.node_id(), record.process_id())
-            } else {
+        let (node_id, process_id) = if let Some((node_id, process_id)) = state.registry().read().await.get(name) {
+            (*node_id, *process_id)
+        } else if let Ok(distributed) = state.distributed() {
+            // Lookup in distributed registry.
+            let Ok(record) = distributed
+                .control
+                .get_process(name)
+                .await
+            else {
                 return Ok(1);
-            }
+            };
+            (record.node_id(), record.process_id())
+        } else {
             return Ok(1);
         };
 
         memory
             .write(&mut caller, node_id_ptr as usize, &node_id.to_le_bytes())
-            .or_trap("lunatic::registry::get")?;
+            .or_trap("lunatic::distributed::get")?;
 
         memory
             .write(
@@ -563,7 +564,116 @@ where T : DistributedCtx<E> + Send + Sync,
                 process_id_ptr as usize,
                 &process_id.to_le_bytes(),
             )
-            .or_trap("lunatic::registry::get")?;
+            .or_trap("lunatic::distributed::get")?;
         Ok(0)
+    })
+}
+
+// Registers process with ID under `name`.
+//
+// Traps:
+// * If the process ID doesn't exist.
+// * If any memory outside the guest heap space is referenced.
+// * If the remote call fails.
+fn put_process<E, T>(
+    mut caller: Caller<T>,
+    name_str_ptr: u32,
+    name_str_len: u32,
+    node_id: u64,
+    process_id: u64,
+) -> Box<dyn Future<Output = Result<()>> + Send + '_>
+where T : DistributedCtx<E> + Send + Sync,
+      E : Environment
+{
+    Box::new(async move {
+        let memory = get_memory(&mut caller)?;
+        let (memory_slice, state) = memory.data_and_store_mut(&mut caller);
+        let name = memory_slice
+            .get(name_str_ptr as usize..(name_str_ptr + name_str_len) as usize)
+            .or_trap("lunatic::distributed::put")?;
+        let name = std::str::from_utf8(name).or_trap("lunatic::distributed::put")?;
+
+        // Store locally.
+        match state.registry_atomic_put().take() {
+            // Use existing lock for writing.
+            Some(mut registry_lock) => {
+                registry_lock.insert(name.to_owned(), (node_id, ProcessId::new(process_id)));
+            }
+            // If no lock exists, acquire it.
+            None => {
+                state
+                    .registry()
+                    .write()
+                    .await
+                    .insert(name.to_owned(), (node_id, ProcessId::new(process_id)));
+            }
+        }
+
+        // Store in the distributed registry.
+        if let Ok(distributed) = state.distributed() {
+            let record = ProcessRecord::new(node_id, ProcessId::new(process_id));
+            distributed.control.add_process(name, record).await
+                .or_trap("lunatic::distributed::put")?;
+        }
+
+        #[cfg(feature = "metrics")]
+        metrics::increment_counter!("lunatic.distributed.write");
+
+        #[cfg(feature = "metrics")]
+        metrics::increment_gauge!("lunatic.distributed.registered", 1.0);
+
+        Ok(())
+    })
+}
+
+// Removes process under `name` if it exists.
+//
+// Traps:
+// * If any memory outside the guest heap space is referenced.
+fn remove_process<E, T>(
+    mut caller: Caller<T>,
+    name_str_ptr: u32,
+    name_str_len: u32,
+) -> Box<dyn Future<Output = Result<()>> + Send + '_>
+    where T : DistributedCtx<E> + Send + Sync,
+    E : Environment
+{
+  Box::new(async move {
+        let memory = get_memory(&mut caller)?;
+        let (memory_slice, state) = memory.data_and_store_mut(&mut caller);
+        let name = memory_slice
+            .get(name_str_ptr as usize..(name_str_ptr + name_str_len) as usize)
+            .or_trap("lunatic::distributed::get")?;
+        let name = std::str::from_utf8(name).or_trap("lunatic::distributed::get")?;
+
+        // Sanity check
+        if state.registry_atomic_put().is_some() {
+            return Err(anyhow!(
+                "calling `lunatic::distributed::remove` after `get_or_put_later` will deadlock"
+            ));
+        }
+
+        // Remove locally.
+        state.registry().write().await.remove(name);
+
+        // Remove globally.
+        if let Ok(distributed) = state.distributed() {
+            if let Err(err) = distributed.control.remove_process(name).await {
+                for error in err.chain() {
+                    if let Some(&lunatic_control_axum::api::ApiError::ProcessNotFound) = error.downcast_ref() {
+                        break;
+                    }
+                }
+                return Err(err).or_trap("lunatic::distributed::remove")?
+             }
+        }
+
+        #[cfg(feature = "metrics")]
+        metrics::increment_counter!("lunatic.distributed.deletion");
+
+        #[cfg(feature = "metrics")]
+        metrics::decrement_gauge!("lunatic.distributed.registered", 1.0);
+
+        Ok(())
     })
 }

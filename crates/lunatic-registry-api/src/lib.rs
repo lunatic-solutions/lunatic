@@ -2,7 +2,7 @@ use std::{collections::HashMap, future::Future, mem::transmute};
 
 use anyhow::{anyhow, Result};
 use lunatic_common_api::{get_memory, IntoTrap};
-use lunatic_process::state::ProcessState;
+use lunatic_process::{state::ProcessState, ProcessId};
 use lunatic_process_api::ProcessCtx;
 use tokio::sync::RwLockWriteGuard;
 use wasmtime::{Caller, Linker};
@@ -178,7 +178,7 @@ fn get_or_put_later<T: ProcessState + ProcessCtx<T> + Send + Sync>(
         // Safety:
         //   The process state (containing the lock) can't outlive the `RwLock`,
         //   which is global. This makes it safe to extend the lifetime.
-        let registry_lock: RwLockWriteGuard<'static, HashMap<String, (u64, u64)>> =
+        let registry_lock: RwLockWriteGuard<'static, HashMap<String, (u64, ProcessId)>> =
             unsafe { transmute(registry_lock) };
 
         if let Some(process) = registry_lock.get(name) {

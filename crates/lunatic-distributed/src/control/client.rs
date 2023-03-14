@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use dashmap::DashMap;
-use lunatic_process::{runtimes::RawWasm, ProcessName, ProcessRecord};
+use lunatic_process::{runtimes::RawWasm, ProcessRecord};
 use reqwest::{Client as HttpClient, Url};
 use serde::{de::DeserializeOwned, Serialize};
 use std::{

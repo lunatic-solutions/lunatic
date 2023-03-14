@@ -8,6 +8,7 @@ use lunatic_distributed::{DistributedCtx, DistributedProcessState};
 use lunatic_error_api::{ErrorCtx, ErrorResource};
 use lunatic_networking_api::{DnsIterator, TlsConnection, TlsListener};
 use lunatic_networking_api::{NetworkingCtx, TcpConnection};
+use lunatic_process::ProcessId;
 use lunatic_process::env::{Environment, LunaticEnvironment};
 use lunatic_process::runtimes::wasmtime::{WasmtimeCompiledModule, WasmtimeRuntime};
 use lunatic_process::state::{ConfigResources, ProcessState};
@@ -70,11 +71,11 @@ pub struct DefaultProcessState {
     initialized: bool,
     // database resources
     db_resources: DbResources,
-    registry: Arc<RwLock<HashMap<String, (u64, u64)>>>,
+    registry: Arc<RwLock<HashMap<String, (u64, ProcessId)>>>,
     // Allows for atomic registry "lookup and insert" operations, by holding the write-lock of a
     // `RwLock` struct. The lifetime of the lock will need to be extended to `'static`, but this
     // is a safe operation, because it references a global registry that outlives all processes.
-    registry_atomic_put: Option<RwLockWriteGuard<'static, HashMap<String, (u64, u64)>>>,
+    registry_atomic_put: Option<RwLockWriteGuard<'static, HashMap<String, (u64, ProcessId)>>>,
 }
 
 impl DefaultProcessState {
@@ -84,7 +85,7 @@ impl DefaultProcessState {
         runtime: WasmtimeRuntime,
         module: Arc<WasmtimeCompiledModule<Self>>,
         config: Arc<DefaultProcessConfig>,
-        registry: Arc<RwLock<HashMap<String, (u64, u64)>>>,
+        registry: Arc<RwLock<HashMap<String, (u64, ProcessId)>>>,
     ) -> Result<Self> {
         let signal_mailbox = unbounded_channel();
         let signal_mailbox = (signal_mailbox.0, Arc::new(Mutex::new(signal_mailbox.1)));
@@ -243,13 +244,13 @@ impl ProcessState for DefaultProcessState {
         &mut self.resources.configs
     }
 
-    fn registry(&self) -> &Arc<RwLock<HashMap<String, (u64, u64)>>> {
+    fn registry(&self) -> &Arc<RwLock<HashMap<String, (u64, ProcessId)>>> {
         &self.registry
     }
 
     fn registry_atomic_put(
         &mut self,
-    ) -> &mut Option<RwLockWriteGuard<'static, HashMap<String, (u64, u64)>>> {
+    ) -> &mut Option<RwLockWriteGuard<'static, HashMap<String, (u64, ProcessId)>>> {
         &mut self.registry_atomic_put
     }
 }
