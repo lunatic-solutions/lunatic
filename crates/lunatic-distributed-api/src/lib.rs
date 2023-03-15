@@ -537,32 +537,26 @@ where T : DistributedCtx<E> + Send + Sync,
         #[cfg(feature = "metrics")]
         metrics::increment_counter!("lunatic.registry.read");
 
-        // Lookup in local registry.
-        let (node_id, process_id) = if let Some((node_id, process_id)) = state.registry().read().await.get(name) {
-            (*node_id, *process_id)
-        } else if let Ok(distributed) = state.distributed() {
-            // Lookup in distributed registry.
-            let Ok(record) = distributed
-                .control
-                .get_process(name)
-                .await
-            else {
-                return Ok(1);
-            };
-            (record.node_id(), record.process_id())
-        } else {
+        // Lookup in distributed registry.
+        let distributed  = state.distributed()
+            .or_trap("lunatic::distributed::get")?;
+        let Ok(record) = distributed
+            .control
+            .get_process(name)
+            .await
+        else {
             return Ok(1);
         };
 
         memory
-            .write(&mut caller, node_id_ptr as usize, &node_id.to_le_bytes())
+            .write(&mut caller, node_id_ptr as usize, &record.node_id().to_le_bytes())
             .or_trap("lunatic::distributed::get")?;
 
         memory
             .write(
                 &mut caller,
                 process_id_ptr as usize,
-                &process_id.to_le_bytes(),
+                &record.process_id().to_le_bytes(),
             )
             .or_trap("lunatic::distributed::get")?;
         Ok(0)
@@ -593,28 +587,11 @@ where T : DistributedCtx<E> + Send + Sync,
             .or_trap("lunatic::distributed::put")?;
         let name = std::str::from_utf8(name).or_trap("lunatic::distributed::put")?;
 
-        // Store locally.
-        match state.registry_atomic_put().take() {
-            // Use existing lock for writing.
-            Some(mut registry_lock) => {
-                registry_lock.insert(name.to_owned(), (node_id, ProcessId::new(process_id)));
-            }
-            // If no lock exists, acquire it.
-            None => {
-                state
-                    .registry()
-                    .write()
-                    .await
-                    .insert(name.to_owned(), (node_id, ProcessId::new(process_id)));
-            }
-        }
-
         // Store in the distributed registry.
-        if let Ok(distributed) = state.distributed() {
-            let record = ProcessRecord::new(node_id, ProcessId::new(process_id));
-            distributed.control.add_process(name, record).await
-                .or_trap("lunatic::distributed::put")?;
-        }
+        let distributed = state.distributed().or_trap("lunatic::distributed::put")?;
+        let record = ProcessRecord::new(node_id, ProcessId::new(process_id));
+        distributed.control.add_process(name, record).await
+            .or_trap("lunatic::distributed::put")?;
 
         #[cfg(feature = "metrics")]
         metrics::increment_counter!("lunatic.distributed.write");
@@ -626,15 +603,16 @@ where T : DistributedCtx<E> + Send + Sync,
     })
 }
 
-// Removes process under `name` if it exists.
+// Removes process under `name` if it exists, returns 0 if it was found or 1 if not found.
 //
 // Traps:
 // * If any memory outside the guest heap space is referenced.
+// * If the remote call fails.
 fn remove_process<E, T>(
     mut caller: Caller<T>,
     name_str_ptr: u32,
     name_str_len: u32,
-) -> Box<dyn Future<Output = Result<()>> + Send + '_>
+) -> Box<dyn Future<Output = Result<u32>> + Send + '_>
     where T : DistributedCtx<E> + Send + Sync,
     E : Environment
 {
@@ -653,19 +631,17 @@ fn remove_process<E, T>(
             ));
         }
 
-        // Remove locally.
-        state.registry().write().await.remove(name);
-
         // Remove globally.
-        if let Ok(distributed) = state.distributed() {
-            if let Err(err) = distributed.control.remove_process(name).await {
-                for error in err.chain() {
-                    if let Some(&lunatic_control_axum::api::ApiError::ProcessNotFound) = error.downcast_ref() {
-                        break;
-                    }
+        let distributed = state.distributed().or_trap("lunatic::distributed::remove_process")?;
+        if let Err(err) = distributed.control.remove_process(name).await {
+            // A double removal is not considered an error.
+            for error in err.chain() {
+                if let Some(&lunatic_control_axum::api::ApiError::ProcessNotFound) = error.downcast_ref() {
+                    return Ok(1);
                 }
-                return Err(err).or_trap("lunatic::distributed::remove")?
-             }
+            }
+            // Other errors are.
+            return Err(err).or_trap("lunatic::distributed::remove")?
         }
 
         #[cfg(feature = "metrics")]
@@ -674,6 +650,6 @@ fn remove_process<E, T>(
         #[cfg(feature = "metrics")]
         metrics::decrement_gauge!("lunatic.distributed.registered", 1.0);
 
-        Ok(())
+        Ok(0)
     })
 }
