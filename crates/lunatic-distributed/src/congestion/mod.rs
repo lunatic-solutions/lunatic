@@ -1,4 +1,3 @@
-#![allow(unused, dead_code)] // TODO REMOVE ME
 use std::{
     collections::VecDeque,
     sync::{
@@ -7,7 +6,7 @@ use std::{
     },
 };
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use dashmap::DashMap;
 use tokio::sync::{
     mpsc::{self, error::TryRecvError, Receiver, Sender},
@@ -53,17 +52,19 @@ pub struct MessageCtx {
     env: EnvironmentId,
     src: ProcessId,
     node: NodeId,
+    dest: ProcessId,
     chunk_id: AtomicU64,
     offset: AtomicUsize,
     data: Vec<u8>,
 }
 
-pub struct MessageChunk<'a> {
+pub struct MessageChunk {
+    src: ProcessId,
+    dest: ProcessId,
     message_id: u64,
     message_size: u32,
     chunk_id: u64,
-    chunk_size: u32,
-    data: &'a [u8],
+    data: bytes::Bytes,
 }
 
 // Receiving part of the message queue
@@ -85,6 +86,7 @@ pub struct Inner {
     buf_tx: DashMap<(EnvironmentId, ProcessId), Sender<MessageCtx>>,
     // Holds the message while its being chunked
     in_progress: DashMap<(EnvironmentId, ProcessId), MessageCtx>,
+    nodes_queues: DashMap<NodeId, Sender<MessageChunk>>,
 }
 
 impl Client {
@@ -101,6 +103,7 @@ impl Client {
         env: EnvironmentId,
         src: ProcessId,
         node: NodeId,
+        dest: ProcessId,
         data: Vec<u8>,
     ) -> Result<()> {
         // Lazy initialize process message buffers
@@ -123,12 +126,31 @@ impl Client {
             }
         };
 
+        let node_manager_exists = self.inner.nodes_queues.get(&node).is_none();
+
+        if node_manager_exists {
+            let node_info = self
+                .inner
+                .control_client
+                .node_info(node.0)
+                .ok_or_else(|| anyhow!(""))?;
+            let (send, recv) = tokio::sync::mpsc::channel(100);
+            tokio::spawn(node_connection_manager(NodeConnectionManager {
+                streams: 10,
+                node_info,
+                client: self.inner.node_client.clone(),
+                message_chunks: recv,
+            }));
+            self.inner.nodes_queues.insert(node, send);
+        }
+
         match tx
             .send(MessageCtx {
                 message_id: self.next_message_id(),
                 env,
                 src,
                 node,
+                dest,
                 offset: AtomicUsize::new(0),
                 chunk_id: AtomicU64::new(0),
                 data,
@@ -158,7 +180,7 @@ impl Client {
             Ok(data) => data,
             Err(_) => unreachable!("lunatic::distributed::client::send serialize_message"),
         };
-        self.new_message(params.env, params.src, params.node, data)
+        self.new_message(params.env, params.src, params.node, params.dest, data)
             .await
     }
 
@@ -169,7 +191,7 @@ impl Client {
             Ok(data) => data,
             Err(_) => unreachable!("lunatic::distributed::client::spawn serialize_message"),
         };
-        self.new_message(params.env, params.src, params.node, data)
+        self.new_message(params.env, params.src, params.node, ProcessId(0), data)
             .await
     }
 }
@@ -189,20 +211,50 @@ pub async fn congestion_control_worker(state: Client) -> ! {
                     let chunk_id = msg_ctx.chunk_id.load(atomic::Ordering::Relaxed);
                     let (data, finished) = if msg_ctx.data.len() <= offset + CHUNK_SIZE {
                         // Chunk will be finished after this write
-                        (&msg_ctx.data[offset..], true)
+                        (bytes::Bytes::copy_from_slice(&msg_ctx.data[offset..]), true)
                     } else {
-                        (&msg_ctx.data[offset..offset + CHUNK_SIZE], false)
+                        (
+                            bytes::Bytes::copy_from_slice(
+                                &msg_ctx.data[offset..offset + CHUNK_SIZE],
+                            ),
+                            false,
+                        )
                     };
                     // Create chunk
-                    let _chunk = MessageChunk {
+                    let chunk = MessageChunk {
+                        src: msg_ctx.src,
+                        dest: msg_ctx.dest,
                         message_id: msg_ctx.message_id.0,
                         message_size: msg_ctx.data.len() as u32,
                         chunk_id,
-                        chunk_size: data.len() as u32,
                         data,
                     };
-                    // TODO send data to node manager
-                    finished
+                    if let Some(node_queue) = state.inner.nodes_queues.get(&msg_ctx.node) {
+                        match node_queue.try_send(chunk) {
+                            Ok(_) => {
+                                // Move to next chunk
+                                msg_ctx
+                                    .offset
+                                    .store(offset + CHUNK_SIZE, atomic::Ordering::Relaxed);
+                                msg_ctx
+                                    .chunk_id
+                                    .store(chunk_id + 1, atomic::Ordering::Relaxed);
+                                finished
+                            }
+                            Err(e) => {
+                                log::warn!(
+                                    "Cannot send next chunk from pid={} to node={} dest_pid={}, reason: {e}",
+                                    msg_ctx.src.0,
+                                    msg_ctx.node.0,
+                                    msg_ctx.dest.0,
+                                );
+                                finished
+                            }
+                        }
+                    } else {
+                        log::error!("Connection to node={} does not exist", msg_ctx.node.0);
+                        false
+                    }
                 } else {
                     let mut recv = pid.write().await;
                     match recv.try_recv() {
@@ -235,7 +287,7 @@ pub async fn congestion_control_worker(state: Client) -> ! {
     }
 }
 
-type StreamBuffer = Arc<RwLock<VecDeque<()>>>;
+type StreamBuffer = Arc<RwLock<VecDeque<MessageChunk>>>;
 
 enum StreamAction {
     Message,
@@ -246,7 +298,7 @@ pub struct NodeConnectionManager {
     pub streams: usize,
     pub node_info: NodeInfo,
     pub client: quic::Client,
-    pub message_chunks: Receiver<()>,
+    pub message_chunks: Receiver<MessageChunk>,
 }
 
 pub async fn node_connection_manager(mut manager: NodeConnectionManager) -> Result<()> {
@@ -268,8 +320,7 @@ pub async fn node_connection_manager(mut manager: NodeConnectionManager) -> Resu
         // Start stream tasks
         let mut stream_tasks = Vec::new();
         let mut stream_wakers = Vec::new();
-        for i in 0..manager.streams {
-            let buffer = buffers[i].clone();
+        for buffer in buffers.iter().take(manager.streams) {
             let stream = conn.open_uni().await?;
             let (send, recv) = mpsc::channel::<StreamAction>(100);
             stream_wakers.push(send);
@@ -277,18 +328,18 @@ pub async fn node_connection_manager(mut manager: NodeConnectionManager) -> Resu
                 quic_stream: stream,
                 action: recv,
                 manager_notifier: dead_stream_notifier.clone(),
-                buffer,
+                buffer: buffer.clone(),
             })));
         }
         // Working chunk passing loop
         'forward_chunks: loop {
             tokio::select! {
                 Some(chunk) = manager.message_chunks.recv() => {
-                    let src = 1;
-                    let dest = 2;
+                    let src = chunk.src.0;
+                    let dest = chunk.dest.0;
                     // Determine stream index by source and destination process_id
                     // This ensures that all messages arrive in order between processes
-                    let stream_index = src ^ dest % manager.streams;
+                    let stream_index = ((src ^ dest) % manager.streams as u64) as usize;
                     // Push data into message buffer
                     buffers[stream_index].write().await.push_front(chunk);
                     // Wake up stream task
@@ -318,32 +369,34 @@ struct StreamTask {
 }
 
 async fn stream_task(mut state: StreamTask) {
-    loop {
-        match state.action.recv().await {
-            Some(StreamAction::Message) => {
-                let mut buffer = state.buffer.write().await;
-                let mut chunks = Vec::new();
-                while let Some(chunk) = buffer.pop_back() {
-                    chunks.push(chunk);
-                }
-                // Serialize chunks
-                let mut data: Vec<bytes::Bytes> =
-                    chunks.iter().map(|_| bytes::Bytes::from("")).collect();
-                // Try to send data
-                match state.quic_stream.write_all_chunks(&mut data).await {
-                    Ok(_) => (),
-                    Err(_) => {
-                        // Connection is dead return chunks in order back to the buffer
-                        chunks.drain(..).rev().for_each(|c| buffer.push_back(c));
-                        // Notify manager that connection has died
-                        state.manager_notifier.send(()).await.ok();
-                        break;
-                    }
-                };
-            }
-            _ => {
+    while let Some(StreamAction::Message) = state.action.recv().await {
+        let mut buffer = state.buffer.write().await;
+        let mut chunks = Vec::new();
+        while let Some(chunk) = buffer.pop_back() {
+            chunks.push(chunk);
+        }
+        let mut data: Vec<bytes::Bytes> = chunks
+            .iter()
+            .map(|c| {
+                let mut buf = Vec::new();
+                buf.extend(c.message_id.to_le_bytes().as_ref());
+                buf.extend(c.message_size.to_le_bytes().as_ref());
+                buf.extend(c.chunk_id.to_le_bytes().as_ref());
+                buf.extend((c.data.len() as u32).to_le_bytes().as_ref());
+                buf.extend(&c.data);
+                bytes::Bytes::from(buf)
+            })
+            .collect();
+        // Try to send data
+        match state.quic_stream.write_all_chunks(&mut data).await {
+            Ok(_) => (),
+            Err(_) => {
+                // Connection is dead return chunks in order back to the buffer
+                chunks.drain(..).rev().for_each(|c| buffer.push_back(c));
+                // Notify manager that connection has died
+                state.manager_notifier.send(()).await.ok();
                 break;
             }
-        }
+        };
     }
 }
