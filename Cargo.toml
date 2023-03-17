@@ -66,6 +66,8 @@ reqwest = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "net"] }
 toml = "0.5"
+url = "2.2.2"
+url_serde = "0.2.0"
 uuid = { workspace = true }
 wasmtime = { workspace = true }
 wasmtime-wasi  = {workspace = true }
@@ -123,7 +125,7 @@ anyhow = "1.0"
 dashmap = "5.4"
 log = "0.4"
 metrics = "0.20.1"
-reqwest = "0.11"
+reqwest = {version = "0.11", features = ["cookies"]}
 rustls-pemfile = "1.0"
 serde = "1.0"
 tokio = "1.20"
@@ -132,3 +134,4 @@ wasi-common = "5"
 wasmtime = "5"
 wasmtime-wasi = "5"
 wiggle = "5"
+dirs = "4.0.0"

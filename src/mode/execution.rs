@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 
@@ -27,6 +29,15 @@ enum Commands {
     Control(super::control::Args),
     /// Starts a node
     Node(super::node::Args),
+    /// Authenticate app
+    Auth(super::auth::Args),
+    /// Deploy an application
+    Deploy(super::deploy::Args),
+    /// Manage data regarding remote lunatic project
+    Remote(super::remote::Args),
+    /// Manage mapping of repository binary and lunatic `App` within
+    /// the scope of the selected `Project`
+    App(super::app::Args),
 }
 
 pub(crate) async fn execute(augmented_args: Option<Vec<String>>) -> Result<()> {
@@ -42,5 +53,9 @@ pub(crate) async fn execute(augmented_args: Option<Vec<String>>) -> Result<()> {
         Commands::Run(a) => super::run::start(a).await,
         Commands::Control(a) => super::control::start(a).await,
         Commands::Node(a) => super::node::start(a).await,
+        Commands::Auth(a) => super::auth::start(a).await,
+        Commands::Deploy(_) => Ok(()),
+        Commands::Remote(a) => super::remote::start(a).await,
+        Commands::App(a) => super::app::start(a).await,
     }
 }
