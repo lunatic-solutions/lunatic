@@ -2,7 +2,7 @@ use std::{net::SocketAddr, sync::Arc, time::Duration};
 
 use anyhow::{anyhow, Result};
 use bytes::Bytes;
-use dashmap::{mapref::entry, DashMap};
+use dashmap::DashMap;
 use lunatic_process::{env::Environment, state::ProcessState};
 use quinn::{ClientConfig, Connecting, ConnectionError, Endpoint, ServerConfig};
 use rustls::server::AllowAnyAuthenticatedClient;
