@@ -91,7 +91,7 @@ impl DefaultProcessConfig {
         } else {
             dir.clone()
         };
-        self.preopened_dirs.push((dir.into(), resolved_path))
+        self.preopened_dirs.push((dir, resolved_path))
     }
 
     pub fn set_command_line_arguments(&mut self, args: Vec<String>) {

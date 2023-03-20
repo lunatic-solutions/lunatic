@@ -1,5 +1,3 @@
-use std::path::PathBuf;
-
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 
@@ -54,7 +52,7 @@ pub(crate) async fn execute(augmented_args: Option<Vec<String>>) -> Result<()> {
         Commands::Control(a) => super::control::start(a).await,
         Commands::Node(a) => super::node::start(a).await,
         Commands::Auth(a) => super::auth::start(a).await,
-        Commands::Deploy(_) => Ok(()),
+        Commands::Deploy(a) => super::deploy::start(a).await,
         Commands::Remote(a) => super::remote::start(a).await,
         Commands::App(a) => super::app::start(a).await,
     }

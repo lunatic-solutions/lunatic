@@ -1,8 +1,6 @@
+use super::config::ConfigManager;
 use anyhow::{anyhow, Result};
 use clap::Parser;
-use serde::{Deserialize, Serialize};
-
-use super::config::ConfigManager;
 
 #[derive(Parser, Debug, Clone)]
 #[clap(rename_all = "kebab_case")]
@@ -25,7 +23,7 @@ pub enum AppArgs {
         #[arg(short = 'e', long)]
         package: Option<String>,
     },
-    Remote {
+    Remove {
         /// The name of the App to remove
         name: String,
     },
@@ -46,15 +44,51 @@ pub(crate) async fn start(args: Args) -> Result<()> {
             example,
             package,
         } => {
-            let config =
+            let mut config =
                 ConfigManager::new().map_err(|e| anyhow!("failed to load config {e:?}"))?;
-            let app_list = config.list_project_apps().await?;
-            println!("GOT THESE ACTIVE PROJECT APPS {app_list:?}");
-            // provider.token;
-            // reqwest::config.project_config.
+            config.update_project_apps().await?;
+            let app_to_update = match config.find_app(name.as_str()) {
+                Some(matching_app) => matching_app,
+                None => {
+                    // create new app and store in list
+                    config.create_new_app(name).await?
+                }
+            };
+            app_to_update.example = example;
+            app_to_update.bin = bin;
+            app_to_update.package = package;
+
+            config.flush()?;
         }
-        AppArgs::Remote { name } => todo!(),
-        AppArgs::List => todo!(),
+        AppArgs::Remove { name } => {
+            let mut config =
+                ConfigManager::new().map_err(|e| anyhow!("failed to load config {e:?}"))?;
+            config.remove_app(name).await?;
+        }
+        AppArgs::List => {
+            let mut config =
+                ConfigManager::new().map_err(|e| anyhow!("failed to load config {e:?}"))?;
+            config.update_project_apps().await?;
+
+            println!("Available apps on remote:");
+            for app in config.project_config.remote.into_iter() {
+                let (mapping_type, mapping_path) = match (
+                    app.bin.as_deref(),
+                    app.example.as_deref(),
+                    app.package.as_deref(),
+                ) {
+                    (None, None, None) => ("No mapping yet", ""),
+                    (None, Some(example), None) => ("example ", example),
+                    (Some(bin), None, None) => ("bin ", bin),
+                    (None, None, Some(package)) => ("package/workspace member ", package),
+                    _ => ("WARNING! Multiple mappings found for app", ""),
+                };
+                println!(
+                    "- Name: \"{}\". Id: {}. Mapping: {}{}",
+                    app.app_name, app.app_id, mapping_type, mapping_path
+                );
+            }
+        }
     }
     Ok(())
 
