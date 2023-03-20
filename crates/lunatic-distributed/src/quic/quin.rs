@@ -2,6 +2,7 @@ use std::{net::SocketAddr, sync::Arc, time::Duration};
 
 use anyhow::{anyhow, Result};
 use bytes::Bytes;
+use dashmap::{mapref::entry, DashMap};
 use lunatic_process::{env::Environment, state::ProcessState};
 use quinn::{ClientConfig, Connecting, ConnectionError, Endpoint, ServerConfig};
 use rustls::server::AllowAnyAuthenticatedClient;
@@ -222,7 +223,7 @@ async fn handle_quic_stream_node<T, E>(
 {
     let mut recv_ctx = RecvCtx {
         recv: recv.stream,
-        chunks: Vec::new(),
+        chunks: DashMap::new(),
     };
     while let Ok((msg_id, bytes)) = read_next_stream_message(&mut recv_ctx).await {
         if let Ok(request) = rmp_serde::from_slice::<distributed::message::Request>(&bytes) {
@@ -241,7 +242,8 @@ struct Chunk {
 
 struct RecvCtx {
     recv: quinn::RecvStream,
-    chunks: Vec<Chunk>,
+    // Map to collect message chunks key: message_id, data: (message_size, data)
+    chunks: DashMap<u64, (usize, Vec<u8>)>,
 }
 
 async fn read_next_stream_chunk(recv: &mut quinn::RecvStream) -> Result<Chunk> {
@@ -282,20 +284,28 @@ async fn read_next_stream_chunk(recv: &mut quinn::RecvStream) -> Result<Chunk> {
 async fn read_next_stream_message(ctx: &mut RecvCtx) -> Result<(u64, Bytes)> {
     loop {
         let new_chunk = read_next_stream_chunk(&mut ctx.recv).await?;
-        if let Some(last_chunk) = ctx.chunks.last() {
-            // Check if chunks continue or message finished
-            if last_chunk.message_id == new_chunk.message_id {
-                ctx.chunks.push(new_chunk);
-            } else {
-                let message_id = last_chunk.message_id;
-                let mut data = Vec::with_capacity(last_chunk.message_size);
-                ctx.chunks.drain(..).for_each(|c| data.extend(c.data));
-                ctx.chunks.push(new_chunk);
-                log::trace!("finished reading from chunks message_id={message_id}");
-                return Ok((message_id, Bytes::from(data)));
-            }
+        let message_id = new_chunk.message_id;
+        let message_size = new_chunk.message_size;
+        if let Some(mut entry) = ctx.chunks.get_mut(&message_id) {
+            entry.1.extend(new_chunk.data);
         } else {
-            ctx.chunks.push(new_chunk);
+            ctx.chunks
+                .insert(message_id, (message_size, new_chunk.data));
+        };
+        let finished = ctx
+            .chunks
+            .get(&message_id)
+            .map(|entry| entry.0 == entry.1.len());
+        match finished {
+            Some(true) => {
+                let (message_id, data) = ctx.chunks.remove(&message_id).unwrap();
+                log::trace!("Finished collecting message_id={message_id}");
+                return Ok((message_id, Bytes::from(data.1)));
+            }
+            Some(false) => {
+                continue;
+            }
+            None => unreachable!("Message must exists at all times"),
         }
     }
 }
