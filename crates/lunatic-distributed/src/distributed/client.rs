@@ -1,195 +1,201 @@
-use anyhow::Result;
-use async_cell::sync::AsyncCell;
-use bytes::Bytes;
-use dashmap::DashMap;
-use std::sync::{atomic, atomic::AtomicU64, Arc};
-use tokio::sync::mpsc::{self, unbounded_channel, UnboundedReceiver, UnboundedSender};
-
-use crate::{
-    control,
-    distributed::message::{ClientError, Request, Response},
-    quic::{self, RecvStream},
-    NodeInfo,
+use std::sync::{
+    atomic::{self, AtomicU64, AtomicUsize},
+    Arc,
 };
 
-use super::message::Spawn;
+use anyhow::{anyhow, Result};
+use dashmap::DashMap;
+use tokio::sync::{
+    mpsc::{Receiver, Sender},
+    RwLock,
+};
 
-struct SendRequest {
-    msg_id: u64,
-    node_id: u64,
-    request: Request,
+use crate::{
+    congestion::{node_connection_manager, MessageChunk, NodeConnectionManager},
+    control,
+    distributed::message::{Request, Spawn},
+    quic,
+};
+
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
+pub struct EnvironmentId(pub u64);
+
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
+pub struct ProcessId(pub u64);
+
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
+pub struct NodeId(pub u64);
+
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
+pub struct MessageId(pub u64);
+
+pub struct SendParams {
+    pub env: EnvironmentId,
+    pub src: ProcessId,
+    pub node: NodeId,
+    pub dest: ProcessId,
+    pub tag: Option<i64>,
+    pub data: Vec<u8>,
 }
+
+pub struct SpawnParams {
+    pub env: EnvironmentId,
+    pub src: ProcessId,
+    pub node: NodeId,
+    pub spawn: Spawn,
+}
+
+pub struct MessageCtx {
+    pub message_id: MessageId,
+    pub env: EnvironmentId,
+    pub src: ProcessId,
+    pub node: NodeId,
+    pub dest: ProcessId,
+    pub chunk_id: AtomicU64,
+    pub offset: AtomicUsize,
+    pub data: Vec<u8>,
+}
+
+// Receiving part of the message queue
+type BufRx = RwLock<Receiver<MessageCtx>>;
+
+// TODO: replace distributed::Client
 #[derive(Clone)]
 pub struct Client {
-    inner: Arc<InnerClient>,
+    pub inner: Arc<Inner>,
 }
 
-pub struct InnerClient {
-    next_message_id: AtomicU64,
-    node_message_buffers: DashMap<u64, UnboundedSender<(u64, Request)>>,
-    pending_requests: DashMap<u64, Arc<AsyncCell<Response>>>,
+pub struct Inner {
     control_client: control::Client,
-    quic_client: quic::Client,
-    tx: UnboundedSender<SendRequest>,
+    node_client: quic::Client,
+    pub next_message_id: AtomicU64,
+    // Across Environments and ProcessId's track message queues
+    pub buf_rx: DashMap<EnvironmentId, DashMap<ProcessId, BufRx>>,
+    // Sending part of the message queue
+    pub buf_tx: DashMap<(EnvironmentId, ProcessId), Sender<MessageCtx>>,
+    // Holds the message while its being chunked
+    pub in_progress: DashMap<(EnvironmentId, ProcessId), MessageCtx>,
+    pub nodes_queues: DashMap<NodeId, Sender<MessageChunk>>,
 }
 
 impl Client {
-    // TODO node_id?
-    pub async fn new(
-        _node_id: u64,
-        control_client: control::Client,
-        quic_client: quic::Client,
-    ) -> Result<Client> {
-        let (tx, rx) = mpsc::unbounded_channel();
-        let client = Client {
-            inner: Arc::new(InnerClient {
-                next_message_id: AtomicU64::new(1),
-                node_message_buffers: DashMap::new(),
-                pending_requests: DashMap::new(),
+    pub fn new(control_client: control::Client, node_client: quic::Client) -> Self {
+        Self {
+            inner: Arc::new(Inner {
                 control_client,
-                quic_client,
-                tx,
+                node_client,
+                next_message_id: AtomicU64::new(1),
+                buf_rx: DashMap::new(),
+                buf_tx: DashMap::new(),
+                in_progress: DashMap::new(),
+                nodes_queues: DashMap::new(),
             }),
-        };
-        tokio::spawn(forward_node_messages(client.clone(), rx));
-        Ok(client)
+        }
     }
 
-    pub fn next_message_id(&self) -> u64 {
-        self.inner
-            .next_message_id
-            .fetch_add(1, atomic::Ordering::Relaxed)
+    fn next_message_id(&self) -> MessageId {
+        MessageId(
+            self.inner
+                .next_message_id
+                .fetch_add(1, atomic::Ordering::Relaxed),
+        )
     }
 
-    async fn request(&self, node_id: u64, request: Request) -> Result<Response, ClientError> {
-        let msg_id = self.next_message_id();
-        self.inner
-            .tx
-            .send(SendRequest {
-                msg_id,
-                node_id,
-                request,
-            })
-            .map_err(|e| ClientError::Unexpected(e.to_string()))?;
-        let cell = AsyncCell::shared();
-        self.inner.pending_requests.insert(msg_id, cell.clone());
-        let response = cell.take().await;
-        self.inner.pending_requests.remove(&msg_id);
-        Ok(response)
-    }
-
-    pub async fn message_process(
+    async fn new_message(
         &self,
-        node_id: u64,
-        environment_id: u64,
-        process_id: u64,
-        tag: Option<i64>,
+        env: EnvironmentId,
+        src: ProcessId,
+        node: NodeId,
+        dest: ProcessId,
         data: Vec<u8>,
-    ) -> Result<(), ClientError> {
-        match self
-            .request(
-                node_id,
-                Request::Message {
-                    environment_id,
-                    process_id,
-                    tag,
-                    data,
-                },
-            )
+    ) -> Result<()> {
+        // Lazy initialize process message buffers
+        let tx = match self.inner.buf_tx.get(&(env, src)) {
+            Some(tx) => tx,
+            None => {
+                let (send, recv) = tokio::sync::mpsc::channel(100); // TODO: configuration
+                match self.inner.buf_rx.get(&env) {
+                    Some(env_queue) => {
+                        env_queue.insert(src, RwLock::new(recv));
+                    }
+                    None => {
+                        let queue = DashMap::new();
+                        queue.insert(src, RwLock::new(recv));
+                        self.inner.buf_rx.insert(env, queue);
+                    }
+                };
+                self.inner.buf_tx.insert((env, src), send);
+                self.inner.buf_tx.get(&(env, src)).unwrap()
+            }
+        };
+
+        let node_manager_exists = self.inner.nodes_queues.get(&node).is_none();
+
+        if node_manager_exists {
+            let node_info = self
+                .inner
+                .control_client
+                .node_info(node.0)
+                .ok_or_else(|| anyhow!("Node does not exist"))?;
+            let (send, recv) = tokio::sync::mpsc::channel(100); // TODO: configuration
+            tokio::spawn(node_connection_manager(NodeConnectionManager {
+                streams: 10, // TODO: configuration
+                node_info,
+                client: self.inner.node_client.clone(),
+                message_chunks: recv,
+            }));
+            self.inner.nodes_queues.insert(node, send);
+        }
+
+        match tx
+            .send(MessageCtx {
+                message_id: self.next_message_id(),
+                env,
+                src,
+                node,
+                dest,
+                offset: AtomicUsize::new(0),
+                chunk_id: AtomicU64::new(0),
+                data,
+            })
             .await
         {
-            Ok(Response::Sent) => Ok(()),
-            Ok(Response::Error(error)) | Err(error) => Err(error),
-            Ok(_) => Err(ClientError::Unexpected(
-                "Invalid response type for send".to_string(),
-            )),
-        }
-    }
-
-    fn process_response(&self, id: u64, resp: Response) {
-        if let Some(e) = self.inner.pending_requests.get(&id) {
-            e.set(resp);
+            Ok(_) => (),
+            Err(_) => log::error!("lunatic::distributed::client::send"),
         };
+        Ok(())
     }
 
-    pub async fn spawn(&self, node_id: u64, spawn: Spawn) -> Result<u64, ClientError> {
-        match self.request(node_id, Request::Spawn(spawn)).await {
-            Ok(Response::Spawned(id)) => Ok(id),
-            Ok(Response::Error(error)) | Err(error) => Err(error),
-            Ok(_) => Err(ClientError::Unexpected(
-                "Invalid response type for spawn".to_string(),
-            )),
-        }
+    // TODO: how to detect process is dead?
+    pub fn remove_process_resources(&self, env: EnvironmentId, process_id: ProcessId) {
+        self.inner.buf_tx.remove(&(env, process_id));
     }
-}
 
-async fn reader_task(client: Client, mut recv: RecvStream) -> Result<()> {
-    loop {
-        match recv.receive().await {
-            Ok(bytes) => {
-                let (msg_id, response) =
-                    rmp_serde::from_slice::<(u64, super::message::Response)>(&bytes)?;
-                client.process_response(msg_id, response);
-                Ok(())
-            }
-            Err(e) => {
-                log::debug!("Node connection error: {e}");
-                Err(e)
-            }
-        }?;
+    // Send distributed message
+    pub async fn send(&self, params: SendParams) -> Result<()> {
+        let message = Request::Message {
+            environment_id: params.env.0,
+            process_id: params.dest.0,
+            tag: params.tag,
+            data: params.data,
+        };
+        let data = match rmp_serde::to_vec(&message) {
+            Ok(data) => data,
+            Err(_) => unreachable!("lunatic::distributed::client::send serialize_message"),
+        };
+        self.new_message(params.env, params.src, params.node, params.dest, data)
+            .await
     }
-}
 
-async fn forward_node_messages(client: Client, mut rx: UnboundedReceiver<SendRequest>) {
-    while let Some(SendRequest {
-        msg_id,
-        node_id,
-        request,
-    }) = rx.recv().await
-    {
-        if let Some(node_buf) = client.inner.node_message_buffers.get(&node_id) {
-            node_buf.value().send((msg_id, request)).ok();
-        } else {
-            let (send, recv) = unbounded_channel();
-            send.send((msg_id, request)).ok();
-            client.inner.node_message_buffers.insert(node_id, send);
-            tokio::spawn(manage_node_connection(node_id, client.clone(), recv));
-        }
-    }
-}
-
-async fn try_node_info_forever(node_id: u64, client: &Client) -> NodeInfo {
-    loop {
-        let node_info = client.inner.control_client.node_info(node_id);
-        if node_info.is_none() {
-            client.inner.control_client.refresh_nodes().await.ok();
-        } else {
-            return node_info.unwrap();
-        }
-    }
-}
-
-async fn manage_node_connection(
-    node_id: u64,
-    client: Client,
-    mut rx: UnboundedReceiver<(u64, Request)>,
-) {
-    let quic_client = client.inner.quic_client.clone();
-    let NodeInfo { address, name, .. } = try_node_info_forever(node_id, &client).await;
-    let (mut send, recv) = quic::try_connect_forever(&quic_client, address, &name).await;
-    tokio::spawn(reader_task(client.clone(), recv));
-    while let Some(msg) = rx.recv().await {
-        if let Ok(data) = rmp_serde::to_vec(&msg) {
-            let size = (data.len() as u32).to_le_bytes();
-            let size: Bytes = Bytes::copy_from_slice(&size[..]);
-            let bytes: Bytes = data.into();
-            while let Err(e) = send.send(&mut [size.clone(), bytes.clone()]).await {
-                log::debug!("Cannot send data to node: {e}, reconnecting...");
-                let (new_send, new_recv) =
-                    quic::try_connect_forever(&quic_client, address, &name).await;
-                tokio::spawn(reader_task(client.clone(), new_recv));
-                send = new_send;
-            }
-        }
+    // Send distributed spawn message
+    pub async fn spawn(&self, params: SpawnParams) -> Result<u64> {
+        let message = Request::Spawn(params.spawn);
+        let data = match rmp_serde::to_vec(&message) {
+            Ok(data) => data,
+            Err(_) => unreachable!("lunatic::distributed::client::spawn serialize_message"),
+        };
+        self.new_message(params.env, params.src, params.node, ProcessId(0), data)
+            .await?;
+        todo!()
     }
 }

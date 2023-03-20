@@ -91,8 +91,7 @@ pub(crate) async fn start(args: Args) -> Result<()> {
     )
     .with_context(|| "Failed to create mTLS QUIC client")?;
 
-    let distributed_client =
-        distributed::Client::new(node_id, control_client.clone(), quic_client.clone()).await?;
+    let distributed_client = distributed::Client::new(control_client.clone(), quic_client.clone());
 
     let dist = lunatic_distributed::DistributedProcessState::new(
         node_id,
