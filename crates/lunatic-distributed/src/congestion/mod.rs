@@ -1,3 +1,44 @@
+/// Congestion control module for distributed message chunking between competing processes.
+///
+/// When a process send out a message to another process on a different node
+/// the message is forwarded to the Congestion control worker via a queue.
+///
+/// Congestion control worker picks up each message sent and routes chunks
+/// to  node connection managers. For each node there exists only one connection
+/// manager.
+///
+/// The node connection manager is responsible for routing message chunks based on
+/// the source process_id and destination process_id to appropriate quic stream.
+/// This ensures that all process to process messages come in order in which they
+/// are being sent.
+///
+/// Stream task manages quic stream and writes multiple message chunks.
+///
+/// Topology illustration:
+///
+///  -----       -----
+/// |  P  | ... |  P  | - Processes
+///  -----       -----
+///    |      /
+///    |    /
+///  -----
+/// |  C  | - Congestion control worker
+///  -----
+///    | \
+///    |   \
+///    |     \
+///    |       \
+///  -----       -----
+/// |  N  | ... |  N  | - Node connection managers
+///  -----       -----
+///    |         | \
+///    |         ...
+///    |
+///    |
+///  -----       -----
+/// |  S  | ... |  S  | - Stream tasks
+///  -----       -----
+///
 use std::{
     collections::VecDeque,
     sync::{atomic, Arc},

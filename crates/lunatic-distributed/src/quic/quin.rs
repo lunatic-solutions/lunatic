@@ -14,36 +14,6 @@ use crate::{
     DistributedCtx,
 };
 
-pub struct SendStream {
-    pub stream: quinn::SendStream,
-}
-
-impl SendStream {
-    pub async fn send(&mut self, data: &mut [Bytes]) -> Result<()> {
-        self.stream.write_all_chunks(data).await?;
-        Ok(())
-    }
-}
-
-pub struct RecvStream {
-    pub stream: quinn::RecvStream,
-}
-
-impl RecvStream {
-    pub async fn receive(&mut self) -> Result<Bytes> {
-        let mut size = [0u8; 4];
-        self.stream.read_exact(&mut size).await?;
-        let size = u32::from_le_bytes(size);
-        let mut buffer = vec![0u8; size as usize];
-        self.stream.read_exact(&mut buffer).await?;
-        Ok(buffer.into())
-    }
-
-    pub fn id(&self) -> quinn::StreamId {
-        self.stream.id()
-    }
-}
-
 #[derive(Clone)]
 pub struct Client {
     inner: Endpoint,
@@ -70,30 +40,6 @@ impl Client {
             tokio::time::sleep(Duration::from_secs(2)).await;
         }
         Err(anyhow!("Failed to connect to {name} at {addr}"))
-    }
-
-    pub async fn connect(
-        &self,
-        addr: SocketAddr,
-        name: &str,
-        retry: u32,
-    ) -> Result<(SendStream, RecvStream)> {
-        for try_num in 1..(retry + 1) {
-            match self.connect_once(addr, name).await {
-                Ok(r) => return Ok(r),
-                Err(e) => {
-                    log::error!("Error connecting to {name} at {addr}, try {try_num}. Error: {e}")
-                }
-            }
-            tokio::time::sleep(Duration::from_secs(2)).await;
-        }
-        Err(anyhow!("Failed to connect to {name} at {addr}"))
-    }
-
-    async fn connect_once(&self, addr: SocketAddr, name: &str) -> Result<(SendStream, RecvStream)> {
-        let conn = self.inner.connect(addr, name)?.await?;
-        let (send, recv) = conn.open_bi().await?;
-        Ok((SendStream { stream: send }, RecvStream { stream: recv }))
     }
 }
 
@@ -197,13 +143,11 @@ where
             log::info!("Connection {} is closed: {reason}", conn.remote_address());
             break;
         }
-        let stream = conn.accept_bi().await;
+        let stream = conn.accept_uni().await;
         log::info!("Stream from remote {} accepted", conn.remote_address());
         match stream {
-            Ok((s, r)) => {
-                let send = SendStream { stream: s };
-                let recv = RecvStream { stream: r };
-                tokio::spawn(handle_quic_stream_node(ctx.clone(), send, recv));
+            Ok(recv) => {
+                tokio::spawn(handle_quic_stream_node(ctx.clone(), recv));
             }
             Err(ConnectionError::LocallyClosed) => break,
             Err(_) => {}
@@ -215,19 +159,18 @@ where
 
 async fn handle_quic_stream_node<T, E>(
     ctx: distributed::server::ServerCtx<T, E>,
-    mut send: SendStream,
-    recv: RecvStream,
+    recv: quinn::RecvStream,
 ) where
     T: ProcessState + ResourceLimiter + DistributedCtx<E> + Send + Sync + 'static,
     E: Environment + 'static,
 {
     let mut recv_ctx = RecvCtx {
-        recv: recv.stream,
+        recv,
         chunks: DashMap::new(),
     };
     while let Ok((msg_id, bytes)) = read_next_stream_message(&mut recv_ctx).await {
         if let Ok(request) = rmp_serde::from_slice::<distributed::message::Request>(&bytes) {
-            distributed::server::handle_message(ctx.clone(), &mut send, msg_id, request).await;
+            distributed::server::handle_message(ctx.clone(), msg_id, request).await;
         } else {
             log::debug!("Error deserializing request");
         }

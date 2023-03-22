@@ -4,8 +4,9 @@ use anyhow::{anyhow, Result};
 use lunatic_common_api::{get_memory, IntoTrap};
 use lunatic_distributed::{
     distributed::{
+        self,
         client::{EnvironmentId, NodeId, ProcessId, SendParams, SpawnParams},
-        message::{Spawn, Val},
+        message::{ClientError, Spawn, Val},
     },
     DistributedCtx,
 };
@@ -291,17 +292,32 @@ where
                 config,
             },
         };
-        let (process_or_error_id, ret) =
-            match state.distributed()?.node_client.spawn(spawn_params).await {
-                Ok(process_id) => (process_id, 0),
-                Err(message) => {
-                    let error_id = caller
+        let node_client = state.distributed()?.node_client.clone();
+        let spawn_response = node_client
+            .spawn(spawn_params)
+            .await
+            .map(|message_id| node_client.await_response(message_id))?
+            .await?;
+        let (process_or_error_id, ret) = match spawn_response {
+            distributed::message::ResponseContent::Spawned(process_id) => Ok((process_id, 0)),
+            distributed::message::ResponseContent::Error(error) => {
+                let (code, message): (u32, String) = match error {
+                    ClientError::Unexpected(cause) => Err(anyhow!(cause)),
+                    ClientError::Connection(cause) => Ok((9027, cause)),
+                    ClientError::NodeNotFound => Ok((1, "Node does not exist.".to_string())),
+                    ClientError::ModuleNotFound => Ok((2, "Module does not exist.".to_string())),
+                    ClientError::ProcessNotFound => Err(anyhow!("unreachable")),
+                }?;
+                Ok((
+                    caller
                         .data_mut()
                         .error_resources_mut()
-                        .add(anyhow!(message));
-                    (error_id, 1)
-                }
-            };
+                        .add(anyhow!(message)),
+                    code,
+                ))
+            }
+            _ => Err(anyhow!("unreachable")),
+        }?;
 
         memory
             .write(

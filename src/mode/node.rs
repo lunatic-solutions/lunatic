@@ -96,7 +96,7 @@ pub(crate) async fn start(args: Args) -> Result<()> {
     let dist = lunatic_distributed::DistributedProcessState::new(
         node_id,
         control_client.clone(),
-        distributed_client,
+        distributed_client.clone(),
     )
     .await?;
 
@@ -110,6 +110,7 @@ pub(crate) async fn start(args: Args) -> Result<()> {
             modules: Modules::<DefaultProcessState>::default(),
             distributed: dist.clone(),
             runtime: runtime.clone(),
+            node_client: distributed_client.clone(),
         },
         socket,
         reg.root_cert,

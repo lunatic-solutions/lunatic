@@ -10,6 +10,7 @@ pub enum Request {
         tag: Option<i64>,
         data: Vec<u8>,
     },
+    Response(Response),
 }
 
 impl Request {
@@ -17,6 +18,7 @@ impl Request {
         match self {
             Request::Spawn(_) => "Spawn",
             Request::Message { .. } => "Message",
+            Request::Response(_) => "Response",
         }
     }
 }
@@ -46,7 +48,13 @@ impl Default for ClientError {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub enum Response {
+pub struct Response {
+    pub message_id: u64,
+    pub content: ResponseContent,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum ResponseContent {
     Spawned(u64),
     Sent,
     Linked,
@@ -55,11 +63,11 @@ pub enum Response {
 
 impl Response {
     pub fn kind(&self) -> &'static str {
-        match self {
-            Response::Spawned(_) => "Spawned",
-            Response::Sent => "Sent",
-            Response::Linked => "Linked",
-            Response::Error(_) => "Error",
+        match self.content {
+            ResponseContent::Spawned(_) => "Spawned",
+            ResponseContent::Sent => "Sent",
+            ResponseContent::Linked => "Linked",
+            ResponseContent::Error(_) => "Error",
         }
     }
 }

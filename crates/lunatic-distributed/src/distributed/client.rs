@@ -1,9 +1,13 @@
-use std::sync::{
-    atomic::{self, AtomicU64, AtomicUsize},
-    Arc,
+use std::{
+    sync::{
+        atomic::{self, AtomicU64, AtomicUsize},
+        Arc,
+    },
+    time::{Duration, Instant},
 };
 
 use anyhow::{anyhow, Result};
+use async_cell::sync::AsyncCell;
 use dashmap::DashMap;
 use tokio::sync::{
     mpsc::{Receiver, Sender},
@@ -13,9 +17,11 @@ use tokio::sync::{
 use crate::{
     congestion::{node_connection_manager, MessageChunk, NodeConnectionManager},
     control,
-    distributed::message::{Request, Spawn},
+    distributed::message::{Request, ResponseContent, Spawn},
     quic,
 };
+
+use super::message::Response;
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
 pub struct EnvironmentId(pub u64);
@@ -59,6 +65,8 @@ pub struct MessageCtx {
 // Receiving part of the message queue
 type BufRx = RwLock<Receiver<MessageCtx>>;
 
+type IncomingResponse = (AsyncCell<ResponseContent>, Instant);
+
 // TODO: replace distributed::Client
 #[derive(Clone)]
 pub struct Client {
@@ -76,11 +84,14 @@ pub struct Inner {
     // Holds the message while its being chunked
     pub in_progress: DashMap<(EnvironmentId, ProcessId), MessageCtx>,
     pub nodes_queues: DashMap<NodeId, Sender<MessageChunk>>,
+    pub responses: DashMap<MessageId, Arc<IncomingResponse>>,
+    pub response_tx: Sender<(MessageId, ResponseContent)>,
 }
 
 impl Client {
     pub fn new(control_client: control::Client, node_client: quic::Client) -> Self {
-        Self {
+        let (send, recv) = tokio::sync::mpsc::channel(1000);
+        let client = Self {
             inner: Arc::new(Inner {
                 control_client,
                 node_client,
@@ -89,8 +100,12 @@ impl Client {
                 buf_tx: DashMap::new(),
                 in_progress: DashMap::new(),
                 nodes_queues: DashMap::new(),
+                responses: DashMap::new(),
+                response_tx: send,
             }),
-        }
+        };
+        tokio::spawn(process_responses(client.clone(), recv));
+        client
     }
 
     fn next_message_id(&self) -> MessageId {
@@ -108,7 +123,7 @@ impl Client {
         node: NodeId,
         dest: ProcessId,
         data: Vec<u8>,
-    ) -> Result<()> {
+    ) -> Result<MessageId> {
         // Lazy initialize process message buffers
         let tx = match self.inner.buf_tx.get(&(env, src)) {
             Some(tx) => tx,
@@ -146,10 +161,10 @@ impl Client {
             }));
             self.inner.nodes_queues.insert(node, send);
         }
-
+        let message_id = self.next_message_id();
         match tx
             .send(MessageCtx {
-                message_id: self.next_message_id(),
+                message_id,
                 env,
                 src,
                 node,
@@ -163,7 +178,7 @@ impl Client {
             Ok(_) => (),
             Err(_) => log::error!("lunatic::distributed::client::send"),
         };
-        Ok(())
+        Ok(message_id)
     }
 
     // TODO: how to detect process is dead?
@@ -172,7 +187,7 @@ impl Client {
     }
 
     // Send distributed message
-    pub async fn send(&self, params: SendParams) -> Result<()> {
+    pub async fn send(&self, params: SendParams) -> Result<MessageId> {
         let message = Request::Message {
             environment_id: params.env.0,
             process_id: params.dest.0,
@@ -188,14 +203,91 @@ impl Client {
     }
 
     // Send distributed spawn message
-    pub async fn spawn(&self, params: SpawnParams) -> Result<u64> {
+    pub async fn spawn(&self, params: SpawnParams) -> Result<MessageId> {
         let message = Request::Spawn(params.spawn);
         let data = match rmp_serde::to_vec(&message) {
             Ok(data) => data,
             Err(_) => unreachable!("lunatic::distributed::client::spawn serialize_message"),
         };
-        self.new_message(params.env, params.src, params.node, ProcessId(0), data)
+        let message_id = self
+            .new_message(params.env, params.src, params.node, ProcessId(0), data)
             .await?;
-        todo!()
+        self.inner
+            .responses
+            .insert(message_id, Arc::new((AsyncCell::new(), Instant::now())));
+        Ok(message_id)
+    }
+
+    // Send distributed response message
+    pub async fn send_response(&self, response: Response) -> Result<MessageId> {
+        let message = Request::Response(response);
+        let data = match rmp_serde::to_vec(&message) {
+            Ok(data) => data,
+            Err(_) => unreachable!("lunatic::distributed::client::spawn serialize_message"),
+        };
+        self.new_message(
+            EnvironmentId(0),
+            ProcessId(0),
+            NodeId(0),
+            ProcessId(0),
+            data,
+        )
+        .await
+    }
+
+    // Receive response
+    pub async fn recv_response(&self, response: Response) {
+        self.inner
+            .response_tx
+            .send((MessageId(response.message_id), response.content))
+            .await
+            .ok();
+    }
+
+    pub async fn await_response(&self, message_id: MessageId) -> Result<ResponseContent> {
+        let response = self
+            .inner
+            .responses
+            .get(&message_id)
+            .ok_or_else(|| anyhow!("message does not exist"))?
+            .0
+            .take()
+            .await;
+        self.inner.responses.remove(&message_id);
+        Ok(response)
+    }
+}
+
+pub async fn process_responses(
+    client: Client,
+    mut recv: Receiver<(MessageId, ResponseContent)>,
+) -> ! {
+    const TIMEOUT: Duration = Duration::from_secs(5);
+    loop {
+        tokio::select! {
+           r =  recv.recv() => {
+            if let Some((message_id, response)) = r {
+                if let Some(cell) = client.inner.responses.get(&message_id) {
+                cell.0.set(response);
+                }
+            }
+           },
+           _ = tokio::time::sleep(TIMEOUT) => {
+            for entry in client.inner.responses.iter() {
+                // Clean up timeouts
+                if entry.0.is_set() && entry.1.elapsed() > TIMEOUT {
+                    client.inner.responses.remove(entry.key());
+                }
+                // Set timeout response
+                if !entry.0.is_set() && entry.1.elapsed() > TIMEOUT {
+                    entry.0.set(ResponseContent::Error(
+                        crate::distributed::message::ClientError::Unexpected(
+                            "Response timeout.".to_string(),
+                        ),
+                    ));
+                }
+            }
+           }
+        };
     }
 }

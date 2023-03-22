@@ -14,17 +14,21 @@ use wasmtime::ResourceLimiter;
 
 use crate::{
     distributed::message::{Request, Response},
-    quic::{self, SendStream},
+    quic::{self},
     DistributedCtx, DistributedProcessState,
 };
 
-use super::message::{ClientError, Spawn};
+use super::{
+    client::Client,
+    message::{ClientError, ResponseContent, Spawn},
+};
 
 pub struct ServerCtx<T, E: Environment> {
     pub envs: Arc<dyn Environments<Env = E>>,
     pub modules: Modules<T>,
     pub distributed: DistributedProcessState,
     pub runtime: WasmtimeRuntime,
+    pub node_client: Client,
 }
 
 impl<T: 'static, E: Environment> Clone for ServerCtx<T, E> {
@@ -34,6 +38,7 @@ impl<T: 'static, E: Environment> Clone for ServerCtx<T, E> {
             modules: self.modules.clone(),
             distributed: self.distributed.clone(),
             runtime: self.runtime.clone(),
+            node_client: self.node_client.clone(),
         }
     }
 }
@@ -77,48 +82,49 @@ where
     Ok(())
 }
 
-pub async fn handle_message<T, E>(
-    ctx: ServerCtx<T, E>,
-    send: &mut SendStream,
-    msg_id: u64,
-    msg: Request,
-) where
+pub async fn handle_message<T, E>(ctx: ServerCtx<T, E>, msg_id: u64, msg: Request)
+where
     T: ProcessState + DistributedCtx<E> + ResourceLimiter + Send + Sync + 'static,
     E: Environment + 'static,
 {
-    if let Err(e) = handle_message_err(ctx, send, msg_id, msg).await {
+    if let Err(e) = handle_message_err(ctx, msg_id, msg).await {
         log::error!("Error handling message: {e}");
     }
 }
 
-async fn handle_message_err<T, E>(
-    ctx: ServerCtx<T, E>,
-    send: &mut SendStream,
-    msg_id: u64,
-    msg: Request,
-) -> Result<()>
+async fn handle_message_err<T, E>(ctx: ServerCtx<T, E>, msg_id: u64, msg: Request) -> Result<()>
 where
     T: ProcessState + DistributedCtx<E> + ResourceLimiter + Send + Sync + 'static,
     E: Environment + 'static,
 {
     match msg {
         Request::Spawn(spawn) => {
-            match handle_spawn(ctx, spawn).await {
+            match handle_spawn(ctx.clone(), spawn).await {
                 Ok(Ok(id)) => {
-                    let mut data = super::message::pack_response(msg_id, Response::Spawned(id));
-                    send.send(&mut data).await?;
+                    ctx.node_client
+                        .send_response(Response {
+                            message_id: msg_id,
+                            content: ResponseContent::Spawned(id),
+                        })
+                        .await?;
                 }
                 Ok(Err(client_error)) => {
-                    let mut data =
-                        super::message::pack_response(msg_id, Response::Error(client_error));
-                    send.send(&mut data).await?;
+                    ctx.node_client
+                        .send_response(Response {
+                            message_id: msg_id,
+                            content: ResponseContent::Error(client_error),
+                        })
+                        .await?;
                 }
                 Err(error) => {
-                    let mut data = super::message::pack_response(
-                        msg_id,
-                        Response::Error(ClientError::Unexpected(error.to_string())),
-                    );
-                    send.send(&mut data).await?
+                    ctx.node_client
+                        .send_response(Response {
+                            message_id: msg_id,
+                            content: ResponseContent::Error(ClientError::Unexpected(
+                                error.to_string(),
+                            )),
+                        })
+                        .await?;
                 }
             };
         }
@@ -127,16 +133,28 @@ where
             process_id,
             tag,
             data,
-        } => match handle_process_message(ctx, environment_id, process_id, tag, data).await {
+        } => match handle_process_message(ctx.clone(), environment_id, process_id, tag, data).await
+        {
             Ok(_) => {
-                let mut data = super::message::pack_response(msg_id, Response::Sent);
-                send.send(&mut data).await?;
+                ctx.node_client
+                    .send_response(Response {
+                        message_id: msg_id,
+                        content: ResponseContent::Sent,
+                    })
+                    .await?;
             }
             Err(error) => {
-                let mut data = super::message::pack_response(msg_id, Response::Error(error));
-                send.send(&mut data).await?;
+                ctx.node_client
+                    .send_response(Response {
+                        message_id: msg_id,
+                        content: ResponseContent::Error(error),
+                    })
+                    .await?;
             }
         },
+        Request::Response(response) => {
+            ctx.node_client.recv_response(response).await;
+        }
     };
     Ok(())
 }
