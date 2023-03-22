@@ -32,7 +32,7 @@ enum Commands {
     /// Deploy an application
     Deploy(super::deploy::Args),
     /// Manage data regarding remote lunatic project
-    Remote(super::remote::Args),
+    Project(super::project::Args),
     /// Manage mapping of repository binary and lunatic `App` within
     /// the scope of the selected `Project`
     App(super::app::Args),
@@ -53,7 +53,7 @@ pub(crate) async fn execute(augmented_args: Option<Vec<String>>) -> Result<()> {
         Commands::Node(a) => super::node::start(a).await,
         Commands::Auth(a) => super::auth::start(a).await,
         Commands::Deploy(a) => super::deploy::start(a).await,
-        Commands::Remote(a) => super::remote::start(a).await,
+        Commands::Project(a) => super::project::start(a).await,
         Commands::App(a) => super::app::start(a).await,
     }
 }

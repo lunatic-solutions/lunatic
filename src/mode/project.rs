@@ -6,7 +6,7 @@ use super::config::{ConfigManager, ProjectLunaticConfig};
 
 #[derive(Parser, Debug, Clone)]
 #[clap(rename_all = "kebab_case")]
-pub enum RemoteArgs {
+pub enum ProjectArgs {
     Add {
         /// The id of the remote
         id: String,
@@ -36,26 +36,26 @@ pub enum RemoteArgs {
 #[derive(Parser, Debug)]
 pub struct Args {
     #[command(subcommand)]
-    remote: RemoteArgs,
+    project: ProjectArgs,
 }
 
 pub(crate) async fn start(args: Args) -> Result<()> {
-    match args.remote {
-        RemoteArgs::Add { id, url } => {
+    match args.project {
+        ProjectArgs::Add { id, url } => {
             let mut config =
                 ConfigManager::new().map_err(|e| anyhow!("failed to load config {e:?}"))?;
             config.project_config.project_url = url;
             config.project_config.project_id = id;
             config.lookup_project().await?;
         }
-        // RemoteArgs::Rename { old_name, new_name } => todo!(),
-        RemoteArgs::Remove => {
+        // ProjectArgs::Rename { old_name, new_name } => todo!(),
+        ProjectArgs::Remove => {
             let mut config =
                 ConfigManager::new().map_err(|e| anyhow!("failed to load config {e:?}"))?;
             config.project_config = ProjectLunaticConfig::default();
             config.flush()?;
         }
-        RemoteArgs::Get { name, url, id } => {
+        ProjectArgs::Get { name, url, id } => {
             let config =
                 ConfigManager::new().map_err(|e| anyhow!("failed to load config {e:?}"))?;
             if name.is_some() {

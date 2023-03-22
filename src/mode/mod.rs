@@ -15,5 +15,5 @@ mod control;
 mod deploy;
 mod init;
 mod node;
-mod remote;
+mod project;
 mod run;
