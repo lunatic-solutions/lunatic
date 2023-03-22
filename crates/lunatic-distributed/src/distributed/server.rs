@@ -38,15 +38,13 @@ impl<T: 'static, E: Environment> Clone for ServerCtx<T, E> {
     }
 }
 
-pub fn root_cert(test_ca: bool, ca_cert: Option<&str>) -> Result<String> {
-    if test_ca {
-        Ok(crate::control::cert::TEST_ROOT_CERT.to_string())
-    } else {
-        let cert = std::fs::read(
-            ca_cert.ok_or_else(|| anyhow::anyhow!("Missing public root certificate."))?,
-        )?;
-        Ok(std::str::from_utf8(&cert)?.to_string())
-    }
+pub fn test_root_cert() -> String {
+    crate::control::cert::TEST_ROOT_CERT.to_string()
+}
+
+pub fn root_cert(ca_cert: &str) -> Result<String> {
+    let cert = std::fs::read(ca_cert)?;
+    Ok(std::str::from_utf8(&cert)?.to_string())
 }
 
 pub fn gen_node_cert(node_name: &str) -> Result<Certificate> {
@@ -67,7 +65,7 @@ pub async fn node_server<T, E>(
     key: String,
 ) -> Result<()>
 where
-    T: ProcessState + ResourceLimiter + DistributedCtx<E> + Send + 'static,
+    T: ProcessState + ResourceLimiter + DistributedCtx<E> + Send + Sync + 'static,
     E: Environment + 'static,
 {
     let mut quic_server = quic::new_quic_server(socket, &cert, &key, &ca_cert)?;
@@ -83,7 +81,7 @@ pub async fn handle_message<T, E>(
     msg_id: u64,
     msg: Request,
 ) where
-    T: ProcessState + DistributedCtx<E> + ResourceLimiter + Send + 'static,
+    T: ProcessState + DistributedCtx<E> + ResourceLimiter + Send + Sync + 'static,
     E: Environment + 'static,
 {
     if let Err(e) = handle_message_err(ctx, send, msg_id, msg).await {
@@ -98,7 +96,7 @@ async fn handle_message_err<T, E>(
     msg: Request,
 ) -> Result<()>
 where
-    T: ProcessState + DistributedCtx<E> + ResourceLimiter + Send + 'static,
+    T: ProcessState + DistributedCtx<E> + ResourceLimiter + Send + Sync + 'static,
     E: Environment + 'static,
 {
     match msg {
@@ -143,7 +141,7 @@ where
 
 async fn handle_spawn<T, E>(ctx: ServerCtx<T, E>, spawn: Spawn) -> Result<Result<u64, ClientError>>
 where
-    T: ProcessState + DistributedCtx<E> + ResourceLimiter + Send + 'static,
+    T: ProcessState + DistributedCtx<E> + ResourceLimiter + Send + Sync + 'static,
     E: Environment + 'static,
 {
     let Spawn {

@@ -36,8 +36,6 @@ pub trait ProcessState: Sized {
         config: Arc<Self::Config>,
     ) -> Result<Self>;
 
-    fn state_for_instantiation() -> Self;
-
     /// Register all host functions to the linker.
     fn register(linker: &mut Linker<Self>) -> Result<()>;
     /// Marks a wasm instance as initialized

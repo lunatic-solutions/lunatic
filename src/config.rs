@@ -261,17 +261,17 @@ mod tests {
         let guest_api =
             get_absolute_path(Path::new("crates/lunatic-sqlite-api/src/guest_api")).unwrap();
         // checks that there's no access to any ancestor paths
-        assert_eq!(path_is_ancestor(&guest_api, &crates), false);
-        assert_eq!(path_is_ancestor(&guest_api, &sqlite), false);
-        assert_eq!(path_is_ancestor(&guest_api, &src), false);
+        assert!(!path_is_ancestor(&guest_api, &crates));
+        assert!(!path_is_ancestor(&guest_api, &sqlite));
+        assert!(!path_is_ancestor(&guest_api, &src));
     }
 
     #[test]
     fn test_forbidden_absolute_paths() {
         let src = get_absolute_path(Path::new("crates/lunatic-sqlite-api/src")).unwrap();
         // checks that there's no access to any ancestor paths
-        assert_eq!(path_is_ancestor(&src, Path::new("/")), false);
-        assert_eq!(path_is_ancestor(&src, Path::new("/etc/passwd")), false);
+        assert!(!path_is_ancestor(&src, Path::new("/")));
+        assert!(!path_is_ancestor(&src, Path::new("/etc/passwd")));
     }
 
     #[test]

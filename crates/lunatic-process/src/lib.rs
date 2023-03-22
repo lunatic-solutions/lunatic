@@ -12,6 +12,8 @@ use anyhow::{anyhow, Result};
 use env::Environment;
 use log::{debug, log_enabled, trace, warn, Level};
 
+use smallvec::SmallVec;
+use state::ProcessState;
 use tokio::{
     sync::{
         mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender},
@@ -211,6 +213,46 @@ impl Process for WasmProcess {
     }
 }
 
+/// Enum containing a process name if available, otherwise its ID.
+enum NameOrID<'a> {
+    Names(SmallVec<[&'a str; 2]>),
+    ID(u64),
+}
+
+impl<'a> NameOrID<'a> {
+    /// Returns names, otherwise id if names is empty.
+    fn or_id(self, id: u64) -> Self {
+        match self {
+            NameOrID::Names(ref names) if !names.is_empty() => self,
+            _ => NameOrID::ID(id),
+        }
+    }
+}
+
+impl<'a> std::fmt::Display for NameOrID<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            NameOrID::Names(names) => {
+                for (i, name) in names.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, " / ")?;
+                    }
+                    write!(f, "'{name}'")?;
+                }
+                Ok(())
+            }
+            NameOrID::ID(id) => write!(f, "{id}"),
+        }
+    }
+}
+
+impl<'a> FromIterator<&'a str> for NameOrID<'a> {
+    fn from_iter<T: IntoIterator<Item = &'a str>>(iter: T) -> Self {
+        let names = SmallVec::from_iter(iter);
+        NameOrID::Names(names)
+    }
+}
+
 /// Turns a `Future` into a process, enabling signals (e.g. kill).
 ///
 /// This function represents the core execution loop of lunatic processes:
@@ -235,6 +277,7 @@ pub(crate) async fn new<F, S, R>(
     message_mailbox: MessageMailbox,
 ) -> Result<S>
 where
+    S: ProcessState,
     R: Into<ExecutionResult<S>>,
     F: Future<Output = R> + Send + 'static,
 {
@@ -339,11 +382,19 @@ where
 
     match result {
         Finished::Normal(result) => {
-            let result = result.into();
+            let result: ExecutionResult<_> = result.into();
+
             if let Some(failure) = result.failure() {
+                let registry = result.state().registry().read().await;
+                let name = registry
+                    .iter()
+                    .filter(|(_, (_, process_id))| process_id == &id)
+                    .map(|(name, _)| name.splitn(4, '/').last().unwrap_or(name.as_str()))
+                    .collect::<NameOrID>()
+                    .or_id(id);
                 warn!(
                     "Process {} failed, notifying: {} links {}",
-                    id,
+                    name,
                     links.len(),
                     // If the log level is WARN instruct user how to display the stacktrace
                     if !log_enabled!(Level::Debug) {
@@ -363,7 +414,7 @@ where
                 links.iter().for_each(|(_, (proc, tag))| {
                     proc.send(Signal::LinkDied(id, *tag, DeathReason::Normal));
                 });
-                Ok(result.state())
+                Ok(result.into_state())
             }
         }
         Finished::KillSignal => {
@@ -389,27 +440,13 @@ pub struct NativeProcess {
 }
 
 /// Spawns a process from a closure.
-///
-/// ## Example:
-///
-/// ```no_run
-/// use std::sync::Arc;
-/// let env = Arc::new(lunatic_process::env::LunaticEnvironment::new(1));
-/// let _proc = lunatic_process::spawn(env, |_this, mailbox| async move {
-///     // Wait on a message with the tag `27`.
-///     mailbox.pop(Some(&[27])).await;
-///     // TODO: Needs to return ExecutionResult. Probably the `new` function will need to be adjusted
-///     Ok(())
-/// });
-/// ```
-
 pub fn spawn<T, F, K, R>(
     env: Arc<dyn Environment>,
     func: F,
 ) -> (JoinHandle<Result<T>>, NativeProcess)
 where
-    T: Send + 'static,
-    R: Into<ExecutionResult<T>> + 'static,
+    T: ProcessState + Send + Sync + 'static,
+    R: Into<ExecutionResult<T>> + Send + 'static,
     K: Future<Output = R> + Send + 'static,
     F: FnOnce(NativeProcess, MessageMailbox) -> K,
 {
@@ -468,8 +505,13 @@ impl<T> ExecutionResult<T> {
         }
     }
 
+    // Returns the process state reference
+    pub fn state(&self) -> &T {
+        &self.state
+    }
+
     // Returns the process state
-    pub fn state(self) -> T {
+    pub fn into_state(self) -> T {
         self.state
     }
 }

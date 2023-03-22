@@ -153,37 +153,6 @@ impl ProcessState for DefaultProcessState {
         Ok(state)
     }
 
-    fn state_for_instantiation() -> Self {
-        let config = DefaultProcessConfig::default();
-        let signal_mailbox = unbounded_channel();
-        let signal_mailbox = (signal_mailbox.0, Arc::new(Mutex::new(signal_mailbox.1)));
-        let message_mailbox = MessageMailbox::default();
-        Self {
-            id: 1,
-            environment: Arc::new(LunaticEnvironment::new(0)),
-            distributed: None,
-            runtime: None,
-            module: None,
-            registry: Default::default(),
-            registry_atomic_put: None,
-            config: Arc::new(config.clone()),
-            message: None,
-            signal_mailbox,
-            message_mailbox,
-            resources: Resources::default(),
-            wasi: build_wasi(
-                Some(config.command_line_arguments()),
-                Some(config.environment_variables()),
-                config.preopened_dirs(),
-            )
-            .unwrap(),
-            wasi_stdout: None,
-            wasi_stderr: None,
-            initialized: false,
-            db_resources: DbResources::default(),
-        }
-    }
-
     fn register(linker: &mut Linker<Self>) -> Result<()> {
         lunatic_error_api::register(linker)?;
         lunatic_process_api::register(linker)?;
