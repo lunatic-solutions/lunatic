@@ -285,6 +285,7 @@ where
             src: ProcessId(state.id()),
             node: NodeId(node_id),
             spawn: Spawn {
+                node_id,
                 environment_id: state.environment_id(),
                 function: function.to_string(),
                 module_id,

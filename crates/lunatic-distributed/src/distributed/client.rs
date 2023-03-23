@@ -51,6 +51,11 @@ pub struct SpawnParams {
     pub spawn: Spawn,
 }
 
+pub struct ResponseParams {
+    pub node_id: NodeId,
+    pub response: Response,
+}
+
 pub struct MessageCtx {
     pub message_id: MessageId,
     pub env: EnvironmentId,
@@ -70,6 +75,7 @@ type IncomingResponse = (AsyncCell<ResponseContent>, Instant);
 // TODO: replace distributed::Client
 #[derive(Clone)]
 pub struct Client {
+    pub node_id: NodeId,
     pub inner: Arc<Inner>,
 }
 
@@ -89,9 +95,10 @@ pub struct Inner {
 }
 
 impl Client {
-    pub fn new(control_client: control::Client, node_client: quic::Client) -> Self {
+    pub fn new(node_id: u64, control_client: control::Client, node_client: quic::Client) -> Self {
         let (send, recv) = tokio::sync::mpsc::channel(1000);
         let client = Self {
+            node_id: NodeId(node_id),
             inner: Arc::new(Inner {
                 control_client,
                 node_client,
@@ -189,6 +196,7 @@ impl Client {
     // Send distributed message
     pub async fn send(&self, params: SendParams) -> Result<MessageId> {
         let message = Request::Message {
+            node_id: self.node_id.0,
             environment_id: params.env.0,
             process_id: params.dest.0,
             tag: params.tag,
@@ -219,8 +227,8 @@ impl Client {
     }
 
     // Send distributed response message
-    pub async fn send_response(&self, response: Response) -> Result<MessageId> {
-        let message = Request::Response(response);
+    pub async fn send_response(&self, params: ResponseParams) -> Result<MessageId> {
+        let message = Request::Response(params.response);
         let data = match rmp_serde::to_vec(&message) {
             Ok(data) => data,
             Err(_) => unreachable!("lunatic::distributed::client::spawn serialize_message"),
@@ -228,7 +236,7 @@ impl Client {
         self.new_message(
             EnvironmentId(0),
             ProcessId(0),
-            NodeId(0),
+            params.node_id,
             ProcessId(0),
             data,
         )

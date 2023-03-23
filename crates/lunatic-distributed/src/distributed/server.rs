@@ -19,7 +19,7 @@ use crate::{
 };
 
 use super::{
-    client::Client,
+    client::{Client, NodeId, ResponseParams},
     message::{ClientError, ResponseContent, Spawn},
 };
 
@@ -99,36 +99,47 @@ where
 {
     match msg {
         Request::Spawn(spawn) => {
+            let node_id = spawn.node_id;
             match handle_spawn(ctx.clone(), spawn).await {
                 Ok(Ok(id)) => {
                     ctx.node_client
-                        .send_response(Response {
-                            message_id: msg_id,
-                            content: ResponseContent::Spawned(id),
+                        .send_response(ResponseParams {
+                            node_id: NodeId(node_id),
+                            response: Response {
+                                message_id: msg_id,
+                                content: ResponseContent::Spawned(id),
+                            },
                         })
                         .await?;
                 }
                 Ok(Err(client_error)) => {
                     ctx.node_client
-                        .send_response(Response {
-                            message_id: msg_id,
-                            content: ResponseContent::Error(client_error),
+                        .send_response(ResponseParams {
+                            node_id: NodeId(node_id),
+                            response: Response {
+                                message_id: msg_id,
+                                content: ResponseContent::Error(client_error),
+                            },
                         })
                         .await?;
                 }
                 Err(error) => {
                     ctx.node_client
-                        .send_response(Response {
-                            message_id: msg_id,
-                            content: ResponseContent::Error(ClientError::Unexpected(
-                                error.to_string(),
-                            )),
+                        .send_response(ResponseParams {
+                            node_id: NodeId(node_id),
+                            response: Response {
+                                message_id: msg_id,
+                                content: ResponseContent::Error(ClientError::Unexpected(
+                                    error.to_string(),
+                                )),
+                            },
                         })
                         .await?;
                 }
             };
         }
         Request::Message {
+            node_id,
             environment_id,
             process_id,
             tag,
@@ -137,17 +148,23 @@ where
         {
             Ok(_) => {
                 ctx.node_client
-                    .send_response(Response {
-                        message_id: msg_id,
-                        content: ResponseContent::Sent,
+                    .send_response(ResponseParams {
+                        node_id: NodeId(node_id),
+                        response: Response {
+                            message_id: msg_id,
+                            content: ResponseContent::Sent,
+                        },
                     })
                     .await?;
             }
             Err(error) => {
                 ctx.node_client
-                    .send_response(Response {
-                        message_id: msg_id,
-                        content: ResponseContent::Error(error),
+                    .send_response(ResponseParams {
+                        node_id: NodeId(node_id),
+                        response: Response {
+                            message_id: msg_id,
+                            content: ResponseContent::Error(error),
+                        },
                     })
                     .await?;
             }
@@ -170,6 +187,7 @@ where
         function,
         params,
         config,
+        ..
     } = spawn;
 
     let config: T::Config = rmp_serde::from_slice(&config[..])?;
