@@ -45,6 +45,7 @@ use std::{
 };
 
 use anyhow::Result;
+use lunatic_control::NodeInfo;
 use tokio::sync::{
     mpsc::{self, error::TryRecvError, Receiver, Sender},
     RwLock,
@@ -52,7 +53,7 @@ use tokio::sync::{
 
 use crate::{
     distributed::{self, client::ProcessId},
-    quic, NodeInfo,
+    quic,
 };
 
 pub struct MessageChunk {

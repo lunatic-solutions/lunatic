@@ -1,0 +1,25 @@
+[package]
+name = "lunatic-control-submillisecond"
+version = "0.12.0"
+edition = "2021"
+description = "TBD"
+homepage = "https://lunatic.solutions"
+repository = "https://github.com/lunatic-solutions/lunatic/tree/main/crates"
+license = "Apache-2.0/MIT"
+
+[dependencies]
+lunatic-control = { path = "../lunatic-control" }
+
+anyhow = "1.0"
+base64-url = "1.4.13"
+bincode = "1.3"
+chrono = { version = "0.4.23", default-features = false, features = ["clock", "serde", "std"] }
+getrandom = "0.2.8"
+lunatic = { git = "https://github.com/lunatic-solutions/lunatic-rs", features = ["sqlite"] }
+lunatic-log = { git = "https://github.com/lunatic-solutions/lunatic-log-rs", branch = "lunatic-0-13-git" }
+serde = "1.0"
+serde_json = "1.0.89"
+submillisecond = { git = "https://github.com/lunatic-solutions/submillisecond", features = ["json"] }
+uuid = "1.3"
+
+[workspace]

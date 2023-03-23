@@ -1,7 +1,7 @@
 use std::{future::Future, sync::Arc, time::Duration};
 
 use anyhow::{anyhow, Result};
-use lunatic_common_api::{get_memory, IntoTrap};
+use lunatic_common_api::{get_memory, write_to_guest_vec, IntoTrap};
 use lunatic_distributed::{
     distributed::{
         self,
@@ -16,6 +16,7 @@ use lunatic_process::{
     message::{DataMessage, Message},
 };
 use lunatic_process_api::ProcessCtx;
+use rcgen::{Certificate, CertificateParams, CertificateSigningRequest, KeyPair};
 use tokio::time::timeout;
 use wasmtime::{Caller, Linker, ResourceLimiter};
 
@@ -47,6 +48,13 @@ where
         "copy_lookup_nodes_results",
         copy_lookup_nodes_results,
     )?;
+    linker.func_wrap1_async("lunatic::distributed", "test_root_cert", test_root_cert)?;
+    linker.func_wrap5_async(
+        "lunatic::distributed",
+        "default_server_certificates",
+        default_server_certificates,
+    )?;
+    linker.func_wrap7_async("lunatic::distributed", "sign_node", sign_node)?;
     Ok(())
 }
 
@@ -185,6 +193,144 @@ where
             .or_trap("lunatic::distributed::copy_lookup_nodes_results::error_ptr")?;
         Ok(-1)
     }
+}
+
+fn test_root_cert<T, E>(
+    mut caller: Caller<T>,
+    len_ptr: u32,
+) -> Box<dyn Future<Output = Result<u32>> + Send + '_>
+where
+    T: DistributedCtx<E> + Send,
+    E: Environment,
+{
+    Box::new(async move {
+        let memory = get_memory(&mut caller)?;
+        let root_cert = lunatic_distributed::control::cert::test_root_cert()
+            .or_trap("lunatic::distributed::test_root_cert")?;
+
+        let cert_pem = root_cert
+            .serialize_pem()
+            .or_trap("lunatic::distributed::test_root_cert")?;
+        let key_pair_pem = root_cert.serialize_private_key_pem();
+
+        let data = bincode::serialize(&(cert_pem, key_pair_pem))
+            .or_trap("lunatic::distributed::test_root_cert")?;
+        let ptr = write_to_guest_vec(&mut caller, &memory, &data, len_ptr)
+            .await
+            .or_trap("lunatic::distributed::test_root_cert")?;
+
+        Ok(ptr)
+    })
+}
+
+fn default_server_certificates<T, E>(
+    mut caller: Caller<T>,
+    cert_pem_ptr: u32,
+    cert_pem_len: u32,
+    pk_pem_ptr: u32,
+    pk_pem_len: u32,
+    len_ptr: u32,
+) -> Box<dyn Future<Output = Result<u32>> + Send + '_>
+where
+    T: DistributedCtx<E> + Send,
+    E: Environment,
+{
+    Box::new(async move {
+        let memory = get_memory(&mut caller)?;
+
+        let cert_pem_bytes = memory
+            .data(&caller)
+            .get(cert_pem_ptr as usize..(cert_pem_ptr + cert_pem_len) as usize)
+            .or_trap("lunatic::distributed::spawn::default_server_certificates")?;
+        let cert_pem = std::str::from_utf8(cert_pem_bytes)
+            .or_trap("lunatic::distributed::default_server_certificates")?;
+
+        let pk_pem_bytes = memory
+            .data(&caller)
+            .get(pk_pem_ptr as usize..(pk_pem_ptr + pk_pem_len) as usize)
+            .or_trap("lunatic::distributed::default_server_certificates")?;
+        let pk_pem = std::str::from_utf8(pk_pem_bytes)
+            .or_trap("lunatic::distributed::default_server_certificates")?;
+
+        let key_pair = KeyPair::from_pem(pk_pem)
+            .or_trap("lunatic::distributed::default_server_certificates")?;
+        let cert_params = CertificateParams::from_ca_cert_pem(cert_pem, key_pair)
+            .or_trap("lunatic::distributed::default_server_certificates")?;
+
+        let root_cert = Certificate::from_params(cert_params)
+            .or_trap("lunatic::distributed::default_server_certificates")?;
+
+        let (ctrl_cert, ctrl_pk) =
+            lunatic_distributed::control::cert::default_server_certificates(&root_cert)?;
+
+        let data = bincode::serialize(&(ctrl_cert, ctrl_pk))
+            .or_trap("lunatic::distributed::default_server_certificates")?;
+        let ptr = write_to_guest_vec(&mut caller, &memory, &data, len_ptr)
+            .await
+            .or_trap("lunatic::distributed::default_server_certificates")?;
+
+        Ok(ptr)
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn sign_node<T, E>(
+    mut caller: Caller<T>,
+    cert_pem_ptr: u32,
+    cert_pem_len: u32,
+    pk_pem_ptr: u32,
+    pk_pem_len: u32,
+    csr_pem_ptr: u32,
+    csr_pem_len: u32,
+    len_ptr: u32,
+) -> Box<dyn Future<Output = Result<u32>> + Send + '_>
+where
+    T: DistributedCtx<E> + Send,
+    E: Environment,
+{
+    Box::new(async move {
+        let memory = get_memory(&mut caller)?;
+
+        let cert_pem_bytes = memory
+            .data(&caller)
+            .get(cert_pem_ptr as usize..(cert_pem_ptr + cert_pem_len) as usize)
+            .or_trap("lunatic::distributed::spawn::sign_node")?;
+        let cert_pem =
+            std::str::from_utf8(cert_pem_bytes).or_trap("lunatic::distributed::sign_node")?;
+
+        let pk_pem_bytes = memory
+            .data(&caller)
+            .get(pk_pem_ptr as usize..(pk_pem_ptr + pk_pem_len) as usize)
+            .or_trap("lunatic::distributed::sign_node")?;
+        let pk_pem =
+            std::str::from_utf8(pk_pem_bytes).or_trap("lunatic::distributed::sign_node")?;
+
+        let csr_pem_bytes = memory
+            .data(&caller)
+            .get(csr_pem_ptr as usize..(csr_pem_ptr + csr_pem_len) as usize)
+            .or_trap("lunatic::distributed::sign_node")?;
+        let csr_pem =
+            std::str::from_utf8(csr_pem_bytes).or_trap("lunatic::distributed::sign_node")?;
+
+        let key_pair = KeyPair::from_pem(pk_pem).or_trap("lunatic::distributed::sign_node")?;
+        let cert_params = CertificateParams::from_ca_cert_pem(cert_pem, key_pair)
+            .or_trap("lunatic::distributed::sign_node")?;
+
+        let ca_cert =
+            Certificate::from_params(cert_params).or_trap("lunatic::distributed::sign_node")?;
+
+        let Ok(cert_pem) = CertificateSigningRequest::from_pem(csr_pem)
+            .and_then(|sign_request| sign_request.serialize_pem_with_signer(&ca_cert)) else {
+                return Ok(0);
+            };
+
+        let data = bincode::serialize(&cert_pem).or_trap("lunatic::distributed::sign_node")?;
+        let ptr = write_to_guest_vec(&mut caller, &memory, &data, len_ptr)
+            .await
+            .or_trap("lunatic::distributed::sign_node")?;
+
+        Ok(ptr)
+    })
 }
 
 // Similar to a local spawn, it spawns a new process using the passed in function inside a module

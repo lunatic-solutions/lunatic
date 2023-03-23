@@ -8,7 +8,7 @@ impl BindPair {
     pub fn bind(&self, statement: &mut Statement) -> Result<()> {
         if let BindKey::Numeric(idx) = self.0 {
             return match self.1.clone() {
-                BindValue::Null => todo!(),
+                BindValue::Null => statement.bind((idx, ())),
                 BindValue::Blob(b) => statement.bind((idx, &b[..])),
                 BindValue::Text(t) => statement.bind((idx, t.as_str())),
                 BindValue::Double(d) => statement.bind((idx, d)),
@@ -19,7 +19,7 @@ impl BindPair {
         }
         match self.1.clone() {
             BindValue::Blob(b) => statement.bind(&[&b[..]][..]),
-            BindValue::Null => todo!(),
+            BindValue::Null => statement.bind(&[()][..]),
             BindValue::Text(t) => statement.bind(&[t.as_str()][..]),
             BindValue::Double(d) => statement.bind(&[d][..]),
             BindValue::Int(i) => statement.bind(&[i as i64][..]),

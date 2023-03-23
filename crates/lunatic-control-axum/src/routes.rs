@@ -6,10 +6,8 @@ use axum::{
     routing::{get, post},
     Extension, Json, Router,
 };
-use lunatic_distributed::{
-    control::{api::*, cert::TEST_ROOT_CERT},
-    NodeInfo,
-};
+use lunatic_control::{api::*, NodeInfo};
+use lunatic_distributed::control::cert::TEST_ROOT_CERT;
 use rcgen::CertificateSigningRequest;
 use tower_http::limit::RequestBodyLimitLayer;
 

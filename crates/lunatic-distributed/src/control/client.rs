@@ -1,5 +1,7 @@
 use anyhow::{Context, Result};
 use dashmap::DashMap;
+use lunatic_control::api::*;
+use lunatic_control::NodeInfo;
 use lunatic_process::runtimes::RawWasm;
 use reqwest::{Client as HttpClient, Url};
 use serde::{de::DeserializeOwned, Serialize};
@@ -9,8 +11,6 @@ use std::{
     sync::{atomic, atomic::AtomicU64, Arc, RwLock},
     time::Duration,
 };
-
-use crate::{control::api::*, NodeInfo};
 
 #[derive(Clone)]
 pub struct Client {

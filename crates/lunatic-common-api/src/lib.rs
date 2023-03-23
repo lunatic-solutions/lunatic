@@ -1,5 +1,5 @@
-use anyhow::{anyhow, Result};
-use std::{fmt::Display, future::Future, pin::Pin};
+use anyhow::{anyhow, Context, Result};
+use std::{fmt::Display, future::Future, io::Write, pin::Pin};
 use wasmtime::{Caller, Memory, Val};
 
 const ALLOCATOR_FUNCTION_NAME: &str = "lunatic_alloc";
@@ -54,6 +54,28 @@ pub fn free_guest_memory<'a, T: Send>(
         result.or_trap(format!("failed to call {FREEING_FUNCTION_NAME}"))?;
         Ok(())
     })
+}
+
+// Allocates and writes data to guest memory, updating the len_ptr and returning the allocated ptr.
+pub async fn write_to_guest_vec<T: Send>(
+    caller: &mut Caller<'_, T>,
+    memory: &Memory,
+    data: &[u8],
+    len_ptr: u32,
+) -> Result<u32> {
+    let alloc_len = data.len();
+    let alloc_ptr = allocate_guest_memory(caller, alloc_len as u32).await?;
+
+    let (memory_slice, _) = memory.data_and_store_mut(&mut (*caller));
+    let mut alloc_vec = memory_slice
+        .get_mut(alloc_ptr as usize..(alloc_ptr as usize + alloc_len))
+        .context("allocated memory does not exist")?;
+
+    alloc_vec.write_all(data)?;
+
+    memory.write(caller, len_ptr as usize, &alloc_len.to_le_bytes())?;
+
+    Ok(alloc_ptr)
 }
 
 pub trait IntoTrap<T> {
