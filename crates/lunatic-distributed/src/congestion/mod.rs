@@ -42,6 +42,7 @@
 use std::{
     collections::VecDeque,
     sync::{atomic, Arc},
+    time::Duration,
 };
 
 use anyhow::Result;
@@ -69,12 +70,15 @@ pub struct MessageChunk {
 const CHUNK_SIZE: usize = 1024;
 
 pub async fn congestion_control_worker(state: distributed::Client) -> ! {
+    log::trace!("starting congestion control worker");
     loop {
+        let mut progress = false;
         for env in state.inner.buf_rx.iter() {
             let mut disconected = vec![];
             for pid in env.iter() {
                 let key = (*env.key(), *pid.key());
                 let finished = if let Some(msg_ctx) = state.inner.in_progress.get(&key) {
+                    progress = true;
                     // Chunk data using offset
                     let offset = msg_ctx.offset.load(atomic::Ordering::Relaxed);
                     let chunk_id = msg_ctx.chunk_id.load(atomic::Ordering::Relaxed);
@@ -101,6 +105,10 @@ pub async fn congestion_control_worker(state: distributed::Client) -> ! {
                     if let Some(node_queue) = state.inner.nodes_queues.get(&msg_ctx.node) {
                         match node_queue.try_send(chunk) {
                             Ok(_) => {
+                                log::trace!(
+                                    "congestion::chunk::sent message_id={} chunk_id={chunk_id}",
+                                    msg_ctx.message_id.0
+                                );
                                 // Move to next chunk
                                 msg_ctx
                                     .offset
@@ -129,6 +137,10 @@ pub async fn congestion_control_worker(state: distributed::Client) -> ! {
                     match recv.try_recv() {
                         // Push message into in progress space
                         Ok(new_msg_ctx) => {
+                            log::trace!(
+                                "congestion::message::received message_id={}",
+                                new_msg_ctx.message_id.0
+                            );
                             state
                                 .inner
                                 .in_progress
@@ -153,6 +165,9 @@ pub async fn congestion_control_worker(state: distributed::Client) -> ! {
                 env.remove(&pid);
             }
         }
+        if !progress {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
     }
 }
 
@@ -172,6 +187,11 @@ pub struct NodeConnectionManager {
 
 pub async fn node_connection_manager(mut manager: NodeConnectionManager) -> Result<()> {
     let node_info = manager.node_info;
+    log::trace!(
+        "congestion::node_connection_manager::started node={} address={}",
+        node_info.id,
+        node_info.address
+    );
     // Setup stream buffer
     let mut buffers: Vec<StreamBuffer> = Vec::with_capacity(manager.streams);
     for _ in 0..manager.streams {
@@ -182,15 +202,34 @@ pub async fn node_connection_manager(mut manager: NodeConnectionManager) -> Resu
 
     loop {
         // Setup conn or fail
-        let conn = manager
+        let conn = match manager
             .client
             .try_connect(node_info.address, &node_info.name, 3)
-            .await?;
+            .await
+        {
+            Ok(conn) => conn,
+            Err(e) => {
+                log::error!("congestion::node_connection_manager Connection failed: {e}");
+                continue;
+            }
+        };
+        log::trace!(
+            "node={} name={} address={}",
+            node_info.id,
+            node_info.name,
+            node_info.address
+        );
         // Start stream tasks
         let mut stream_tasks = Vec::new();
         let mut stream_wakers = Vec::new();
         for buffer in buffers.iter().take(manager.streams) {
-            let stream = conn.open_uni().await?;
+            let stream = match conn.open_uni().await {
+                Ok(stream) => stream,
+                Err(e) => {
+                    log::error!("congestion::node_connection_manager Stream open failed: {e}");
+                    continue;
+                }
+            };
             let (send, recv) = mpsc::channel::<StreamAction>(100);
             stream_wakers.push(send);
             stream_tasks.push(tokio::spawn(stream_task(StreamTask {
@@ -204,6 +243,7 @@ pub async fn node_connection_manager(mut manager: NodeConnectionManager) -> Resu
         'forward_chunks: loop {
             tokio::select! {
                 Some(chunk) = manager.message_chunks.recv() => {
+                    log::trace!("congestion::node_connection_manager::recv_chunk {}", chunk.message_id);
                     let src = chunk.src.0;
                     let dest = chunk.dest.0;
                     // Determine stream index by source and destination process_id
@@ -238,6 +278,7 @@ struct StreamTask {
 }
 
 async fn stream_task(mut state: StreamTask) {
+    log::trace!("congestion::stream_task::start {}", state.quic_stream.id());
     while let Some(StreamAction::Message) = state.action.recv().await {
         let mut buffer = state.buffer.write().await;
         let mut chunks = Vec::new();
@@ -258,7 +299,9 @@ async fn stream_task(mut state: StreamTask) {
             .collect();
         // Try to send data
         match state.quic_stream.write_all_chunks(&mut data).await {
-            Ok(_) => (),
+            Ok(_) => {
+                log::trace!("congestion::stream_task::write");
+            }
             Err(_) => {
                 // Connection is dead return chunks in order back to the buffer
                 chunks.drain(..).rev().for_each(|c| buffer.push_back(c));
@@ -268,4 +311,5 @@ async fn stream_task(mut state: StreamTask) {
             }
         };
     }
+    // state.manager_notifier.send(()).await.ok();
 }

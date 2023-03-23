@@ -426,12 +426,13 @@ where
 
         log::debug!("Spawn on node {node_id}, mod {module_id}, fn {function}, params {params:?}");
 
+        let self_node_id = state.distributed()?.node_id();
         let spawn_params = SpawnParams {
             env: EnvironmentId(state.environment_id()),
             src: ProcessId(state.id()),
             node: NodeId(node_id),
             spawn: Spawn {
-                node_id,
+                response_node_id: self_node_id,
                 environment_id: state.environment_id(),
                 function: function.to_string(),
                 module_id,

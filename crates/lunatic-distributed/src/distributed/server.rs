@@ -97,9 +97,11 @@ where
 {
     match msg {
         Request::Spawn(spawn) => {
-            let node_id = spawn.node_id;
+            log::trace!("lunatic::distributed::server process Spawn");
+            let node_id = spawn.response_node_id;
             match handle_spawn(ctx.clone(), spawn).await {
                 Ok(Ok(id)) => {
+                    log::trace!("lunatic::distributed::server Spawned {id}");
                     ctx.node_client
                         .send_response(ResponseParams {
                             node_id: NodeId(node_id),
@@ -111,6 +113,7 @@ where
                         .await?;
                 }
                 Ok(Err(client_error)) => {
+                    log::trace!("lunatic::distributed::server Spawn error: {client_error:?}");
                     ctx.node_client
                         .send_response(ResponseParams {
                             node_id: NodeId(node_id),
@@ -122,6 +125,7 @@ where
                         .await?;
                 }
                 Err(error) => {
+                    log::trace!("lunatic::distributed::server Spawn error: {error}");
                     ctx.node_client
                         .send_response(ResponseParams {
                             node_id: NodeId(node_id),
@@ -142,32 +146,35 @@ where
             process_id,
             tag,
             data,
-        } => match handle_process_message(ctx.clone(), environment_id, process_id, tag, data).await
-        {
-            Ok(_) => {
-                ctx.node_client
-                    .send_response(ResponseParams {
-                        node_id: NodeId(node_id),
-                        response: Response {
-                            message_id: msg_id,
-                            content: ResponseContent::Sent,
-                        },
-                    })
-                    .await?;
+        } => {
+            log::trace!("distributed::server process Message");
+            match handle_process_message(ctx.clone(), environment_id, process_id, tag, data).await {
+                Ok(_) => {
+                    ctx.node_client
+                        .send_response(ResponseParams {
+                            node_id: NodeId(node_id),
+                            response: Response {
+                                message_id: msg_id,
+                                content: ResponseContent::Sent,
+                            },
+                        })
+                        .await?;
+                }
+                Err(error) => {
+                    ctx.node_client
+                        .send_response(ResponseParams {
+                            node_id: NodeId(node_id),
+                            response: Response {
+                                message_id: msg_id,
+                                content: ResponseContent::Error(error),
+                            },
+                        })
+                        .await?;
+                }
             }
-            Err(error) => {
-                ctx.node_client
-                    .send_response(ResponseParams {
-                        node_id: NodeId(node_id),
-                        response: Response {
-                            message_id: msg_id,
-                            content: ResponseContent::Error(error),
-                        },
-                    })
-                    .await?;
-            }
-        },
+        }
         Request::Response(response) => {
+            log::trace!("distributed::server process Response");
             ctx.node_client.recv_response(response).await;
         }
     };

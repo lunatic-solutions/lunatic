@@ -15,7 +15,7 @@ use tokio::sync::{
 };
 
 use crate::{
-    congestion::{node_connection_manager, MessageChunk, NodeConnectionManager},
+    congestion::{self, node_connection_manager, MessageChunk, NodeConnectionManager},
     control,
     distributed::message::{Request, ResponseContent, Spawn},
     quic,
@@ -111,6 +111,7 @@ impl Client {
                 response_tx: send,
             }),
         };
+        tokio::spawn(congestion::congestion_control_worker(client.clone()));
         tokio::spawn(process_responses(client.clone(), recv));
         client
     }
@@ -154,6 +155,8 @@ impl Client {
         let node_manager_exists = self.inner.nodes_queues.get(&node).is_none();
 
         if node_manager_exists {
+            // Refresh nodes to be sure that target node is up to date
+            self.inner.control_client.refresh_nodes().await.ok();
             let node_info = self
                 .inner
                 .control_client

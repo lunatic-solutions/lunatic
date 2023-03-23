@@ -26,7 +26,7 @@ impl Request {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Spawn {
-    pub node_id: u64,
+    pub response_node_id: u64,
     pub environment_id: u64,
     pub module_id: u64,
     pub function: String,

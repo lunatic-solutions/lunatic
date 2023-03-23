@@ -108,7 +108,7 @@ pub fn new_quic_server(addr: SocketAddr, cert: &str, key: &str, ca_cert: &str) -
     let mut server_config = ServerConfig::with_crypto(Arc::new(server_crypto));
     Arc::get_mut(&mut server_config.transport)
         .unwrap()
-        .max_concurrent_uni_streams(0_u8.into());
+        .keep_alive_interval(Some(Duration::from_millis(100)));
 
     Ok(quinn::Endpoint::server(server_config, addr)?)
 }
@@ -149,7 +149,10 @@ where
             Ok(recv) => {
                 tokio::spawn(handle_quic_stream_node(ctx.clone(), recv));
             }
-            Err(ConnectionError::LocallyClosed) => break,
+            Err(ConnectionError::LocallyClosed) => {
+                log::trace!("distributed::server::stream locally closed");
+                break;
+            }
             Err(_) => {}
         }
     }
@@ -168,6 +171,7 @@ async fn handle_quic_stream_node<T, E>(
         recv,
         chunks: DashMap::new(),
     };
+    log::trace!("distributed::server::handle_quic_stream started");
     while let Ok((msg_id, bytes)) = read_next_stream_message(&mut recv_ctx).await {
         if let Ok(request) = rmp_serde::from_slice::<distributed::message::Request>(&bytes) {
             distributed::server::handle_message(ctx.clone(), msg_id, request).await;
@@ -175,6 +179,7 @@ async fn handle_quic_stream_node<T, E>(
             log::debug!("Error deserializing request");
         }
     }
+    log::trace!("distributed::server::handle_quic_stream finished");
 }
 
 struct Chunk {
