@@ -8,7 +8,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      - uses: rustsec/audit-check@v0.1.0
+      - uses: rustsec/audit-check@v1.3.2
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
