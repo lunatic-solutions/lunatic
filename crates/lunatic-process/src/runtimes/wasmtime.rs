@@ -101,6 +101,10 @@ impl<T> WasmtimeCompiledModule<T> {
         &self.inner.source
     }
 
+    pub fn module(&self) -> &wasmtime::Module {
+        &self.inner.module
+    }
+
     pub fn instantiator(&self) -> &wasmtime::InstancePre<T> {
         &self.inner.instance_pre
     }

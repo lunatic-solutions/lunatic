@@ -3,6 +3,7 @@ use std::{path::PathBuf, sync::Arc};
 use anyhow::{anyhow, Context, Result};
 use clap::Args;
 
+use env_logger::filter::{self, Filter};
 use lunatic_distributed::DistributedProcessState;
 use lunatic_process::{
     env::{Environment, LunaticEnvironment, LunaticEnvironments},
@@ -11,6 +12,12 @@ use lunatic_process::{
 };
 use lunatic_process_api::ProcessConfigCtx;
 use lunatic_runtime::{DefaultProcessConfig, DefaultProcessState};
+use opentelemetry::{
+    global::BoxedTracer,
+    sdk::export::trace::stdout,
+    trace::{noop::NoopTracer, Span, SpanBuilder, TraceContextExt, Tracer},
+    KeyValue,
+};
 
 #[derive(Args, Debug)]
 pub struct WasmArgs {}
@@ -24,6 +31,7 @@ pub struct RunWasm {
     pub envs: Arc<LunaticEnvironments>,
     pub env: Arc<LunaticEnvironment>,
     pub distributed: Option<DistributedProcessState>,
+    pub tracer: Arc<BoxedTracer>,
 }
 
 pub async fn run_wasm(args: RunWasm) -> Result<()> {
@@ -65,6 +73,16 @@ pub async fn run_wasm(args: RunWasm) -> Result<()> {
     };
 
     let module = Arc::new(args.runtime.compile_module::<DefaultProcessState>(module)?);
+    let mut root_span = args.tracer.start(
+        "app_start", // SpanBuilder::from_name("app_start")
+                     //     .with_attributes([KeyValue::new("path", path.to_string_lossy().to_string())]),
+    );
+    let tracer_context = Arc::new(opentelemetry::Context::current_with_span(root_span));
+    let logger = Arc::new(
+        env_logger::Builder::from_env("LUNATIC_LOG")
+            .default_format()
+            .build(),
+    );
     let state = DefaultProcessState::new(
         args.env.clone(),
         args.distributed,
@@ -72,10 +90,14 @@ pub async fn run_wasm(args: RunWasm) -> Result<()> {
         module.clone(),
         Arc::new(config),
         Default::default(),
+        args.tracer.clone(),
+        tracer_context.clone(),
+        logger,
     )
     .unwrap();
 
     args.env.can_spawn_next_process().await?;
+
     let (task, _) = spawn_wasm(
         args.env,
         args.runtime,

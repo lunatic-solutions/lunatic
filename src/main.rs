@@ -74,9 +74,13 @@ async fn main() -> Result<()> {
         Err(_) => false,
     };
 
-    if cargo_test {
+    let result = if cargo_test {
         cargo_test::test(augmented_args).await
     } else {
         execution::execute(augmented_args).await
-    }
+    };
+
+    opentelemetry::global::shutdown_tracer_provider();
+
+    result
 }

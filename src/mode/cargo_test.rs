@@ -2,6 +2,7 @@ use std::{collections::HashMap, env, fs, path::Path, sync::Arc, time::Instant};
 
 use anyhow::{Context, Result};
 use clap::Parser;
+use env_logger::filter;
 use lunatic_process::{
     env::{Environment, LunaticEnvironment},
     runtimes,
@@ -11,6 +12,7 @@ use lunatic_process_api::ProcessConfigCtx;
 use lunatic_runtime::{DefaultProcessConfig, DefaultProcessState};
 use lunatic_stdout_capture::StdoutCapture;
 use lunatic_wasi_api::LunaticWasiCtx;
+use opentelemetry::{global::BoxedTracer, sdk::export::trace::stdout, trace::noop::NoopTracer};
 use tokio::sync::RwLock;
 
 #[derive(Parser, Debug)]
@@ -208,6 +210,13 @@ pub(crate) async fn test(augmented_args: Option<Vec<String>>) -> Result<()> {
     let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
 
     let config = Arc::new(config);
+    let tracer = Arc::new(BoxedTracer::new(Box::new(NoopTracer::new())));
+    let tracer_context = Arc::new(opentelemetry::Context::new());
+    let logger = Arc::new(
+        env_logger::Builder::from_env("LUNATIC_LOG")
+            .default_format()
+            .build(),
+    );
 
     for test_function in test_functions {
         // Skip over filtered out functions
@@ -236,6 +245,9 @@ pub(crate) async fn test(augmented_args: Option<Vec<String>>) -> Result<()> {
             module.clone(),
             config.clone(),
             registry,
+            tracer.clone(),
+            tracer_context.clone(),
+            logger.clone(),
         )
         .unwrap();
 

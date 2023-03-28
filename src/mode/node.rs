@@ -129,6 +129,7 @@ pub(crate) async fn start(args: Args) -> Result<()> {
                 envs,
                 env,
                 distributed: Some(dist),
+                tracer: todo!(),
             })
             .await
             {

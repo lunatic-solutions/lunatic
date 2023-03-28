@@ -378,8 +378,6 @@ where
         }
     };
 
-    env.remove_process(id);
-
     match result {
         Finished::Normal(result) => {
             let result: ExecutionResult<_> = result.into();
@@ -539,4 +537,5 @@ pub enum ResultValue {
     Ok,
     Failed(String),
     SpawnError(String),
+    Killed,
 }

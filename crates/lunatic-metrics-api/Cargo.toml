@@ -9,7 +9,12 @@ license = "Apache-2.0/MIT"
 
 [dependencies]
 anyhow = { workspace = true }
-wasmtime = { workspace = true }
-metrics = { workspace = true }
-lunatic-common-api = { workspace = true }
+hash-map-id = { workspace = true }
 log = { workspace = true }
+lunatic-common-api = { workspace = true }
+lunatic-process = { workspace = true }
+lunatic-process-api = { workspace = true }
+opentelemetry = { workspace = true }
+serde_json = "1.0"
+metrics = { workspace = true }
+wasmtime = { workspace = true }

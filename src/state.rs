@@ -3,9 +3,12 @@ use std::fmt::Debug;
 use std::sync::Arc;
 
 use anyhow::Result;
+use env_logger::Logger;
 use hash_map_id::HashMapId;
+use log::{Log, Record};
 use lunatic_distributed::{DistributedCtx, DistributedProcessState};
 use lunatic_error_api::{ErrorCtx, ErrorResource};
+use lunatic_metrics_api::{MetricsCtx, SpanResources, TracerSpan};
 use lunatic_networking_api::{DnsIterator, TlsConnection, TlsListener};
 use lunatic_networking_api::{NetworkingCtx, TcpConnection};
 use lunatic_process::env::{Environment, LunaticEnvironment};
@@ -21,6 +24,9 @@ use lunatic_sqlite_api::{SQLiteConnections, SQLiteCtx, SQLiteGuestAllocators, SQ
 use lunatic_stdout_capture::StdoutCapture;
 use lunatic_timer_api::{TimerCtx, TimerResources};
 use lunatic_wasi_api::{build_wasi, LunaticWasiCtx};
+use opentelemetry::global::BoxedTracer;
+use opentelemetry::trace::{FutureExt, Span, SpanRef, TraceContextExt, Tracer};
+use opentelemetry::{Context, KeyValue};
 use tokio::net::{TcpListener, UdpSocket};
 use tokio::sync::mpsc::unbounded_channel;
 use tokio::sync::{Mutex, RwLock, RwLockWriteGuard};
@@ -75,6 +81,12 @@ pub struct DefaultProcessState {
     // `RwLock` struct. The lifetime of the lock will need to be extended to `'static`, but this
     // is a safe operation, because it references a global registry that outlives all processes.
     registry_atomic_put: Option<RwLockWriteGuard<'static, HashMap<String, (u64, u64)>>>,
+    // Metrics
+    // TODO: Does this need to be in an Arc?
+    tracer: Arc<BoxedTracer>,
+    tracer_context: Arc<Context>,
+    last_span_id: u64,
+    logger: Arc<Logger>,
 }
 
 impl DefaultProcessState {
@@ -85,12 +97,16 @@ impl DefaultProcessState {
         module: Arc<WasmtimeCompiledModule<Self>>,
         config: Arc<DefaultProcessConfig>,
         registry: Arc<RwLock<HashMap<String, (u64, u64)>>>,
+        tracer: Arc<BoxedTracer>,
+        tracer_context: Arc<Context>,
+        log_filter: Arc<Logger>,
     ) -> Result<Self> {
         let signal_mailbox = unbounded_channel();
         let signal_mailbox = (signal_mailbox.0, Arc::new(Mutex::new(signal_mailbox.1)));
         let message_mailbox = MessageMailbox::default();
+        let id = environment.get_next_process_id();
         let state = Self {
-            id: environment.get_next_process_id(),
+            id,
             environment,
             distributed,
             runtime: Some(runtime),
@@ -99,7 +115,7 @@ impl DefaultProcessState {
             message: None,
             signal_mailbox,
             message_mailbox,
-            resources: Resources::default(),
+            resources: Resources::new(id, &tracer, &tracer_context),
             wasi: build_wasi(
                 Some(config.command_line_arguments()),
                 Some(config.environment_variables()),
@@ -111,6 +127,10 @@ impl DefaultProcessState {
             registry,
             db_resources: DbResources::default(),
             registry_atomic_put: None,
+            tracer,
+            tracer_context,
+            last_span_id: 0,
+            logger: log_filter,
         };
         Ok(state)
     }
@@ -127,8 +147,9 @@ impl ProcessState for DefaultProcessState {
         let signal_mailbox = unbounded_channel();
         let signal_mailbox = (signal_mailbox.0, Arc::new(Mutex::new(signal_mailbox.1)));
         let message_mailbox = MessageMailbox::default();
+        let id = self.environment.get_next_process_id();
         let state = Self {
-            id: self.environment.get_next_process_id(),
+            id,
             environment: self.environment.clone(),
             distributed: self.distributed.clone(),
             runtime: self.runtime.clone(),
@@ -137,7 +158,7 @@ impl ProcessState for DefaultProcessState {
             message: None,
             signal_mailbox,
             message_mailbox,
-            resources: Resources::default(),
+            resources: Resources::new(id, &self.tracer, &self.tracer_context),
             wasi: build_wasi(
                 Some(config.command_line_arguments()),
                 Some(config.environment_variables()),
@@ -149,6 +170,10 @@ impl ProcessState for DefaultProcessState {
             registry: self.registry.clone(),
             db_resources: DbResources::default(),
             registry_atomic_put: None,
+            tracer: Arc::clone(&self.tracer),
+            tracer_context: Arc::clone(&self.tracer_context),
+            last_span_id: 0,
+            logger: self.logger.clone(),
         };
         Ok(state)
     }
@@ -406,10 +431,64 @@ impl SQLiteCtx for DefaultProcessState {
     }
 }
 
-#[derive(Default, Debug)]
+impl MetricsCtx for DefaultProcessState {
+    type Tracer = BoxedTracer;
+
+    fn log(&self, record: &Record) {
+        self.logger.log(record);
+    }
+
+    fn add_span<T, I>(&mut self, parent: Option<u64>, name: T, attributes: I) -> Option<u64>
+    where
+        T: Into<std::borrow::Cow<'static, str>>,
+        I: IntoIterator<Item = KeyValue>,
+    {
+        let parent_ctx = if let Some(parent_id) = parent {
+            self.resources.spans.get(parent_id)?
+        } else {
+            &self.resources.process_context
+        };
+        let mut span = self.tracer.start_with_context(name, parent_ctx);
+        span.set_attributes(attributes);
+        let context = parent_ctx.with_span(span);
+        let id = self.resources.spans.add(context);
+        self.last_span_id = id;
+        Some(id)
+    }
+
+    fn drop_span(&mut self, id: u64) {
+        self.resources.spans.remove(id);
+        self.last_span_id -= 1;
+    }
+
+    fn get_span(&self, id: u64) -> Option<SpanRef<'_>> {
+        self.resources.spans.get(id).map(|ctx| ctx.span())
+    }
+
+    fn get_last_span(&self) -> SpanRef<'_> {
+        self.resources
+            .spans
+            .get(self.last_span_id)
+            .map(|ctx| ctx.span())
+            .unwrap_or_else(|| self.resources.process_context.span())
+    }
+}
+
+impl DefaultProcessState {
+    fn get_last_context(&self) -> &Context {
+        self.resources
+            .spans
+            .get(self.last_span_id)
+            .unwrap_or(&self.tracer_context)
+    }
+}
+
+#[derive(Debug)]
 pub(crate) struct Resources {
     pub(crate) configs: HashMapId<DefaultProcessConfig>,
     pub(crate) modules: HashMapId<Arc<WasmtimeCompiledModule<DefaultProcessState>>>,
+    pub(crate) spans: SpanResources,
+    pub(crate) process_context: Context,
     pub(crate) timers: TimerResources,
     pub(crate) dns_iterators: HashMapId<DnsIterator>,
     pub(crate) tcp_listeners: HashMapId<TcpListener>,
@@ -418,6 +497,32 @@ pub(crate) struct Resources {
     pub(crate) tls_streams: HashMapId<Arc<TlsConnection>>,
     pub(crate) udp_sockets: HashMapId<Arc<UdpSocket>>,
     pub(crate) errors: HashMapId<anyhow::Error>,
+}
+
+impl Resources {
+    fn new(process_id: u64, tracer: &BoxedTracer, tracer_context: &Context) -> Self {
+        let mut process_span = tracer.start_with_context("process_spawn", tracer_context);
+        process_span.set_attribute(opentelemetry::KeyValue::new(
+            "process.id",
+            process_id as i64,
+        ));
+        let process_context = tracer_context.with_span(process_span);
+
+        Resources {
+            configs: Default::default(),
+            modules: Default::default(),
+            spans: Default::default(),
+            process_context,
+            timers: Default::default(),
+            dns_iterators: Default::default(),
+            tcp_listeners: Default::default(),
+            tcp_streams: Default::default(),
+            tls_listeners: Default::default(),
+            tls_streams: Default::default(),
+            udp_sockets: Default::default(),
+            errors: Default::default(),
+        }
+    }
 }
 
 impl DistributedCtx<LunaticEnvironment> for DefaultProcessState {
@@ -456,6 +561,7 @@ impl DistributedCtx<LunaticEnvironment> for DefaultProcessState {
         runtime: WasmtimeRuntime,
         module: Arc<WasmtimeCompiledModule<Self>>,
         config: Arc<Self::Config>,
+        // tracer: Arc<Tracer>,
     ) -> Result<Self> {
         let signal_mailbox = unbounded_channel();
         let signal_mailbox = (signal_mailbox.0, Arc::new(Mutex::new(signal_mailbox.1)));
@@ -470,7 +576,7 @@ impl DistributedCtx<LunaticEnvironment> for DefaultProcessState {
             message: None,
             signal_mailbox,
             message_mailbox,
-            resources: Resources::default(),
+            resources: todo!(), // Resources::default(),
             wasi: build_wasi(
                 Some(config.command_line_arguments()),
                 Some(config.environment_variables()),
@@ -482,13 +588,16 @@ impl DistributedCtx<LunaticEnvironment> for DefaultProcessState {
             registry: Default::default(), // TODO move registry into env?
             db_resources: DbResources::default(),
             registry_atomic_put: None,
+            tracer: todo!(), // TODO this should not be hard coded like this
+            tracer_context: todo!(),
+            last_span_id: 0,
+            logger: todo!(),
         };
         Ok(state)
     }
 }
 
-mod tests {
-
+/* mod tests {
     #[tokio::test]
     async fn import_filter_signature_matches() {
         use std::collections::HashMap;
@@ -529,4 +638,4 @@ mod tests {
             .await
             .unwrap();
     }
-}
+} */

@@ -31,6 +31,7 @@ metrics = [
     "lunatic-registry-api/metrics",
     "lunatic-timer-api/metrics",
     "dep:lunatic-metrics-api",
+    "dep:opentelemetry",
 ]
 prometheus = ["dep:metrics-exporter-prometheus", "metrics"]
 
@@ -61,6 +62,8 @@ dashmap = { workspace = true }
 env_logger = "0.9"
 log = { workspace = true }
 metrics-exporter-prometheus = { version = "0.11.0", optional = true }
+opentelemetry = { workspace = true, features = ["rt-tokio"], optional = true }
+opentelemetry-jaeger = { version = "0.18.0", features = ["rt-tokio"], path = "../../tqwewe/opentelemetry-rust/opentelemetry-jaeger" }
 regex = "1.7"
 reqwest = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
@@ -127,6 +130,7 @@ anyhow = "1.0"
 bincode = "1.3"
 dashmap = "5.4"
 log = "0.4"
+opentelemetry = { version = "0.19", path = "../../tqwewe/opentelemetry-rust/opentelemetry" }
 metrics = "0.20.1"
 reqwest = "0.11"
 rustls-pemfile = "1.0"
