@@ -8,7 +8,7 @@ use lunatic_process::state::ProcessState;
 use lunatic_process_api::ProcessCtx;
 use metrics::{counter, decrement_gauge, gauge, histogram, increment_counter, increment_gauge};
 use opentelemetry::{
-    trace::{Span, SpanRef, Tracer},
+    trace::{SpanRef, Tracer},
     Context, KeyValue, StringValue,
 };
 use serde_json::Map;
@@ -138,12 +138,19 @@ where
             serde_json::from_slice(attributes_data).or_trap("lunatic::metrics::add_event")?;
 
         let level = attributes_json
-            .get("level")
-            .and_then(|level| level.as_str())
-            .and_then(|level| level.parse().ok())
+            .get("severityNumber")
+            .and_then(|level| level.as_u64())
+            .and_then(|level| match level {
+                1..=4 => Some(Level::Trace),
+                5..=8 => Some(Level::Debug),
+                9..=12 => Some(Level::Info),
+                13..=16 => Some(Level::Warn),
+                17..=20 => Some(Level::Error),
+                _ => None,
+            })
             .unwrap_or(Level::Info);
         let message = attributes_json
-            .get("message")
+            .get("body")
             .and_then(|message| message.as_str())
             .unwrap_or(&name);
         let target = attributes_json
@@ -151,12 +158,14 @@ where
             .and_then(|target| target.as_str())
             .or(state.module().module().name())
             .unwrap_or("");
-        let file = attributes_json.get("file").and_then(|file| file.as_str());
+        let file = attributes_json
+            .get("code.filepath")
+            .and_then(|file| file.as_str());
         let line = attributes_json
-            .get("line")
+            .get("code.lineno")
             .and_then(|line| line.as_u64().map(|line| line as u32));
         let module_path = attributes_json
-            .get("module_path")
+            .get("code.namespace")
             .and_then(|module_path| module_path.as_str());
 
         state.log(
@@ -365,7 +374,7 @@ fn data_to_opentelemetry(data: Map<String, serde_json::Value>) -> Vec<KeyValue> 
     data.into_iter()
         .map(|(k, v)| KeyValue {
             key: k.to_string().into(),
-            value: json_to_opentelemetry(v), // TODO: Remove this clone
+            value: json_to_opentelemetry(v),
         })
         .collect()
 }

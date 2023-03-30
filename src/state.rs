@@ -8,7 +8,7 @@ use hash_map_id::HashMapId;
 use log::{Log, Record};
 use lunatic_distributed::{DistributedCtx, DistributedProcessState};
 use lunatic_error_api::{ErrorCtx, ErrorResource};
-use lunatic_metrics_api::{MetricsCtx, SpanResources, TracerSpan};
+use lunatic_metrics_api::{MetricsCtx, SpanResources};
 use lunatic_networking_api::{DnsIterator, TlsConnection, TlsListener};
 use lunatic_networking_api::{NetworkingCtx, TcpConnection};
 use lunatic_process::env::{Environment, LunaticEnvironment};
@@ -25,7 +25,8 @@ use lunatic_stdout_capture::StdoutCapture;
 use lunatic_timer_api::{TimerCtx, TimerResources};
 use lunatic_wasi_api::{build_wasi, LunaticWasiCtx};
 use opentelemetry::global::BoxedTracer;
-use opentelemetry::trace::{FutureExt, Span, SpanRef, TraceContextExt, Tracer};
+use opentelemetry::trace::noop::NoopTracer;
+use opentelemetry::trace::{Span, SpanRef, TraceContextExt, Tracer};
 use opentelemetry::{Context, KeyValue};
 use tokio::net::{TcpListener, UdpSocket};
 use tokio::sync::mpsc::unbounded_channel;
@@ -105,22 +106,23 @@ impl DefaultProcessState {
         let signal_mailbox = (signal_mailbox.0, Arc::new(Mutex::new(signal_mailbox.1)));
         let message_mailbox = MessageMailbox::default();
         let id = environment.get_next_process_id();
+        let wasi = build_wasi(
+            Some(config.command_line_arguments()),
+            Some(config.environment_variables()),
+            config.preopened_dirs(),
+        )?;
         let state = Self {
             id,
             environment,
             distributed,
             runtime: Some(runtime),
             module: Some(module),
-            config: config.clone(),
+            config,
             message: None,
             signal_mailbox,
             message_mailbox,
             resources: Resources::new(id, &tracer, &tracer_context),
-            wasi: build_wasi(
-                Some(config.command_line_arguments()),
-                Some(config.environment_variables()),
-                config.preopened_dirs(),
-            )?,
+            wasi,
             wasi_stdout: None,
             wasi_stderr: None,
             initialized: false,
@@ -148,30 +150,31 @@ impl ProcessState for DefaultProcessState {
         let signal_mailbox = (signal_mailbox.0, Arc::new(Mutex::new(signal_mailbox.1)));
         let message_mailbox = MessageMailbox::default();
         let id = self.environment.get_next_process_id();
+        let wasi = build_wasi(
+            Some(config.command_line_arguments()),
+            Some(config.environment_variables()),
+            config.preopened_dirs(),
+        )?;
         let state = Self {
             id,
             environment: self.environment.clone(),
             distributed: self.distributed.clone(),
             runtime: self.runtime.clone(),
             module: Some(module),
-            config: config.clone(),
+            config,
             message: None,
             signal_mailbox,
             message_mailbox,
             resources: Resources::new(id, &self.tracer, &self.tracer_context),
-            wasi: build_wasi(
-                Some(config.command_line_arguments()),
-                Some(config.environment_variables()),
-                config.preopened_dirs(),
-            )?,
+            wasi,
             wasi_stdout: None,
             wasi_stderr: None,
             initialized: false,
             registry: self.registry.clone(),
             db_resources: DbResources::default(),
             registry_atomic_put: None,
-            tracer: Arc::clone(&self.tracer),
-            tracer_context: Arc::clone(&self.tracer_context),
+            tracer: self.tracer.clone(),
+            tracer_context: self.tracer_context.clone(),
             last_span_id: 0,
             logger: self.logger.clone(),
         };
@@ -448,11 +451,15 @@ impl MetricsCtx for DefaultProcessState {
         } else {
             &self.resources.process_context
         };
+
         let mut span = self.tracer.start_with_context(name, parent_ctx);
         span.set_attributes(attributes);
+
         let context = parent_ctx.with_span(span);
+
         let id = self.resources.spans.add(context);
         self.last_span_id = id;
+
         Some(id)
     }
 
@@ -474,16 +481,7 @@ impl MetricsCtx for DefaultProcessState {
     }
 }
 
-impl DefaultProcessState {
-    fn get_last_context(&self) -> &Context {
-        self.resources
-            .spans
-            .get(self.last_span_id)
-            .unwrap_or(&self.tracer_context)
-    }
-}
-
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub(crate) struct Resources {
     pub(crate) configs: HashMapId<DefaultProcessConfig>,
     pub(crate) modules: HashMapId<Arc<WasmtimeCompiledModule<DefaultProcessState>>>,
@@ -561,37 +559,45 @@ impl DistributedCtx<LunaticEnvironment> for DefaultProcessState {
         runtime: WasmtimeRuntime,
         module: Arc<WasmtimeCompiledModule<Self>>,
         config: Arc<Self::Config>,
-        // tracer: Arc<Tracer>,
+        // tracer: Arc<BoxedTracer>,
+        // tracer_context: Arc<Context>,
+        // logger: Arc<Logger>,
     ) -> Result<Self> {
         let signal_mailbox = unbounded_channel();
         let signal_mailbox = (signal_mailbox.0, Arc::new(Mutex::new(signal_mailbox.1)));
         let message_mailbox = MessageMailbox::default();
+        let id = environment.get_next_process_id();
+        let wasi = build_wasi(
+            Some(config.command_line_arguments()),
+            Some(config.environment_variables()),
+            config.preopened_dirs(),
+        )?;
         let state = Self {
-            id: environment.get_next_process_id(),
+            id,
             environment,
             distributed: Some(distributed),
             runtime: Some(runtime),
             module: Some(module),
-            config: config.clone(),
+            config,
             message: None,
             signal_mailbox,
             message_mailbox,
-            resources: todo!(), // Resources::default(),
-            wasi: build_wasi(
-                Some(config.command_line_arguments()),
-                Some(config.environment_variables()),
-                config.preopened_dirs(),
-            )?,
+            resources: Resources::default(),
+            wasi,
             wasi_stdout: None,
             wasi_stderr: None,
             initialized: false,
             registry: Default::default(), // TODO move registry into env?
             db_resources: DbResources::default(),
             registry_atomic_put: None,
-            tracer: todo!(), // TODO this should not be hard coded like this
-            tracer_context: todo!(),
+            tracer: Arc::new(BoxedTracer::new(Box::new(NoopTracer::new()))),
+            tracer_context: Arc::new(Context::new()),
             last_span_id: 0,
-            logger: todo!(),
+            logger: Arc::new(
+                env_logger::Builder::new()
+                    .filter_level(log::LevelFilter::Off)
+                    .build(),
+            ),
         };
         Ok(state)
     }

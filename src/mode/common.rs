@@ -3,7 +3,6 @@ use std::{path::PathBuf, sync::Arc};
 use anyhow::{anyhow, Context, Result};
 use clap::Args;
 
-use env_logger::filter::{self, Filter};
 use lunatic_distributed::DistributedProcessState;
 use lunatic_process::{
     env::{Environment, LunaticEnvironment, LunaticEnvironments},
@@ -14,8 +13,7 @@ use lunatic_process_api::ProcessConfigCtx;
 use lunatic_runtime::{DefaultProcessConfig, DefaultProcessState};
 use opentelemetry::{
     global::BoxedTracer,
-    sdk::export::trace::stdout,
-    trace::{noop::NoopTracer, Span, SpanBuilder, TraceContextExt, Tracer},
+    trace::{Span, TraceContextExt, Tracer},
     KeyValue,
 };
 
@@ -77,11 +75,18 @@ pub async fn run_wasm(args: RunWasm) -> Result<()> {
         "app_start", // SpanBuilder::from_name("app_start")
                      //     .with_attributes([KeyValue::new("path", path.to_string_lossy().to_string())]),
     );
+    root_span.set_attribute(KeyValue::new(
+        "lunatic.path",
+        path.to_string_lossy().to_string(),
+    ));
     let tracer_context = Arc::new(opentelemetry::Context::current_with_span(root_span));
     let logger = Arc::new(
-        env_logger::Builder::from_env("LUNATIC_LOG")
-            .default_format()
-            .build(),
+        env_logger::Builder::from_env(
+            env_logger::Env::new()
+                .filter_or("LUNATIC_LOG", "info")
+                .write_style("LUNATIC_LOG_STYLE"),
+        )
+        .build(),
     );
     let state = DefaultProcessState::new(
         args.env.clone(),
@@ -90,13 +95,21 @@ pub async fn run_wasm(args: RunWasm) -> Result<()> {
         module.clone(),
         Arc::new(config),
         Default::default(),
-        args.tracer.clone(),
-        tracer_context.clone(),
+        args.tracer,
+        tracer_context,
         logger,
     )
     .unwrap();
 
     args.env.can_spawn_next_process().await?;
+
+    let env = args.env.clone();
+    tokio::spawn(async move {
+        if tokio::signal::ctrl_c().await.is_ok() {
+            let _ = tokio::time::timeout(tokio::time::Duration::from_secs(5), env.shutdown()).await;
+            std::process::exit(0);
+        }
+    });
 
     let (task, _) = spawn_wasm(
         args.env,

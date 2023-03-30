@@ -4,14 +4,9 @@ use anyhow::Result;
 use clap::Parser;
 use lunatic_process::{
     env::{Environments, LunaticEnvironments},
-    runtimes::{self},
+    runtimes,
 };
-use opentelemetry::{
-    global::BoxedTracer,
-    runtime::Tokio,
-    trace::{noop::NoopTracer, Span, Tracer},
-    Context, KeyValue,
-};
+use opentelemetry::{global::BoxedTracer, runtime::Tokio, trace::noop::NoopTracer};
 
 use super::common::{run_wasm, RunWasm};
 

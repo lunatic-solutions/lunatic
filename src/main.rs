@@ -80,7 +80,5 @@ async fn main() -> Result<()> {
         execution::execute(augmented_args).await
     };
 
-    opentelemetry::global::shutdown_tracer_provider();
-
     result
 }

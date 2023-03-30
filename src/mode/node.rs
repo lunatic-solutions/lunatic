@@ -4,12 +4,13 @@ use std::{
 };
 
 use clap::Parser;
+use opentelemetry::{global::BoxedTracer, trace::noop::NoopTracer};
 
 use std::{collections::HashMap, sync::Arc};
 
 use anyhow::{anyhow, Context, Result};
 use lunatic_distributed::{
-    control::{self},
+    control,
     distributed::{self, server::ServerCtx},
     quic,
 };
@@ -129,7 +130,7 @@ pub(crate) async fn start(args: Args) -> Result<()> {
                 envs,
                 env,
                 distributed: Some(dist),
-                tracer: todo!(),
+                tracer: Arc::new(BoxedTracer::new(Box::new(NoopTracer::new()))),
             })
             .await
             {

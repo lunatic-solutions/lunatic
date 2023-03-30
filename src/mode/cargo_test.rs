@@ -2,7 +2,6 @@ use std::{collections::HashMap, env, fs, path::Path, sync::Arc, time::Instant};
 
 use anyhow::{Context, Result};
 use clap::Parser;
-use env_logger::filter;
 use lunatic_process::{
     env::{Environment, LunaticEnvironment},
     runtimes,
@@ -12,7 +11,7 @@ use lunatic_process_api::ProcessConfigCtx;
 use lunatic_runtime::{DefaultProcessConfig, DefaultProcessState};
 use lunatic_stdout_capture::StdoutCapture;
 use lunatic_wasi_api::LunaticWasiCtx;
-use opentelemetry::{global::BoxedTracer, sdk::export::trace::stdout, trace::noop::NoopTracer};
+use opentelemetry::{global::BoxedTracer, trace::noop::NoopTracer};
 use tokio::sync::RwLock;
 
 #[derive(Parser, Debug)]
