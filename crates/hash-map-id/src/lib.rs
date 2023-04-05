@@ -35,6 +35,13 @@ where
     pub fn get(&self, id: u64) -> Option<&T> {
         self.store.get(&id)
     }
+
+    pub fn get_last(&self) -> Option<&T> {
+        self.store
+            .iter()
+            .max_by_key(|(k, _)| **k)
+            .map(|(_, value)| value)
+    }
 }
 
 impl<T> Default for HashMapId<T>

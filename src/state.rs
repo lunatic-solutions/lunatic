@@ -8,7 +8,7 @@ use hash_map_id::HashMapId;
 use log::{Log, Record};
 use lunatic_distributed::{DistributedCtx, DistributedProcessState};
 use lunatic_error_api::{ErrorCtx, ErrorResource};
-use lunatic_metrics_api::{MetricsCtx, SpanResources};
+use lunatic_metrics_api::{ContextResources, MetricsCtx};
 use lunatic_networking_api::{DnsIterator, TlsConnection, TlsListener};
 use lunatic_networking_api::{NetworkingCtx, TcpConnection};
 use lunatic_process::env::{Environment, LunaticEnvironment};
@@ -24,9 +24,12 @@ use lunatic_sqlite_api::{SQLiteConnections, SQLiteCtx, SQLiteGuestAllocators, SQ
 use lunatic_stdout_capture::StdoutCapture;
 use lunatic_timer_api::{TimerCtx, TimerResources};
 use lunatic_wasi_api::{build_wasi, LunaticWasiCtx};
-use opentelemetry::global::BoxedTracer;
+use opentelemetry::global::{BoxedTracer, GlobalMeterProvider};
+use opentelemetry::metrics::noop::NoopMeterProvider;
+use opentelemetry::metrics::{Counter, Histogram, Meter};
+use opentelemetry::sdk::metrics::data::Gauge;
 use opentelemetry::trace::noop::NoopTracer;
-use opentelemetry::trace::{Span, SpanRef, TraceContextExt, Tracer};
+use opentelemetry::trace::{Span, TraceContextExt, Tracer};
 use opentelemetry::{Context, KeyValue};
 use tokio::net::{TcpListener, UdpSocket};
 use tokio::sync::mpsc::unbounded_channel;
@@ -86,7 +89,8 @@ pub struct DefaultProcessState {
     // TODO: Does this need to be in an Arc?
     tracer: Arc<BoxedTracer>,
     tracer_context: Arc<Context>,
-    last_span_id: u64,
+    process_context: Context,
+    meter_provider: GlobalMeterProvider,
     logger: Arc<Logger>,
 }
 
@@ -100,12 +104,14 @@ impl DefaultProcessState {
         registry: Arc<RwLock<HashMap<String, (u64, u64)>>>,
         tracer: Arc<BoxedTracer>,
         tracer_context: Arc<Context>,
+        meter_provider: GlobalMeterProvider,
         log_filter: Arc<Logger>,
     ) -> Result<Self> {
         let signal_mailbox = unbounded_channel();
         let signal_mailbox = (signal_mailbox.0, Arc::new(Mutex::new(signal_mailbox.1)));
         let message_mailbox = MessageMailbox::default();
         let id = environment.get_next_process_id();
+        let process_context = new_process_context(id, &tracer, &tracer_context);
         let wasi = build_wasi(
             Some(config.command_line_arguments()),
             Some(config.environment_variables()),
@@ -121,7 +127,7 @@ impl DefaultProcessState {
             message: None,
             signal_mailbox,
             message_mailbox,
-            resources: Resources::new(id, &tracer, &tracer_context),
+            resources: Resources::default(),
             wasi,
             wasi_stdout: None,
             wasi_stderr: None,
@@ -131,7 +137,8 @@ impl DefaultProcessState {
             registry_atomic_put: None,
             tracer,
             tracer_context,
-            last_span_id: 0,
+            process_context,
+            meter_provider,
             logger: log_filter,
         };
         Ok(state)
@@ -150,6 +157,7 @@ impl ProcessState for DefaultProcessState {
         let signal_mailbox = (signal_mailbox.0, Arc::new(Mutex::new(signal_mailbox.1)));
         let message_mailbox = MessageMailbox::default();
         let id = self.environment.get_next_process_id();
+        let process_context = new_process_context(id, &self.tracer, &self.tracer_context);
         let wasi = build_wasi(
             Some(config.command_line_arguments()),
             Some(config.environment_variables()),
@@ -165,7 +173,7 @@ impl ProcessState for DefaultProcessState {
             message: None,
             signal_mailbox,
             message_mailbox,
-            resources: Resources::new(id, &self.tracer, &self.tracer_context),
+            resources: Resources::default(),
             wasi,
             wasi_stdout: None,
             wasi_stderr: None,
@@ -175,7 +183,8 @@ impl ProcessState for DefaultProcessState {
             registry_atomic_put: None,
             tracer: self.tracer.clone(),
             tracer_context: self.tracer_context.clone(),
-            last_span_id: 0,
+            process_context,
+            meter_provider: self.meter_provider.clone(),
             logger: self.logger.clone(),
         };
         Ok(state)
@@ -436,48 +445,113 @@ impl SQLiteCtx for DefaultProcessState {
 
 impl MetricsCtx for DefaultProcessState {
     type Tracer = BoxedTracer;
+    type MeterProvider = GlobalMeterProvider;
+
+    fn tracer(&self) -> &Self::Tracer {
+        &self.tracer
+    }
+
+    fn meter_provider(&self) -> &Self::MeterProvider {
+        &self.meter_provider
+    }
 
     fn log(&self, record: &Record) {
         self.logger.log(record);
     }
 
-    fn add_span<T, I>(&mut self, parent: Option<u64>, name: T, attributes: I) -> Option<u64>
-    where
-        T: Into<std::borrow::Cow<'static, str>>,
-        I: IntoIterator<Item = KeyValue>,
-    {
-        let parent_ctx = if let Some(parent_id) = parent {
-            self.resources.spans.get(parent_id)?
-        } else {
-            &self.resources.process_context
-        };
-
-        let mut span = self.tracer.start_with_context(name, parent_ctx);
-        span.set_attributes(attributes);
-
-        let context = parent_ctx.with_span(span);
-
-        let id = self.resources.spans.add(context);
-        self.last_span_id = id;
-
-        Some(id)
+    fn add_context(&mut self, context: Context) -> u64 {
+        context.span().set_attribute(KeyValue::new("hey", "there"));
+        self.resources.contexts.add(context)
     }
 
-    fn drop_span(&mut self, id: u64) {
-        self.resources.spans.remove(id);
-        self.last_span_id -= 1;
+    fn get_context(&self, id: u64) -> Option<&Context> {
+        self.resources.contexts.get(id)
     }
 
-    fn get_span(&self, id: u64) -> Option<SpanRef<'_>> {
-        self.resources.spans.get(id).map(|ctx| ctx.span())
-    }
-
-    fn get_last_span(&self) -> SpanRef<'_> {
+    fn get_last_context(&self) -> &Context {
         self.resources
-            .spans
-            .get(self.last_span_id)
-            .map(|ctx| ctx.span())
-            .unwrap_or_else(|| self.resources.process_context.span())
+            .contexts
+            .get_last()
+            .unwrap_or(&self.process_context)
+    }
+
+    fn drop_context(&mut self, id: u64) {
+        self.resources.contexts.remove(id);
+    }
+
+    fn add_meter(&mut self, meter: Meter) -> u64 {
+        self.resources.meters.add(meter)
+    }
+
+    fn get_meter(&self, id: u64) -> Option<&Meter> {
+        self.resources.meters.get(id)
+    }
+
+    fn drop_meter(&mut self, id: u64) -> Option<Meter> {
+        self.resources.meters.remove(id)
+    }
+
+    fn add_counter(&mut self, counter: Counter<f64>) -> u64 {
+        self.resources.metrics.add(Metric::Counter(counter))
+    }
+
+    fn get_counter(&self, id: u64) -> Option<&Counter<f64>> {
+        match self.resources.metrics.get(id)? {
+            Metric::Counter(counter) => Some(counter),
+            _ => None,
+        }
+    }
+
+    fn drop_counter(&mut self, id: u64) -> Option<Counter<f64>> {
+        self.resources
+            .metrics
+            .remove(id)
+            .and_then(|metric| match metric {
+                Metric::Counter(counter) => Some(counter),
+                _ => None,
+            })
+    }
+
+    fn add_gauge(&mut self, gauge: Gauge<f64>) -> u64 {
+        self.resources.metrics.add(Metric::Gauge(gauge))
+    }
+
+    fn get_gauge(&self, id: u64) -> Option<&Gauge<f64>> {
+        match self.resources.metrics.get(id)? {
+            Metric::Gauge(gauge) => Some(gauge),
+            _ => None,
+        }
+    }
+
+    fn drop_gauge(&mut self, id: u64) -> Option<Gauge<f64>> {
+        self.resources
+            .metrics
+            .remove(id)
+            .and_then(|metric| match metric {
+                Metric::Gauge(gauge) => Some(gauge),
+                _ => None,
+            })
+    }
+
+    fn add_histogram(&mut self, histogram: Histogram<f64>) -> u64 {
+        self.resources.metrics.add(Metric::Histogram(histogram))
+    }
+
+    fn get_histogram(&self, id: u64) -> Option<&Histogram<f64>> {
+        match self.resources.metrics.get(id)? {
+            Metric::Histogram(histogram) => Some(histogram),
+            _ => None,
+        }
+    }
+
+    fn drop_histogram(&mut self, id: u64) -> Option<Histogram<f64>> {
+        self.resources
+            .metrics
+            .remove(id)
+            .and_then(|metric| match metric {
+                Metric::Histogram(histogram) => Some(histogram),
+                _ => None,
+            })
     }
 }
 
@@ -485,8 +559,9 @@ impl MetricsCtx for DefaultProcessState {
 pub(crate) struct Resources {
     pub(crate) configs: HashMapId<DefaultProcessConfig>,
     pub(crate) modules: HashMapId<Arc<WasmtimeCompiledModule<DefaultProcessState>>>,
-    pub(crate) spans: SpanResources,
-    pub(crate) process_context: Context,
+    pub(crate) contexts: ContextResources,
+    pub(crate) meters: HashMapId<Meter>,
+    pub(crate) metrics: HashMapId<Metric<f64>>,
     pub(crate) timers: TimerResources,
     pub(crate) dns_iterators: HashMapId<DnsIterator>,
     pub(crate) tcp_listeners: HashMapId<TcpListener>,
@@ -497,30 +572,10 @@ pub(crate) struct Resources {
     pub(crate) errors: HashMapId<anyhow::Error>,
 }
 
-impl Resources {
-    fn new(process_id: u64, tracer: &BoxedTracer, tracer_context: &Context) -> Self {
-        let mut process_span = tracer.start_with_context("process_spawn", tracer_context);
-        process_span.set_attribute(opentelemetry::KeyValue::new(
-            "process.id",
-            process_id as i64,
-        ));
-        let process_context = tracer_context.with_span(process_span);
-
-        Resources {
-            configs: Default::default(),
-            modules: Default::default(),
-            spans: Default::default(),
-            process_context,
-            timers: Default::default(),
-            dns_iterators: Default::default(),
-            tcp_listeners: Default::default(),
-            tcp_streams: Default::default(),
-            tls_listeners: Default::default(),
-            tls_streams: Default::default(),
-            udp_sockets: Default::default(),
-            errors: Default::default(),
-        }
-    }
+pub(crate) enum Metric<T> {
+    Counter(Counter<T>),
+    Gauge(Gauge<T>),
+    Histogram(Histogram<T>),
 }
 
 impl DistributedCtx<LunaticEnvironment> for DefaultProcessState {
@@ -592,7 +647,8 @@ impl DistributedCtx<LunaticEnvironment> for DefaultProcessState {
             registry_atomic_put: None,
             tracer: Arc::new(BoxedTracer::new(Box::new(NoopTracer::new()))),
             tracer_context: Arc::new(Context::new()),
-            last_span_id: 0,
+            process_context: Context::new(),
+            meter_provider: GlobalMeterProvider::new(NoopMeterProvider::new()),
             logger: Arc::new(
                 env_logger::Builder::new()
                     .filter_level(log::LevelFilter::Off)
@@ -601,6 +657,15 @@ impl DistributedCtx<LunaticEnvironment> for DefaultProcessState {
         };
         Ok(state)
     }
+}
+
+fn new_process_context(process_id: u64, tracer: &BoxedTracer, tracer_context: &Context) -> Context {
+    let mut process_span = tracer.start_with_context("process_spawn", tracer_context);
+    process_span.set_attribute(opentelemetry::KeyValue::new(
+        "process.id",
+        process_id as i64,
+    ));
+    tracer_context.with_span(process_span)
 }
 
 /* mod tests {

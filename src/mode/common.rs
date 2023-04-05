@@ -1,8 +1,14 @@
-use std::{path::PathBuf, sync::Arc};
+use std::{net::SocketAddr, path::PathBuf, sync::Arc};
 
 use anyhow::{anyhow, Context, Result};
 use clap::Args;
 
+use hyper::{
+    header::CONTENT_TYPE,
+    http,
+    service::{make_service_fn, service_fn},
+    Body, Method, Request, Response, Server,
+};
 use lunatic_distributed::DistributedProcessState;
 use lunatic_process::{
     env::{Environment, LunaticEnvironment, LunaticEnvironments},
@@ -12,10 +18,13 @@ use lunatic_process::{
 use lunatic_process_api::ProcessConfigCtx;
 use lunatic_runtime::{DefaultProcessConfig, DefaultProcessState};
 use opentelemetry::{
-    global::BoxedTracer,
+    global::{BoxedTracer, GlobalMeterProvider},
+    metrics::MetricsError,
+    sdk::metrics::MeterProvider,
     trace::{Span, TraceContextExt, Tracer},
     KeyValue,
 };
+use prometheus::{Encoder, Registry, TextEncoder};
 
 #[derive(Args, Debug)]
 pub struct WasmArgs {}
@@ -30,6 +39,7 @@ pub struct RunWasm {
     pub env: Arc<LunaticEnvironment>,
     pub distributed: Option<DistributedProcessState>,
     pub tracer: Arc<BoxedTracer>,
+    pub meter_provider: GlobalMeterProvider,
 }
 
 pub async fn run_wasm(args: RunWasm) -> Result<()> {
@@ -75,11 +85,12 @@ pub async fn run_wasm(args: RunWasm) -> Result<()> {
         "app_start", // SpanBuilder::from_name("app_start")
                      //     .with_attributes([KeyValue::new("path", path.to_string_lossy().to_string())]),
     );
-    root_span.set_attribute(KeyValue::new(
-        "lunatic.path",
-        path.to_string_lossy().to_string(),
-    ));
-    let tracer_context = Arc::new(opentelemetry::Context::current_with_span(root_span));
+    root_span.set_attributes([
+        KeyValue::new("service.name", "lunatic"),
+        KeyValue::new("lunatic.path", path.to_string_lossy().to_string()),
+        KeyValue::new("lunatic.environment", args.env.id() as i64),
+    ]);
+    let tracer_context = Arc::new(opentelemetry::Context::new().with_span(root_span));
     let logger = Arc::new(
         env_logger::Builder::from_env(
             env_logger::Env::new()
@@ -97,22 +108,15 @@ pub async fn run_wasm(args: RunWasm) -> Result<()> {
         Default::default(),
         args.tracer,
         tracer_context,
+        args.meter_provider,
         logger,
     )
     .unwrap();
 
     args.env.can_spawn_next_process().await?;
 
-    let env = args.env.clone();
-    tokio::spawn(async move {
-        if tokio::signal::ctrl_c().await.is_ok() {
-            let _ = tokio::time::timeout(tokio::time::Duration::from_secs(5), env.shutdown()).await;
-            std::process::exit(0);
-        }
-    });
-
     let (task, _) = spawn_wasm(
-        args.env,
+        args.env.clone(),
         args.runtime,
         &module,
         state,
@@ -126,27 +130,77 @@ pub async fn run_wasm(args: RunWasm) -> Result<()> {
         path.to_string_lossy()
     ))?;
 
-    // Wait on the main process to finish
-    task.await.map(|_| ()).map_err(|e| anyhow!(e.to_string()))
+    // Wait on the main process to finish, or ctrl c signal
+    tokio::select! {
+        result = task => {
+            result.map(|_| ()).map_err(|err| anyhow!(err.to_string()))
+        },
+        Ok(_) = tokio::signal::ctrl_c() => {
+            args.env.shutdown();
+            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+            Ok(())
+        },
+    }
 }
 
-#[cfg(feature = "prometheus")]
-#[derive(Args, Debug)]
-pub struct PrometheusArgs {
-    /// Enables the prometheus metrics exporter
-    #[arg(long)]
-    pub prometheus: bool,
+pub fn prometheus(addr: &SocketAddr, _node_id: Option<u64>) -> Result<MeterProvider, MetricsError> {
+    let registry = Registry::new();
+    let exporter = opentelemetry_prometheus::exporter()
+        .with_registry(registry.clone())
+        .build()?;
+    let provider = MeterProvider::builder().with_reader(exporter).build();
 
-    /// Address to bind the prometheus http listener to
-    #[arg(long, value_name = "PROMETHEUS_HTTP_ADDRESS", requires = "prometheus")]
-    pub prometheus_http: Option<std::net::SocketAddr>,
-}
+    async fn handle_request(
+        req: Request<Body>,
+        registry: Registry,
+    ) -> Result<Response<Body>, http::Error> {
+        match (req.method(), req.uri().path()) {
+            (&Method::GET, "/metrics") => {
+                let mut buffer = vec![];
+                let encoder = TextEncoder::new();
+                let metric_families = registry.gather();
+                if let Err(err) = encoder.encode(&metric_families, &mut buffer) {
+                    log::error!("failed to encode prometheus metrics: {err}");
+                    return Response::builder().status(400).body(Body::empty());
+                }
 
-#[cfg(feature = "prometheus")]
-pub fn prometheus(http_socket: Option<std::net::SocketAddr>, node_id: Option<u64>) -> Result<()> {
-    metrics_exporter_prometheus::PrometheusBuilder::new()
-        .with_http_listener(http_socket.unwrap_or_else(|| "0.0.0.0:9927".parse().unwrap()))
-        .add_global_label("node_id", node_id.unwrap_or(0).to_string())
-        .install()?;
-    Ok(())
+                Response::builder()
+                    .status(200)
+                    .header(CONTENT_TYPE, encoder.format_type())
+                    .body(Body::from(buffer))
+            }
+            _ => Response::builder()
+                .status(404)
+                .body(Body::from("not found")),
+        }
+    }
+
+    let server =
+        Server::bind(addr).serve(make_service_fn(move |_conn| {
+            let registry = registry.clone();
+
+            async move {
+                Ok::<_, http::Error>(service_fn(move |req| handle_request(req, registry.clone())))
+            }
+        }));
+
+    if addr.ip().is_loopback() || addr.ip().is_unspecified() {
+        log::info!(
+            "prometheus metrics available at http://localhost:{}/metrics",
+            addr.port()
+        );
+    } else {
+        log::info!(
+            "prometheus metrics available at http://{}:{}/metrics",
+            addr.ip(),
+            addr.port()
+        );
+    }
+
+    tokio::spawn(server);
+    // metrics_exporter_prometheus::PrometheusBuilder::new()
+    //     .with_http_listener(http_socket.unwrap_or_else(|| "0.0.0.0:9927".parse().unwrap()))
+    //     .add_global_label("node_id", node_id.unwrap_or(0).to_string())
+    //     .install()?;
+    Ok(provider)
 }

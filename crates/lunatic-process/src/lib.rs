@@ -378,9 +378,7 @@ where
         }
     };
 
-    env.remove_process(id);
-
-    match result {
+    let result = match result {
         Finished::Normal(result) => {
             let result: ExecutionResult<_> = result.into();
 
@@ -429,7 +427,11 @@ where
             });
             Err(anyhow!("Process received Kill signal"))
         }
-    }
+    };
+
+    env.remove_process(id);
+
+    result
 }
 
 /// A process spawned from a native Rust closure.

@@ -4,7 +4,11 @@ use std::{
 };
 
 use clap::Parser;
-use opentelemetry::{global::BoxedTracer, trace::noop::NoopTracer};
+use opentelemetry::{
+    global::{BoxedTracer, GlobalMeterProvider},
+    metrics::noop::NoopMeterProvider,
+    trace::noop::NoopTracer,
+};
 
 use std::{collections::HashMap, sync::Arc};
 
@@ -42,18 +46,9 @@ pub(crate) struct Args {
     /// Define key=value variable to store as node information
     #[arg(long, value_parser = parse_key_val, action = clap::ArgAction::Append)]
     tag: Vec<(String, String)>,
-
-    #[cfg(feature = "prometheus")]
-    #[command(flatten)]
-    prometheus: super::common::PrometheusArgs,
 }
 
 pub(crate) async fn start(args: Args) -> Result<()> {
-    #[cfg(feature = "prometheus")]
-    if args.prometheus.prometheus {
-        super::common::prometheus(args.prometheus.prometheus_http, None)?;
-    }
-
     let socket = args
         .bind_socket
         .or_else(get_available_localhost)
@@ -130,7 +125,8 @@ pub(crate) async fn start(args: Args) -> Result<()> {
                 envs,
                 env,
                 distributed: Some(dist),
-                tracer: Arc::new(BoxedTracer::new(Box::new(NoopTracer::new()))),
+                tracer: Arc::new(BoxedTracer::new(Box::new(NoopTracer::new()))), // TODO: Shoul this be noop?
+                meter_provider: GlobalMeterProvider::new(NoopMeterProvider::new()), // TODO: Should this be noop?
             })
             .await
             {

@@ -1,16 +1,10 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use dashmap::DashMap;
-use std::{
-    future::Future,
-    pin::Pin,
-    sync::{
-        atomic::{AtomicU64, Ordering},
-        Arc,
-    },
-    task::{Context, Poll},
+use std::sync::{
+    atomic::{AtomicU64, Ordering},
+    Arc,
 };
-use tokio::time::{interval, Interval};
 
 use crate::{Process, Signal};
 
@@ -24,9 +18,7 @@ pub trait Environment: Send + Sync {
     fn process_count(&self) -> usize;
     async fn can_spawn_next_process(&self) -> Result<Option<()>>;
     fn send(&self, id: u64, signal: Signal);
-    fn shutdown(&self) -> ShutdownFuture<'_, Self>
-    where
-        Self: Sized;
+    fn shutdown(&self);
 }
 
 #[async_trait]
@@ -111,15 +103,10 @@ impl Environment for LunaticEnvironment {
         Ok(Some(()))
     }
 
-    fn shutdown(&self) -> ShutdownFuture<'_, Self>
-    where
-        Self: Sized,
-    {
+    fn shutdown(&self) {
         for proc in self.processes.iter() {
             proc.send(Signal::Kill);
         }
-
-        ShutdownFuture::new(self)
     }
 }
 
@@ -141,44 +128,5 @@ impl Environments for LunaticEnvironments {
 
     async fn get(&self, id: u64) -> Option<Arc<Self::Env>> {
         self.envs.get(&id).map(|e| e.clone())
-    }
-}
-
-#[derive(Debug)]
-pub struct ShutdownFuture<'a, E> {
-    environment: &'a E,
-    interval: Interval,
-}
-
-impl<'a, E> ShutdownFuture<'a, E> {
-    fn new(environment: &'a E) -> Self {
-        ShutdownFuture {
-            environment,
-            interval: interval(tokio::time::Duration::from_millis(50)),
-        }
-    }
-}
-
-impl<'a, E> Future for ShutdownFuture<'a, E>
-where
-    E: Environment,
-{
-    type Output = ();
-
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        if self.environment.process_count() == 0 {
-            Poll::Ready(())
-        } else {
-            match self.interval.poll_tick(cx) {
-                Poll::Ready(_) => {
-                    if self.environment.process_count() == 0 {
-                        Poll::Ready(())
-                    } else {
-                        Poll::Pending
-                    }
-                }
-                Poll::Pending => Poll::Pending,
-            }
-        }
     }
 }

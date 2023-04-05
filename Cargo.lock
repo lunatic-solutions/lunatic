@@ -1103,7 +1103,7 @@ checksum = "c05aeb6a22b8f62540c194aac980f2115af067bfe15a0734d7277a768d396b31"
 dependencies = [
  "cfg-if",
  "libc",
- "wasi 0.11.0+wasi-snapshot-preview1",
+ "wasi",
 ]
 
 [[package]]
@@ -1667,6 +1667,7 @@ dependencies = [
  "dashmap",
  "env_logger 0.9.3",
  "hash-map-id",
+ "hyper",
  "log",
  "lunatic-control",
  "lunatic-control-axum",
@@ -1685,9 +1686,10 @@ dependencies = [
  "lunatic-trap-api",
  "lunatic-version-api",
  "lunatic-wasi-api",
- "metrics-exporter-prometheus",
  "opentelemetry",
  "opentelemetry-jaeger",
+ "opentelemetry-prometheus",
+ "prometheus",
  "regex",
  "reqwest",
  "serde",
@@ -1832,25 +1834,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "metrics-exporter-prometheus"
-version = "0.11.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8603921e1f54ef386189335f288441af761e0fc61bcb552168d9cedfe63ebc70"
-dependencies = [
- "hyper",
- "indexmap",
- "ipnet",
- "metrics",
- "metrics-util",
- "parking_lot",
- "portable-atomic",
- "quanta",
- "thiserror",
- "tokio",
- "tracing",
-]
-
-[[package]]
 name = "metrics-macros"
 version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1859,23 +1842,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
-]
-
-[[package]]
-name = "metrics-util"
-version = "0.14.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f7d24dc2dbae22bff6f1f9326ffce828c9f07ef9cc1e8002e5279f845432a30a"
-dependencies = [
- "crossbeam-epoch",
- "crossbeam-utils",
- "hashbrown",
- "metrics",
- "num_cpus",
- "parking_lot",
- "portable-atomic",
- "quanta",
- "sketches-ddsketch",
 ]
 
 [[package]]
@@ -1898,7 +1864,7 @@ checksum = "5b9d9a46eff5b4ff64b45a9e316a6d1e0bc719ef429cbec4dc630684212bfdf9"
 dependencies = [
  "libc",
  "log",
- "wasi 0.11.0+wasi-snapshot-preview1",
+ "wasi",
  "windows-sys 0.45.0",
 ]
 
@@ -2063,6 +2029,7 @@ dependencies = [
 [[package]]
 name = "opentelemetry"
 version = "0.19.0"
+source = "git+https://github.com/tqwewe/opentelemetry-rust?branch=cow#d59370647fd98699fb7668f532b0022db7f4b7e5"
 dependencies = [
  "opentelemetry_api",
  "opentelemetry_sdk",
@@ -2071,6 +2038,7 @@ dependencies = [
 [[package]]
 name = "opentelemetry-jaeger"
 version = "0.18.0"
+source = "git+https://github.com/tqwewe/opentelemetry-rust?branch=cow#d59370647fd98699fb7668f532b0022db7f4b7e5"
 dependencies = [
  "async-trait",
  "futures",
@@ -2084,8 +2052,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "opentelemetry-prometheus"
+version = "0.12.0"
+source = "git+https://github.com/tqwewe/opentelemetry-rust?branch=cow#d59370647fd98699fb7668f532b0022db7f4b7e5"
+dependencies = [
+ "once_cell",
+ "opentelemetry_api",
+ "opentelemetry_sdk",
+ "prometheus",
+ "protobuf",
+]
+
+[[package]]
 name = "opentelemetry-semantic-conventions"
 version = "0.11.0"
+source = "git+https://github.com/tqwewe/opentelemetry-rust?branch=cow#d59370647fd98699fb7668f532b0022db7f4b7e5"
 dependencies = [
  "opentelemetry",
 ]
@@ -2093,7 +2074,9 @@ dependencies = [
 [[package]]
 name = "opentelemetry_api"
 version = "0.19.0"
+source = "git+https://github.com/tqwewe/opentelemetry-rust?branch=cow#d59370647fd98699fb7668f532b0022db7f4b7e5"
 dependencies = [
+ "fnv",
  "futures-channel",
  "futures-util",
  "indexmap",
@@ -2106,6 +2089,7 @@ dependencies = [
 [[package]]
 name = "opentelemetry_sdk"
 version = "0.19.0"
+source = "git+https://github.com/tqwewe/opentelemetry-rust?branch=cow#d59370647fd98699fb7668f532b0022db7f4b7e5"
 dependencies = [
  "async-trait",
  "crossbeam-channel",
@@ -2114,8 +2098,10 @@ dependencies = [
  "futures-util",
  "once_cell",
  "opentelemetry_api",
+ "ordered-float 3.6.0",
  "percent-encoding",
  "rand",
+ "regex",
  "thiserror",
  "tokio",
  "tokio-stream",
@@ -2126,6 +2112,15 @@ name = "ordered-float"
 version = "2.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7940cf2ca942593318d07fcf2596cdca60a85c9e7fab408a5e21a4f9dcd40d87"
+dependencies = [
+ "num-traits",
+]
+
+[[package]]
+name = "ordered-float"
+version = "3.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "13a384337e997e6860ffbaa83708b2ef329fd8c54cb67a5f64d421e0f943254f"
 dependencies = [
  "num-traits",
 ]
@@ -2292,6 +2287,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "prometheus"
+version = "0.13.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "449811d15fbdf5ceb5c1144416066429cf82316e2ec8ce0c1f6f8a02e7bbcf8c"
+dependencies = [
+ "cfg-if",
+ "fnv",
+ "lazy_static",
+ "memchr",
+ "parking_lot",
+ "protobuf",
+ "thiserror",
+]
+
+[[package]]
+name = "protobuf"
+version = "2.28.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "106dd99e98437432fed6519dedecfade6a06a73bb7b2a1e019fdd2bee5778d94"
+
+[[package]]
 name = "psm"
 version = "0.1.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2309,22 +2325,6 @@ dependencies = [
  "bitflags",
  "memchr",
  "unicase",
-]
-
-[[package]]
-name = "quanta"
-version = "0.10.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b7e31331286705f455e56cca62e0e717158474ff02b7936c1fa596d983f4ae27"
-dependencies = [
- "crossbeam-utils",
- "libc",
- "mach",
- "once_cell",
- "raw-cpuid",
- "wasi 0.10.2+wasi-snapshot-preview1",
- "web-sys",
- "winapi",
 ]
 
 [[package]]
@@ -2414,15 +2414,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ec0be4795e2f6a28069bec0b5ff3e2ac9bafc99e6a9a7dc3547996c5c816922c"
 dependencies = [
  "getrandom",
-]
-
-[[package]]
-name = "raw-cpuid"
-version = "10.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6c297679cb867470fa8c9f67dbba74a78d78e3e98d7cf2b08d6d71540f797332"
-dependencies = [
- "bitflags",
 ]
 
 [[package]]
@@ -2810,12 +2801,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "sketches-ddsketch"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ceb945e54128e09c43d8e4f1277851bd5044c6fc540bbaa2ad888f60b3da9ae7"
-
-[[package]]
 name = "slab"
 version = "0.4.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3017,7 +3002,7 @@ dependencies = [
  "byteorder",
  "integer-encoding",
  "log",
- "ordered-float",
+ "ordered-float 2.10.0",
  "threadpool",
 ]
 
@@ -3356,12 +3341,6 @@ dependencies = [
  "log",
  "try-lock",
 ]
-
-[[package]]
-name = "wasi"
-version = "0.10.2+wasi-snapshot-preview1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fd6fbd9a79829dd1ad0cc20627bf1ed606756a7f77edff7b66b7064f9cb327c6"
 
 [[package]]
 name = "wasi"

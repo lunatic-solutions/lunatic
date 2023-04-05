@@ -25,6 +25,10 @@ fn is_run_implied() -> bool {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    if env::var("OTEL_SERVICE_NAME").is_err() {
+        env::set_var("OTEL_SERVICE_NAME", "lunatic");
+    }
+
     // Run is implied from lunatic 0.12
     let augmented_args = if is_run_implied() {
         let mut augmented_args: VecDeque<String> = std::env::args().collect();
@@ -79,6 +83,8 @@ async fn main() -> Result<()> {
     } else {
         execution::execute(augmented_args).await
     };
+
+    opentelemetry::global::shutdown_tracer_provider();
 
     result
 }

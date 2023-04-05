@@ -306,7 +306,7 @@ fn take_module<T: ProcessState + ProcessCtx<T> + NetworkingCtx + 'static>(
         .or_trap("lunatic::message::take_module")?;
     let module = match message {
         Message::Data(data) => data
-            .take_module(index as usize)
+            .take_resource(index as usize)
             .or_trap("lunatic::message::take_module")?,
         Message::LinkDied(_) => {
             return Err(anyhow!("Unexpected `Message::LinkDied` in scratch area"))
@@ -316,10 +316,10 @@ fn take_module<T: ProcessState + ProcessCtx<T> + NetworkingCtx + 'static>(
 }
 
 // Adds a tcp stream resource to the message that is currently in the scratch area and returns
-// the new location of it. This will remove the tcp stream from  the current process' resources.
+// the new location of it. This will remove the tcp stream from the current process' resources.
 //
 // Traps:
-// * If TCP stream ID doesn't exist
+// * If TCP stream ID doesn't exist.
 // * If no data message is in the scratch area.
 fn push_tcp_stream<T: ProcessState + ProcessCtx<T> + NetworkingCtx>(
     mut caller: Caller<T>,
@@ -361,7 +361,7 @@ fn take_tcp_stream<T: ProcessState + ProcessCtx<T> + NetworkingCtx>(
         .or_trap("lunatic::message::take_tcp_stream")?;
     let tcp_stream = match message {
         Message::Data(data) => data
-            .take_tcp_stream(index as usize)
+            .take_resource(index as usize)
             .or_trap("lunatic::message::take_tcp_stream")?,
         Message::LinkDied(_) => {
             return Err(anyhow!("Unexpected `Message::LinkDied` in scratch area"))
@@ -417,7 +417,7 @@ fn take_tls_stream<T: ProcessState + ProcessCtx<T> + NetworkingCtx>(
         .or_trap("lunatic::message::take_tls_stream")?;
     let tls_stream = match message {
         Message::Data(data) => data
-            .take_tls_stream(index as usize)
+            .take_resource(index as usize)
             .or_trap("lunatic::message::take_tls_stream")?,
         Message::LinkDied(_) => {
             return Err(anyhow!("Unexpected `Message::LinkDied` in scratch area"))
@@ -608,7 +608,7 @@ fn take_udp_socket<T: ProcessState + ProcessCtx<T> + NetworkingCtx>(
         .or_trap("lunatic::message::take_udp_socket")?;
     let udp_socket = match message {
         Message::Data(data) => data
-            .take_udp_socket(index as usize)
+            .take_resource(index as usize)
             .or_trap("lunatic::message::take_udp_socket")?,
         Message::LinkDied(_) => {
             return Err(anyhow!("Unexpected `Message::LinkDied` in scratch area"))

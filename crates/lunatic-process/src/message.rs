@@ -11,10 +11,7 @@ use std::{
     sync::Arc,
 };
 
-use lunatic_networking_api::{TcpConnection, TlsConnection};
-use tokio::net::UdpSocket;
-
-use crate::runtimes::wasmtime::WasmtimeCompiledModule;
+use smallvec::SmallVec;
 
 pub type Resource = dyn Any + Send + Sync;
 
@@ -59,7 +56,7 @@ pub struct DataMessage {
     pub tag: Option<i64>,
     pub read_ptr: usize,
     pub buffer: Vec<u8>,
-    pub resources: Vec<Option<Arc<Resource>>>,
+    pub resources: SmallVec<[Option<Arc<Resource>>; 3]>,
 }
 
 impl DataMessage {
@@ -69,7 +66,7 @@ impl DataMessage {
             tag,
             read_ptr: 0,
             buffer: Vec::with_capacity(buffer_capacity),
-            resources: Vec::new(),
+            resources: SmallVec::new(),
         }
     }
 
@@ -79,7 +76,7 @@ impl DataMessage {
             tag,
             read_ptr: 0,
             buffer,
-            resources: Vec::new(),
+            resources: SmallVec::new(),
         }
     }
 
@@ -91,39 +88,21 @@ impl DataMessage {
         self.resources.len() - 1
     }
 
-    /// Takes a module from the message, but preserves the indexes of all others.
+    /// Takes a resource from the message, downcasting to `T`.
     ///
-    /// If the index is out of bound or the resource is not a module the function will return
-    /// None.
-    pub fn take_module<T: 'static>(
-        &mut self,
-        index: usize,
-    ) -> Option<Arc<WasmtimeCompiledModule<T>>> {
-        self.take_downcast(index)
-    }
-
-    /// Takes a TCP stream from the message, but preserves the indexes of all others.
-    ///
-    /// If the index is out of bound or the resource is not a tcp stream the function will return
-    /// None.
-    pub fn take_tcp_stream(&mut self, index: usize) -> Option<Arc<TcpConnection>> {
-        self.take_downcast(index)
-    }
-
-    /// Takes a UDP Socket from the message, but preserves the indexes of all others.
-    ///
-    /// If the index is out of bound or the resource is not a tcp stream the function will return
-    /// None.
-    pub fn take_udp_socket(&mut self, index: usize) -> Option<Arc<UdpSocket>> {
-        self.take_downcast(index)
-    }
-
-    /// Takes a TLS stream from the message, but preserves the indexes of all others.
-    ///
-    /// If the index is out of bound or the resource is not a tcp stream the function will return
-    /// None.
-    pub fn take_tls_stream(&mut self, index: usize) -> Option<Arc<TlsConnection>> {
-        self.take_downcast(index)
+    /// If the index is out of bounds, or the downcast fails, None is returned and the resource
+    /// will remain in the message.
+    pub fn take_resource<T: Send + Sync + 'static>(&mut self, index: usize) -> Option<Arc<T>> {
+        let resource_ref = self.resources.get_mut(index)?;
+        let resource_any = std::mem::take(resource_ref).map(|resource| resource.downcast())?;
+        match resource_any {
+            Ok(resource) => Some(resource),
+            Err(resource) => {
+                // Downcast failed, return the resource back to the message.
+                *resource_ref = Some(resource);
+                None
+            }
+        }
     }
 
     /// Moves read pointer to index.
@@ -143,24 +122,6 @@ impl DataMessage {
             self.resources.len() as f64
         );
         metrics::histogram!("lunatic.process.messages.data.size", self.size() as f64);
-    }
-
-    fn take_downcast<T: Send + Sync + 'static>(&mut self, index: usize) -> Option<Arc<T>> {
-        let resource = self.resources.get_mut(index);
-        match resource {
-            Some(resource_ref) => {
-                let resource_any = std::mem::take(resource_ref).map(|resource| resource.downcast());
-                match resource_any {
-                    Some(Ok(resource)) => Some(resource),
-                    Some(Err(resource)) => {
-                        *resource_ref = Some(resource);
-                        None
-                    }
-                    None => None,
-                }
-            }
-            None => None,
-        }
     }
 }
 

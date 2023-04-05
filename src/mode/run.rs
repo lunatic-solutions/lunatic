@@ -1,4 +1,4 @@
-use std::{path::PathBuf, sync::Arc};
+use std::{net::SocketAddr, path::PathBuf, sync::Arc};
 
 use anyhow::Result;
 use clap::Parser;
@@ -6,16 +6,17 @@ use lunatic_process::{
     env::{Environments, LunaticEnvironments},
     runtimes,
 };
-use opentelemetry::{global::BoxedTracer, runtime::Tokio, trace::noop::NoopTracer};
+use opentelemetry::{
+    global::{BoxedTracer, GlobalMeterProvider},
+    metrics::noop::NoopMeterProvider,
+    runtime::Tokio,
+    trace::noop::NoopTracer,
+};
 
-use super::common::{run_wasm, RunWasm};
+use super::common::{prometheus, run_wasm, RunWasm};
 
 #[derive(Parser, Debug)]
 #[command(version)]
-#[command(group(
-    clap::ArgGroup::new("tracer")
-        .args(["jaeger"]),
-))]
 pub struct Args {
     /// Grant access to the given host directories
     #[arg(long, value_name = "DIRECTORY")]
@@ -26,8 +27,24 @@ pub struct Args {
     pub bench: bool,
 
     /// Jaeger connection url for tracing.
-    #[arg(long)]
-    pub jaeger: Option<String>,
+    #[arg(
+        long,
+        value_name = "JAEGER_HTTP_ADDRESS",
+        num_args(0..=1),
+        require_equals(true),
+        default_missing_value("127.0.0.1:6831")
+    )]
+    pub jaeger: Option<SocketAddr>,
+
+    /// Address to bind the prometheus http listener to
+    #[arg(
+        long,
+        value_name = "PROMETHEUS_HTTP_ADDRESS",
+        num_args(0..=1),
+        require_equals(true),
+        default_missing_value("0.0.0.0:9927")
+    )]
+    pub prometheus: Option<SocketAddr>,
 
     /// Entry .wasm file
     #[arg(index = 1)]
@@ -36,18 +53,9 @@ pub struct Args {
     /// Arguments passed to the guest
     #[arg(index = 2)]
     pub wasm_args: Vec<String>,
-
-    #[cfg(feature = "prometheus")]
-    #[command(flatten)]
-    prometheus: super::common::PrometheusArgs,
 }
 
 pub(crate) async fn start(mut args: Args) -> Result<()> {
-    #[cfg(feature = "prometheus")]
-    if args.prometheus.prometheus {
-        super::common::prometheus(args.prometheus.prometheus_http, None)?;
-    }
-
     // Create wasmtime runtime
     let wasmtime_config = runtimes::wasmtime::default_config();
     let runtime = runtimes::wasmtime::WasmtimeRuntime::new(&wasmtime_config)?;
@@ -70,6 +78,13 @@ pub(crate) async fn start(mut args: Args) -> Result<()> {
         None => Arc::new(BoxedTracer::new(Box::new(NoopTracer::new()))),
     };
 
+    let meter_provider = match &args.prometheus {
+        Some(url) => GlobalMeterProvider::new(
+            prometheus(url, None).expect("failed to create prometheus registry"),
+        ),
+        None => GlobalMeterProvider::new(NoopMeterProvider::new()),
+    };
+
     run_wasm(RunWasm {
         path: args.path,
         wasm_args: args.wasm_args,
@@ -79,6 +94,7 @@ pub(crate) async fn start(mut args: Args) -> Result<()> {
         env,
         distributed: None,
         tracer,
+        meter_provider,
     })
     .await
 }
