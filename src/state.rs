@@ -26,8 +26,7 @@ use lunatic_timer_api::{TimerCtx, TimerResources};
 use lunatic_wasi_api::{build_wasi, LunaticWasiCtx};
 use opentelemetry::global::{BoxedTracer, GlobalMeterProvider};
 use opentelemetry::metrics::noop::NoopMeterProvider;
-use opentelemetry::metrics::{Counter, Histogram, Meter};
-use opentelemetry::sdk::metrics::data::Gauge;
+use opentelemetry::metrics::{Counter, Histogram, Meter, UpDownCounter};
 use opentelemetry::trace::noop::NoopTracer;
 use opentelemetry::trace::{Span, TraceContextExt, Tracer};
 use opentelemetry::{Context, KeyValue};
@@ -512,23 +511,25 @@ impl MetricsCtx for DefaultProcessState {
             })
     }
 
-    fn add_gauge(&mut self, gauge: Gauge<f64>) -> u64 {
-        self.resources.metrics.add(Metric::Gauge(gauge))
+    fn add_up_down_counter(&mut self, up_down_counter: UpDownCounter<f64>) -> u64 {
+        self.resources
+            .metrics
+            .add(Metric::UpDownCounter(up_down_counter))
     }
 
-    fn get_gauge(&self, id: u64) -> Option<&Gauge<f64>> {
+    fn get_up_down_counter(&self, id: u64) -> Option<&UpDownCounter<f64>> {
         match self.resources.metrics.get(id)? {
-            Metric::Gauge(gauge) => Some(gauge),
+            Metric::UpDownCounter(up_down_counter) => Some(up_down_counter),
             _ => None,
         }
     }
 
-    fn drop_gauge(&mut self, id: u64) -> Option<Gauge<f64>> {
+    fn drop_up_down_counter(&mut self, id: u64) -> Option<UpDownCounter<f64>> {
         self.resources
             .metrics
             .remove(id)
             .and_then(|metric| match metric {
-                Metric::Gauge(gauge) => Some(gauge),
+                Metric::UpDownCounter(up_down_counter) => Some(up_down_counter),
                 _ => None,
             })
     }
@@ -574,7 +575,7 @@ pub(crate) struct Resources {
 
 pub(crate) enum Metric<T> {
     Counter(Counter<T>),
-    Gauge(Gauge<T>),
+    UpDownCounter(UpDownCounter<T>),
     Histogram(Histogram<T>),
 }
 
@@ -614,9 +615,6 @@ impl DistributedCtx<LunaticEnvironment> for DefaultProcessState {
         runtime: WasmtimeRuntime,
         module: Arc<WasmtimeCompiledModule<Self>>,
         config: Arc<Self::Config>,
-        // tracer: Arc<BoxedTracer>,
-        // tracer_context: Arc<Context>,
-        // logger: Arc<Logger>,
     ) -> Result<Self> {
         let signal_mailbox = unbounded_channel();
         let signal_mailbox = (signal_mailbox.0, Arc::new(Mutex::new(signal_mailbox.1)));
@@ -668,18 +666,25 @@ fn new_process_context(process_id: u64, tracer: &BoxedTracer, tracer_context: &C
     tracer_context.with_span(process_span)
 }
 
-/* mod tests {
+mod tests {
     #[tokio::test]
     async fn import_filter_signature_matches() {
         use std::collections::HashMap;
+        use std::sync::Arc;
+
+        use lunatic_process::env::Environment;
+        use lunatic_process::runtimes::wasmtime::WasmtimeRuntime;
+        use lunatic_process::wasm::spawn_wasm;
+        use opentelemetry::{
+            global::{BoxedTracer, GlobalMeterProvider},
+            metrics::noop::NoopMeterProvider,
+            trace::noop::NoopTracer,
+            Context,
+        };
         use tokio::sync::RwLock;
 
         use crate::state::DefaultProcessState;
         use crate::DefaultProcessConfig;
-        use lunatic_process::env::Environment;
-        use lunatic_process::runtimes::wasmtime::WasmtimeRuntime;
-        use lunatic_process::wasm::spawn_wasm;
-        use std::sync::Arc;
 
         // The default configuration includes both, the "lunatic::*" and "wasi_*" namespaces.
         let config = DefaultProcessConfig::default();
@@ -693,6 +698,14 @@ fn new_process_context(process_id: u64, tracer: &BoxedTracer, tracer_context: &C
         let module = Arc::new(runtime.compile_module(raw_module.into()).unwrap());
         let env = Arc::new(lunatic_process::env::LunaticEnvironment::new(0));
         let registry = Arc::new(RwLock::new(HashMap::new()));
+        let tracer = Arc::new(BoxedTracer::new(Box::new(NoopTracer::new())));
+        let tracer_context = Arc::new(Context::new());
+        let meter_provider = GlobalMeterProvider::new(NoopMeterProvider::new());
+        let logger = Arc::new(
+            env_logger::Builder::new()
+                .filter_level(log::LevelFilter::Off)
+                .build(),
+        );
         let state = DefaultProcessState::new(
             env.clone(),
             None,
@@ -700,6 +713,10 @@ fn new_process_context(process_id: u64, tracer: &BoxedTracer, tracer_context: &C
             module.clone(),
             Arc::new(config),
             registry,
+            tracer,
+            tracer_context,
+            meter_provider,
+            logger,
         )
         .unwrap();
 
@@ -709,4 +726,4 @@ fn new_process_context(process_id: u64, tracer: &BoxedTracer, tracer_context: &C
             .await
             .unwrap();
     }
-} */
+}

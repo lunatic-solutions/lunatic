@@ -1,17 +1,15 @@
-use std::{borrow::Cow, sync::Arc};
-
-use anyhow::Result;
+use anyhow::{Context as _, Result};
 use hash_map_id::HashMapId;
 use log::{Level, Record};
 use lunatic_common_api::{get_memory, IntoTrap};
 use lunatic_process::state::ProcessState;
 use lunatic_process_api::ProcessCtx;
-use metrics::{counter, decrement_gauge, gauge, histogram, increment_counter, increment_gauge};
 use opentelemetry::{
-    global,
-    metrics::{Counter, Histogram, Meter, MeterProvider, Unit},
-    sdk::metrics::data::Gauge,
-    trace::{Span, SpanRef, TraceContextExt, Tracer, TracerProvider},
+    metrics::{
+        Counter, Histogram, InstrumentBuilder, Meter, MeterProvider, MetricsError, Unit,
+        UpDownCounter,
+    },
+    trace::{Span, TraceContextExt, Tracer},
     Context, KeyValue, StringValue,
 };
 use serde_json::Map;
@@ -48,9 +46,9 @@ pub trait MetricsCtx {
     fn get_counter(&self, id: u64) -> Option<&Counter<f64>>;
     fn drop_counter(&mut self, id: u64) -> Option<Counter<f64>>;
 
-    fn add_gauge(&mut self, gauge: Gauge<f64>) -> u64;
-    fn get_gauge(&self, id: u64) -> Option<&Gauge<f64>>;
-    fn drop_gauge(&mut self, id: u64) -> Option<Gauge<f64>>;
+    fn add_up_down_counter(&mut self, up_down_counter: UpDownCounter<f64>) -> u64;
+    fn get_up_down_counter(&self, id: u64) -> Option<&UpDownCounter<f64>>;
+    fn drop_up_down_counter(&mut self, id: u64) -> Option<UpDownCounter<f64>>;
 
     fn add_histogram(&mut self, histogram: Histogram<f64>) -> u64;
     fn get_histogram(&self, id: u64) -> Option<&Histogram<f64>>;
@@ -63,22 +61,34 @@ where
     T: ProcessState + ProcessCtx<T> + MetricsCtx + Send + Sync + 'static,
     <<T as MetricsCtx>::Tracer as Tracer>::Span: Send + Sync,
 {
-    linker.func_wrap("lunatic::metrics", "start_span", start_span)?;
-    linker.func_wrap("lunatic::metrics", "drop_span", drop_span)?;
+    linker.func_wrap("lunatic::metrics", "span_start", span_start)?;
+    linker.func_wrap("lunatic::metrics", "span_drop", span_drop)?;
 
     linker.func_wrap("lunatic::metrics", "meter", meter)?;
-    linker.func_wrap("lunatic::metrics", "drop_meter", drop_meter)?;
+    linker.func_wrap("lunatic::metrics", "meter_drop", meter_drop)?;
 
-    linker.func_wrap("lunatic::metrics", "add_event", add_event)?;
+    linker.func_wrap("lunatic::metrics", "event", event)?;
 
     linker.func_wrap("lunatic::metrics", "counter", counter)?;
-    linker.func_wrap("lunatic::metrics", "increment_counter", increment_counter)?;
-    linker.func_wrap("lunatic::metrics", "drop_counter", drop_counter)?;
+    linker.func_wrap("lunatic::metrics", "counter_add", counter_add)?;
+    linker.func_wrap("lunatic::metrics", "counter_drop", counter_drop)?;
 
-    linker.func_wrap("lunatic::metrics", "gauge", gauge)?;
-    linker.func_wrap("lunatic::metrics", "increment_gauge", increment_gauge)?;
-    linker.func_wrap("lunatic::metrics", "decrement_gauge", decrement_gauge)?;
+    linker.func_wrap("lunatic::metrics", "up_down_counter", up_down_counter)?;
+    linker.func_wrap(
+        "lunatic::metrics",
+        "up_down_counter_add",
+        up_down_counter_add,
+    )?;
+    linker.func_wrap(
+        "lunatic::metrics",
+        "up_down_counter_drop",
+        up_down_counter_drop,
+    )?;
+
     linker.func_wrap("lunatic::metrics", "histogram", histogram)?;
+    linker.func_wrap("lunatic::metrics", "histogram_record", histogram_record)?;
+    linker.func_wrap("lunatic::metrics", "histogram_drop", histogram_drop)?;
+
     Ok(())
 }
 
@@ -92,7 +102,7 @@ where
 /// * If the attributes is not valid json.
 /// * If the parent span does not exist.
 /// * If any memory outside the guest heap space is referenced.
-fn start_span<T>(
+fn span_start<T>(
     mut caller: Caller<'_, T>,
     parent: u64,
     name_ptr: u32,
@@ -113,13 +123,13 @@ where
         None
     };
 
-    let name = get_string_arg(data, name_ptr, name_len, "lunatic::metrics::start_span")?;
+    let name = get_string_arg(data, name_ptr, name_len).or_trap("lunatic::metrics::span_start")?;
     let attributes = if attributes_len > 0 {
         let attributes_data = data
             .get(attributes_ptr as usize..(attributes_ptr + attributes_len) as usize)
-            .or_trap("lunatic::metrics::start_span")?;
+            .or_trap("lunatic::metrics::span_start")?;
         let attributes_json =
-            serde_json::from_slice(attributes_data).or_trap("lunatic::metrics::start_span")?;
+            serde_json::from_slice(attributes_data).or_trap("lunatic::metrics::span_start")?;
         data_to_opentelemetry(attributes_json)
     } else {
         vec![]
@@ -128,7 +138,7 @@ where
     let parent_ctx = if let Some(id) = parent {
         state
             .get_context(id)
-            .or_trap("lunatic::metrics::start_span")?
+            .or_trap("lunatic::metrics::span_start")?
     } else {
         state.get_last_context()
     };
@@ -144,7 +154,7 @@ where
 }
 
 /// Drops a span, marking it as finished.
-fn drop_span<T>(mut caller: Caller<'_, T>, id: u64) -> Result<()>
+fn span_drop<T>(mut caller: Caller<'_, T>, id: u64) -> Result<()>
 where
     T: ProcessState + ProcessCtx<T> + MetricsCtx + Send + Sync,
     <<T as MetricsCtx>::Tracer as Tracer>::Span: Send + Sync,
@@ -169,7 +179,7 @@ where
     let memory = get_memory(&mut caller)?;
     let (data, state) = memory.data_and_store_mut(&mut caller);
 
-    let name = get_string_arg(&data, name_ptr, name_len, "lunatic::metrics::meter")?;
+    let name = get_string_arg(&data, name_ptr, name_len).or_trap("lunatic::metrics::meter")?;
 
     let meter = state.meter_provider().meter(name.into());
     let id = state.add_meter(meter);
@@ -178,7 +188,7 @@ where
 }
 
 /// Drops a meter.
-fn drop_meter<T>(mut caller: Caller<'_, T>, id: u64) -> Result<()>
+fn meter_drop<T>(mut caller: Caller<'_, T>, id: u64) -> Result<()>
 where
     T: MetricsCtx,
 {
@@ -217,7 +227,7 @@ where
 /// * If the attributes is not valid json.
 /// * If the parent span does not exist.
 /// * If any memory outside the guest heap space is referenced.
-fn add_event<T>(
+fn event<T>(
     mut caller: Caller<'_, T>,
     span: u64,
     name_ptr: u32,
@@ -232,14 +242,14 @@ where
     let memory = get_memory(&mut caller)?;
     let (data, state) = memory.data_and_store_mut(&mut caller);
 
-    let name = get_string_arg(data, name_ptr, name_len, "lunatic::metrics::add_event")?;
+    let name = get_string_arg(data, name_ptr, name_len).or_trap("lunatic::metrics::event")?;
 
     let attributes = if attributes_len > 0 {
         let attributes_data = data
             .get(attributes_ptr as usize..(attributes_ptr + attributes_len) as usize)
-            .or_trap("lunatic::metrics::add_event")?;
+            .or_trap("lunatic::metrics::event")?;
         let attributes_json: Map<String, serde_json::Value> =
-            serde_json::from_slice(attributes_data).or_trap("lunatic::metrics::add_event")?;
+            serde_json::from_slice(attributes_data).or_trap("lunatic::metrics::event")?;
 
         let level = attributes_json
             .get("severityNumber")
@@ -301,7 +311,7 @@ where
     let span = if span != u64::MAX {
         state
             .get_context(span)
-            .or_trap("lunatic::metrics::add_event")?
+            .or_trap("lunatic::metrics::event")?
             .span()
     } else {
         state.get_last_context().span()
@@ -330,39 +340,18 @@ fn counter<T>(
 where
     T: MetricsCtx,
 {
-    let memory = get_memory(&mut caller)?;
-    let (data, state) = memory.data_and_store_mut(&mut caller);
-
-    let name = get_string_arg(data, name_ptr, name_len, "lunatic::metrics::counter")?;
-    let description = get_string_arg(
-        data,
+    let (state, counter) = create_metric(
+        &mut caller,
+        meter,
+        name_ptr,
+        name_len,
         description_ptr,
         description_len,
-        "lunatic::metrics::counter",
-    )?;
-    let unit =
-        get_string_arg(data, unit_ptr, unit_len, "lunatic::metrics::counter").map(|unit| {
-            if unit.is_empty() {
-                None
-            } else {
-                Some(Unit::new(unit))
-            }
-        })?;
-
-    let mut counter_builder = state
-        .get_meter(meter)
-        .or_trap("lunatic::metrics::counter")?
-        .f64_counter(name);
-    if !description.is_empty() {
-        counter_builder = counter_builder.with_description(description);
-    }
-    if let Some(unit) = unit {
-        counter_builder = counter_builder.with_unit(unit);
-    }
-
-    let counter = counter_builder
-        .try_init()
-        .or_trap("lunatic::metrics::counter")?;
+        unit_ptr,
+        unit_len,
+        |meter, name| meter.f64_counter(name),
+    )
+    .or_trap("lunatic::metrics::counter")?;
 
     let id = state.add_counter(counter);
 
@@ -374,7 +363,7 @@ where
 /// Traps:
 /// * If the name is not a valid utf8 string.
 /// * If any memory outside the guest heap space is referenced.
-fn increment_counter<T>(
+fn counter_add<T>(
     mut caller: Caller<'_, T>,
     span: u64,
     counter: u64,
@@ -385,32 +374,12 @@ fn increment_counter<T>(
 where
     T: MetricsCtx,
 {
-    let memory = get_memory(&mut caller)?;
-    let (data, state) = memory.data_and_store_mut(&mut caller);
-
-    let cx = if span != u64::MAX {
-        state
-            .get_context(span)
-            .or_trap("lunatic::metrics::increment_counter")?
-    } else {
-        state.get_last_context()
-    };
-
-    let attributes = if attributes_len > 0 {
-        let attributes_data = data
-            .get(attributes_ptr as usize..(attributes_ptr + attributes_len) as usize)
-            .or_trap("lunatic::metrics::add_event")?;
-        let attributes_json: Map<String, serde_json::Value> =
-            serde_json::from_slice(attributes_data).or_trap("lunatic::metrics::add_event")?;
-
-        data_to_opentelemetry(attributes_json)
-    } else {
-        vec![]
-    };
+    let (state, cx, attributes) = update_metric(&mut caller, span, attributes_ptr, attributes_len)
+        .or_trap("lunatic::metrics::counter_add")?;
 
     let counter = state
         .get_counter(counter)
-        .or_trap("lunatic::metrics::increment_counter")?;
+        .or_trap("lunatic::metrics::counter_add")?;
 
     counter.add(cx, amount, &attributes);
 
@@ -418,7 +387,7 @@ where
 }
 
 /// Drops a counter.
-fn drop_counter<T>(mut caller: Caller<'_, T>, id: u64) -> Result<()>
+fn counter_drop<T>(mut caller: Caller<'_, T>, id: u64) -> Result<()>
 where
     T: MetricsCtx,
 {
@@ -430,95 +399,273 @@ where
     Ok(())
 }
 
-/// Sets a gauge.
-///
-/// Traps:
-/// * If the name is not a valid utf8 string.
-/// * If any memory outside the guest heap space is referenced.
-fn gauge<T>(mut caller: Caller<'_, T>, name_ptr: u32, name_len: u32, value: f64) -> Result<()> {
-    let memory = get_memory(&mut caller)?;
-    let data = memory.data(&mut caller);
-
-    let name = get_string_arg(data, name_ptr, name_len, "lunatic::metrics::gauge")?;
-
-    gauge!(name, value);
-    Ok(())
-}
-
-/// Increments a gauge.
-///
-/// Traps:
-/// * If the name is not a valid utf8 string.
-/// * If any memory outside the guest heap space is referenced.
-fn increment_gauge<T>(
+fn up_down_counter<T>(
     mut caller: Caller<'_, T>,
+    meter: u64,
     name_ptr: u32,
     name_len: u32,
-    value: f64,
-) -> Result<()> {
-    let memory = get_memory(&mut caller)?;
-    let data = memory.data(&mut caller);
-
-    let name = get_string_arg(
-        data,
+    description_ptr: u32,
+    description_len: u32,
+    unit_ptr: u32,
+    unit_len: u32,
+) -> Result<u64>
+where
+    T: MetricsCtx,
+{
+    let (state, up_down_counter) = create_metric(
+        &mut caller,
+        meter,
         name_ptr,
         name_len,
-        "lunatic::metrics::increment_gauge",
-    )?;
+        description_ptr,
+        description_len,
+        unit_ptr,
+        unit_len,
+        |meter, name| meter.f64_up_down_counter(name),
+    )
+    .or_trap("lunatic::metrics::up_down_counter")?;
 
-    increment_gauge!(name, value);
-    Ok(())
+    let id = state.add_up_down_counter(up_down_counter);
+
+    Ok(id)
 }
 
-/// Decrements a gauge.
-///
-/// Traps:
-/// * If the name is not a valid utf8 string.
-/// * If any memory outside the guest heap space is referenced.
-fn decrement_gauge<T>(
+fn up_down_counter_add<T>(
     mut caller: Caller<'_, T>,
-    name_ptr: u32,
-    name_len: u32,
-    value: f64,
-) -> Result<()> {
-    let memory = get_memory(&mut caller)?;
-    let data = memory.data(&mut caller);
+    span: u64,
+    counter: u64,
+    amount: f64,
+    attributes_ptr: u32,
+    attributes_len: u32,
+) -> Result<()>
+where
+    T: MetricsCtx,
+{
+    let (state, cx, attributes) = update_metric(&mut caller, span, attributes_ptr, attributes_len)
+        .or_trap("lunatic::metrics::up_down_counter_add")?;
 
-    let name = get_string_arg(
-        data,
-        name_ptr,
-        name_len,
-        "lunatic::metrics::decrement_gauge",
-    )?;
+    let counter = state
+        .get_up_down_counter(counter)
+        .or_trap("lunatic::metrics::up_down_counter_add")?;
 
-    decrement_gauge!(name, value);
+    counter.add(cx, amount, &attributes);
+
     Ok(())
 }
+
+fn up_down_counter_drop<T>(mut caller: Caller<'_, T>, id: u64) -> Result<()>
+where
+    T: MetricsCtx,
+{
+    let memory = get_memory(&mut caller)?;
+    let (_data, state) = memory.data_and_store_mut(&mut caller);
+
+    state.drop_up_down_counter(id);
+
+    Ok(())
+}
+
+// /// Increments a gauge.
+// ///
+// /// Traps:
+// /// * If the name is not a valid utf8 string.
+// /// * If any memory outside the guest heap space is referenced.
+// fn increment_gauge<T>(
+//     mut caller: Caller<'_, T>,
+//     name_ptr: u32,
+//     name_len: u32,
+//     value: f64,
+// ) -> Result<()> {
+//     todo!()
+//     // let memory = get_memory(&mut caller)?;
+//     // let data = memory.data(&mut caller);
+//     //
+//     // let name =
+//     //     get_string_arg(data, name_ptr, name_len).or_trap("lunatic::metrics::increment_gauge")?;
+//     //
+//     // increment_gauge!(name, value);
+//     // Ok(())
+// }
+//
+// /// Decrements a gauge.
+// ///
+// /// Traps:
+// /// * If the name is not a valid utf8 string.
+// /// * If any memory outside the guest heap space is referenced.
+// fn decrement_gauge<T>(
+//     mut caller: Caller<'_, T>,
+//     name_ptr: u32,
+//     name_len: u32,
+//     value: f64,
+// ) -> Result<()> {
+//     todo!()
+//     // let memory = get_memory(&mut caller)?;
+//     // let data = memory.data(&mut caller);
+//     //
+//     // let name =
+//     //     get_string_arg(data, name_ptr, name_len).or_trap("lunatic::metrics::decrement_gauge")?;
+//     //
+//     // decrement_gauge!(name, value);
+//     // Ok(())
+// }
 
 /// Sets a histogram.
 ///
 /// Traps:
 /// * If the name is not a valid utf8 string.
 /// * If any memory outside the guest heap space is referenced.
-fn histogram<T>(mut caller: Caller<'_, T>, name_ptr: u32, name_len: u32, value: f64) -> Result<()> {
-    let memory = get_memory(&mut caller)?;
-    let data = memory.data(&mut caller);
+fn histogram<T>(
+    mut caller: Caller<'_, T>,
+    meter: u64,
+    name_ptr: u32,
+    name_len: u32,
+    description_ptr: u32,
+    description_len: u32,
+    unit_ptr: u32,
+    unit_len: u32,
+) -> Result<u64>
+where
+    T: MetricsCtx,
+{
+    let (state, histogram) = create_metric(
+        &mut caller,
+        meter,
+        name_ptr,
+        name_len,
+        description_ptr,
+        description_len,
+        unit_ptr,
+        unit_len,
+        |meter, name| meter.f64_histogram(name),
+    )
+    .or_trap("lunatic::metrics::histogram")?;
 
-    let name = get_string_arg(data, name_ptr, name_len, "lunatic::metrics::histogram")?;
+    let id = state.add_histogram(histogram);
 
-    histogram!(name, value);
+    Ok(id)
+}
+
+fn histogram_record<T>(
+    mut caller: Caller<'_, T>,
+    span: u64,
+    histogram: u64,
+    value: f64,
+    attributes_ptr: u32,
+    attributes_len: u32,
+) -> Result<()>
+where
+    T: MetricsCtx,
+{
+    let (state, cx, attributes) = update_metric(&mut caller, span, attributes_ptr, attributes_len)
+        .or_trap("lunatic::metrics::histogram_record")?;
+
+    let histogram = state
+        .get_histogram(histogram)
+        .or_trap("lunatic::metrics::histogram_record")?;
+
+    histogram.record(cx, value, &attributes);
+
     Ok(())
 }
 
-fn get_string_arg(data: &[u8], name_ptr: u32, name_len: u32, func_name: &str) -> Result<String> {
+fn histogram_drop<T>(mut caller: Caller<'_, T>, id: u64) -> Result<()>
+where
+    T: MetricsCtx,
+{
+    let memory = get_memory(&mut caller)?;
+    let (_data, state) = memory.data_and_store_mut(&mut caller);
+
+    state.drop_histogram(id);
+
+    Ok(())
+}
+
+fn get_string_arg(data: &[u8], name_ptr: u32, name_len: u32) -> Result<String> {
     if name_len == 0 {
         return Ok(String::new());
     }
     let name = data
         .get(name_ptr as usize..(name_ptr + name_len) as usize)
-        .or_trap(func_name)?;
-    let name = String::from_utf8(name.to_vec()).or_trap(func_name)?;
+        .context("invalid memory region")?;
+    let name = String::from_utf8(name.to_vec())?;
     Ok(name)
+}
+
+fn create_metric<'a, T, M, F>(
+    caller: &'a mut Caller<'_, T>,
+    meter: u64,
+    name_ptr: u32,
+    name_len: u32,
+    description_ptr: u32,
+    description_len: u32,
+    unit_ptr: u32,
+    unit_len: u32,
+    builder: F,
+) -> Result<(&'a mut T, M)>
+where
+    T: MetricsCtx,
+    M: for<'b> TryFrom<InstrumentBuilder<'b, M>, Error = MetricsError>,
+    F: for<'b> Fn(&'b Meter, String) -> InstrumentBuilder<'b, M>,
+{
+    let memory = get_memory(caller)?;
+    let (data, state) = memory.data_and_store_mut(caller);
+
+    let name = get_string_arg(data, name_ptr, name_len)?;
+    let description = get_string_arg(data, description_ptr, description_len)?;
+    let unit = get_string_arg(data, unit_ptr, unit_len).map(|unit| {
+        if unit.is_empty() {
+            None
+        } else {
+            Some(Unit::new(unit))
+        }
+    })?;
+
+    let meter = state.get_meter(meter).context("meter does not exist")?;
+
+    let mut metric_builder = builder(meter, name);
+    if !description.is_empty() {
+        metric_builder = metric_builder.with_description(description);
+    }
+    if let Some(unit) = unit {
+        metric_builder = metric_builder.with_unit(unit);
+    }
+
+    let metric = metric_builder.try_init()?;
+
+    Ok((state, metric))
+}
+
+fn update_metric<'a, T>(
+    caller: &'a mut Caller<'_, T>,
+    span: u64,
+    attributes_ptr: u32,
+    attributes_len: u32,
+) -> Result<(&'a T, &'a Context, Vec<KeyValue>)>
+where
+    T: MetricsCtx,
+{
+    let memory = get_memory(caller)?;
+    let (data, state) = memory.data_and_store_mut(caller);
+
+    let cx = if span != u64::MAX {
+        state.get_context(span).context("span does not exist")?
+    } else {
+        state.get_last_context()
+    };
+
+    let attributes = if attributes_len > 0 {
+        let attributes_data = data
+            .get(attributes_ptr as usize..(attributes_ptr + attributes_len) as usize)
+            .context("invalid memory region for attributes")?;
+        let attributes_json: Map<String, serde_json::Value> =
+            serde_json::from_slice(attributes_data)?;
+
+        data_to_opentelemetry(attributes_json)
+    } else {
+        vec![]
+    };
+
+    Ok((state, cx, attributes))
 }
 
 fn data_to_opentelemetry(data: Map<String, serde_json::Value>) -> Vec<KeyValue> {
