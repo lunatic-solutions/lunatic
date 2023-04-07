@@ -6,10 +6,6 @@ use clap::{Parser, Subcommand};
 pub struct Args {
     #[command(subcommand)]
     command: Commands,
-
-    #[cfg(feature = "prometheus")]
-    #[command(flatten)]
-    prometheus: super::common::PrometheusArgs,
 }
 
 #[derive(Debug, Subcommand)]
