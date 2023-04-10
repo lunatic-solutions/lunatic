@@ -24,13 +24,6 @@ pub trait MetricsCtx {
     fn tracer(&self) -> &Self::Tracer;
     fn meter_provider(&self) -> &Self::MeterProvider;
 
-    // fn add_span<T, I>(&mut self, parent: Option<u64>, name: T, attributes: I) -> Option<u64>
-    // where
-    //     T: Into<Cow<'static, str>>,
-    //     I: IntoIterator<Item = KeyValue>;
-    // fn get_span(&self, id: u64) -> Option<SpanRef<'_>>;
-    // fn get_last_span(&self) -> SpanRef;
-    // fn drop_span(&mut self, id: u64);
     fn add_context(&mut self, context: Context) -> u64;
     fn get_context(&self, id: u64) -> Option<&Context>;
     fn get_last_context(&self) -> &Context;

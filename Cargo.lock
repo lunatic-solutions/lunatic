@@ -1482,6 +1482,8 @@ name = "lunatic-common-api"
 version = "0.13.0"
 dependencies = [
  "anyhow",
+ "once_cell",
+ "opentelemetry",
  "wasmtime",
 ]
 
@@ -1589,7 +1591,6 @@ dependencies = [
  "lunatic-common-api",
  "lunatic-process",
  "lunatic-process-api",
- "metrics",
  "opentelemetry",
  "serde_json",
  "wasmtime",
@@ -1619,8 +1620,10 @@ dependencies = [
  "dashmap",
  "hash-map-id",
  "log",
+ "lunatic-common-api",
  "lunatic-networking-api",
- "metrics",
+ "once_cell",
+ "opentelemetry",
  "serde",
  "smallvec",
  "tokio",
@@ -1638,7 +1641,8 @@ dependencies = [
  "lunatic-error-api",
  "lunatic-process",
  "lunatic-wasi-api",
- "metrics",
+ "once_cell",
+ "opentelemetry",
  "tokio",
  "wasmtime",
 ]
@@ -1651,7 +1655,8 @@ dependencies = [
  "lunatic-common-api",
  "lunatic-process",
  "lunatic-process-api",
- "metrics",
+ "once_cell",
+ "opentelemetry",
  "tokio",
  "wasmtime",
 ]
@@ -1734,7 +1739,8 @@ dependencies = [
  "lunatic-common-api",
  "lunatic-process",
  "lunatic-process-api",
- "metrics",
+ "once_cell",
+ "opentelemetry",
  "tokio",
  "wasmtime",
 ]
@@ -1820,28 +1826,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d61c719bcfbcf5d62b3a09efa6088de8c54bc0bfcd3ea7ae39fcc186108b8de1"
 dependencies = [
  "autocfg",
-]
-
-[[package]]
-name = "metrics"
-version = "0.20.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7b9b8653cec6897f73b519a43fba5ee3d50f62fe9af80b428accdcc093b4a849"
-dependencies = [
- "ahash",
- "metrics-macros",
- "portable-atomic",
-]
-
-[[package]]
-name = "metrics-macros"
-version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "731f8ecebd9f3a4aa847dfe75455e4757a45da40a7793d2f0b1f9b6ed18b23f3"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
 ]
 
 [[package]]
@@ -2240,12 +2224,6 @@ checksum = "f9a81d2759aae1dae668f783c308bc5c8ebd191ff4184aaa1b37f65a6ae5a56f"
 dependencies = [
  "plotters-backend",
 ]
-
-[[package]]
-name = "portable-atomic"
-version = "0.3.19"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "26f6a7b87c2e435a3241addceeeff740ff8b7e76b74c13bf9acb17fa454ea00b"
 
 [[package]]
 name = "ppv-lite86"

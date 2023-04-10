@@ -18,7 +18,7 @@ use lunatic_process::{
 use lunatic_process_api::ProcessConfigCtx;
 use lunatic_runtime::{DefaultProcessConfig, DefaultProcessState};
 use opentelemetry::{
-    global::{BoxedTracer, GlobalMeterProvider},
+    global::{self, BoxedTracer, GlobalMeterProvider},
     metrics::MetricsError,
     sdk::metrics::MeterProvider,
     trace::{Span, TraceContextExt, Tracer},
@@ -149,6 +149,7 @@ pub fn prometheus(addr: &SocketAddr, _node_id: Option<u64>) -> Result<MeterProvi
         .with_registry(registry.clone())
         .build()?;
     let provider = MeterProvider::builder().with_reader(exporter).build();
+    global::set_meter_provider(provider.clone());
 
     async fn handle_request(
         req: Request<Body>,

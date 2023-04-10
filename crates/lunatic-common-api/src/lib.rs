@@ -1,5 +1,7 @@
-use anyhow::{anyhow, Context, Result};
 use std::{fmt::Display, future::Future, io::Write, pin::Pin};
+
+use anyhow::{anyhow, Context, Result};
+use once_cell::sync::OnceCell;
 use wasmtime::{Caller, Memory, Val};
 
 const ALLOCATOR_FUNCTION_NAME: &str = "lunatic_alloc";
@@ -76,6 +78,23 @@ pub async fn write_to_guest_vec<T: Send>(
     memory.write(caller, len_ptr as usize, &alloc_len.to_le_bytes())?;
 
     Ok(alloc_ptr)
+}
+
+pub trait MetricsExt<T> {
+    fn with_current_context<F>(&self, f: F)
+    where
+        F: Fn(&T, opentelemetry::Context);
+}
+
+impl<T> MetricsExt<T> for OnceCell<T> {
+    fn with_current_context<F>(&self, f: F)
+    where
+        F: Fn(&T, opentelemetry::Context),
+    {
+        if let Some(v) = self.get() {
+            f(v, opentelemetry::Context::current());
+        }
+    }
 }
 
 pub trait IntoTrap<T> {

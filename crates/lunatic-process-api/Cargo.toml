@@ -7,9 +7,6 @@ homepage = "https://lunatic.solutions"
 repository = "https://github.com/lunatic-solutions/lunatic/tree/main/crates/lunatic-process-api"
 license = "Apache-2.0/MIT"
 
-[features]
-metrics = ["dep:metrics"]
-
 [dependencies]
 hash-map-id = { workspace = true }
 lunatic-common-api = { workspace = true }
@@ -18,6 +15,7 @@ lunatic-process = { workspace = true }
 lunatic-wasi-api = { workspace = true }
 
 anyhow = { workspace = true }
-metrics = { workspace = true, optional = true }
+once_cell = { workspace = true }
+opentelemetry = { workspace = true }
 tokio = { workspace = true, features = ["time"] }
 wasmtime = { workspace = true }

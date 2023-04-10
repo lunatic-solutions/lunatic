@@ -7,9 +7,14 @@ use std::{
 
 use anyhow::Result;
 use hash_map_id::HashMapId;
-use lunatic_common_api::IntoTrap;
+use lunatic_common_api::{IntoTrap, MetricsExt};
 use lunatic_process::{state::ProcessState, Signal};
 use lunatic_process_api::ProcessCtx;
+use once_cell::sync::OnceCell;
+use opentelemetry::{
+    global,
+    metrics::{Counter, Meter, Unit, UpDownCounter},
+};
 use tokio::task::JoinHandle;
 use wasmtime::{Caller, Linker};
 
@@ -84,36 +89,54 @@ pub trait TimerCtx {
     fn timer_resources_mut(&mut self) -> &mut TimerResources;
 }
 
+struct Metrics {
+    _meter: Meter,
+    started: Counter<u64>,
+    completed: Counter<u64>,
+    canceled: Counter<u64>,
+    active: UpDownCounter<i64>,
+}
+
+static METRICS: OnceCell<Metrics> = OnceCell::new();
+
 pub fn register<T: ProcessState + ProcessCtx<T> + TimerCtx + Send + 'static>(
     linker: &mut Linker<T>,
 ) -> Result<()> {
+    METRICS.get_or_init(|| {
+        let meter = global::meter("lunatic.timers");
+
+        let started = meter
+            .u64_counter("started")
+            .with_unit(Unit::new("count"))
+            .with_description("Number of timers set since startup")
+            .init();
+        let completed = meter
+            .u64_counter("completed")
+            .with_unit(Unit::new("count"))
+            .with_description("Number of timners completed since startup")
+            .init();
+        let canceled = meter
+            .u64_counter("canceled")
+            .with_unit(Unit::new("count"))
+            .with_description("Number of timers cancelled since startup")
+            .init();
+        let active = meter
+            .i64_up_down_counter("active")
+            .with_unit(Unit::new("count"))
+            .with_description("Number of timers currently active")
+            .init();
+
+        Metrics {
+            _meter: meter,
+            started,
+            completed,
+            canceled,
+            active,
+        }
+    });
+
     linker.func_wrap("lunatic::timer", "send_after", send_after)?;
     linker.func_wrap1_async("lunatic::timer", "cancel_timer", cancel_timer)?;
-
-    #[cfg(feature = "metrics")]
-    metrics::describe_counter!(
-        "lunatic.timers.started",
-        metrics::Unit::Count,
-        "number of timers set since startup, will usually be completed + canceled + active"
-    );
-    #[cfg(feature = "metrics")]
-    metrics::describe_counter!(
-        "lunatic.timers.completed",
-        metrics::Unit::Count,
-        "number of timers completed since startup"
-    );
-    #[cfg(feature = "metrics")]
-    metrics::describe_counter!(
-        "lunatic.timers.canceled",
-        metrics::Unit::Count,
-        "number of timers canceled since startup"
-    );
-    #[cfg(feature = "metrics")]
-    metrics::describe_gauge!(
-        "lunatic.timers.active",
-        metrics::Unit::Count,
-        "number of timers currently active"
-    );
 
     Ok(())
 }
@@ -140,20 +163,22 @@ fn send_after<T: ProcessState + ProcessCtx<T> + TimerCtx>(
 
     let target_time = Instant::now() + Duration::from_millis(delay);
     let timer_handle = tokio::task::spawn(async move {
-        #[cfg(feature = "metrics")]
-        metrics::increment_counter!("lunatic.timers.started");
-        #[cfg(feature = "metrics")]
-        metrics::increment_gauge!("lunatic.timers.active", 1.0);
+        METRICS.with_current_context(|metrics, cx| {
+            metrics.started.add(&cx, 1, &[]);
+            metrics.active.add(&cx, 1, &[]);
+        });
+
         let duration_remaining = target_time - Instant::now();
         if duration_remaining != Duration::ZERO {
             tokio::time::sleep(duration_remaining).await;
         }
         if let Some(process) = process {
-            #[cfg(feature = "metrics")]
-            metrics::increment_counter!("lunatic.timers.completed");
-            #[cfg(feature = "metrics")]
-            metrics::decrement_gauge!("lunatic.timers.active", 1.0);
             process.send(Signal::Message(message));
+
+            METRICS.with_current_context(|metrics, cx| {
+                metrics.completed.add(&cx, 1, &[]);
+                metrics.active.add(&cx, -1, &[]);
+            });
         }
     });
 
@@ -181,10 +206,12 @@ fn cancel_timer<T: ProcessState + TimerCtx + Send>(
         match timer_handle {
             Some(timer_handle) => {
                 timer_handle.abort();
-                #[cfg(feature = "metrics")]
-                metrics::increment_counter!("lunatic.timers.canceled");
-                #[cfg(feature = "metrics")]
-                metrics::decrement_gauge!("lunatic.timers.active", 1.0);
+
+                METRICS.with_current_context(|metrics, cx| {
+                    metrics.canceled.add(&cx, 1, &[]);
+                    metrics.active.add(&cx, -1, &[]);
+                });
+
                 Ok(1)
             }
             None => Ok(0),

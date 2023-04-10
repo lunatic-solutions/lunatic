@@ -1,45 +1,64 @@
 use std::{collections::HashMap, future::Future, mem::transmute};
 
 use anyhow::{anyhow, Result};
-use lunatic_common_api::{get_memory, IntoTrap};
+use lunatic_common_api::{get_memory, IntoTrap, MetricsExt};
 use lunatic_process::state::ProcessState;
 use lunatic_process_api::ProcessCtx;
+use once_cell::sync::OnceCell;
+use opentelemetry::{
+    global,
+    metrics::{Counter, Meter, UpDownCounter},
+};
 use tokio::sync::RwLockWriteGuard;
 use wasmtime::{Caller, Linker};
+
+struct Metrics {
+    _meter: Meter,
+    registered: UpDownCounter<i64>,
+    read: Counter<u64>,
+    write: Counter<u64>,
+    deletion: Counter<u64>,
+}
+
+static METRICS: OnceCell<Metrics> = OnceCell::new();
 
 // Register the registry APIs to the linker
 pub fn register<T: ProcessState + ProcessCtx<T> + Send + Sync + 'static>(
     linker: &mut Linker<T>,
 ) -> Result<()> {
+    METRICS.get_or_init(|| {
+        let meter = global::meter("lunatic.registry");
+
+        let registered = meter
+            .i64_up_down_counter("registered")
+            .with_description("Number or processes currently registered")
+            .init();
+        let read = meter
+            .u64_counter("read")
+            .with_description("Number of entries read from the registry")
+            .init();
+        let write = meter
+            .u64_counter("write")
+            .with_description("Number of entries written to the registry")
+            .init();
+        let deletion = meter
+            .u64_counter("deletion")
+            .with_description("Number of entries deleted from the registry")
+            .init();
+
+        Metrics {
+            _meter: meter,
+            registered,
+            read,
+            write,
+            deletion,
+        }
+    });
+
     linker.func_wrap4_async("lunatic::registry", "put", put)?;
     linker.func_wrap4_async("lunatic::registry", "get", get)?;
     linker.func_wrap4_async("lunatic::registry", "get_or_put_later", get_or_put_later)?;
     linker.func_wrap2_async("lunatic::registry", "remove", remove)?;
-
-    #[cfg(feature = "metrics")]
-    metrics::describe_counter!(
-        "lunatic.registry.write",
-        metrics::Unit::Count,
-        "number of new entries written to the registry"
-    );
-    #[cfg(feature = "metrics")]
-    metrics::describe_counter!(
-        "lunatic.timers.read",
-        metrics::Unit::Count,
-        "number of entries read from the registry"
-    );
-    #[cfg(feature = "metrics")]
-    metrics::describe_counter!(
-        "lunatic.timers.deletion",
-        metrics::Unit::Count,
-        "number of entries deleted from the registry"
-    );
-    #[cfg(feature = "metrics")]
-    metrics::describe_gauge!(
-        "lunatic.timers.registered",
-        metrics::Unit::Count,
-        "number of processes currently registered"
-    );
 
     Ok(())
 }
@@ -79,11 +98,10 @@ fn put<T: ProcessState + ProcessCtx<T> + Send + Sync>(
             }
         }
 
-        #[cfg(feature = "metrics")]
-        metrics::increment_counter!("lunatic.registry.write");
-
-        #[cfg(feature = "metrics")]
-        metrics::increment_gauge!("lunatic.registry.registered", 1.0);
+        METRICS.with_current_context(|metrics, cx| {
+            metrics.registered.add(&cx, 1, &[]);
+            metrics.write.add(&cx, 1, &[]);
+        });
 
         Ok(())
     })
@@ -115,8 +133,9 @@ fn get<T: ProcessState + ProcessCtx<T> + Send + Sync>(
             ));
         }
 
-        #[cfg(feature = "metrics")]
-        metrics::increment_counter!("lunatic.registry.read");
+        METRICS.with_current_context(|metrics, cx| {
+            metrics.read.add(&cx, 1, &[]);
+        });
 
         let (node_id, process_id) = if let Some(process) = state.registry().read().await.get(name) {
             *process
@@ -168,8 +187,9 @@ fn get_or_put_later<T: ProcessState + ProcessCtx<T> + Send + Sync>(
             .or_trap("lunatic::registry::get")?;
         let name = std::str::from_utf8(name).or_trap("lunatic::registry::get")?;
 
-        #[cfg(feature = "metrics")]
-        metrics::increment_counter!("lunatic.registry.read");
+        METRICS.with_current_context(|metrics, cx| {
+            metrics.read.add(&cx, 1, &[]);
+        });
 
         // Lock the registry for every other process before lookup, to make sure
         // nobody else can insert anything before us.
@@ -230,11 +250,10 @@ fn remove<T: ProcessState + ProcessCtx<T> + Send + Sync>(
 
         state.registry().write().await.remove(name);
 
-        #[cfg(feature = "metrics")]
-        metrics::increment_counter!("lunatic.registry.deletion");
-
-        #[cfg(feature = "metrics")]
-        metrics::decrement_gauge!("lunatic.registry.registered", 1.0);
+        METRICS.with_current_context(|metrics, cx| {
+            metrics.deletion.add(&cx, 1, &[]);
+            metrics.registered.add(&cx, -1, &[]);
+        });
 
         Ok(())
     })

@@ -85,7 +85,6 @@ pub struct DefaultProcessState {
     // is a safe operation, because it references a global registry that outlives all processes.
     registry_atomic_put: Option<RwLockWriteGuard<'static, HashMap<String, (u64, u64)>>>,
     // Metrics
-    // TODO: Does this need to be in an Arc?
     tracer: Arc<BoxedTracer>,
     tracer_context: Arc<Context>,
     process_context: Context,
@@ -200,7 +199,6 @@ impl ProcessState for DefaultProcessState {
         lunatic_registry_api::register(linker)?;
         lunatic_distributed_api::register(linker)?;
         lunatic_sqlite_api::register(linker)?;
-        #[cfg(feature = "metrics")]
         lunatic_metrics_api::register(linker)?;
         lunatic_trap_api::register(linker)?;
         Ok(())

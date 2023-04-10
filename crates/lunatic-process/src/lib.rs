@@ -12,6 +12,13 @@ use anyhow::{anyhow, Result};
 use env::Environment;
 use log::{debug, log_enabled, trace, warn, Level};
 
+use lunatic_common_api::MetricsExt;
+use once_cell::sync::OnceCell;
+use opentelemetry::{
+    global,
+    metrics::{Counter, Histogram, Meter, Unit, UpDownCounter},
+    KeyValue,
+};
 use smallvec::SmallVec;
 use state::ProcessState;
 use tokio::{
@@ -24,76 +31,42 @@ use tokio::{
 
 use crate::{mailbox::MessageMailbox, message::Message};
 
-#[cfg(feature = "metrics")]
-pub fn describe_metrics() {
-    use metrics::{describe_counter, describe_gauge, describe_histogram, Unit};
-
-    describe_counter!(
-        "lunatic.process.signals.send",
-        Unit::Count,
-        "Number of signals sent to processes since startup"
-    );
-
-    describe_counter!(
-        "lunatic.process.signals.received",
-        Unit::Count,
-        "Number of signals received by processes since startup"
-    );
-
-    describe_counter!(
-        "lunatic.process.messages.send",
-        Unit::Count,
-        "Number of messages sent to processes since startup"
-    );
-
-    describe_gauge!(
-        "lunatic.process.messages.outstanding",
-        Unit::Count,
-        "Current number of messages that are ready to be consumed by the process"
-    );
-
-    describe_gauge!(
-        "lunatic.process.links.alive",
-        Unit::Count,
-        "Number of links currently alive"
-    );
-
-    describe_counter!(
-        "lunatic.process.messages.data.count",
-        Unit::Count,
-        "Number of data messages send since startup"
-    );
-
-    describe_histogram!(
-        "lunatic.process.messages.data.resources.count",
-        Unit::Count,
-        "Number of resources used by each individual data message"
-    );
-
-    describe_histogram!(
-        "lunatic.process.messages.data.size",
-        Unit::Bytes,
-        "Number of bytes used by each individual data message"
-    );
-
-    describe_counter!(
-        "lunatic.process.messages.link_died.count",
-        Unit::Count,
-        "Number of LinkDied messages send since startup"
-    );
-
-    describe_gauge!(
-        "lunatic.process.environment.process.count",
-        Unit::Count,
-        "Number of currently registered processes"
-    );
-
-    describe_gauge!(
-        "lunatic.process.environment.count",
-        Unit::Count,
-        "Number of currently active environments"
-    );
+struct SignalsMetrics {
+    _meter: Meter,
+    sent: Counter<u64>,
+    received: Counter<u64>,
+    link_died: Counter<u64>,
 }
+
+struct MessagesMetrics {
+    _meter: Meter,
+    sent: Counter<u64>,
+    outstanding: UpDownCounter<i64>,
+}
+
+struct LinksMetrics {
+    _meter: Meter,
+    alive: UpDownCounter<i64>,
+}
+
+struct DataMessagesMetrics {
+    _meter: Meter,
+    sent: Counter<u64>,
+    resources_count: Histogram<u64>,
+    size: Histogram<u64>,
+}
+
+struct EnvironmentMetrics {
+    _meter: Meter,
+    count: UpDownCounter<i64>,
+    process_count: UpDownCounter<i64>,
+}
+
+static SIGNALS_METRICS: OnceCell<SignalsMetrics> = OnceCell::new();
+static MESSAGES_METRICS: OnceCell<MessagesMetrics> = OnceCell::new();
+static LINKS_METRICS: OnceCell<LinksMetrics> = OnceCell::new();
+static DATA_MESSAGES_METRICS: OnceCell<DataMessagesMetrics> = OnceCell::new();
+static ENVIRONMENT_METRICS: OnceCell<EnvironmentMetrics> = OnceCell::new();
 
 /// The `Process` is the main abstraction in lunatic.
 ///
@@ -195,21 +168,22 @@ impl Process for WasmProcess {
     }
 
     fn send(&self, signal: Signal) {
-        #[cfg(all(feature = "metrics", not(feature = "detailed_metrics")))]
-        let labels = [("process_kind", "wasm")];
-        #[cfg(all(feature = "metrics", feature = "detailed_metrics"))]
-        let labels = [
-            ("process_kind", "wasm"),
-            ("process_id", self.id().to_string()),
-        ];
-        #[cfg(feature = "metrics")]
-        metrics::increment_counter!("lunatic.process.signals.send", &labels);
-
         // If the receiver doesn't exist or is closed, just ignore it and drop the `signal`.
         // lunatic can't guarantee that a message was successfully seen by the receiving side even
         // if this call succeeds. We deliberately don't expose this API, as it would not make sense
         // to relay on it and could signal wrong guarantees to users.
         let _ = self.signal_mailbox.send(signal);
+
+        SIGNALS_METRICS.with_current_context(|metrics, cx| {
+            metrics.sent.add(
+                &cx,
+                1,
+                &[
+                    KeyValue::new("process_kind", "wasm"),
+                    KeyValue::new("process_id", self.id() as i64),
+                ],
+            )
+        });
     }
 }
 
@@ -295,47 +269,46 @@ where
     //       Currently a panic would just kill the task, but not notify linked processes.
     let mut signal_mailbox = signal_mailbox.lock().await;
     let mut has_sender = true;
-    #[cfg(all(feature = "metrics", not(feature = "detailed_metrics")))]
-    let labels: [(String, String); 0] = [];
-    #[cfg(all(feature = "metrics", feature = "detailed_metrics"))]
-    let labels = [("process_id", id.to_string())];
     let result = loop {
         tokio::select! {
             biased;
             // Handle signals first
             signal = signal_mailbox.recv(), if has_sender => {
-                #[cfg(feature = "metrics")]
-                metrics::increment_counter!("lunatic.process.signals.received", &labels);
+                SIGNALS_METRICS.with_current_context(|metrics, cx| {
+                    metrics.received.add(&cx, 1, &[KeyValue::new("process_id", id as i64)])
+                });
 
                 match signal.ok_or(()) {
                     Ok(Signal::Message(message)) => {
 
-                        #[cfg(feature = "metrics")]
                         message.write_metrics();
 
                         message_mailbox.push(message);
 
                         // process metrics
-                        #[cfg(feature = "metrics")]
-                        metrics::increment_counter!("lunatic.process.messages.send", &labels);
-
-                        #[cfg(feature = "metrics")]
-                        metrics::gauge!("lunatic.process.messages.outstanding", message_mailbox.len() as f64, &labels);
+                        MESSAGES_METRICS.with_current_context(|metrics, cx| {
+                            let attrs= [KeyValue::new("process_id", id as i64)];
+                            metrics.sent.add(&cx, 1, &attrs);
+                            metrics.outstanding.add(&cx, message_mailbox.len() as i64, &attrs);
+                        });
                     },
                     Ok(Signal::DieWhenLinkDies(value)) => die_when_link_dies = value,
                     // Put process into list of linked processes
                     Ok(Signal::Link(tag, proc)) => {
                         links.insert(proc.id(), (proc, tag));
 
-                        #[cfg(feature = "metrics")]
-                        metrics::gauge!("lunatic.process.links.alive", links.len() as f64, &labels);
+                        LINKS_METRICS.with_current_context(|metrics, cx| {
+                            metrics.alive.add(&cx, 1, &[KeyValue::new("process_id", id as i64)])
+                        });
+
                     },
                     // Remove process from list
                     Ok(Signal::UnLink { process_id }) => {
                         links.remove(&process_id);
 
-                        #[cfg(feature = "metrics")]
-                        metrics::gauge!("lunatic.process.links.alive", links.len() as f64, &labels);
+                        LINKS_METRICS.with_current_context(|metrics, cx| {
+                            metrics.alive.add(&cx, -1, &[KeyValue::new("process_id", id as i64)])
+                        });
                     }
                     // Exit loop and don't poll anymore the future if Signal::Kill received.
                     Ok(Signal::Kill) => break Finished::KillSignal,
@@ -344,8 +317,10 @@ where
                     Ok(Signal::LinkDied(id, tag, reason)) => {
                         links.remove(&id);
 
-                        #[cfg(feature = "metrics")]
-                        metrics::gauge!("lunatic.process.links.alive", links.len() as f64, &labels);
+                        LINKS_METRICS.with_current_context(|metrics, cx| {
+                            metrics.alive.add(&cx, -1, &[KeyValue::new("process_id", id as i64)])
+                        });
+
                         match reason {
                             DeathReason::Failure | DeathReason::NoProcess => {
                                 if die_when_link_dies {
@@ -355,11 +330,10 @@ where
                                 } else {
                                     let message = Message::LinkDied(tag);
 
-                                    #[cfg(feature = "metrics")]
-                                    metrics::increment_counter!("lunatic.process.messages.send", &labels);
+                                    MESSAGES_METRICS.with_current_context(|metrics, cx| {
+                                        metrics.outstanding.add(&cx, -(message_mailbox.len() as i64), &[KeyValue::new("process_id", id as i64)]);
+                                    });
 
-                                    #[cfg(feature = "metrics")]
-                                    metrics::gauge!("lunatic.process.messages.outstanding", message_mailbox.len() as f64, &labels);
                                     message_mailbox.push(message);
                                 }
                             },
@@ -471,21 +445,22 @@ impl Process for NativeProcess {
     }
 
     fn send(&self, signal: Signal) {
-        #[cfg(all(feature = "metrics", not(feature = "detailed_metrics")))]
-        let labels = [("process_kind", "native")];
-        #[cfg(all(feature = "metrics", feature = "detailed_metrics"))]
-        let labels = [
-            ("process_kind", "native"),
-            ("process_id", self.id().to_string()),
-        ];
-        #[cfg(feature = "metrics")]
-        metrics::increment_counter!("lunatic.process.signals.send", &labels);
-
         // If the receiver doesn't exist or is closed, just ignore it and drop the `signal`.
         // lunatic can't guarantee that a message was successfully seen by the receiving side even
         // if this call succeeds. We deliberately don't expose this API, as it would not make sense
         // to relay on it and could signal wrong guarantees to users.
         let _ = self.signal_mailbox.send(signal);
+
+        SIGNALS_METRICS.with_current_context(|metrics, cx| {
+            metrics.sent.add(
+                &cx,
+                1,
+                &[
+                    KeyValue::new("process_kind", "native"),
+                    KeyValue::new("process_id", self.id() as i64),
+                ],
+            );
+        });
     }
 }
 
@@ -542,4 +517,118 @@ pub enum ResultValue {
     Failed(String),
     SpawnError(String),
     Killed,
+}
+pub fn init_metrics() {
+    SIGNALS_METRICS.get_or_init(|| {
+        let meter = global::meter("lunatic.process.signals");
+
+        let sent = meter
+            .u64_counter("sent")
+            .with_unit(Unit::new("count"))
+            .with_description("Number of signals sent to processes since startup")
+            .init();
+        let received = meter
+            .u64_counter("received")
+            .with_unit(Unit::new("count"))
+            .with_description("Number of received by processes since startup")
+            .init();
+        let link_died = meter
+            .u64_counter("link_died")
+            .with_unit(Unit::new("count"))
+            .with_description("Number of LinkDied messages send since startup")
+            .init();
+
+        SignalsMetrics {
+            _meter: meter,
+            sent,
+            received,
+            link_died,
+        }
+    });
+
+    MESSAGES_METRICS.get_or_init(|| {
+        let meter = global::meter("lunatic.process.messages");
+
+        let sent = meter
+            .u64_counter("sent")
+            .with_unit(Unit::new("count"))
+            .with_description("Number of messages sent to processes since startup")
+            .init();
+        let outstanding = meter
+            .i64_up_down_counter("outstanding")
+            .with_unit(Unit::new("count"))
+            .with_description(
+                "Current number of messages that are ready to be consumed by processes",
+            )
+            .init();
+
+        MessagesMetrics {
+            _meter: meter,
+            sent,
+            outstanding,
+        }
+    });
+
+    LINKS_METRICS.get_or_init(|| {
+        let meter = global::meter("lunatic.process.links");
+
+        let alive = meter
+            .i64_up_down_counter("alive")
+            .with_unit(Unit::new("count"))
+            .with_description("Number of links currently alive")
+            .init();
+
+        LinksMetrics {
+            _meter: meter,
+            alive,
+        }
+    });
+
+    DATA_MESSAGES_METRICS.get_or_init(|| {
+        let meter = global::meter("lunatic.process.messages.data");
+
+        let sent = meter
+            .u64_counter("sent")
+            .with_unit(Unit::new("count"))
+            .with_description("Number of data messages sent since startup")
+            .init();
+        let resources_count = meter
+            .u64_histogram("resources_count")
+            .with_unit(Unit::new("count"))
+            .with_description("Number of resources used by each individual message")
+            .init();
+        let size = meter
+            .u64_histogram("size")
+            .with_unit(Unit::new("bytes"))
+            .with_description("Number of bytes used by each individual process")
+            .init();
+
+        DataMessagesMetrics {
+            _meter: meter,
+            sent,
+            resources_count,
+            size,
+        }
+    });
+
+    ENVIRONMENT_METRICS.get_or_init(|| {
+        let meter = global::meter("lunatic.environment");
+
+        let count = meter
+            .i64_up_down_counter("count")
+            .with_unit(Unit::new("count"))
+            .with_description("Number of currently active environment")
+            .init();
+        let process_count = meter
+            .i64_up_down_counter("process_count")
+            .with_unit(Unit::new("count"))
+            .with_description("Number of currently registered processes")
+            .init();
+
+        EnvironmentMetrics {
+            _meter: meter,
+            count,
+            process_count,
+        }
+    });
 }

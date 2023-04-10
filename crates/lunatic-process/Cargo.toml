@@ -7,21 +7,17 @@ homepage = "https://lunatic.solutions"
 repository = "https://github.com/lunatic-solutions/lunatic/tree/main/crates/lunatic-process"
 license = "Apache-2.0/MIT"
 
-[features]
-metrics = ["dep:metrics"]
-
-# Disabled by default as it will usually lead to giant metrics exports
-detailed_metrics = ["metrics"]
-
 [dependencies]
 hash-map-id = { workspace = true }
+lunatic-common-api = { workspace = true }
 lunatic-networking-api = { workspace = true }
 
-async-trait = "0.1.58"
 anyhow = { workspace = true }
+async-trait = "0.1.58"
 dashmap = { workspace = true }
 log = { workspace = true }
-metrics = { workspace = true, optional = true }
+once_cell = { workspace = true }
+opentelemetry = { workspace = true }
 serde = { workspace = true }
 smallvec = "1.10"
 tokio = { workspace = true, features = [

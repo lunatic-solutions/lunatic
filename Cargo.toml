@@ -23,16 +23,6 @@ path = "src/main.rs"
 name = "cargo-lunatic"
 path = "src/cargo_lunatic.rs"
 
-[features]
-default = ["metrics"]
-metrics = [
-    "lunatic-process-api/metrics",
-    "lunatic-process/metrics",
-    "lunatic-registry-api/metrics",
-    "lunatic-timer-api/metrics",
-    "dep:lunatic-metrics-api",
-]
-
 [dependencies]
 hash-map-id = { workspace = true }
 lunatic-control = { workspace = true }
@@ -41,17 +31,17 @@ lunatic-distributed = { workspace = true }
 lunatic-distributed-api = { workspace = true }
 lunatic-error-api = { workspace = true }
 lunatic-messaging-api = { workspace = true }
+lunatic-metrics-api = { workspace = true }
 lunatic-networking-api = { workspace = true }
 lunatic-process = { workspace = true }
 lunatic-process-api = { workspace = true }
 lunatic-registry-api = { workspace = true }
+lunatic-sqlite-api = { workspace = true }
 lunatic-stdout-capture = { workspace = true }
 lunatic-timer-api = { workspace = true }
-lunatic-version-api = { workspace = true }
-lunatic-metrics-api = { workspace = true, optional = true }
-lunatic-wasi-api = { workspace = true }
 lunatic-trap-api = { workspace = true }
-lunatic-sqlite-api = { workspace = true }
+lunatic-version-api = { workspace = true }
+lunatic-wasi-api = { workspace = true }
 
 anyhow = { workspace = true }
 async-ctrlc = "1.2.0"
@@ -130,8 +120,8 @@ anyhow = "1.0"
 bincode = "1.3"
 dashmap = "5.4"
 log = "0.4"
+once_cell = "1.17"
 opentelemetry = { version = "0.19", git = "https://github.com/tqwewe/opentelemetry-rust", branch = "cow", features = ["metrics"] }
-metrics = "0.20.1"
 reqwest = "0.11"
 rustls-pemfile = "1.0"
 serde = "1.0"

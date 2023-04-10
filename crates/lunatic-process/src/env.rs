@@ -1,12 +1,15 @@
-use anyhow::Result;
-use async_trait::async_trait;
-use dashmap::DashMap;
 use std::sync::{
     atomic::{AtomicU64, Ordering},
     Arc,
 };
 
-use crate::{Process, Signal};
+use anyhow::Result;
+use async_trait::async_trait;
+use dashmap::DashMap;
+use lunatic_common_api::MetricsExt;
+use opentelemetry::KeyValue;
+
+use crate::{Process, Signal, ENVIRONMENT_METRICS};
 
 #[async_trait]
 pub trait Environment: Send + Sync {
@@ -54,30 +57,26 @@ impl Environment for LunaticEnvironment {
 
     fn add_process(&self, id: u64, proc: Arc<dyn Process>) {
         self.processes.insert(id, proc);
-        #[cfg(all(feature = "metrics", not(feature = "detailed_metrics")))]
-        let labels: [(String, String); 0] = [];
-        #[cfg(all(feature = "metrics", feature = "detailed_metrics"))]
-        let labels = [("environment_id", self.id().to_string())];
-        #[cfg(feature = "metrics")]
-        metrics::gauge!(
-            "lunatic.process.environment.process.count",
-            self.processes.len() as f64,
-            &labels
-        );
+
+        ENVIRONMENT_METRICS.with_current_context(|metrics, cx| {
+            metrics.process_count.add(
+                &cx,
+                self.processes.len() as i64,
+                &[KeyValue::new("environment_id", self.id() as i64)],
+            );
+        });
     }
 
     fn remove_process(&self, id: u64) {
         self.processes.remove(&id);
-        #[cfg(all(feature = "metrics", not(feature = "detailed_metrics")))]
-        let labels: [(String, String); 0] = [];
-        #[cfg(all(feature = "metrics", feature = "detailed_metrics"))]
-        let labels = [("environment_id", self.id().to_string())];
-        #[cfg(feature = "metrics")]
-        metrics::gauge!(
-            "lunatic.process.environment.process.count",
-            self.processes.len() as f64,
-            &labels
-        );
+
+        ENVIRONMENT_METRICS.with_current_context(|metrics, cx| {
+            metrics.process_count.add(
+                &cx,
+                -(self.processes.len() as i64),
+                &[KeyValue::new("environment_id", self.id() as i64)],
+            );
+        });
     }
 
     fn process_count(&self) -> usize {
@@ -121,8 +120,11 @@ impl Environments for LunaticEnvironments {
     async fn create(&self, id: u64) -> Arc<Self::Env> {
         let env = Arc::new(LunaticEnvironment::new(id));
         self.envs.insert(id, env.clone());
-        #[cfg(feature = "metrics")]
-        metrics::gauge!("lunatic.process.environment.count", self.envs.len() as f64);
+
+        ENVIRONMENT_METRICS.with_current_context(|metrics, cx| {
+            metrics.count.add(&cx, 1, &[]);
+        });
+
         env
     }
 

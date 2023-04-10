@@ -9,4 +9,6 @@ license = "Apache-2.0/MIT"
 
 [dependencies]
 anyhow = { workspace = true }
+once_cell = { workspace = true }
+opentelemetry = { workspace = true }
 wasmtime = { workspace = true }

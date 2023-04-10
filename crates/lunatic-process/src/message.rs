@@ -11,7 +11,10 @@ use std::{
     sync::Arc,
 };
 
+use lunatic_common_api::MetricsExt;
 use smallvec::SmallVec;
+
+use crate::{DATA_MESSAGES_METRICS, SIGNALS_METRICS};
 
 pub type Resource = dyn Any + Send + Sync;
 
@@ -36,12 +39,13 @@ impl Message {
         }
     }
 
-    #[cfg(feature = "metrics")]
     pub fn write_metrics(&self) {
         match self {
             Message::Data(message) => message.write_metrics(),
             Message::LinkDied(_) => {
-                metrics::increment_counter!("lunatic.process.messages.link_died.count");
+                SIGNALS_METRICS.with_current_context(|metrics, cx| {
+                    metrics.link_died.add(&cx, 1, &[]);
+                });
             }
         }
     }
@@ -114,14 +118,14 @@ impl DataMessage {
         self.buffer.len()
     }
 
-    #[cfg(feature = "metrics")]
     pub fn write_metrics(&self) {
-        metrics::increment_counter!("lunatic.process.messages.data.count");
-        metrics::histogram!(
-            "lunatic.process.messages.data.resources.count",
-            self.resources.len() as f64
-        );
-        metrics::histogram!("lunatic.process.messages.data.size", self.size() as f64);
+        DATA_MESSAGES_METRICS.with_current_context(|metrics, cx| {
+            metrics.sent.add(&cx, 1, &[]);
+            metrics
+                .resources_count
+                .record(&cx, self.resources.len() as u64, &[]);
+            metrics.size.record(&cx, self.size() as u64, &[]);
+        });
     }
 }
 
