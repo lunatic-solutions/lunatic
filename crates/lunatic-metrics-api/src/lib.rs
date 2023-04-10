@@ -48,7 +48,7 @@ pub trait MetricsCtx {
     fn drop_histogram(&mut self, id: u64) -> Option<Histogram<f64>>;
 }
 
-/// Links the [Metrics](https://crates.io/crates/metrics) APIs
+/// Links the [Metrics](https://crates.io/crates/metrics) APIs.
 pub fn register<T>(linker: &mut Linker<T>) -> anyhow::Result<()>
 where
     T: ProcessState + ProcessCtx<T> + MetricsCtx + Send + Sync + 'static,
@@ -85,10 +85,9 @@ where
     Ok(())
 }
 
-/// Starts a new span of work, used for recording metrics including log events and meters.
+/// Starts a new span of work, used for recording metrics including log events and meters such as counters, gauges, and histograms.
 ///
-/// `parent` is the ID of another span. If it is set to u64::MAX, then the last created span
-/// will be used.
+/// If parent is set to u64::MAX, then the last created span will be used.
 ///
 /// Traps:
 /// * If the name is not a valid utf8 string.
@@ -195,8 +194,7 @@ where
 
 /// Adds a log event in span, containing a name and optional attributes.
 ///
-/// `span` is the ID of the parent span. If it is set to u64::MAX, then the last created span
-/// will be used.
+/// If span is set to u64::MAX, then the last created span will be used.
 ///
 /// The following attributes are optional, and used for logging to the terminal:
 /// * `target`: a string describing the part of the system where the span or event that this
@@ -315,10 +313,13 @@ where
     Ok(())
 }
 
-/// Sets a counter.
+/// Creates a counter with a given name, and optional description and unit.
 ///
 /// Traps:
-/// * If the name is not a valid utf8 string.
+/// * If the name is not a valid utf8 string, or contains invalid characters.
+/// * If the description is not a valid utf8 string.
+/// * If the unit is not a valid utf8 string, or exceeds 63 characters.
+/// * If the meter does not exist.
 /// * If any memory outside the guest heap space is referenced.
 fn counter<T>(
     mut caller: Caller<'_, T>,
@@ -353,8 +354,12 @@ where
 
 /// Increments a counter.
 ///
+/// If span is set to u64::MAX, then the last created span will be used.
+///
 /// Traps:
-/// * If the name is not a valid utf8 string.
+/// * If the span does not exist.
+/// * If the counter does not exist.
+/// * If the attributes is not valid json.
 /// * If any memory outside the guest heap space is referenced.
 fn counter_add<T>(
     mut caller: Caller<'_, T>,
@@ -392,6 +397,14 @@ where
     Ok(())
 }
 
+/// Creates an up/down counter with a given name, and optional description and unit.
+///
+/// Traps:
+/// * If the name is not a valid utf8 string, or contains invalid characters.
+/// * If the description is not a valid utf8 string.
+/// * If the unit is not a valid utf8 string, or exceeds 63 characters.
+/// * If the meter does not exist.
+/// * If any memory outside the guest heap space is referenced.
 fn up_down_counter<T>(
     mut caller: Caller<'_, T>,
     meter: u64,
@@ -423,6 +436,15 @@ where
     Ok(id)
 }
 
+/// Increments an up/down counter. The amount can be negative to decrement.
+///
+/// If span is set to u64::MAX, then the last created span will be used.
+///
+/// Traps:
+/// * If the span does not exist.
+/// * If the counter does not exist.
+/// * If the attributes is not valid json.
+/// * If any memory outside the guest heap space is referenced.
 fn up_down_counter_add<T>(
     mut caller: Caller<'_, T>,
     span: u64,
@@ -446,6 +468,7 @@ where
     Ok(())
 }
 
+/// Drops an up/down counter.
 fn up_down_counter_drop<T>(mut caller: Caller<'_, T>, id: u64) -> Result<()>
 where
     T: MetricsCtx,
@@ -458,54 +481,13 @@ where
     Ok(())
 }
 
-// /// Increments a gauge.
-// ///
-// /// Traps:
-// /// * If the name is not a valid utf8 string.
-// /// * If any memory outside the guest heap space is referenced.
-// fn increment_gauge<T>(
-//     mut caller: Caller<'_, T>,
-//     name_ptr: u32,
-//     name_len: u32,
-//     value: f64,
-// ) -> Result<()> {
-//     todo!()
-//     // let memory = get_memory(&mut caller)?;
-//     // let data = memory.data(&mut caller);
-//     //
-//     // let name =
-//     //     get_string_arg(data, name_ptr, name_len).or_trap("lunatic::metrics::increment_gauge")?;
-//     //
-//     // increment_gauge!(name, value);
-//     // Ok(())
-// }
-//
-// /// Decrements a gauge.
-// ///
-// /// Traps:
-// /// * If the name is not a valid utf8 string.
-// /// * If any memory outside the guest heap space is referenced.
-// fn decrement_gauge<T>(
-//     mut caller: Caller<'_, T>,
-//     name_ptr: u32,
-//     name_len: u32,
-//     value: f64,
-// ) -> Result<()> {
-//     todo!()
-//     // let memory = get_memory(&mut caller)?;
-//     // let data = memory.data(&mut caller);
-//     //
-//     // let name =
-//     //     get_string_arg(data, name_ptr, name_len).or_trap("lunatic::metrics::decrement_gauge")?;
-//     //
-//     // decrement_gauge!(name, value);
-//     // Ok(())
-// }
-
-/// Sets a histogram.
+/// Creates a histogram with a given name, and optional description and unit.
 ///
 /// Traps:
-/// * If the name is not a valid utf8 string.
+/// * If the name is not a valid utf8 string, or contains invalid characters.
+/// * If the description is not a valid utf8 string.
+/// * If the unit is not a valid utf8 string, or exceeds 63 characters.
+/// * If the meter does not exist.
 /// * If any memory outside the guest heap space is referenced.
 fn histogram<T>(
     mut caller: Caller<'_, T>,
@@ -538,6 +520,15 @@ where
     Ok(id)
 }
 
+/// Records a value to a histogram.
+///
+/// If span is set to u64::MAX, then the last created span will be used.
+///
+/// Traps:
+/// * If the span does not exist.
+/// * If the histogram does not exist.
+/// * If the attributes is not valid json.
+/// * If any memory outside the guest heap space is referenced.
 fn histogram_record<T>(
     mut caller: Caller<'_, T>,
     span: u64,
@@ -561,6 +552,7 @@ where
     Ok(())
 }
 
+/// Drops a histogram.
 fn histogram_drop<T>(mut caller: Caller<'_, T>, id: u64) -> Result<()>
 where
     T: MetricsCtx,
@@ -572,6 +564,8 @@ where
 
     Ok(())
 }
+
+// === Helper functions ===
 
 fn get_string_arg(data: &[u8], name_ptr: u32, name_len: u32) -> Result<String> {
     if name_len == 0 {
