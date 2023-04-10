@@ -93,6 +93,7 @@ pub struct DefaultProcessState {
 }
 
 impl DefaultProcessState {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         environment: Arc<LunaticEnvironment>,
         distributed: Option<DistributedProcessState>,
