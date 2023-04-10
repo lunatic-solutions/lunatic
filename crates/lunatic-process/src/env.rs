@@ -59,11 +59,9 @@ impl Environment for LunaticEnvironment {
         self.processes.insert(id, proc);
 
         ENVIRONMENT_METRICS.with_current_context(|metrics, cx| {
-            metrics.process_count.add(
-                &cx,
-                self.processes.len() as i64,
-                &[KeyValue::new("environment_id", self.id() as i64)],
-            );
+            metrics
+                .process_count
+                .add(&cx, 1, &[KeyValue::new("environment_id", self.id() as i64)]);
         });
     }
 
@@ -73,7 +71,7 @@ impl Environment for LunaticEnvironment {
         ENVIRONMENT_METRICS.with_current_context(|metrics, cx| {
             metrics.process_count.add(
                 &cx,
-                -(self.processes.len() as i64),
+                -1,
                 &[KeyValue::new("environment_id", self.id() as i64)],
             );
         });

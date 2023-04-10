@@ -7,7 +7,7 @@ use lunatic_process_api::ProcessCtx;
 use once_cell::sync::OnceCell;
 use opentelemetry::{
     global,
-    metrics::{Counter, Meter, UpDownCounter},
+    metrics::{Counter, Meter, Unit, UpDownCounter},
 };
 use tokio::sync::RwLockWriteGuard;
 use wasmtime::{Caller, Linker};
@@ -17,7 +17,7 @@ struct Metrics {
     registered: UpDownCounter<i64>,
     read: Counter<u64>,
     write: Counter<u64>,
-    deletion: Counter<u64>,
+    delete: Counter<u64>,
 }
 
 static METRICS: OnceCell<Metrics> = OnceCell::new();
@@ -31,18 +31,22 @@ pub fn register<T: ProcessState + ProcessCtx<T> + Send + Sync + 'static>(
 
         let registered = meter
             .i64_up_down_counter("registered")
+            .with_unit(Unit::new("count"))
             .with_description("Number or processes currently registered")
             .init();
         let read = meter
             .u64_counter("read")
+            .with_unit(Unit::new("count"))
             .with_description("Number of entries read from the registry")
             .init();
         let write = meter
             .u64_counter("write")
+            .with_unit(Unit::new("count"))
             .with_description("Number of entries written to the registry")
             .init();
-        let deletion = meter
-            .u64_counter("deletion")
+        let delete = meter
+            .u64_counter("delete")
+            .with_unit(Unit::new("count"))
             .with_description("Number of entries deleted from the registry")
             .init();
 
@@ -51,7 +55,7 @@ pub fn register<T: ProcessState + ProcessCtx<T> + Send + Sync + 'static>(
             registered,
             read,
             write,
-            deletion,
+            delete,
         }
     });
 
@@ -251,7 +255,7 @@ fn remove<T: ProcessState + ProcessCtx<T> + Send + Sync>(
         state.registry().write().await.remove(name);
 
         METRICS.with_current_context(|metrics, cx| {
-            metrics.deletion.add(&cx, 1, &[]);
+            metrics.delete.add(&cx, 1, &[]);
             metrics.registered.add(&cx, -1, &[]);
         });
 

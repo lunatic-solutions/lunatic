@@ -31,42 +31,42 @@ use tokio::{
 
 use crate::{mailbox::MessageMailbox, message::Message};
 
-struct SignalsMetrics {
+pub struct SignalsMetrics {
     _meter: Meter,
-    sent: Counter<u64>,
-    received: Counter<u64>,
-    link_died: Counter<u64>,
+    pub sent: Counter<u64>,
+    pub received: Counter<u64>,
+    pub link_died: Counter<u64>,
 }
 
-struct MessagesMetrics {
+pub struct MessagesMetrics {
     _meter: Meter,
-    sent: Counter<u64>,
-    outstanding: UpDownCounter<i64>,
+    pub sent: Counter<u64>,
+    pub outstanding: UpDownCounter<i64>,
 }
 
-struct LinksMetrics {
+pub struct LinksMetrics {
     _meter: Meter,
-    alive: UpDownCounter<i64>,
+    pub alive: UpDownCounter<i64>,
 }
 
-struct DataMessagesMetrics {
+pub struct DataMessagesMetrics {
     _meter: Meter,
-    sent: Counter<u64>,
-    resources_count: Histogram<u64>,
-    size: Histogram<u64>,
+    pub sent: Counter<u64>,
+    pub resources_count: Histogram<u64>,
+    pub size: Histogram<u64>,
 }
 
-struct EnvironmentMetrics {
+pub struct EnvironmentMetrics {
     _meter: Meter,
-    count: UpDownCounter<i64>,
-    process_count: UpDownCounter<i64>,
+    pub count: UpDownCounter<i64>,
+    pub process_count: UpDownCounter<i64>,
 }
 
-static SIGNALS_METRICS: OnceCell<SignalsMetrics> = OnceCell::new();
-static MESSAGES_METRICS: OnceCell<MessagesMetrics> = OnceCell::new();
-static LINKS_METRICS: OnceCell<LinksMetrics> = OnceCell::new();
-static DATA_MESSAGES_METRICS: OnceCell<DataMessagesMetrics> = OnceCell::new();
-static ENVIRONMENT_METRICS: OnceCell<EnvironmentMetrics> = OnceCell::new();
+pub static SIGNALS_METRICS: OnceCell<SignalsMetrics> = OnceCell::new();
+pub static MESSAGES_METRICS: OnceCell<MessagesMetrics> = OnceCell::new();
+pub static LINKS_METRICS: OnceCell<LinksMetrics> = OnceCell::new();
+pub static DATA_MESSAGES_METRICS: OnceCell<DataMessagesMetrics> = OnceCell::new();
+pub static ENVIRONMENT_METRICS: OnceCell<EnvironmentMetrics> = OnceCell::new();
 
 /// The `Process` is the main abstraction in lunatic.
 ///
@@ -287,9 +287,9 @@ where
 
                         // process metrics
                         MESSAGES_METRICS.with_current_context(|metrics, cx| {
-                            let attrs= [KeyValue::new("process_id", id as i64)];
+                            let attrs = [KeyValue::new("process_id", id as i64)];
                             metrics.sent.add(&cx, 1, &attrs);
-                            metrics.outstanding.add(&cx, message_mailbox.len() as i64, &attrs);
+                            metrics.outstanding.add(&cx, 1, &attrs);
                         });
                     },
                     Ok(Signal::DieWhenLinkDies(value)) => die_when_link_dies = value,
@@ -329,12 +329,12 @@ where
                                     break Finished::KillSignal
                                 } else {
                                     let message = Message::LinkDied(tag);
+                                    message_mailbox.push(message);
 
                                     MESSAGES_METRICS.with_current_context(|metrics, cx| {
-                                        metrics.outstanding.add(&cx, -(message_mailbox.len() as i64), &[KeyValue::new("process_id", id as i64)]);
+                                        metrics.outstanding.add(&cx, 1, &[KeyValue::new("process_id", id as i64)]);
                                     });
 
-                                    message_mailbox.push(message);
                                 }
                             },
                             // In case a linked process finishes normally, don't do anything.
@@ -351,6 +351,14 @@ where
             output = &mut fut => { break Finished::Normal(output); }
         }
     };
+
+    MESSAGES_METRICS.with_current_context(|metrics, cx| {
+        metrics.outstanding.add(
+            &cx,
+            -(message_mailbox.len() as i64),
+            &[KeyValue::new("process_id", id as i64)],
+        );
+    });
 
     let result = match result {
         Finished::Normal(result) => {
@@ -530,7 +538,7 @@ pub fn init_metrics() {
         let received = meter
             .u64_counter("received")
             .with_unit(Unit::new("count"))
-            .with_description("Number of received by processes since startup")
+            .with_description("Number of signals received by processes since startup")
             .init();
         let link_died = meter
             .u64_counter("link_died")
@@ -617,7 +625,7 @@ pub fn init_metrics() {
         let count = meter
             .i64_up_down_counter("count")
             .with_unit(Unit::new("count"))
-            .with_description("Number of currently active environment")
+            .with_description("Number of currently active environments")
             .init();
         let process_count = meter
             .i64_up_down_counter("process_count")

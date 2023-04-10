@@ -14,7 +14,7 @@ use wasmtime::{Caller, Linker};
 use lunatic_process::{
     message::{DataMessage, Message},
     state::ProcessState,
-    Signal,
+    Signal, MESSAGES_METRICS,
 };
 
 // Register the mailbox APIs to the linker
@@ -544,6 +544,15 @@ fn receive<T: ProcessState + ProcessCtx<T> + Send>(
         };
 
         let pop = caller.data_mut().mailbox().pop(tags.as_deref());
+
+        MESSAGES_METRICS.with_current_context(|metrics, cx| {
+            metrics.outstanding.add(
+                &cx,
+                -1,
+                &[KeyValue::new("process_id", caller.data().id() as i64)],
+            );
+        });
+
         if let Ok(message) = match timeout_duration {
             // Without timeout
             u64::MAX => Ok(pop.await),
