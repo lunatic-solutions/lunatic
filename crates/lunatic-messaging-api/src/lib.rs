@@ -5,17 +5,17 @@ use std::{
 };
 
 use anyhow::{anyhow, Result};
-use lunatic_common_api::{get_memory, IntoTrap};
+use lunatic_common_api::{get_memory, IntoTrap, MetricsExt};
 use lunatic_networking_api::NetworkingCtx;
-use lunatic_process_api::ProcessCtx;
-use tokio::time::{timeout, Duration};
-use wasmtime::{Caller, Linker};
-
 use lunatic_process::{
     message::{DataMessage, Message},
     state::ProcessState,
     Signal, MESSAGES_METRICS,
 };
+use lunatic_process_api::ProcessCtx;
+use opentelemetry::KeyValue;
+use tokio::time::{timeout, Duration};
+use wasmtime::{Caller, Linker};
 
 // Register the mailbox APIs to the linker
 pub fn register<T: ProcessState + ProcessCtx<T> + NetworkingCtx + Send + 'static>(
@@ -526,6 +526,8 @@ fn receive<T: ProcessState + ProcessCtx<T> + Send>(
     timeout_duration: u64,
 ) -> Box<dyn Future<Output = Result<u32>> + Send + '_> {
     Box::new(async move {
+        let id = caller.data().id();
+
         let tags = if tag_len > 0 {
             let memory = get_memory(&mut caller)?;
             let buffer = memory
@@ -546,11 +548,9 @@ fn receive<T: ProcessState + ProcessCtx<T> + Send>(
         let pop = caller.data_mut().mailbox().pop(tags.as_deref());
 
         MESSAGES_METRICS.with_current_context(|metrics, cx| {
-            metrics.outstanding.add(
-                &cx,
-                -1,
-                &[KeyValue::new("process_id", caller.data().id() as i64)],
-            );
+            metrics
+                .outstanding
+                .add(&cx, -1, &[KeyValue::new("process_id", id as i64)]);
         });
 
         if let Ok(message) = match timeout_duration {

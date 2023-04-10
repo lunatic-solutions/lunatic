@@ -1577,6 +1577,7 @@ dependencies = [
  "lunatic-networking-api",
  "lunatic-process",
  "lunatic-process-api",
+ "opentelemetry",
  "tokio",
  "wasmtime",
 ]
@@ -1590,7 +1591,6 @@ dependencies = [
  "log",
  "lunatic-common-api",
  "lunatic-process",
- "lunatic-process-api",
  "opentelemetry",
  "serde_json",
  "wasmtime",

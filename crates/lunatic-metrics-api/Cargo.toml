@@ -8,12 +8,12 @@ repository = "https://github.com/lunatic-solutions/lunatic/tree/main/crates/luna
 license = "Apache-2.0/MIT"
 
 [dependencies]
-anyhow = { workspace = true }
 hash-map-id = { workspace = true }
-log = { workspace = true }
 lunatic-common-api = { workspace = true }
 lunatic-process = { workspace = true }
-lunatic-process-api = { workspace = true }
+
+anyhow = { workspace = true }
+log = { workspace = true }
 opentelemetry = { workspace = true }
 serde_json = "1.0"
 wasmtime = { workspace = true }

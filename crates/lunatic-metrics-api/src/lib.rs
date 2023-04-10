@@ -3,7 +3,6 @@ use hash_map_id::HashMapId;
 use log::{Level, Record};
 use lunatic_common_api::{get_memory, IntoTrap};
 use lunatic_process::state::ProcessState;
-use lunatic_process_api::ProcessCtx;
 use opentelemetry::{
     metrics::{
         Counter, Histogram, InstrumentBuilder, Meter, MeterProvider, MetricsError, Unit,
@@ -51,7 +50,7 @@ pub trait MetricsCtx {
 /// Links the [Metrics](https://crates.io/crates/metrics) APIs.
 pub fn register<T>(linker: &mut Linker<T>) -> anyhow::Result<()>
 where
-    T: ProcessState + ProcessCtx<T> + MetricsCtx + Send + Sync + 'static,
+    T: ProcessState + MetricsCtx + 'static,
     <<T as MetricsCtx>::Tracer as Tracer>::Span: Send + Sync,
 {
     linker.func_wrap("lunatic::metrics", "span_start", span_start)?;
@@ -103,7 +102,7 @@ fn span_start<T>(
     attributes_len: u32,
 ) -> Result<u64>
 where
-    T: ProcessState + ProcessCtx<T> + MetricsCtx + Send + Sync,
+    T: MetricsCtx,
     <<T as MetricsCtx>::Tracer as Tracer>::Span: Send + Sync + 'static,
 {
     let memory = get_memory(&mut caller)?;
@@ -148,8 +147,7 @@ where
 /// Drops a span, marking it as finished.
 fn span_drop<T>(mut caller: Caller<'_, T>, id: u64) -> Result<()>
 where
-    T: ProcessState + ProcessCtx<T> + MetricsCtx + Send + Sync,
-    <<T as MetricsCtx>::Tracer as Tracer>::Span: Send + Sync,
+    T: MetricsCtx,
 {
     let memory = get_memory(&mut caller)?;
     let (_data, state) = memory.data_and_store_mut(&mut caller);
@@ -227,8 +225,7 @@ fn event<T>(
     attributes_len: u32,
 ) -> Result<()>
 where
-    T: ProcessState + ProcessCtx<T> + MetricsCtx + Send + Sync,
-    <<T as MetricsCtx>::Tracer as Tracer>::Span: Send + Sync,
+    T: ProcessState + MetricsCtx,
 {
     let memory = get_memory(&mut caller)?;
     let (data, state) = memory.data_and_store_mut(&mut caller);
