@@ -169,7 +169,7 @@ where
     let memory = get_memory(&mut caller)?;
     let (data, state) = memory.data_and_store_mut(&mut caller);
 
-    let name = get_string_arg(&data, name_ptr, name_len).or_trap("lunatic::metrics::meter")?;
+    let name = get_string_arg(data, name_ptr, name_len).or_trap("lunatic::metrics::meter")?;
 
     let meter = state.meter_provider().meter(name.into());
     let id = state.add_meter(meter);
@@ -318,6 +318,7 @@ where
 /// * If the unit is not a valid utf8 string, or exceeds 63 characters.
 /// * If the meter does not exist.
 /// * If any memory outside the guest heap space is referenced.
+#[allow(clippy::too_many_arguments)]
 fn counter<T>(
     mut caller: Caller<'_, T>,
     meter: u64,
@@ -402,6 +403,7 @@ where
 /// * If the unit is not a valid utf8 string, or exceeds 63 characters.
 /// * If the meter does not exist.
 /// * If any memory outside the guest heap space is referenced.
+#[allow(clippy::too_many_arguments)]
 fn up_down_counter<T>(
     mut caller: Caller<'_, T>,
     meter: u64,
@@ -486,6 +488,7 @@ where
 /// * If the unit is not a valid utf8 string, or exceeds 63 characters.
 /// * If the meter does not exist.
 /// * If any memory outside the guest heap space is referenced.
+#[allow(clippy::too_many_arguments)]
 fn histogram<T>(
     mut caller: Caller<'_, T>,
     meter: u64,
@@ -575,6 +578,7 @@ fn get_string_arg(data: &[u8], name_ptr: u32, name_len: u32) -> Result<String> {
     Ok(name)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn create_metric<'a, T, M, F>(
     caller: &'a mut Caller<'_, T>,
     meter: u64,
@@ -655,7 +659,7 @@ where
 fn data_to_opentelemetry(data: Map<String, serde_json::Value>) -> Vec<KeyValue> {
     data.into_iter()
         .map(|(k, v)| KeyValue {
-            key: k.to_string().into(),
+            key: k.into(),
             value: json_to_opentelemetry(v),
         })
         .collect()
