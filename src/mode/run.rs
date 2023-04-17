@@ -72,6 +72,7 @@ pub(crate) async fn start(mut args: Args) -> Result<()> {
             let tracer = opentelemetry_jaeger::new_agent_pipeline()
                 .with_endpoint(jaeger_url)
                 .with_service_name("lunatic")
+                .with_auto_split_batch(true)
                 .install_batch(Tokio)?;
             Arc::new(BoxedTracer::new(Box::new(tracer)))
         }

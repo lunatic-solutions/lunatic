@@ -255,159 +255,160 @@ where
     R: Into<ExecutionResult<S>>,
     F: Future<Output = R> + Send + 'static,
 {
-    trace!("Process {} spawned", id);
-    tokio::pin!(fut);
+    let result = {
+        trace!("Process {} spawned", id);
+        tokio::pin!(fut);
 
-    // Defines what happens if one of the linked processes dies.
-    // If the value is set to false, instead of dying too the process will receive a message about
-    // the linked process' death.
-    let mut die_when_link_dies = true;
-    // Process linked to this one
-    let mut links = HashMap::new();
-    // TODO: Maybe wrapping this in some kind of `std::panic::catch_unwind` wold be a good idea,
-    //       to protect against panics in host function calls that unwind through Wasm code.
-    //       Currently a panic would just kill the task, but not notify linked processes.
-    let mut signal_mailbox = signal_mailbox.lock().await;
-    let mut has_sender = true;
-    let result = loop {
-        tokio::select! {
-            biased;
-            // Handle signals first
-            signal = signal_mailbox.recv(), if has_sender => {
-                SIGNALS_METRICS.with_current_context(|metrics, cx| {
-                    metrics.received.add(&cx, 1, &[KeyValue::new("process_id", id as i64)])
-                });
+        // Defines what happens if one of the linked processes dies.
+        // If the value is set to false, instead of dying too the process will receive a message about
+        // the linked process' death.
+        let mut die_when_link_dies = true;
+        // Process linked to this one
+        let mut links = HashMap::new();
+        // TODO: Maybe wrapping this in some kind of `std::panic::catch_unwind` wold be a good idea,
+        //       to protect against panics in host function calls that unwind through Wasm code.
+        //       Currently a panic would just kill the task, but not notify linked processes.
+        let mut signal_mailbox = signal_mailbox.lock().await;
+        let mut has_sender = true;
+        let result = loop {
+            tokio::select! {
+                biased;
+                // Handle signals first
+                signal = signal_mailbox.recv(), if has_sender => {
+                    SIGNALS_METRICS.with_current_context(|metrics, cx| {
+                        metrics.received.add(&cx, 1, &[KeyValue::new("process_id", id as i64)])
+                    });
 
-                match signal.ok_or(()) {
-                    Ok(Signal::Message(message)) => {
+                    match signal.ok_or(()) {
+                        Ok(Signal::Message(message)) => {
+                            message.write_metrics();
+                            message_mailbox.push(message);
 
-                        message.write_metrics();
+                            MESSAGES_METRICS.with_current_context(|metrics, cx| {
+                                let attrs = [KeyValue::new("process_id", id as i64)];
+                                metrics.sent.add(&cx, 1, &attrs);
+                                metrics.outstanding.add(&cx, 1, &attrs);
+                            });
+                        },
+                        Ok(Signal::DieWhenLinkDies(value)) => die_when_link_dies = value,
+                        // Put process into list of linked processes
+                        Ok(Signal::Link(tag, proc)) => {
+                            links.insert(proc.id(), (proc, tag));
 
-                        message_mailbox.push(message);
+                            LINKS_METRICS.with_current_context(|metrics, cx| {
+                                metrics.alive.add(&cx, 1, &[KeyValue::new("process_id", id as i64)])
+                            });
 
-                        // process metrics
-                        MESSAGES_METRICS.with_current_context(|metrics, cx| {
-                            let attrs = [KeyValue::new("process_id", id as i64)];
-                            metrics.sent.add(&cx, 1, &attrs);
-                            metrics.outstanding.add(&cx, 1, &attrs);
-                        });
-                    },
-                    Ok(Signal::DieWhenLinkDies(value)) => die_when_link_dies = value,
-                    // Put process into list of linked processes
-                    Ok(Signal::Link(tag, proc)) => {
-                        links.insert(proc.id(), (proc, tag));
+                        },
+                        // Remove process from list
+                        Ok(Signal::UnLink { process_id }) => {
+                            links.remove(&process_id);
 
-                        LINKS_METRICS.with_current_context(|metrics, cx| {
-                            metrics.alive.add(&cx, 1, &[KeyValue::new("process_id", id as i64)])
-                        });
-
-                    },
-                    // Remove process from list
-                    Ok(Signal::UnLink { process_id }) => {
-                        links.remove(&process_id);
-
-                        LINKS_METRICS.with_current_context(|metrics, cx| {
-                            metrics.alive.add(&cx, -1, &[KeyValue::new("process_id", id as i64)])
-                        });
-                    }
-                    // Exit loop and don't poll anymore the future if Signal::Kill received.
-                    Ok(Signal::Kill) => break Finished::KillSignal,
-                    // Depending if `die_when_link_dies` is set, process will die or turn the
-                    // signal into a message
-                    Ok(Signal::LinkDied(id, tag, reason)) => {
-                        links.remove(&id);
-
-                        LINKS_METRICS.with_current_context(|metrics, cx| {
-                            metrics.alive.add(&cx, -1, &[KeyValue::new("process_id", id as i64)])
-                        });
-
-                        match reason {
-                            DeathReason::Failure | DeathReason::NoProcess => {
-                                if die_when_link_dies {
-                                    // Even this was not a **kill** signal it has the same effect on
-                                    // this process and should be propagated as such.
-                                    break Finished::KillSignal
-                                } else {
-                                    let message = Message::LinkDied(tag);
-                                    message_mailbox.push(message);
-
-                                    MESSAGES_METRICS.with_current_context(|metrics, cx| {
-                                        metrics.outstanding.add(&cx, 1, &[KeyValue::new("process_id", id as i64)]);
-                                    });
-
-                                }
-                            },
-                            // In case a linked process finishes normally, don't do anything.
-                            DeathReason::Normal => {},
+                            LINKS_METRICS.with_current_context(|metrics, cx| {
+                                metrics.alive.add(&cx, -1, &[KeyValue::new("process_id", id as i64)])
+                            });
                         }
-                    },
-                    Err(_) => {
-                        debug_assert!(has_sender);
-                        has_sender = false;
+                        // Exit loop and don't poll anymore the future if Signal::Kill received.
+                        Ok(Signal::Kill) => break Finished::KillSignal,
+                        // Depending if `die_when_link_dies` is set, process will die or turn the
+                        // signal into a message
+                        Ok(Signal::LinkDied(id, tag, reason)) => {
+                            links.remove(&id);
+
+                            LINKS_METRICS.with_current_context(|metrics, cx| {
+                                metrics.alive.add(&cx, -1, &[KeyValue::new("process_id", id as i64)])
+                            });
+
+                            match reason {
+                                DeathReason::Failure | DeathReason::NoProcess => {
+                                    if die_when_link_dies {
+                                        // Even this was not a **kill** signal it has the same effect on
+                                        // this process and should be propagated as such.
+                                        break Finished::KillSignal;
+                                    } else {
+                                        let message = Message::LinkDied(tag);
+                                        message_mailbox.push(message);
+
+                                        MESSAGES_METRICS.with_current_context(|metrics, cx| {
+                                            metrics.outstanding.add(&cx, 1, &[KeyValue::new("process_id", id as i64)]);
+                                        });
+
+                                    }
+                                },
+                                // In case a linked process finishes normally, don't do anything.
+                                DeathReason::Normal => {},
+                            }
+                        },
+                        Err(_) => {
+                            debug_assert!(has_sender);
+                            has_sender = false;
+                        }
                     }
                 }
+                // Run process
+                output = &mut fut => { break Finished::Normal(output); }
             }
-            // Run process
-            output = &mut fut => { break Finished::Normal(output); }
-        }
-    };
+        };
 
-    MESSAGES_METRICS.with_current_context(|metrics, cx| {
-        metrics.outstanding.add(
-            &cx,
-            -(message_mailbox.len() as i64),
-            &[KeyValue::new("process_id", id as i64)],
-        );
-    });
+        MESSAGES_METRICS.with_current_context(|metrics, cx| {
+            metrics.outstanding.add(
+                &cx,
+                -(message_mailbox.len() as i64),
+                &[KeyValue::new("process_id", id as i64)],
+            );
+        });
 
-    let result = match result {
-        Finished::Normal(result) => {
-            let result: ExecutionResult<_> = result.into();
+        match result {
+            Finished::Normal(result) => {
+                let result: ExecutionResult<_> = result.into();
 
-            if let Some(failure) = result.failure() {
-                let registry = result.state().registry().read().await;
-                let name = registry
-                    .iter()
-                    .filter(|(_, (_, process_id))| process_id == &id)
-                    .map(|(name, _)| name.splitn(4, '/').last().unwrap_or(name.as_str()))
-                    .collect::<NameOrID>()
-                    .or_id(id);
+                if let Some(failure) = result.failure() {
+                    let registry = result.state().registry().read().await;
+                    let name = registry
+                        .iter()
+                        .filter(|(_, (_, process_id))| process_id == &id)
+                        .map(|(name, _)| name.splitn(4, '/').last().unwrap_or(name.as_str()))
+                        .collect::<NameOrID>()
+                        .or_id(id);
+                    warn!(
+                        "Process {} failed, notifying: {} links {}",
+                        name,
+                        links.len(),
+                        // If the log level is WARN instruct user how to display the stacktrace
+                        if !log_enabled!(Level::Debug) {
+                            "\n\t\t\t    (Set ENV variable `RUST_LOG=lunatic=debug` to show stacktrace)"
+                        } else {
+                            ""
+                        }
+                    );
+                    debug!("{}", failure);
+                    // Notify all links that we finished with an error
+                    links.iter().for_each(|(_, (proc, tag))| {
+                        proc.send(Signal::LinkDied(id, *tag, DeathReason::Failure));
+                    });
+                    Err(anyhow!(failure.to_string()))
+                } else {
+                    // Notify all links that we finished normally
+                    links.iter().for_each(|(_, (proc, tag))| {
+                        proc.send(Signal::LinkDied(id, *tag, DeathReason::Normal));
+                    });
+                    Ok(result.into_state())
+                }
+            }
+            Finished::KillSignal => {
                 warn!(
-                    "Process {} failed, notifying: {} links {}",
-                    name,
-                    links.len(),
-                    // If the log level is WARN instruct user how to display the stacktrace
-                    if !log_enabled!(Level::Debug) {
-                        "\n\t\t\t    (Set ENV variable `RUST_LOG=lunatic=debug` to show stacktrace)"
-                    } else {
-                        ""
-                    }
+                    "Process {} was killed, notifying: {} links",
+                    id,
+                    links.len()
                 );
-                debug!("{}", failure);
-                // Notify all links that we finished with an error
+
+                // Notify all links that we finished because of a kill signal
                 links.iter().for_each(|(_, (proc, tag))| {
                     proc.send(Signal::LinkDied(id, *tag, DeathReason::Failure));
                 });
-                Err(anyhow!(failure.to_string()))
-            } else {
-                // Notify all links that we finished normally
-                links.iter().for_each(|(_, (proc, tag))| {
-                    proc.send(Signal::LinkDied(id, *tag, DeathReason::Normal));
-                });
-                Ok(result.into_state())
+
+                Err(anyhow!("Process received Kill signal"))
             }
-        }
-        Finished::KillSignal => {
-            warn!(
-                "Process {} was killed, notifying: {} links",
-                id,
-                links.len()
-            );
-            // Notify all links that we finished because of a kill signal
-            links.iter().for_each(|(_, (proc, tag))| {
-                proc.send(Signal::LinkDied(id, *tag, DeathReason::Failure));
-            });
-            Err(anyhow!("Process received Kill signal"))
         }
     };
 

@@ -66,7 +66,4 @@ pub trait ProcessState: Sized {
     fn registry_atomic_put(
         &mut self,
     ) -> &mut Option<RwLockWriteGuard<'static, HashMap<String, (u64, u64)>>>;
-
-    // Spans
-    // fn span_resources(&self) -> &SpanResources<>
 }

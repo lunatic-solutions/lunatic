@@ -8,6 +8,7 @@ use async_trait::async_trait;
 use dashmap::DashMap;
 use lunatic_common_api::MetricsExt;
 use opentelemetry::KeyValue;
+use tokio::sync::{mpsc, Mutex};
 
 use crate::{Process, Signal, ENVIRONMENT_METRICS};
 
@@ -21,7 +22,7 @@ pub trait Environment: Send + Sync {
     fn process_count(&self) -> usize;
     async fn can_spawn_next_process(&self) -> Result<Option<()>>;
     fn send(&self, id: u64, signal: Signal);
-    fn shutdown(&self);
+    async fn shutdown(&self);
 }
 
 #[async_trait]
@@ -32,19 +33,21 @@ pub trait Environments: Send + Sync {
     async fn get(&self, id: u64) -> Option<Arc<Self::Env>>;
 }
 
-#[derive(Clone)]
 pub struct LunaticEnvironment {
     environment_id: u64,
     next_process_id: Arc<AtomicU64>,
     processes: Arc<DashMap<u64, Arc<dyn Process>>>,
+    all_processes_finished: (mpsc::Sender<()>, Mutex<mpsc::Receiver<()>>),
 }
 
 impl LunaticEnvironment {
     pub fn new(id: u64) -> Self {
+        let (tx, rx) = mpsc::channel(1);
         Self {
             environment_id: id,
             processes: Arc::new(DashMap::new()),
             next_process_id: Arc::new(AtomicU64::new(1)),
+            all_processes_finished: (tx, Mutex::new(rx)),
         }
     }
 }
@@ -75,6 +78,11 @@ impl Environment for LunaticEnvironment {
                 &[KeyValue::new("environment_id", self.id() as i64)],
             );
         });
+
+        if self.process_count() == 0 {
+            let tx = self.all_processes_finished.0.clone();
+            tokio::spawn(async move { tx.send(()).await });
+        }
     }
 
     fn process_count(&self) -> usize {
@@ -100,9 +108,12 @@ impl Environment for LunaticEnvironment {
         Ok(Some(()))
     }
 
-    fn shutdown(&self) {
-        for proc in self.processes.iter() {
-            proc.send(Signal::Kill);
+    async fn shutdown(&self) {
+        if self.process_count() > 0 {
+            for proc in self.processes.iter() {
+                proc.send(Signal::Kill);
+            }
+            self.all_processes_finished.1.lock().await.recv().await;
         }
     }
 }

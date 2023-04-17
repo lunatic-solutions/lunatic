@@ -29,7 +29,7 @@ use opentelemetry::metrics::noop::NoopMeterProvider;
 use opentelemetry::metrics::{Counter, Histogram, Meter, UpDownCounter};
 use opentelemetry::trace::noop::NoopTracer;
 use opentelemetry::trace::{Span, TraceContextExt, Tracer};
-use opentelemetry::{Context, KeyValue};
+use opentelemetry::Context;
 use tokio::net::{TcpListener, UdpSocket};
 use tokio::sync::mpsc::unbounded_channel;
 use tokio::sync::{Mutex, RwLock, RwLockWriteGuard};
@@ -458,7 +458,6 @@ impl MetricsCtx for DefaultProcessState {
     }
 
     fn add_context(&mut self, context: Context) -> u64 {
-        context.span().set_attribute(KeyValue::new("hey", "there"));
         self.resources.contexts.add(context)
     }
 

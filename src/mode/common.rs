@@ -9,6 +9,7 @@ use hyper::{
     service::{make_service_fn, service_fn},
     Body, Method, Request, Response, Server,
 };
+use log::LevelFilter;
 use lunatic_distributed::DistributedProcessState;
 use lunatic_process::{
     env::{Environment, LunaticEnvironment, LunaticEnvironments},
@@ -25,6 +26,7 @@ use opentelemetry::{
     KeyValue,
 };
 use prometheus::{Encoder, Registry, TextEncoder};
+use tokio::time::{timeout, Duration};
 
 #[derive(Args, Debug)]
 pub struct WasmArgs {}
@@ -81,10 +83,7 @@ pub async fn run_wasm(args: RunWasm) -> Result<()> {
     };
 
     let module = Arc::new(args.runtime.compile_module::<DefaultProcessState>(module)?);
-    let mut root_span = args.tracer.start(
-        "app_start", // SpanBuilder::from_name("app_start")
-                     //     .with_attributes([KeyValue::new("path", path.to_string_lossy().to_string())]),
-    );
+    let mut root_span = args.tracer.start("app_start");
     root_span.set_attributes([
         KeyValue::new("service.name", "lunatic"),
         KeyValue::new("lunatic.path", path.to_string_lossy().to_string()),
@@ -107,7 +106,7 @@ pub async fn run_wasm(args: RunWasm) -> Result<()> {
         Arc::new(config),
         Default::default(),
         args.tracer,
-        tracer_context,
+        tracer_context.clone(),
         args.meter_provider,
         logger,
     )
@@ -131,16 +130,23 @@ pub async fn run_wasm(args: RunWasm) -> Result<()> {
     ))?;
 
     // Wait on the main process to finish, or ctrl c signal
-    tokio::select! {
+    let result = tokio::select! {
         result = task => {
             result.map(|_| ()).map_err(|err| anyhow!(err.to_string()))
         },
         Ok(_) = tokio::signal::ctrl_c() => {
-            args.env.shutdown();
-            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
             Ok(())
         },
-    }
+    };
+
+    // Kill remaining processes
+    log::set_max_level(LevelFilter::Off);
+    let _ = timeout(Duration::from_millis(100), args.env.shutdown()).await;
+
+    // End the app span
+    tracer_context.span().end();
+
+    result
 }
 
 pub fn prometheus(addr: &SocketAddr, _node_id: Option<u64>) -> Result<MeterProvider, MetricsError> {
@@ -199,9 +205,6 @@ pub fn prometheus(addr: &SocketAddr, _node_id: Option<u64>) -> Result<MeterProvi
     }
 
     tokio::spawn(server);
-    // metrics_exporter_prometheus::PrometheusBuilder::new()
-    //     .with_http_listener(http_socket.unwrap_or_else(|| "0.0.0.0:9927".parse().unwrap()))
-    //     .add_global_label("node_id", node_id.unwrap_or(0).to_string())
-    //     .install()?;
+
     Ok(provider)
 }
