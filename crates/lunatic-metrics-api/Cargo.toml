@@ -11,6 +11,7 @@ license = "Apache-2.0/MIT"
 hash-map-id = { workspace = true }
 lunatic-common-api = { workspace = true }
 lunatic-process = { workspace = true }
+lunatic-process-api = { workspace = true }
 
 anyhow = { workspace = true }
 log = { workspace = true }

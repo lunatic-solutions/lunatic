@@ -3,6 +3,7 @@ use hash_map_id::HashMapId;
 use log::{Level, Record};
 use lunatic_common_api::{get_memory, IntoTrap};
 use lunatic_process::state::ProcessState;
+use lunatic_process_api::ProcessCtx;
 use opentelemetry::{
     metrics::{
         Counter, Histogram, InstrumentBuilder, Meter, MeterProvider, MetricsError, Unit,
@@ -13,6 +14,9 @@ use opentelemetry::{
 };
 use serde_json::Map;
 use wasmtime::{Caller, Linker};
+
+pub const OTEL_LUNATIC_ENVIRONMENT_ID_KEY: &str = "lunatic.environment_id";
+pub const OTEL_LUNATIC_PROCESS_ID_KEY: &str = "lunatic.process_id";
 
 pub type ContextResources = HashMapId<Context>;
 
@@ -50,7 +54,7 @@ pub trait MetricsCtx {
 /// Links the [Metrics](https://crates.io/crates/metrics) APIs.
 pub fn register<T>(linker: &mut Linker<T>) -> anyhow::Result<()>
 where
-    T: ProcessState + MetricsCtx + 'static,
+    T: ProcessCtx<T> + ProcessState + MetricsCtx + 'static,
     <<T as MetricsCtx>::Tracer as Tracer>::Span: Send + Sync,
 {
     linker.func_wrap("lunatic::metrics", "span_start", span_start)?;
@@ -102,7 +106,7 @@ fn span_start<T>(
     attributes_len: u32,
 ) -> Result<u64>
 where
-    T: MetricsCtx,
+    T: ProcessCtx<T> + ProcessState + MetricsCtx,
     <<T as MetricsCtx>::Tracer as Tracer>::Span: Send + Sync + 'static,
 {
     let memory = get_memory(&mut caller)?;
@@ -115,7 +119,7 @@ where
     };
 
     let name = get_string_arg(data, name_ptr, name_len).or_trap("lunatic::metrics::span_start")?;
-    let attributes = if attributes_len > 0 {
+    let mut attributes = if attributes_len > 0 {
         let attributes_data = data
             .get(attributes_ptr as usize..(attributes_ptr + attributes_len) as usize)
             .or_trap("lunatic::metrics::span_start")?;
@@ -125,6 +129,7 @@ where
     } else {
         vec![]
     };
+    inject_lunatic_attributes(state, &mut attributes);
 
     let parent_ctx = if let Some(id) = parent {
         state
@@ -225,14 +230,14 @@ fn event<T>(
     attributes_len: u32,
 ) -> Result<()>
 where
-    T: ProcessState + MetricsCtx,
+    T: ProcessCtx<T> + ProcessState + MetricsCtx,
 {
     let memory = get_memory(&mut caller)?;
     let (data, state) = memory.data_and_store_mut(&mut caller);
 
     let name = get_string_arg(data, name_ptr, name_len).or_trap("lunatic::metrics::event")?;
 
-    let attributes = if attributes_len > 0 {
+    let mut attributes = if attributes_len > 0 {
         let attributes_data = data
             .get(attributes_ptr as usize..(attributes_ptr + attributes_len) as usize)
             .or_trap("lunatic::metrics::event")?;
@@ -295,6 +300,7 @@ where
 
         vec![]
     };
+    inject_lunatic_attributes(state, &mut attributes);
 
     let span = if span != u64::MAX {
         state
@@ -368,7 +374,7 @@ fn counter_add<T>(
     attributes_len: u32,
 ) -> Result<()>
 where
-    T: MetricsCtx,
+    T: ProcessCtx<T> + ProcessState + MetricsCtx,
 {
     let (state, cx, attributes) = update_metric(&mut caller, span, attributes_ptr, attributes_len)
         .or_trap("lunatic::metrics::counter_add")?;
@@ -453,7 +459,7 @@ fn up_down_counter_add<T>(
     attributes_len: u32,
 ) -> Result<()>
 where
-    T: MetricsCtx,
+    T: ProcessCtx<T> + ProcessState + MetricsCtx,
 {
     let (state, cx, attributes) = update_metric(&mut caller, span, attributes_ptr, attributes_len)
         .or_trap("lunatic::metrics::up_down_counter_add")?;
@@ -538,7 +544,7 @@ fn histogram_record<T>(
     attributes_len: u32,
 ) -> Result<()>
 where
-    T: MetricsCtx,
+    T: ProcessCtx<T> + ProcessState + MetricsCtx,
 {
     let (state, cx, attributes) = update_metric(&mut caller, span, attributes_ptr, attributes_len)
         .or_trap("lunatic::metrics::histogram_record")?;
@@ -630,7 +636,7 @@ fn update_metric<'a, T>(
     attributes_len: u32,
 ) -> Result<(&'a T, &'a Context, Vec<KeyValue>)>
 where
-    T: MetricsCtx,
+    T: ProcessCtx<T> + ProcessState + MetricsCtx,
 {
     let memory = get_memory(caller)?;
     let (data, state) = memory.data_and_store_mut(caller);
@@ -641,7 +647,7 @@ where
         state.get_last_context()
     };
 
-    let attributes = if attributes_len > 0 {
+    let mut attributes = if attributes_len > 0 {
         let attributes_data = data
             .get(attributes_ptr as usize..(attributes_ptr + attributes_len) as usize)
             .context("invalid memory region for attributes")?;
@@ -652,8 +658,32 @@ where
     } else {
         vec![]
     };
+    inject_lunatic_attributes(state, &mut attributes);
 
     Ok((state, cx, attributes))
+}
+
+fn inject_lunatic_attributes<T: ProcessCtx<T> + ProcessState>(
+    state: &T,
+    attributes: &mut Vec<KeyValue>,
+) {
+    let environment_id = opentelemetry::Value::I64(state.environment().id() as i64);
+    let process_id = opentelemetry::Value::I64(state.id() as i64);
+    let lunatic_attrs = [
+        (OTEL_LUNATIC_ENVIRONMENT_ID_KEY, environment_id),
+        (OTEL_LUNATIC_PROCESS_ID_KEY, process_id),
+    ];
+    for (key, value) in lunatic_attrs {
+        match attributes
+            .iter_mut()
+            .find(|key_value| key_value.key.as_str() == key)
+        {
+            Some(key_value) => key_value.value = value,
+            None => {
+                attributes.push(KeyValue::new(key, value));
+            }
+        }
+    }
 }
 
 fn data_to_opentelemetry(data: Map<String, serde_json::Value>) -> Vec<KeyValue> {
