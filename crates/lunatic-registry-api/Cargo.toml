@@ -7,15 +7,13 @@ homepage = "https://lunatic.solutions"
 repository = "https://github.com/lunatic-solutions/lunatic/tree/main/crates"
 license = "Apache-2.0/MIT"
 
-[features]
-metrics = ["dep:metrics"]
-
 [dependencies]
 lunatic-common-api = { workspace = true }
 lunatic-process = { workspace = true }
 lunatic-process-api = { workspace = true }
 
-tokio = { workspace = true, features = ["sync"] }
 anyhow = { workspace = true }
-metrics = { workspace = true, optional = true }
+once_cell = { workspace = true }
+opentelemetry = { workspace = true }
+tokio = { workspace = true, features = ["sync"] }
 wasmtime = { workspace = true }

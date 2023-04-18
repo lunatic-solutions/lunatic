@@ -3,9 +3,12 @@ use std::fmt::Debug;
 use std::sync::Arc;
 
 use anyhow::Result;
+use env_logger::Logger;
 use hash_map_id::HashMapId;
+use log::{Log, Record};
 use lunatic_distributed::{DistributedCtx, DistributedProcessState};
 use lunatic_error_api::{ErrorCtx, ErrorResource};
+use lunatic_metrics_api::{ContextResources, MetricsCtx};
 use lunatic_networking_api::{DnsIterator, TlsConnection, TlsListener};
 use lunatic_networking_api::{NetworkingCtx, TcpConnection};
 use lunatic_process::env::{Environment, LunaticEnvironment};
@@ -21,6 +24,12 @@ use lunatic_sqlite_api::{SQLiteConnections, SQLiteCtx, SQLiteGuestAllocators, SQ
 use lunatic_stdout_capture::StdoutCapture;
 use lunatic_timer_api::{TimerCtx, TimerResources};
 use lunatic_wasi_api::{build_wasi, LunaticWasiCtx};
+use opentelemetry::global::{BoxedTracer, GlobalMeterProvider};
+use opentelemetry::metrics::noop::NoopMeterProvider;
+use opentelemetry::metrics::{Counter, Histogram, Meter, UpDownCounter};
+use opentelemetry::trace::noop::NoopTracer;
+use opentelemetry::trace::{Span, TraceContextExt, Tracer};
+use opentelemetry::Context;
 use tokio::net::{TcpListener, UdpSocket};
 use tokio::sync::mpsc::unbounded_channel;
 use tokio::sync::{Mutex, RwLock, RwLockWriteGuard};
@@ -75,9 +84,16 @@ pub struct DefaultProcessState {
     // `RwLock` struct. The lifetime of the lock will need to be extended to `'static`, but this
     // is a safe operation, because it references a global registry that outlives all processes.
     registry_atomic_put: Option<RwLockWriteGuard<'static, HashMap<String, (u64, u64)>>>,
+    // Metrics
+    tracer: Arc<BoxedTracer>,
+    tracer_context: Arc<Context>,
+    process_context: Context,
+    meter_provider: GlobalMeterProvider,
+    logger: Arc<Logger>,
 }
 
 impl DefaultProcessState {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         environment: Arc<LunaticEnvironment>,
         distributed: Option<DistributedProcessState>,
@@ -85,32 +101,44 @@ impl DefaultProcessState {
         module: Arc<WasmtimeCompiledModule<Self>>,
         config: Arc<DefaultProcessConfig>,
         registry: Arc<RwLock<HashMap<String, (u64, u64)>>>,
+        tracer: Arc<BoxedTracer>,
+        tracer_context: Arc<Context>,
+        meter_provider: GlobalMeterProvider,
+        log_filter: Arc<Logger>,
     ) -> Result<Self> {
         let signal_mailbox = unbounded_channel();
         let signal_mailbox = (signal_mailbox.0, Arc::new(Mutex::new(signal_mailbox.1)));
         let message_mailbox = MessageMailbox::default();
+        let id = environment.get_next_process_id();
+        let process_context = new_process_context(id, &tracer, &tracer_context);
+        let wasi = build_wasi(
+            Some(config.command_line_arguments()),
+            Some(config.environment_variables()),
+            config.preopened_dirs(),
+        )?;
         let state = Self {
-            id: environment.get_next_process_id(),
+            id,
             environment,
             distributed,
             runtime: Some(runtime),
             module: Some(module),
-            config: config.clone(),
+            config,
             message: None,
             signal_mailbox,
             message_mailbox,
             resources: Resources::default(),
-            wasi: build_wasi(
-                Some(config.command_line_arguments()),
-                Some(config.environment_variables()),
-                config.preopened_dirs(),
-            )?,
+            wasi,
             wasi_stdout: None,
             wasi_stderr: None,
             initialized: false,
             registry,
             db_resources: DbResources::default(),
             registry_atomic_put: None,
+            tracer,
+            tracer_context,
+            process_context,
+            meter_provider,
+            logger: log_filter,
         };
         Ok(state)
     }
@@ -127,28 +155,36 @@ impl ProcessState for DefaultProcessState {
         let signal_mailbox = unbounded_channel();
         let signal_mailbox = (signal_mailbox.0, Arc::new(Mutex::new(signal_mailbox.1)));
         let message_mailbox = MessageMailbox::default();
+        let id = self.environment.get_next_process_id();
+        let process_context = new_process_context(id, &self.tracer, &self.tracer_context);
+        let wasi = build_wasi(
+            Some(config.command_line_arguments()),
+            Some(config.environment_variables()),
+            config.preopened_dirs(),
+        )?;
         let state = Self {
-            id: self.environment.get_next_process_id(),
+            id,
             environment: self.environment.clone(),
             distributed: self.distributed.clone(),
             runtime: self.runtime.clone(),
             module: Some(module),
-            config: config.clone(),
+            config,
             message: None,
             signal_mailbox,
             message_mailbox,
             resources: Resources::default(),
-            wasi: build_wasi(
-                Some(config.command_line_arguments()),
-                Some(config.environment_variables()),
-                config.preopened_dirs(),
-            )?,
+            wasi,
             wasi_stdout: None,
             wasi_stderr: None,
             initialized: false,
             registry: self.registry.clone(),
             db_resources: DbResources::default(),
             registry_atomic_put: None,
+            tracer: self.tracer.clone(),
+            tracer_context: self.tracer_context.clone(),
+            process_context,
+            meter_provider: self.meter_provider.clone(),
+            logger: self.logger.clone(),
         };
         Ok(state)
     }
@@ -164,7 +200,6 @@ impl ProcessState for DefaultProcessState {
         lunatic_registry_api::register(linker)?;
         lunatic_distributed_api::register(linker)?;
         lunatic_sqlite_api::register(linker)?;
-        #[cfg(feature = "metrics")]
         lunatic_metrics_api::register(linker)?;
         lunatic_trap_api::register(linker)?;
         Ok(())
@@ -406,10 +441,126 @@ impl SQLiteCtx for DefaultProcessState {
     }
 }
 
-#[derive(Default, Debug)]
+impl MetricsCtx for DefaultProcessState {
+    type Tracer = BoxedTracer;
+    type MeterProvider = GlobalMeterProvider;
+
+    fn tracer(&self) -> &Self::Tracer {
+        &self.tracer
+    }
+
+    fn meter_provider(&self) -> &Self::MeterProvider {
+        &self.meter_provider
+    }
+
+    fn log(&self, record: &Record) {
+        self.logger.log(record);
+    }
+
+    fn add_context(&mut self, context: Context) -> u64 {
+        self.resources.contexts.add(context)
+    }
+
+    fn get_context(&self, id: u64) -> Option<&Context> {
+        self.resources.contexts.get(id)
+    }
+
+    fn get_last_context(&self) -> &Context {
+        self.resources
+            .contexts
+            .get_last()
+            .unwrap_or(&self.process_context)
+    }
+
+    fn drop_context(&mut self, id: u64) {
+        self.resources.contexts.remove(id);
+    }
+
+    fn add_meter(&mut self, meter: Meter) -> u64 {
+        self.resources.meters.add(meter)
+    }
+
+    fn get_meter(&self, id: u64) -> Option<&Meter> {
+        self.resources.meters.get(id)
+    }
+
+    fn drop_meter(&mut self, id: u64) -> Option<Meter> {
+        self.resources.meters.remove(id)
+    }
+
+    fn add_counter(&mut self, counter: Counter<f64>) -> u64 {
+        self.resources.metrics.add(Metric::Counter(counter))
+    }
+
+    fn get_counter(&self, id: u64) -> Option<&Counter<f64>> {
+        match self.resources.metrics.get(id)? {
+            Metric::Counter(counter) => Some(counter),
+            _ => None,
+        }
+    }
+
+    fn drop_counter(&mut self, id: u64) -> Option<Counter<f64>> {
+        self.resources
+            .metrics
+            .remove(id)
+            .and_then(|metric| match metric {
+                Metric::Counter(counter) => Some(counter),
+                _ => None,
+            })
+    }
+
+    fn add_up_down_counter(&mut self, up_down_counter: UpDownCounter<f64>) -> u64 {
+        self.resources
+            .metrics
+            .add(Metric::UpDownCounter(up_down_counter))
+    }
+
+    fn get_up_down_counter(&self, id: u64) -> Option<&UpDownCounter<f64>> {
+        match self.resources.metrics.get(id)? {
+            Metric::UpDownCounter(up_down_counter) => Some(up_down_counter),
+            _ => None,
+        }
+    }
+
+    fn drop_up_down_counter(&mut self, id: u64) -> Option<UpDownCounter<f64>> {
+        self.resources
+            .metrics
+            .remove(id)
+            .and_then(|metric| match metric {
+                Metric::UpDownCounter(up_down_counter) => Some(up_down_counter),
+                _ => None,
+            })
+    }
+
+    fn add_histogram(&mut self, histogram: Histogram<f64>) -> u64 {
+        self.resources.metrics.add(Metric::Histogram(histogram))
+    }
+
+    fn get_histogram(&self, id: u64) -> Option<&Histogram<f64>> {
+        match self.resources.metrics.get(id)? {
+            Metric::Histogram(histogram) => Some(histogram),
+            _ => None,
+        }
+    }
+
+    fn drop_histogram(&mut self, id: u64) -> Option<Histogram<f64>> {
+        self.resources
+            .metrics
+            .remove(id)
+            .and_then(|metric| match metric {
+                Metric::Histogram(histogram) => Some(histogram),
+                _ => None,
+            })
+    }
+}
+
+#[derive(Debug, Default)]
 pub(crate) struct Resources {
     pub(crate) configs: HashMapId<DefaultProcessConfig>,
     pub(crate) modules: HashMapId<Arc<WasmtimeCompiledModule<DefaultProcessState>>>,
+    pub(crate) contexts: ContextResources,
+    pub(crate) meters: HashMapId<Meter>,
+    pub(crate) metrics: HashMapId<Metric<f64>>,
     pub(crate) timers: TimerResources,
     pub(crate) dns_iterators: HashMapId<DnsIterator>,
     pub(crate) tcp_listeners: HashMapId<TcpListener>,
@@ -418,6 +569,12 @@ pub(crate) struct Resources {
     pub(crate) tls_streams: HashMapId<Arc<TlsConnection>>,
     pub(crate) udp_sockets: HashMapId<Arc<UdpSocket>>,
     pub(crate) errors: HashMapId<anyhow::Error>,
+}
+
+pub(crate) enum Metric<T> {
+    Counter(Counter<T>),
+    UpDownCounter(UpDownCounter<T>),
+    Histogram(Histogram<T>),
 }
 
 impl DistributedCtx<LunaticEnvironment> for DefaultProcessState {
@@ -460,46 +617,72 @@ impl DistributedCtx<LunaticEnvironment> for DefaultProcessState {
         let signal_mailbox = unbounded_channel();
         let signal_mailbox = (signal_mailbox.0, Arc::new(Mutex::new(signal_mailbox.1)));
         let message_mailbox = MessageMailbox::default();
+        let id = environment.get_next_process_id();
+        let wasi = build_wasi(
+            Some(config.command_line_arguments()),
+            Some(config.environment_variables()),
+            config.preopened_dirs(),
+        )?;
         let state = Self {
-            id: environment.get_next_process_id(),
+            id,
             environment,
             distributed: Some(distributed),
             runtime: Some(runtime),
             module: Some(module),
-            config: config.clone(),
+            config,
             message: None,
             signal_mailbox,
             message_mailbox,
             resources: Resources::default(),
-            wasi: build_wasi(
-                Some(config.command_line_arguments()),
-                Some(config.environment_variables()),
-                config.preopened_dirs(),
-            )?,
+            wasi,
             wasi_stdout: None,
             wasi_stderr: None,
             initialized: false,
             registry: Default::default(), // TODO move registry into env?
             db_resources: DbResources::default(),
             registry_atomic_put: None,
+            tracer: Arc::new(BoxedTracer::new(Box::new(NoopTracer::new()))),
+            tracer_context: Arc::new(Context::new()),
+            process_context: Context::new(),
+            meter_provider: GlobalMeterProvider::new(NoopMeterProvider::new()),
+            logger: Arc::new(
+                env_logger::Builder::new()
+                    .filter_level(log::LevelFilter::Off)
+                    .build(),
+            ),
         };
         Ok(state)
     }
 }
 
-mod tests {
+fn new_process_context(process_id: u64, tracer: &BoxedTracer, tracer_context: &Context) -> Context {
+    let mut process_span = tracer.start_with_context("process_spawn", tracer_context);
+    process_span.set_attribute(opentelemetry::KeyValue::new(
+        "process.id",
+        process_id as i64,
+    ));
+    tracer_context.with_span(process_span)
+}
 
+mod tests {
     #[tokio::test]
     async fn import_filter_signature_matches() {
         use std::collections::HashMap;
+        use std::sync::Arc;
+
+        use lunatic_process::env::Environment;
+        use lunatic_process::runtimes::wasmtime::WasmtimeRuntime;
+        use lunatic_process::wasm::spawn_wasm;
+        use opentelemetry::{
+            global::{BoxedTracer, GlobalMeterProvider},
+            metrics::noop::NoopMeterProvider,
+            trace::noop::NoopTracer,
+            Context,
+        };
         use tokio::sync::RwLock;
 
         use crate::state::DefaultProcessState;
         use crate::DefaultProcessConfig;
-        use lunatic_process::env::Environment;
-        use lunatic_process::runtimes::wasmtime::WasmtimeRuntime;
-        use lunatic_process::wasm::spawn_wasm;
-        use std::sync::Arc;
 
         // The default configuration includes both, the "lunatic::*" and "wasi_*" namespaces.
         let config = DefaultProcessConfig::default();
@@ -513,6 +696,14 @@ mod tests {
         let module = Arc::new(runtime.compile_module(raw_module.into()).unwrap());
         let env = Arc::new(lunatic_process::env::LunaticEnvironment::new(0));
         let registry = Arc::new(RwLock::new(HashMap::new()));
+        let tracer = Arc::new(BoxedTracer::new(Box::new(NoopTracer::new())));
+        let tracer_context = Arc::new(Context::new());
+        let meter_provider = GlobalMeterProvider::new(NoopMeterProvider::new());
+        let logger = Arc::new(
+            env_logger::Builder::new()
+                .filter_level(log::LevelFilter::Off)
+                .build(),
+        );
         let state = DefaultProcessState::new(
             env.clone(),
             None,
@@ -520,6 +711,10 @@ mod tests {
             module.clone(),
             Arc::new(config),
             registry,
+            tracer,
+            tracer_context,
+            meter_provider,
+            logger,
         )
         .unwrap();
 

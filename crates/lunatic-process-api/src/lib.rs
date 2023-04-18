@@ -8,7 +8,7 @@ use std::{
 
 use anyhow::{anyhow, Result};
 use hash_map_id::HashMapId;
-use lunatic_common_api::{get_memory, IntoTrap};
+use lunatic_common_api::{get_memory, IntoTrap, MetricsExt};
 use lunatic_error_api::ErrorCtx;
 use lunatic_process::{
     config::ProcessConfig,
@@ -20,6 +20,11 @@ use lunatic_process::{
     DeathReason, Process, Signal, WasmProcess,
 };
 use lunatic_wasi_api::LunaticWasiCtx;
+use once_cell::sync::OnceCell;
+use opentelemetry::{
+    global,
+    metrics::{Counter, Histogram, Meter, Unit, UpDownCounter},
+};
 use wasmtime::{Caller, Linker, ResourceLimiter, Val};
 
 pub type ProcessResources = HashMapId<Arc<dyn Process>>;
@@ -43,6 +48,24 @@ pub trait ProcessCtx<S: ProcessState> {
     fn environment(&self) -> Arc<dyn Environment>;
 }
 
+struct ModulesMetrics {
+    _meter: Meter,
+    compiled: Counter<u64>,
+    dropped: Counter<u64>,
+    active: UpDownCounter<i64>,
+    compiled_duration: Histogram<f64>,
+}
+
+struct ConfigsMetrics {
+    _meter: Meter,
+    created: Counter<u64>,
+    dropped: Counter<u64>,
+    active: UpDownCounter<i64>,
+}
+
+static MODULES_METRICS: OnceCell<ModulesMetrics> = OnceCell::new();
+static CONFIGS_METRICS: OnceCell<ConfigsMetrics> = OnceCell::new();
+
 // Register the process APIs to the linker
 pub fn register<T>(linker: &mut Linker<T>) -> Result<()>
 where
@@ -57,60 +80,70 @@ where
     for<'a> &'a T: Send,
     T::Config: ProcessConfigCtx,
 {
-    #[cfg(feature = "metrics")]
-    lunatic_process::describe_metrics();
+    lunatic_process::init_metrics();
 
-    #[cfg(feature = "metrics")]
-    metrics::describe_counter!(
-        "lunatic.process.modules.compiled",
-        metrics::Unit::Count,
-        "number of modules compiled since startup"
-    );
+    MODULES_METRICS.get_or_init(|| {
+        let meter = global::meter("lunatic.process.modules");
 
-    #[cfg(feature = "metrics")]
-    metrics::describe_counter!(
-        "lunatic.process.modules.dropped",
-        metrics::Unit::Count,
-        "number of modules dropped since startup"
-    );
+        let compiled = meter
+            .u64_counter("compiled")
+            .with_unit(Unit::new("count"))
+            .with_description("Number of modules compiled since startup")
+            .init();
+        let dropped = meter
+            .u64_counter("dropped")
+            .with_unit(Unit::new("count"))
+            .with_description("Number of modules dropped since startup")
+            .init();
+        let active = meter
+            .i64_up_down_counter("active")
+            .with_unit(Unit::new("count"))
+            .with_description("Number of modules currently in memory")
+            .init();
+        let compiled_duration = meter
+            .f64_histogram("compiled_duration")
+            .with_unit(Unit::new("seconds"))
+            .with_description("Duration of module compilation")
+            .init();
 
-    #[cfg(feature = "metrics")]
-    metrics::describe_gauge!(
-        "lunatic.process.modules.active",
-        metrics::Unit::Count,
-        "number of modules currently in memory"
-    );
+        ModulesMetrics {
+            _meter: meter,
+            compiled,
+            dropped,
+            active,
+            compiled_duration,
+        }
+    });
 
-    #[cfg(feature = "metrics")]
-    metrics::describe_histogram!(
-        "lunatic.process.modules.compiled.duration",
-        metrics::Unit::Seconds,
-        "Duration of module compilation"
-    );
+    CONFIGS_METRICS.get_or_init(|| {
+        let meter = global::meter("lunatic.process.configs");
+
+        let created = meter
+            .u64_counter("created")
+            .with_unit(Unit::new("count"))
+            .with_description("Number of configs created since startup")
+            .init();
+        let dropped = meter
+            .u64_counter("dropped")
+            .with_unit(Unit::new("count"))
+            .with_description("Number of configs dropped since startup")
+            .init();
+        let active = meter
+            .i64_up_down_counter("active")
+            .with_unit(Unit::new("count"))
+            .with_description("Number of configs currently in memory")
+            .init();
+
+        ConfigsMetrics {
+            _meter: meter,
+            created,
+            dropped,
+            active,
+        }
+    });
 
     linker.func_wrap("lunatic::process", "compile_module", compile_module)?;
     linker.func_wrap("lunatic::process", "drop_module", drop_module)?;
-
-    #[cfg(feature = "metrics")]
-    metrics::describe_counter!(
-        "lunatic.process.configs.created",
-        metrics::Unit::Count,
-        "number of configs created since startup"
-    );
-
-    #[cfg(feature = "metrics")]
-    metrics::describe_counter!(
-        "lunatic.process.configs.dropped",
-        metrics::Unit::Count,
-        "number of configs dropped since startup"
-    );
-
-    #[cfg(feature = "metrics")]
-    metrics::describe_gauge!(
-        "lunatic.process.configs.active",
-        metrics::Unit::Count,
-        "number of configs currently in memory"
-    );
 
     linker.func_wrap("lunatic::process", "create_config", create_config)?;
     linker.func_wrap("lunatic::process", "drop_config", drop_config)?;
@@ -202,13 +235,6 @@ where
         return Ok(-1);
     }
 
-    #[cfg(feature = "metrics")]
-    metrics::increment_counter!("lunatic.process.modules.compiled");
-
-    #[cfg(feature = "metrics")]
-    metrics::increment_gauge!("lunatic.process.modules.active", 1.0);
-
-    #[cfg(feature = "metrics")]
     let start = Instant::now();
 
     let mut module = vec![0; module_data_len as usize];
@@ -229,10 +255,14 @@ where
         Err(error) => (caller.data_mut().error_resources_mut().add(error), 1),
     };
 
-    #[cfg(feature = "metrics")]
     let duration = Instant::now() - start;
-    #[cfg(feature = "metrics")]
-    metrics::histogram!("lunatic.process.modules.compiled.duration", duration);
+    MODULES_METRICS.with_current_context(|metrics, cx| {
+        metrics.compiled.add(&cx, 1, &[]);
+        metrics.active.add(&cx, 1, &[]);
+        metrics
+            .compiled_duration
+            .record(&cx, duration.as_secs_f64(), &[]);
+    });
 
     memory
         .write(&mut caller, id_ptr as usize, &mod_or_error_id.to_le_bytes())
@@ -248,17 +278,17 @@ fn drop_module<T: ProcessState + ProcessCtx<T>>(
     mut caller: Caller<T>,
     module_id: u64,
 ) -> Result<()> {
-    #[cfg(feature = "metrics")]
-    metrics::increment_counter!("lunatic.process.modules.dropped");
-
-    #[cfg(feature = "metrics")]
-    metrics::decrement_gauge!("lunatic.process.modules.active", 1.0);
-
     caller
         .data_mut()
         .module_resources_mut()
         .remove(module_id)
         .or_trap("lunatic::process::drop_module: Module ID doesn't exist")?;
+
+    MODULES_METRICS.with_current_context(|metrics, cx| {
+        metrics.dropped.add(&cx, 1, &[]);
+        metrics.active.add(&cx, -1, &[]);
+    });
+
     Ok(())
 }
 
@@ -277,11 +307,13 @@ where
     if !caller.data().config().can_create_configs() {
         return -1;
     }
+
+    CONFIGS_METRICS.with_current_context(|metrics, cx| {
+        metrics.created.add(&cx, 1, &[]);
+        metrics.active.add(&cx, 1, &[]);
+    });
+
     let config = T::Config::default();
-    #[cfg(feature = "metrics")]
-    metrics::increment_counter!("lunatic.process.configs.created");
-    #[cfg(feature = "metrics")]
-    metrics::increment_gauge!("lunatic.process.configs.active", 1.0);
     caller.data_mut().config_resources_mut().add(config) as i64
 }
 
@@ -298,10 +330,12 @@ fn drop_config<T: ProcessState + ProcessCtx<T>>(
         .config_resources_mut()
         .remove(config_id)
         .or_trap("lunatic::process::drop_config: Config ID doesn't exist")?;
-    #[cfg(feature = "metrics")]
-    metrics::increment_counter!("lunatic.process.configs.dropped");
-    #[cfg(feature = "metrics")]
-    metrics::decrement_gauge!("lunatic.process.configs.active", 1.0);
+
+    CONFIGS_METRICS.with_current_context(|metrics, cx| {
+        metrics.dropped.add(&cx, 1, &[]);
+        metrics.active.add(&cx, -1, &[]);
+    });
+
     Ok(())
 }
 

@@ -5,17 +5,17 @@ use std::{
 };
 
 use anyhow::{anyhow, Result};
-use lunatic_common_api::{get_memory, IntoTrap};
+use lunatic_common_api::{get_memory, IntoTrap, MetricsExt};
 use lunatic_networking_api::NetworkingCtx;
-use lunatic_process_api::ProcessCtx;
-use tokio::time::{timeout, Duration};
-use wasmtime::{Caller, Linker};
-
 use lunatic_process::{
     message::{DataMessage, Message},
     state::ProcessState,
-    Signal,
+    Signal, MESSAGES_METRICS,
 };
+use lunatic_process_api::ProcessCtx;
+use opentelemetry::KeyValue;
+use tokio::time::{timeout, Duration};
+use wasmtime::{Caller, Linker};
 
 // Register the mailbox APIs to the linker
 pub fn register<T: ProcessState + ProcessCtx<T> + NetworkingCtx + Send + 'static>(
@@ -306,7 +306,7 @@ fn take_module<T: ProcessState + ProcessCtx<T> + NetworkingCtx + 'static>(
         .or_trap("lunatic::message::take_module")?;
     let module = match message {
         Message::Data(data) => data
-            .take_module(index as usize)
+            .take_resource(index as usize)
             .or_trap("lunatic::message::take_module")?,
         Message::LinkDied(_) => {
             return Err(anyhow!("Unexpected `Message::LinkDied` in scratch area"))
@@ -316,10 +316,10 @@ fn take_module<T: ProcessState + ProcessCtx<T> + NetworkingCtx + 'static>(
 }
 
 // Adds a tcp stream resource to the message that is currently in the scratch area and returns
-// the new location of it. This will remove the tcp stream from  the current process' resources.
+// the new location of it. This will remove the tcp stream from the current process' resources.
 //
 // Traps:
-// * If TCP stream ID doesn't exist
+// * If TCP stream ID doesn't exist.
 // * If no data message is in the scratch area.
 fn push_tcp_stream<T: ProcessState + ProcessCtx<T> + NetworkingCtx>(
     mut caller: Caller<T>,
@@ -361,7 +361,7 @@ fn take_tcp_stream<T: ProcessState + ProcessCtx<T> + NetworkingCtx>(
         .or_trap("lunatic::message::take_tcp_stream")?;
     let tcp_stream = match message {
         Message::Data(data) => data
-            .take_tcp_stream(index as usize)
+            .take_resource(index as usize)
             .or_trap("lunatic::message::take_tcp_stream")?,
         Message::LinkDied(_) => {
             return Err(anyhow!("Unexpected `Message::LinkDied` in scratch area"))
@@ -417,7 +417,7 @@ fn take_tls_stream<T: ProcessState + ProcessCtx<T> + NetworkingCtx>(
         .or_trap("lunatic::message::take_tls_stream")?;
     let tls_stream = match message {
         Message::Data(data) => data
-            .take_tls_stream(index as usize)
+            .take_resource(index as usize)
             .or_trap("lunatic::message::take_tls_stream")?,
         Message::LinkDied(_) => {
             return Err(anyhow!("Unexpected `Message::LinkDied` in scratch area"))
@@ -526,6 +526,8 @@ fn receive<T: ProcessState + ProcessCtx<T> + Send>(
     timeout_duration: u64,
 ) -> Box<dyn Future<Output = Result<u32>> + Send + '_> {
     Box::new(async move {
+        let id = caller.data().id();
+
         let tags = if tag_len > 0 {
             let memory = get_memory(&mut caller)?;
             let buffer = memory
@@ -544,6 +546,13 @@ fn receive<T: ProcessState + ProcessCtx<T> + Send>(
         };
 
         let pop = caller.data_mut().mailbox().pop(tags.as_deref());
+
+        MESSAGES_METRICS.with_current_context(|metrics, cx| {
+            metrics
+                .outstanding
+                .add(&cx, -1, &[KeyValue::new("process_id", id as i64)]);
+        });
+
         if let Ok(message) = match timeout_duration {
             // Without timeout
             u64::MAX => Ok(pop.await),
@@ -608,7 +617,7 @@ fn take_udp_socket<T: ProcessState + ProcessCtx<T> + NetworkingCtx>(
         .or_trap("lunatic::message::take_udp_socket")?;
     let udp_socket = match message {
         Message::Data(data) => data
-            .take_udp_socket(index as usize)
+            .take_resource(index as usize)
             .or_trap("lunatic::message::take_udp_socket")?,
         Message::LinkDied(_) => {
             return Err(anyhow!("Unexpected `Message::LinkDied` in scratch area"))

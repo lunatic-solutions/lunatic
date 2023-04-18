@@ -6,10 +6,6 @@ use clap::{Parser, Subcommand};
 pub struct Args {
     #[command(subcommand)]
     command: Commands,
-
-    #[cfg(feature = "prometheus")]
-    #[command(flatten)]
-    prometheus: super::common::PrometheusArgs,
 }
 
 #[derive(Debug, Subcommand)]
@@ -30,7 +26,10 @@ enum Commands {
 }
 
 pub(crate) async fn execute(augmented_args: Option<Vec<String>>) -> Result<()> {
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+    env_logger::Builder::from_env(
+        env_logger::Env::default().default_filter_or("warn,crane*=info,lunatic=info"),
+    )
+    .init();
 
     let args = match augmented_args {
         Some(a) => Args::parse_from(a),

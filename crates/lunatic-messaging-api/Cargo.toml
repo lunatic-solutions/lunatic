@@ -14,5 +14,6 @@ lunatic-process = { workspace = true }
 lunatic-process-api = { workspace = true }
 
 anyhow = { workspace = true }
+opentelemetry = { workspace = true }
 tokio = { workspace = true, features = ["time"] }
 wasmtime = { workspace = true }

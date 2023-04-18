@@ -7,6 +7,12 @@ use lunatic_process::{
     runtimes::wasmtime::{default_config, WasmtimeRuntime},
 };
 use lunatic_runtime::{state::DefaultProcessState, DefaultProcessConfig};
+use opentelemetry::{
+    global::{BoxedTracer, GlobalMeterProvider},
+    metrics::noop::NoopMeterProvider,
+    trace::noop::NoopTracer,
+    Context,
+};
 use tokio::sync::RwLock;
 
 fn criterion_benchmark(c: &mut Criterion) {
@@ -23,6 +29,15 @@ fn criterion_benchmark(c: &mut Criterion) {
             .unwrap(),
     );
 
+    let tracer = Arc::new(BoxedTracer::new(Box::new(NoopTracer::new())));
+    let tracer_context = Arc::new(Context::new());
+    let meter_provider = GlobalMeterProvider::new(NoopMeterProvider::new());
+    let logger = Arc::new(
+        env_logger::Builder::new()
+            .filter_level(log::LevelFilter::Off)
+            .build(),
+    );
+
     let env = Arc::new(LunaticEnvironment::new(0));
     c.bench_function("spawn process", |b| {
         b.to_async(&rt).iter(|| async {
@@ -34,6 +49,10 @@ fn criterion_benchmark(c: &mut Criterion) {
                 module.clone(),
                 config.clone(),
                 registry,
+                tracer.clone(),
+                tracer_context.clone(),
+                meter_provider.clone(),
+                logger.clone(),
             )
             .unwrap();
             lunatic_process::wasm::spawn_wasm(
