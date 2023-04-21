@@ -4,7 +4,7 @@ use anyhow::Result;
 use hash_map_id::HashMapId;
 use tokio::sync::{
     mpsc::{UnboundedReceiver, UnboundedSender},
-    Mutex, RwLock, RwLockWriteGuard,
+    Mutex, RwLock,
 };
 use wasmtime::Linker;
 
@@ -63,7 +63,4 @@ pub trait ProcessState: Sized {
 
     // Registry
     fn registry(&self) -> &Arc<RwLock<HashMap<String, (u64, u64)>>>;
-    fn registry_atomic_put(
-        &mut self,
-    ) -> &mut Option<RwLockWriteGuard<'static, HashMap<String, (u64, u64)>>>;
 }
