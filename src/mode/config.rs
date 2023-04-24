@@ -16,7 +16,7 @@ use reqwest::{
 };
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
-use super::api::{self, App, SaveApp};
+use super::api::{self, App, ProjectDetails, SaveApp};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct GlobalLunaticConfig {
@@ -194,7 +194,7 @@ impl Default for GlobalLunaticConfig {
     }
 }
 
-trait FileBased
+pub(crate) trait FileBased
 where
     Self: Serialize + DeserializeOwned + Default,
 {
@@ -418,10 +418,10 @@ impl ConfigManager {
         Ok(())
     }
 
-    pub async fn lookup_project(&self) -> anyhow::Result<Vec<api::App>> {
+    pub async fn lookup_project(&self) -> anyhow::Result<ProjectDetails> {
         self.request_platform_skip_status(
             Method::GET,
-            format!("/api/project/{}", self.project_config.project_id),
+            format!("{}", self.project_config.project_url),
             "create new app",
             None as Option<()>,
             None,
@@ -480,6 +480,12 @@ impl ConfigManager {
             }
             None => self.global_config.providers.push(provider),
         }
+    }
+
+    pub fn logout_provider(&mut self, provider_to_delete: String) {
+        self.global_config
+            .providers
+            .retain(|provider| provider.name != provider_to_delete);
     }
 
     pub fn get_app_id(&self) -> String {

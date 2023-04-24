@@ -29,7 +29,9 @@ enum Commands {
     Node(super::node::Args),
     /// Authenticate app
     Auth(super::auth::Args),
-    /// Deploy an application
+    /// Build one or more applications
+    Build(super::deploy::Args),
+    /// Deploy one or more applications
     Deploy(super::deploy::Args),
     /// Manage data regarding remote lunatic project
     Project(super::project::Args),
@@ -52,6 +54,10 @@ pub(crate) async fn execute(augmented_args: Option<Vec<String>>) -> Result<()> {
         Commands::Control(a) => super::control::start(a).await,
         Commands::Node(a) => super::node::start(a).await,
         Commands::Auth(a) => super::auth::start(a).await,
+        Commands::Build(a) => {
+            super::deploy::start_build(a).await?;
+            Ok(())
+        }
         Commands::Deploy(a) => super::deploy::start(a).await,
         Commands::Project(a) => super::project::start(a).await,
         Commands::App(a) => super::app::start(a).await,

@@ -1,6 +1,7 @@
 use super::config::ConfigManager;
 use anyhow::{anyhow, Result};
 use clap::Parser;
+use log::{debug, info};
 
 #[derive(Parser, Debug, Clone)]
 #[clap(rename_all = "kebab_case")]
@@ -20,7 +21,7 @@ pub enum AppArgs {
         example: Option<String>,
 
         /// Bind App on remote to workspace member (package) in repository
-        #[arg(short = 'e', long)]
+        #[arg(short = 's', long)]
         package: Option<String>,
     },
     Remove {
@@ -70,7 +71,7 @@ pub(crate) async fn start(args: Args) -> Result<()> {
                 ConfigManager::new().map_err(|e| anyhow!("failed to load config {e:?}"))?;
             config.update_project_apps().await?;
 
-            println!("Available apps on remote:");
+            info!("Available apps on remote:");
             for app in config.project_config.remote.into_iter() {
                 let (mapping_type, mapping_path) = match (
                     app.bin.as_deref(),
@@ -83,7 +84,7 @@ pub(crate) async fn start(args: Args) -> Result<()> {
                     (None, None, Some(package)) => ("package/workspace member ", package),
                     _ => ("WARNING! Multiple mappings found for app", ""),
                 };
-                println!(
+                debug!(
                     "- Name: \"{}\". Id: {}. Mapping: {}{}",
                     app.app_name, app.app_id, mapping_type, mapping_path
                 );

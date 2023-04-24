@@ -1,9 +1,13 @@
 use std::{fs::File, io::Read, path::PathBuf};
 
-pub(crate) static TARGET_DIR: &str = "./lunatic_target";
+use crate::mode::config::{FileBased, ProjectLunaticConfig};
+
+pub(crate) static TARGET_DIR: &str = "target";
 
 pub fn get_target_dir() -> PathBuf {
-    let current_dir = std::env::current_dir().expect("Failed to get current directory");
+    let mut current_dir =
+        ProjectLunaticConfig::get_file_path().expect("should have found config path");
+    current_dir.pop();
     current_dir.join(TARGET_DIR)
 }
 
