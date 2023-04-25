@@ -138,6 +138,9 @@ pub enum Signal {
     // the death reason, the receiving process will turn this signal into a message or the
     // process will immediately die as well.
     LinkDied(u64, Option<i64>, DeathReason),
+    Monitor(Arc<dyn Process>),
+    StopMonitoring { process_id: u64 },
+    ProcessDied(u64),
 }
 
 impl Debug for Signal {
@@ -149,12 +152,15 @@ impl Debug for Signal {
             Self::Link(_, p) => write!(f, "Link {}", p.id()),
             Self::UnLink { process_id } => write!(f, "UnLink {process_id}"),
             Self::LinkDied(_, _, reason) => write!(f, "LinkDied {reason:?}"),
+            Self::Monitor(p) => write!(f, "Monitor {}", p.id()),
+            Self::StopMonitoring { process_id } => write!(f, "UnMonitor {process_id}"),
+            Self::ProcessDied(_) => write!(f, "ProcessDied"),
         }
     }
 }
 
 // The reason of a process' death
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub enum DeathReason {
     // Process finished normaly.
     Normal,
@@ -290,6 +296,8 @@ where
     let mut die_when_link_dies = true;
     // Process linked to this one
     let mut links = HashMap::new();
+    // Processes monitoring this one
+    let mut monitors = HashMap::new();
     // TODO: Maybe wrapping this in some kind of `std::panic::catch_unwind` wold be a good idea,
     //       to protect against panics in host function calls that unwind through Wasm code.
     //       Currently a panic would just kill the task, but not notify linked processes.
@@ -367,6 +375,18 @@ where
                             DeathReason::Normal => {},
                         }
                     },
+                    // Put process into list of monitor processes
+                    Ok(Signal::Monitor(proc)) => {
+                        monitors.insert(proc.id(), proc);
+                    }
+                    // Remove process from monitor list
+                    Ok(Signal::StopMonitoring { process_id }) => {
+                        monitors.remove(&process_id);
+                    }
+                    // Notify process that a monitored process died
+                    Ok(Signal::ProcessDied(id)) => {
+                        message_mailbox.push(Message::ProcessDied(id));
+                    }
                     Err(_) => {
                         debug_assert!(has_sender);
                         has_sender = false;
@@ -380,7 +400,7 @@ where
 
     env.remove_process(id);
 
-    match result {
+    let result = match result {
         Finished::Normal(result) => {
             let result: ExecutionResult<_> = result.into();
 
@@ -404,16 +424,9 @@ where
                     }
                 );
                 debug!("{}", failure);
-                // Notify all links that we finished with an error
-                links.iter().for_each(|(_, (proc, tag))| {
-                    proc.send(Signal::LinkDied(id, *tag, DeathReason::Failure));
-                });
+
                 Err(anyhow!(failure.to_string()))
             } else {
-                // Notify all links that we finished normally
-                links.iter().for_each(|(_, (proc, tag))| {
-                    proc.send(Signal::LinkDied(id, *tag, DeathReason::Normal));
-                });
                 Ok(result.into_state())
             }
         }
@@ -423,13 +436,27 @@ where
                 id,
                 links.len()
             );
-            // Notify all links that we finished because of a kill signal
-            links.iter().for_each(|(_, (proc, tag))| {
-                proc.send(Signal::LinkDied(id, *tag, DeathReason::Failure));
-            });
+
             Err(anyhow!("Process received Kill signal"))
         }
+    };
+
+    let reason = match result {
+        Ok(_) => DeathReason::Normal,
+        Err(_) => DeathReason::Failure,
+    };
+
+    // Notify all links that we finished
+    for (proc, tag) in links.values() {
+        proc.send(Signal::LinkDied(id, *tag, reason));
     }
+
+    // Notify all monitoring processes we died
+    for proc in monitors.values() {
+        proc.send(Signal::ProcessDied(id));
+    }
+
+    result
 }
 
 /// A process spawned from a native Rust closure.
