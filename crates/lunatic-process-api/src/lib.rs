@@ -178,6 +178,8 @@ where
     linker.func_wrap("lunatic::process", "environment_id", environment_id)?;
     linker.func_wrap("lunatic::process", "link", link)?;
     linker.func_wrap("lunatic::process", "unlink", unlink)?;
+    linker.func_wrap("lunatic::process", "monitor", monitor)?;
+    linker.func_wrap("lunatic::process", "stop_monitoring", stop_monitoring)?;
     linker.func_wrap("lunatic::process", "kill", kill)?;
     linker.func_wrap("lunatic::process", "exists", exists)?;
     Ok(())
@@ -1004,6 +1006,47 @@ fn unlink<T: ProcessState + ProcessCtx<T>>(mut caller: Caller<T>, process_id: u6
         .0
         .send(Signal::UnLink { process_id })
         .expect("The signal is sent to itself and the receiver must exist at this point");
+
+    Ok(())
+}
+
+// Start monitoring **process_id**. This is not an atomic operation.
+//
+// Traps:
+// * If the process ID doesn't exist.
+fn monitor<T: ProcessState + ProcessCtx<T>>(caller: Caller<T>, process_id: u64) -> Result<()> {
+    // Send link signal to other process
+    let process = caller.data().environment().get_process(process_id);
+
+    if let Some(process) = process {
+        let id = caller.data().id();
+        let signal_mailbox = caller.data().signal_mailbox().clone();
+        let this_process = WasmProcess::new(id, signal_mailbox.0);
+        process.send(Signal::Monitor(Arc::new(this_process)));
+    }
+
+    Ok(())
+}
+
+// Stop monitoring **process_id**. This is not an atomic operation.
+//
+// Traps:
+// * If the process ID doesn't exist.
+fn stop_monitoring<T: ProcessState + ProcessCtx<T>>(
+    caller: Caller<T>,
+    process_id: u64,
+) -> Result<()> {
+    // Create handle to itself
+    let this_process_id = caller.data().id();
+
+    // Send unlink signal to other process
+    let process = caller.data().environment().get_process(process_id);
+
+    if let Some(process) = process {
+        process.send(Signal::StopMonitoring {
+            process_id: this_process_id,
+        });
+    }
 
     Ok(())
 }
