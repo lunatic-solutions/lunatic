@@ -1,6 +1,6 @@
 [package]
 name = "lunatic-wasi-api"
-version = "0.13.0"
+version = "0.13.2"
 edition = "2021"
 description = "Lunatic host functions for WASI."
 homepage = "https://lunatic.solutions"

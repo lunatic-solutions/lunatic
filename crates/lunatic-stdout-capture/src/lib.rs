@@ -113,22 +113,22 @@ impl WasiFile for StdoutCapture {
     fn as_any(&self) -> &dyn Any {
         self
     }
-    async fn datasync(&mut self) -> Result<(), Error> {
+    async fn datasync(&self) -> Result<(), Error> {
         Ok(())
     }
-    async fn sync(&mut self) -> Result<(), Error> {
+    async fn sync(&self) -> Result<(), Error> {
         Ok(())
     }
-    async fn get_filetype(&mut self) -> Result<FileType, Error> {
+    async fn get_filetype(&self) -> Result<FileType, Error> {
         Ok(FileType::Pipe)
     }
-    async fn get_fdflags(&mut self) -> Result<FdFlags, Error> {
+    async fn get_fdflags(&self) -> Result<FdFlags, Error> {
         Ok(FdFlags::APPEND)
     }
     async fn set_fdflags(&mut self, _fdflags: FdFlags) -> Result<(), Error> {
         Err(Error::badf())
     }
-    async fn get_filestat(&mut self) -> Result<Filestat, Error> {
+    async fn get_filestat(&self) -> Result<Filestat, Error> {
         Ok(Filestat {
             device_id: 0,
             inode: 0,
@@ -140,26 +140,26 @@ impl WasiFile for StdoutCapture {
             ctim: None,
         })
     }
-    async fn set_filestat_size(&mut self, _size: u64) -> Result<(), Error> {
+    async fn set_filestat_size(&self, _size: u64) -> Result<(), Error> {
         Err(Error::badf())
     }
-    async fn advise(&mut self, _offset: u64, _len: u64, _advice: Advice) -> Result<(), Error> {
+    async fn advise(&self, _offset: u64, _len: u64, _advice: Advice) -> Result<(), Error> {
         Err(Error::badf())
     }
-    async fn allocate(&mut self, _offset: u64, _len: u64) -> Result<(), Error> {
+    async fn allocate(&self, _offset: u64, _len: u64) -> Result<(), Error> {
         Err(Error::badf())
     }
-    async fn read_vectored<'a>(&mut self, _bufs: &mut [IoSliceMut<'a>]) -> Result<u64, Error> {
+    async fn read_vectored<'a>(&self, _bufs: &mut [IoSliceMut<'a>]) -> Result<u64, Error> {
         Err(Error::badf())
     }
     async fn read_vectored_at<'a>(
-        &mut self,
+        &self,
         _bufs: &mut [IoSliceMut<'a>],
         _offset: u64,
     ) -> Result<u64, Error> {
         Err(Error::badf())
     }
-    async fn write_vectored<'a>(&mut self, bufs: &[IoSlice<'a>]) -> Result<u64, Error> {
+    async fn write_vectored<'a>(&self, bufs: &[IoSlice<'a>]) -> Result<u64, Error> {
         let streams = RwLock::read(&self.writers).unwrap();
         let mut stream = streams[self.index].lock().unwrap();
         let n = stream.write_vectored(bufs)?;
@@ -173,29 +173,29 @@ impl WasiFile for StdoutCapture {
         Ok(n.try_into()?)
     }
     async fn write_vectored_at<'a>(
-        &mut self,
+        &self,
         _bufs: &[IoSlice<'a>],
         _offset: u64,
     ) -> Result<u64, Error> {
         Err(Error::badf())
     }
-    async fn seek(&mut self, _pos: SeekFrom) -> Result<u64, Error> {
+    async fn seek(&self, _pos: SeekFrom) -> Result<u64, Error> {
         Err(Error::badf())
     }
-    async fn peek(&mut self, _buf: &mut [u8]) -> Result<u64, Error> {
+    async fn peek(&self, _buf: &mut [u8]) -> Result<u64, Error> {
         Err(Error::badf())
     }
     async fn set_times(
-        &mut self,
+        &self,
         _atime: Option<SystemTimeSpec>,
         _mtime: Option<SystemTimeSpec>,
     ) -> Result<(), Error> {
         Err(Error::badf())
     }
-    async fn num_ready_bytes(&self) -> Result<u64, Error> {
+    fn num_ready_bytes(&self) -> Result<u64, Error> {
         Ok(0)
     }
-    fn isatty(&mut self) -> bool {
+    fn isatty(&self) -> bool {
         false
     }
     async fn readable(&self) -> Result<(), Error> {
@@ -205,7 +205,7 @@ impl WasiFile for StdoutCapture {
         Err(Error::badf())
     }
 
-    async fn sock_accept(&mut self, _fdflags: FdFlags) -> Result<Box<dyn WasiFile>, Error> {
+    async fn sock_accept(&self, _fdflags: FdFlags) -> Result<Box<dyn WasiFile>, Error> {
         Err(Error::badf())
     }
 }

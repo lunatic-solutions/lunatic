@@ -1,6 +1,6 @@
 [package]
 name = "lunatic-distributed-api"
-version = "0.12.0"
+version = "0.13.2"
 edition = "2021"
 description = "A simple control server implementation"
 homepage = "https://lunatic.solutions"

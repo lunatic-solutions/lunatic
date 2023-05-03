@@ -86,7 +86,7 @@ checksum = "d468802bab17cbc0cc575e9b053f41e72aa36bfa6b7f55e3529ffa43161b97fa"
 
 [[package]]
 name = "base64"
-version = "0.13.1"
+version = "0.13.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9e1b586273c5702936fe7b7d6896644d8be71e6314cfe09d3167c95f712589e8"
 
@@ -1018,7 +1018,7 @@ dependencies = [
 
 [[package]]
 name = "lunatic"
-version = "0.13.0"
+version = "0.13.2"
 source = "git+https://github.com/lunatic-solutions/lunatic-rs#2a1210ebc87627908f49a82533c04acb4a96715a"
 dependencies = [
  "bincode",
@@ -1033,7 +1033,7 @@ dependencies = [
 
 [[package]]
 name = "lunatic-common-api"
-version = "0.13.0"
+version = "0.13.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f80de581a7cb09986785ba1b8c4c1c89ab977545509a65182c38df718d2969d8"
 dependencies = [
@@ -1069,7 +1069,7 @@ dependencies = [
 
 [[package]]
 name = "lunatic-error-api"
-version = "0.13.0"
+version = "0.13.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "13fc77b40a51731788922c7370d4be50f7761b5abd62d86a6af1246db99f4c3b"
 dependencies = [
@@ -1116,7 +1116,7 @@ dependencies = [
 
 [[package]]
 name = "lunatic-macros"
-version = "0.13.0"
+version = "0.13.2"
 source = "git+https://github.com/lunatic-solutions/lunatic-rs#2a1210ebc87627908f49a82533c04acb4a96715a"
 dependencies = [
  "convert_case 0.6.0",
@@ -1127,7 +1127,7 @@ dependencies = [
 
 [[package]]
 name = "lunatic-networking-api"
-version = "0.13.0"
+version = "0.13.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dadd3702e2e74ed3e3ac16bfab2edd9e1c8b41f1cf977879335bbb6e0184d800"
 dependencies = [
@@ -1144,7 +1144,7 @@ dependencies = [
 
 [[package]]
 name = "lunatic-process"
-version = "0.13.0"
+version = "0.13.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2e5e3870a96a9cfab05377a02408efbad1d60045f7c49f22eef066e7a64bf54d"
 dependencies = [
@@ -1162,7 +1162,7 @@ dependencies = [
 
 [[package]]
 name = "lunatic-process-api"
-version = "0.13.0"
+version = "0.13.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5e1982e0445fae1a6f9eaa3ed48e66ab47725d6ed71aa6d55e05e28e00776af0"
 dependencies = [
@@ -1178,7 +1178,7 @@ dependencies = [
 
 [[package]]
 name = "lunatic-sqlite-api"
-version = "0.13.0"
+version = "0.13.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "541889638390fca366d0dd53310068741c2812029d77fe32a9345150b1d61097"
 dependencies = [
@@ -1196,7 +1196,7 @@ dependencies = [
 
 [[package]]
 name = "lunatic-stdout-capture"
-version = "0.13.0"
+version = "0.13.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4a66f75089f4a2afbedccdc167c2da5d0fc062825783872ffb97a3d6e6be417d"
 dependencies = [
@@ -1206,7 +1206,7 @@ dependencies = [
 
 [[package]]
 name = "lunatic-sys"
-version = "0.13.0"
+version = "0.13.2"
 source = "git+https://github.com/lunatic-solutions/lunatic-rs#2a1210ebc87627908f49a82533c04acb4a96715a"
 
 [[package]]
@@ -1221,7 +1221,7 @@ dependencies = [
 
 [[package]]
 name = "lunatic-test"
-version = "0.13.0"
+version = "0.13.2"
 source = "git+https://github.com/lunatic-solutions/lunatic-rs#2a1210ebc87627908f49a82533c04acb4a96715a"
 dependencies = [
  "quote",
@@ -1230,7 +1230,7 @@ dependencies = [
 
 [[package]]
 name = "lunatic-wasi-api"
-version = "0.13.0"
+version = "0.13.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "051c5610099b97ffe076072456b48c590a9c07abce3c8d17b8947494bdcfc761"
 dependencies = [

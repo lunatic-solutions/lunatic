@@ -1,6 +1,6 @@
 [package]
 name = "lunatic-control-submillisecond"
-version = "0.12.0"
+version = "0.13.2"
 edition = "2021"
 description = "TBD"
 homepage = "https://lunatic.solutions"

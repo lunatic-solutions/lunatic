@@ -1,6 +1,6 @@
 [package]
 name = "lunatic-stdout-capture"
-version = "0.13.0"
+version = "0.13.2"
 edition = "2021"
 description = "Helper library for holding stdout streams of lunatic processes."
 homepage = "https://lunatic.solutions"
