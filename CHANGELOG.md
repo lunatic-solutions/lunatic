@@ -7,7 +7,7 @@ Released 2023-05-03.
 ### Changes
 
 - Wasmtime updated to 8.0
-- Proceess monitoring support added ([@tqwewe](https://github.com/tqwewe))
+- Process monitoring support added ([@tqwewe](https://github.com/tqwewe))
 - SQLite support added ([@SquattingSocrates](https://github.com/SquattingSocrates))
 - Support for intermediate CA certificates added ([@teskeras](https://github.com/teskeras))
 - Show name of registered processes when they fail ([@tqwewe](https://github.com/tqwewe))
