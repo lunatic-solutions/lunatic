@@ -137,3 +137,27 @@ wasi-common = "6"
 wasmtime = "6"
 wasmtime-wasi = "6"
 wiggle = "6"
+
+[workspace.metadata.git-cliff.changelog]
+header = """
+# Lunatic Changelog
+
+"""
+
+body = """
+{% if version %}\
+    ## [{{ version | trim_start_matches(pat="v") }}]
+
+    Released {{ timestamp | date(format="%Y-%m-%d") }}.
+{% else %}\
+    ## [unreleased]
+{% endif %}\
+{% for group, commits in commits | group_by(attribute="group") %}
+    ### {{ group | upper_first }}
+    {% for commit in commits %}
+        - {% if commit.breaking %}[**breaking**] {% endif %}{{ commit.message | upper_first }} [`{{ commit.id | truncate(length=7, end="") }}`](https://github.com/lunatic-solutions/lunatic/commit/{{ commit.id | urlencode }})\
+    {% endfor %}
+{% endfor %}\n
+"""
+
+footer = ""
