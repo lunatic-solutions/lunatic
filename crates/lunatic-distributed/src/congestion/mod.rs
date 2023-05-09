@@ -243,7 +243,7 @@ pub async fn node_connection_manager(mut manager: NodeConnectionManager) -> Resu
         'forward_chunks: loop {
             tokio::select! {
                 Some(chunk) = manager.message_chunks.recv() => {
-                    log::trace!("congestion::node_connection_manager::recv_chunk {}", chunk.message_id);
+                    log::trace!("congestion::node_connection_manager::msg_id {}", chunk.message_id);
                     let src = chunk.src.0;
                     let dest = chunk.dest.0;
                     // Determine stream index by source and destination process_id
