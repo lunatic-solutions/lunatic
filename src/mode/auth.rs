@@ -93,8 +93,15 @@ async fn check_auth_status(status_url: &str, client: &reqwest::Client) -> Vec<St
             Ok(res) => {
                 if res.status() == StatusCode::OK {
                     return res
-                        .cookies()
-                        .map(|cookie| cookie.value().to_string())
+                        .headers()
+                        .get_all("set-cookie")
+                        .into_iter()
+                        .map(|header| {
+                            header
+                                .to_str()
+                                .expect("Failed to get Cookie value")
+                                .to_string()
+                        })
                         .collect();
                 }
                 if [StatusCode::UNAUTHORIZED, StatusCode::FORBIDDEN].contains(&res.status()) {

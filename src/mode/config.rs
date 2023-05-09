@@ -421,7 +421,7 @@ impl ConfigManager {
     pub async fn lookup_project(&self) -> anyhow::Result<ProjectDetails> {
         self.request_platform_skip_status(
             Method::GET,
-            format!("{}", self.project_config.project_url),
+            self.project_config.project_url.to_string(),
             "create new app",
             None as Option<()>,
             None,
