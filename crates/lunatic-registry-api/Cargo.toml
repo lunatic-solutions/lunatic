@@ -1,6 +1,6 @@
 [package]
 name = "lunatic-registry-api"
-version = "0.12.0"
+version = "0.13.2"
 edition = "2021"
 description = "Lunatic host functions for registering named processes."
 homepage = "https://lunatic.solutions"

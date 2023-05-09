@@ -20,6 +20,7 @@ pub fn ok<D: Serialize>(data: D) -> ApiResponse<D> {
     Ok(submillisecond::Json(data))
 }
 
+#[allow(dead_code)]
 #[derive(Debug)]
 pub enum ApiError {
     Internal,

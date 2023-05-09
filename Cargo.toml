@@ -1,6 +1,6 @@
 [package]
 name = "lunatic-runtime"
-version = "0.12.0"
+version = "0.13.2"
 authors = ["Bernard Kolobara <bernard@lunatic.solutions>"]
 edition = "2018"
 description = "An actor platform built on WebAssembly"
@@ -102,25 +102,25 @@ members = [
 ]
 
 [workspace.dependencies]
-hash-map-id = { path = "crates/hash-map-id", version = "0.12" }
+hash-map-id = { path = "crates/hash-map-id", version = "0.13" }
 lunatic-common-api = { path = "crates/lunatic-common-api", version = "0.13" }
-lunatic-control = { path = "crates/lunatic-control", version = "0.12" }
-lunatic-control-axum = { path = "crates/lunatic-control-axum", version = "0.12" }
-lunatic-control-submillisecond = { path = "crates/lunatic-control-submillisecond", version = "0.12" }
-lunatic-distributed = { path = "crates/lunatic-distributed", version = "0.12" }
-lunatic-distributed-api = { path = "crates/lunatic-distributed-api", version = "0.12" }
+lunatic-control = { path = "crates/lunatic-control", version = "0.13" }
+lunatic-control-axum = { path = "crates/lunatic-control-axum", version = "0.13" }
+lunatic-control-submillisecond = { path = "crates/lunatic-control-submillisecond", version = "0.13" }
+lunatic-distributed = { path = "crates/lunatic-distributed", version = "0.13" }
+lunatic-distributed-api = { path = "crates/lunatic-distributed-api", version = "0.13" }
 lunatic-error-api = { path = "crates/lunatic-error-api", version = "0.13" }
-lunatic-messaging-api = { path = "crates/lunatic-messaging-api", version = "0.12" }
-lunatic-metrics-api = { path = "crates/lunatic-metrics-api", version = "0.12" }
+lunatic-messaging-api = { path = "crates/lunatic-messaging-api", version = "0.13" }
+lunatic-metrics-api = { path = "crates/lunatic-metrics-api", version = "0.13" }
 lunatic-networking-api = { path = "crates/lunatic-networking-api", version = "0.13" }
 lunatic-process = { path = "crates/lunatic-process", version = "0.13" }
 lunatic-process-api = { path = "crates/lunatic-process-api", version = "0.13" }
-lunatic-registry-api = { path = "crates/lunatic-registry-api", version = "0.12" }
+lunatic-registry-api = { path = "crates/lunatic-registry-api", version = "0.13" }
 lunatic-sqlite-api = { path = "crates/lunatic-sqlite-api", version = "0.13" }
 lunatic-stdout-capture = { path = "crates/lunatic-stdout-capture", version = "0.13" }
-lunatic-timer-api = { path = "crates/lunatic-timer-api", version = "0.12" }
-lunatic-trap-api = { path = "crates/lunatic-trap-api", version = "0.12" }
-lunatic-version-api = { path = "crates/lunatic-version-api", version = "0.12" }
+lunatic-timer-api = { path = "crates/lunatic-timer-api", version = "0.13" }
+lunatic-trap-api = { path = "crates/lunatic-trap-api", version = "0.13" }
+lunatic-version-api = { path = "crates/lunatic-version-api", version = "0.13" }
 lunatic-wasi-api = { path = "crates/lunatic-wasi-api", version = "0.13" }
 
 anyhow = "1.0"
@@ -131,9 +131,33 @@ metrics = "0.20.1"
 reqwest = "0.11"
 rustls-pemfile = "1.0"
 serde = "1.0"
-tokio = "1.20"
+tokio = "1.28"
 uuid = { version = "1.1", features = ["v4"] }
-wasi-common = "6"
-wasmtime = "6"
-wasmtime-wasi = "6"
-wiggle = "6"
+wasi-common = "8"
+wasmtime = "8"
+wasmtime-wasi = "8"
+wiggle = "8"
+
+[workspace.metadata.git-cliff.changelog]
+header = """
+# Lunatic Changelog
+
+"""
+
+body = """
+{% if version %}\
+    ## [{{ version | trim_start_matches(pat="v") }}]
+
+    Released {{ timestamp | date(format="%Y-%m-%d") }}.
+{% else %}\
+    ## [unreleased]
+{% endif %}\
+{% for group, commits in commits | group_by(attribute="group") %}
+    ### {{ group | upper_first }}
+    {% for commit in commits %}
+        - {% if commit.breaking %}[**breaking**] {% endif %}{{ commit.message | upper_first }} [`{{ commit.id | truncate(length=7, end="") }}`](https://github.com/lunatic-solutions/lunatic/commit/{{ commit.id | urlencode }})\
+    {% endfor %}
+{% endfor %}\n
+"""
+
+footer = ""

@@ -1,6 +1,6 @@
 [package]
 name = "lunatic-process-api"
-version = "0.13.0"
+version = "0.13.2"
 edition = "2021"
 description = "Lunatic host functions for working with processes."
 homepage = "https://lunatic.solutions"
@@ -16,6 +16,7 @@ lunatic-common-api = { workspace = true }
 lunatic-error-api = { workspace = true }
 lunatic-process = { workspace = true }
 lunatic-wasi-api = { workspace = true }
+lunatic-distributed = { workspace = true }
 
 anyhow = { workspace = true }
 metrics = { workspace = true, optional = true }

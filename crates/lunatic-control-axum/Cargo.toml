@@ -1,6 +1,6 @@
 [package]
 name = "lunatic-control-axum"
-version = "0.12.0"
+version = "0.13.3"
 edition = "2021"
 description = "TBD"
 homepage = "https://lunatic.solutions"
@@ -14,7 +14,7 @@ lunatic-distributed = { workspace = true }
 anyhow = { workspace = true }
 axum = { version = "0.6", features = ["json", "query", "macros"] }
 tower-http = { version = "0.3.0", features = ["limit"] }
-base64-url = "1.4.13"
+base64-url = "2.0"
 chrono = { version = "0.4.23", default-features = false, features = ["clock", "std"] }
 dashmap = { workspace = true }
 getrandom = "0.2.8"

@@ -78,7 +78,12 @@ pub fn new_quic_client(ca_cert: &str, cert: &str, key: &str) -> Result<Client> {
     Ok(Client { inner: endpoint })
 }
 
-pub fn new_quic_server(addr: SocketAddr, cert: &str, key: &str, ca_cert: &str) -> Result<Endpoint> {
+pub fn new_quic_server(
+    addr: SocketAddr,
+    certs: Vec<String>,
+    key: &str,
+    ca_cert: &str,
+) -> Result<Endpoint> {
     let mut ca_cert = ca_cert.as_bytes();
     let ca_cert = rustls_pemfile::read_one(&mut ca_cert)?.unwrap();
     let ca_cert = match ca_cert {
@@ -88,23 +93,28 @@ pub fn new_quic_server(addr: SocketAddr, cert: &str, key: &str, ca_cert: &str) -
     let mut roots = rustls::RootCertStore::empty();
     roots.add(&ca_cert)?;
 
-    let mut cert = cert.as_bytes();
     let mut key = key.as_bytes();
     let pk = rustls_pemfile::read_one(&mut key)?.unwrap();
     let pk = match pk {
         Item::PKCS8Key(key) => Ok(rustls::PrivateKey(key)),
         _ => Err(anyhow!("Not a valid private key.")),
     }?;
-    let cert = rustls_pemfile::read_one(&mut cert)?.unwrap();
-    let cert = match cert {
-        Item::X509Certificate(cert) => Ok(rustls::Certificate(cert)),
-        _ => Err(anyhow!("Not a valid certificate")),
-    }?;
-    let cert = vec![cert];
+
+    let mut cert_chain = Vec::new();
+    for cert in certs {
+        let mut cert = cert.as_bytes();
+        let cert = rustls_pemfile::read_one(&mut cert)?.unwrap();
+        let cert = match cert {
+            Item::X509Certificate(cert) => Ok(rustls::Certificate(cert)),
+            _ => Err(anyhow!("Not a valid certificate")),
+        }?;
+        cert_chain.push(cert);
+    }
+
     let server_crypto = rustls::ServerConfig::builder()
         .with_safe_defaults()
         .with_client_cert_verifier(AllowAnyAuthenticatedClient::new(roots))
-        .with_single_cert(cert, pk)?;
+        .with_single_cert(cert_chain, pk)?;
     let mut server_config = ServerConfig::with_crypto(Arc::new(server_crypto));
     Arc::get_mut(&mut server_config.transport)
         .unwrap()

@@ -39,7 +39,7 @@ pub fn register(
 
     ok(Registration {
         node_name: reg.node_name,
-        cert_pem,
+        cert_pem_chain: vec![cert_pem],
         authentication_token,
         root_cert: control.root_cert(),
         urls: ControlUrls {

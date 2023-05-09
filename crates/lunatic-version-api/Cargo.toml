@@ -1,6 +1,6 @@
 [package]
 name = "lunatic-version-api"
-version = "0.12.0"
+version = "0.13.2"
 edition = "2021"
 description = "Lunatic host functions for getting Lunatic host version"
 homepage = "https://lunatic.solutions"

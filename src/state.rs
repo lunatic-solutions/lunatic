@@ -23,7 +23,7 @@ use lunatic_timer_api::{TimerCtx, TimerResources};
 use lunatic_wasi_api::{build_wasi, LunaticWasiCtx};
 use tokio::net::{TcpListener, UdpSocket};
 use tokio::sync::mpsc::unbounded_channel;
-use tokio::sync::{Mutex, RwLock, RwLockWriteGuard};
+use tokio::sync::{Mutex, RwLock};
 use wasmtime::{Linker, ResourceLimiter};
 use wasmtime_wasi::WasiCtx;
 
@@ -71,10 +71,6 @@ pub struct DefaultProcessState {
     // database resources
     db_resources: DbResources,
     registry: Arc<RwLock<HashMap<String, (u64, u64)>>>,
-    // Allows for atomic registry "lookup and insert" operations, by holding the write-lock of a
-    // `RwLock` struct. The lifetime of the lock will need to be extended to `'static`, but this
-    // is a safe operation, because it references a global registry that outlives all processes.
-    registry_atomic_put: Option<RwLockWriteGuard<'static, HashMap<String, (u64, u64)>>>,
 }
 
 impl DefaultProcessState {
@@ -110,7 +106,6 @@ impl DefaultProcessState {
             initialized: false,
             registry,
             db_resources: DbResources::default(),
-            registry_atomic_put: None,
         };
         Ok(state)
     }
@@ -148,7 +143,6 @@ impl ProcessState for DefaultProcessState {
             initialized: false,
             registry: self.registry.clone(),
             db_resources: DbResources::default(),
-            registry_atomic_put: None,
         };
         Ok(state)
     }
@@ -214,12 +208,6 @@ impl ProcessState for DefaultProcessState {
 
     fn registry(&self) -> &Arc<RwLock<HashMap<String, (u64, u64)>>> {
         &self.registry
-    }
-
-    fn registry_atomic_put(
-        &mut self,
-    ) -> &mut Option<RwLockWriteGuard<'static, HashMap<String, (u64, u64)>>> {
-        &mut self.registry_atomic_put
     }
 }
 
@@ -481,7 +469,6 @@ impl DistributedCtx<LunaticEnvironment> for DefaultProcessState {
             initialized: false,
             registry: Default::default(), // TODO move registry into env?
             db_resources: DbResources::default(),
-            registry_atomic_put: None,
         };
         Ok(state)
     }

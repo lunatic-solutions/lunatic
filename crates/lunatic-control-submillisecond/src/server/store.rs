@@ -108,7 +108,7 @@ impl ControlServerStore {
                             .ok_or_else(|| anyhow!("missing or invalid created_at"))?,
                         stopped_at: cols
                             .next()
-                            .and_then(|stopped_at| stopped_at.as_text().map(|stopped_at| DateTime::parse_from_rfc3339(&stopped_at).ok()).or_else(|| stopped_at.into_null().map(|_| None)))
+                            .and_then(|stopped_at| stopped_at.as_text().map(|stopped_at| DateTime::parse_from_rfc3339(stopped_at).ok()).or_else(|| stopped_at.into_null().map(|_| None)))
                             .map(|created_at| created_at.map(|dt| dt.with_timezone(&Utc)))
                             .ok_or_else(|| anyhow!("missing or invalid stopped_at"))?,
                         node_address: cols
