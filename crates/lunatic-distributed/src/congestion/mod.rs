@@ -84,12 +84,10 @@ pub async fn congestion_control_worker(state: distributed::Client) -> ! {
                     let chunk_id = msg_ctx.chunk_id.load(atomic::Ordering::Relaxed);
                     let (data, finished) = if msg_ctx.data.len() <= offset + CHUNK_SIZE {
                         // Chunk will be finished after this write
-                        (bytes::Bytes::copy_from_slice(&msg_ctx.data[offset..]), true)
+                        (msg_ctx.data.slice(offset..), true)
                     } else {
                         (
-                            bytes::Bytes::copy_from_slice(
-                                &msg_ctx.data[offset..offset + CHUNK_SIZE],
-                            ),
+                            msg_ctx.data.slice(offset..offset + CHUNK_SIZE),
                             false,
                         )
                     };

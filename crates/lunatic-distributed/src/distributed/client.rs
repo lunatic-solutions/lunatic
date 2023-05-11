@@ -8,6 +8,7 @@ use std::{
 
 use anyhow::{anyhow, Result};
 use async_cell::sync::AsyncCell;
+use bytes::Bytes;
 use dashmap::DashMap;
 use tokio::sync::{
     mpsc::{Receiver, Sender},
@@ -64,7 +65,7 @@ pub struct MessageCtx {
     pub dest: ProcessId,
     pub chunk_id: AtomicU64,
     pub offset: AtomicUsize,
-    pub data: Vec<u8>,
+    pub data: Bytes,
 }
 
 // Receiving part of the message queue
@@ -130,7 +131,7 @@ impl Client {
         src: ProcessId,
         node: NodeId,
         dest: ProcessId,
-        data: Vec<u8>,
+        data: Bytes,
     ) -> Result<MessageId> {
         // Lazy initialize process message buffers
         let tx = match self.inner.buf_tx.get(&(env, src)) {
@@ -209,6 +210,7 @@ impl Client {
             Ok(data) => data,
             Err(_) => unreachable!("lunatic::distributed::client::send serialize_message"),
         };
+        let data = Bytes::copy_from_slice(&data);
         self.new_message(params.env, params.src, params.node, params.dest, data)
             .await
     }
@@ -220,6 +222,7 @@ impl Client {
             Ok(data) => data,
             Err(_) => unreachable!("lunatic::distributed::client::spawn serialize_message"),
         };
+        let data = Bytes::copy_from_slice(&data);
         let message_id = self
             .new_message(params.env, params.src, params.node, ProcessId(0), data)
             .await?;
@@ -236,6 +239,7 @@ impl Client {
             Ok(data) => data,
             Err(_) => unreachable!("lunatic::distributed::client::spawn serialize_message"),
         };
+        let data = Bytes::copy_from_slice(&data);
         self.new_message(
             EnvironmentId(0),
             ProcessId(0),
