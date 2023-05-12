@@ -93,6 +93,7 @@ pub struct Inner {
     pub nodes_queues: DashMap<NodeId, Sender<MessageChunk>>,
     pub responses: DashMap<MessageId, Arc<IncomingResponse>>,
     pub response_tx: Sender<(MessageId, ResponseContent)>,
+    pub has_messages: Arc<AsyncCell<()>>,
 }
 
 impl Client {
@@ -110,6 +111,7 @@ impl Client {
                 nodes_queues: DashMap::new(),
                 responses: DashMap::new(),
                 response_tx: send,
+                has_messages: AsyncCell::shared(),
             }),
         };
         tokio::spawn(congestion::congestion_control_worker(client.clone()));
@@ -189,6 +191,7 @@ impl Client {
             Ok(_) => (),
             Err(_) => log::error!("lunatic::distributed::client::send"),
         };
+        self.inner.has_messages.set(());
         Ok(message_id)
     }
 
@@ -210,9 +213,14 @@ impl Client {
             Ok(data) => data,
             Err(_) => unreachable!("lunatic::distributed::client::send serialize_message"),
         };
-        let data = Bytes::copy_from_slice(&data);
-        self.new_message(params.env, params.src, params.node, params.dest, data)
-            .await
+        self.new_message(
+            params.env,
+            params.src,
+            params.node,
+            params.dest,
+            data.into(),
+        )
+        .await
     }
 
     // Send distributed spawn message
@@ -222,9 +230,14 @@ impl Client {
             Ok(data) => data,
             Err(_) => unreachable!("lunatic::distributed::client::spawn serialize_message"),
         };
-        let data = Bytes::copy_from_slice(&data);
         let message_id = self
-            .new_message(params.env, params.src, params.node, ProcessId(0), data)
+            .new_message(
+                params.env,
+                params.src,
+                params.node,
+                ProcessId(0),
+                data.into(),
+            )
             .await?;
         self.inner
             .responses
@@ -239,13 +252,12 @@ impl Client {
             Ok(data) => data,
             Err(_) => unreachable!("lunatic::distributed::client::spawn serialize_message"),
         };
-        let data = Bytes::copy_from_slice(&data);
         self.new_message(
             EnvironmentId(0),
             ProcessId(0),
             params.node_id,
             ProcessId(0),
-            data,
+            data.into(),
         )
         .await
     }

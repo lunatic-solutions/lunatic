@@ -42,7 +42,6 @@
 use std::{
     collections::VecDeque,
     sync::{atomic, Arc},
-    time::Duration,
 };
 
 use anyhow::Result;
@@ -70,15 +69,15 @@ pub struct MessageChunk {
 const CHUNK_SIZE: usize = 1024;
 
 pub async fn congestion_control_worker(state: distributed::Client) -> ! {
+    // let waker = state.inner.has_messages.take_weak();
+    // (&waker).await;
     log::trace!("starting congestion control worker");
     loop {
-        let mut progress = false;
         for env in state.inner.buf_rx.iter() {
             let mut disconected = vec![];
             for pid in env.iter() {
                 let key = (*env.key(), *pid.key());
                 let finished = if let Some(msg_ctx) = state.inner.in_progress.get(&key) {
-                    progress = true;
                     // Chunk data using offset
                     let offset = msg_ctx.offset.load(atomic::Ordering::Relaxed);
                     let chunk_id = msg_ctx.chunk_id.load(atomic::Ordering::Relaxed);
@@ -86,10 +85,7 @@ pub async fn congestion_control_worker(state: distributed::Client) -> ! {
                         // Chunk will be finished after this write
                         (msg_ctx.data.slice(offset..), true)
                     } else {
-                        (
-                            msg_ctx.data.slice(offset..offset + CHUNK_SIZE),
-                            false,
-                        )
+                        (msg_ctx.data.slice(offset..offset + CHUNK_SIZE), false)
                     };
                     // Create chunk
                     let chunk = MessageChunk {
@@ -162,9 +158,10 @@ pub async fn congestion_control_worker(state: distributed::Client) -> ! {
             for pid in disconected {
                 env.remove(&pid);
             }
-        }
-        if !progress {
-            tokio::time::sleep(Duration::from_millis(100)).await;
+            // TODO: wait to be woken up by next message
+            // if state.inner.in_progress.len() == 0 {
+            //     (&waker).await;
+            // }
         }
     }
 }
@@ -228,7 +225,7 @@ pub async fn node_connection_manager(mut manager: NodeConnectionManager) -> Resu
                     continue;
                 }
             };
-            let (send, recv) = mpsc::channel::<StreamAction>(100);
+            let (send, recv) = mpsc::channel::<StreamAction>(1000);
             stream_wakers.push(send);
             stream_tasks.push(tokio::spawn(stream_task(StreamTask {
                 quic_stream: stream,
