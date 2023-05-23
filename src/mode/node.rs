@@ -62,7 +62,7 @@ pub(crate) async fn start(args: Args) -> Result<()> {
     // TODO unwrap, better message
     let node_name = Uuid::new_v4();
     let node_name_str = node_name.as_hyphenated().to_string();
-    let node_attributes: HashMap<String, String> = Default::default(); //args.tag.into_iter().collect(); TODO
+    let node_attributes: HashMap<String, String> = args.tag.clone().into_iter().collect();
     let node_cert = lunatic_distributed::distributed::server::gen_node_cert(&node_name_str)
         .with_context(|| "Failed to generate node CSR and PK")?;
     log::info!("Generate CSR for node name {node_name_str}");
