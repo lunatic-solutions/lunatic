@@ -10,6 +10,7 @@ use chrono::{DateTime, Utc};
 use lunatic::{
     abstract_process,
     ap::{Config, ProcessRef},
+    ProcessName,
 };
 use lunatic_control::api::{NodeStart, Register};
 use serde::{Deserialize, Serialize};
@@ -18,6 +19,9 @@ use uuid::Uuid;
 use crate::host::{self, CertPk};
 
 use self::store::ControlServerStore;
+
+#[derive(ProcessName)]
+pub struct ControlServerProcess;
 
 #[derive(Clone, Debug)]
 pub struct ControlServer {
@@ -51,7 +55,7 @@ pub struct NodeDetails {
 
 impl ControlServer {
     pub fn lookup() -> Option<ProcessRef<Self>> {
-        ProcessRef::lookup("ControlServer")
+        ProcessRef::lookup(&ControlServerProcess)
     }
 }
 
