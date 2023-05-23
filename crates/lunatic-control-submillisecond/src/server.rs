@@ -50,7 +50,7 @@ pub struct NodeDetails {
     pub created_at: DateTime<Utc>,
     pub stopped_at: Option<DateTime<Utc>>,
     pub node_address: String,
-    pub attributes: BincodeJsonValue,
+    pub attributes: HashMap<String, String>,
 }
 
 impl ControlServer {
@@ -115,7 +115,7 @@ impl ControlServer {
             created_at: Utc::now(),
             stopped_at: None,
             node_address: data.node_address.to_string(),
-            attributes: serde_json::json!(data.attributes).into(),
+            attributes: data.attributes,
         };
         self.store.add_node(id, &details);
         self.nodes.insert(id, details);

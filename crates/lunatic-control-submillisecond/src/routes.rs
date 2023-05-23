@@ -97,15 +97,9 @@ pub fn list_nodes(
         .filter(|n| n.status < 2 && !n.node_address.is_empty())
         .collect();
     let nds: Vec<_> = if !query.is_empty() {
-        let mut lookup_result = Vec::new();
-        for node in nds.into_iter() {
-            let attrs: HashMap<String, String> = serde_json::from_value(node.attributes.0.clone())
-                .map_err(|_| ApiError::Internal)?;
-            if query.iter().all(|(k, v)| attrs.get(k) == Some(v)) {
-                lookup_result.push(node);
-            }
-        }
-        lookup_result
+        nds.into_iter()
+            .filter(|node| query.iter().all(|(k, v)| node.attributes.get(k) == Some(v)))
+            .collect()
     } else {
         nds
     };
