@@ -1,8 +1,8 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use axum::{
     body::Bytes,
-    extract::DefaultBodyLimit,
+    extract::{DefaultBodyLimit, Query},
     routing::{get, post},
     Extension, Json, Router,
 };
@@ -85,6 +85,7 @@ pub async fn node_started(
 
 pub async fn list_nodes(
     _node_auth: NodeAuth,
+    Query(query): Query<HashMap<String, String>>,
     control: Extension<Arc<ControlServer>>,
 ) -> ApiResponse<NodesList> {
     let control = control.as_ref();
@@ -93,6 +94,14 @@ pub async fn list_nodes(
         .iter()
         .filter(|n| n.status < 2 && !n.node_address.is_empty())
         .collect();
+    // Filter nodes based on query params and node attributes
+    let nds: Vec<_> = if !query.is_empty() {
+        nds.into_iter()
+            .filter(|node| query.iter().all(|(k, v)| node.attributes.get(k) == Some(v)))
+            .collect()
+    } else {
+        nds
+    };
     let nodes: Vec<_> = control
         .registrations
         .iter()
