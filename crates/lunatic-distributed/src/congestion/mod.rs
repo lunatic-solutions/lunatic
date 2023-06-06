@@ -69,10 +69,11 @@ pub struct MessageChunk {
 const CHUNK_SIZE: usize = 1024;
 
 pub async fn congestion_control_worker(state: distributed::Client) -> ! {
-    // let waker = state.inner.has_messages.take_weak();
-    // (&waker).await;
+    let waker = state.inner.has_messages.take_weak();
+    (&waker).await;
     log::trace!("starting congestion control worker");
     loop {
+        let mut has_local_msg = false;
         for env in state.inner.buf_rx.iter() {
             let mut disconected = vec![];
             for pid in env.iter() {
@@ -135,6 +136,7 @@ pub async fn congestion_control_worker(state: distributed::Client) -> ! {
                                 "congestion::message::received message_id={}",
                                 new_msg_ctx.message_id.0
                             );
+                            has_local_msg = true;
                             state
                                 .inner
                                 .in_progress
@@ -158,10 +160,10 @@ pub async fn congestion_control_worker(state: distributed::Client) -> ! {
             for pid in disconected {
                 env.remove(&pid);
             }
-            // TODO: wait to be woken up by next message
-            // if state.inner.in_progress.len() == 0 {
-            //     (&waker).await;
-            // }
+            // wait to be woken up by next message
+            if has_local_msg && state.inner.in_progress.is_empty() {
+                 (&waker).await;
+            }
         }
     }
 }
