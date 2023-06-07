@@ -73,7 +73,6 @@ pub async fn congestion_control_worker(state: distributed::Client) -> ! {
     (&waker).await;
     log::trace!("starting congestion control worker");
     loop {
-        let mut has_local_msg = false;
         for env in state.inner.buf_rx.iter() {
             let mut disconected = vec![];
             for pid in env.iter() {
@@ -136,7 +135,6 @@ pub async fn congestion_control_worker(state: distributed::Client) -> ! {
                                 "congestion::message::received message_id={}",
                                 new_msg_ctx.message_id.0
                             );
-                            has_local_msg = true;
                             state
                                 .inner
                                 .in_progress
@@ -161,9 +159,9 @@ pub async fn congestion_control_worker(state: distributed::Client) -> ! {
                 env.remove(&pid);
             }
             // wait to be woken up by next message
-            if has_local_msg && state.inner.in_progress.is_empty() {
-                 (&waker).await;
-            }
+            // if no_msg_recv {
+            //    (&waker).await;
+            //}
         }
     }
 }
@@ -284,14 +282,14 @@ async fn stream_task(mut state: StreamTask) {
         }
         let mut data: Vec<bytes::Bytes> = chunks
             .iter()
-            .map(|c| {
+            .flat_map(|c| {
                 let mut buf = Vec::new();
                 buf.extend(c.message_id.to_le_bytes().as_ref());
                 buf.extend(c.message_size.to_le_bytes().as_ref());
                 buf.extend(c.chunk_id.to_le_bytes().as_ref());
                 buf.extend((c.data.len() as u32).to_le_bytes().as_ref());
-                buf.extend(&c.data);
-                bytes::Bytes::from(buf)
+                // buf.extend(&c.data);
+                vec![bytes::Bytes::from(buf), c.data.clone()]
             })
             .collect();
         // Try to send data
