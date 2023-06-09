@@ -127,6 +127,10 @@ pub async fn congestion_control_worker(state: distributed::Client) -> ! {
                         false
                     }
                 } else {
+                    true
+                };
+                if finished {
+                    state.inner.in_progress.remove(&key);
                     let mut recv = pid.write().await;
                     match recv.try_recv() {
                         // Push message into in progress space
@@ -147,11 +151,6 @@ pub async fn congestion_control_worker(state: distributed::Client) -> ! {
                             disconected.push(*pid.key());
                         }
                     };
-                    // Chunk in progress
-                    false
-                };
-                if finished {
-                    state.inner.in_progress.remove(&key);
                 }
             }
             // remove disconnected processes
@@ -159,9 +158,9 @@ pub async fn congestion_control_worker(state: distributed::Client) -> ! {
                 env.remove(&pid);
             }
             // wait to be woken up by next message
-            // if no_msg_recv {
-            //    (&waker).await;
-            //}
+            if state.inner.in_progress.is_empty() {
+                (&waker).await;
+            }
         }
     }
 }
