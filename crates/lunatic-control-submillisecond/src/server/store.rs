@@ -4,7 +4,7 @@ use anyhow::anyhow;
 use chrono::{DateTime, Utc};
 use lunatic::sqlite::{Query, SqliteClient, SqliteError};
 
-use super::{BincodeJsonValue, NodeDetails, Registered};
+use super::{NodeDetails, Registered};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ControlServerStore {
@@ -108,7 +108,7 @@ impl ControlServerStore {
                             .ok_or_else(|| anyhow!("missing or invalid created_at"))?,
                         stopped_at: cols
                             .next()
-                            .and_then(|stopped_at| stopped_at.as_text().map(|stopped_at| DateTime::parse_from_rfc3339(&stopped_at).ok()).or_else(|| stopped_at.into_null().map(|_| None)))
+                            .and_then(|stopped_at| stopped_at.as_text().map(|stopped_at| DateTime::parse_from_rfc3339(stopped_at).ok()).or_else(|| stopped_at.into_null().map(|_| None)))
                             .map(|created_at| created_at.map(|dt| dt.with_timezone(&Utc)))
                             .ok_or_else(|| anyhow!("missing or invalid stopped_at"))?,
                         node_address: cols
@@ -118,7 +118,7 @@ impl ControlServerStore {
                         attributes: cols
                             .next()
                             .and_then(|attributes| attributes.into_blob())
-                            .and_then(|attributes| serde_json::from_slice(&attributes).ok().map(BincodeJsonValue))
+                            .and_then(|attributes| serde_json::from_slice(&attributes).ok())
                             .ok_or_else(|| anyhow!("missing or invalid attributes"))?,
                     },
                 ))

@@ -62,7 +62,7 @@ pub(crate) async fn start(args: Args) -> Result<()> {
     // TODO unwrap, better message
     let node_name = Uuid::new_v4();
     let node_name_str = node_name.as_hyphenated().to_string();
-    let node_attributes: HashMap<String, String> = Default::default(); //args.tag.into_iter().collect(); TODO
+    let node_attributes: HashMap<String, String> = args.tag.clone().into_iter().collect();
     let node_cert = lunatic_distributed::distributed::server::gen_node_cert(&node_name_str)
         .with_context(|| "Failed to generate node CSR and PK")?;
     log::info!("Generate CSR for node name {node_name_str}");
@@ -86,7 +86,9 @@ pub(crate) async fn start(args: Args) -> Result<()> {
 
     let quic_client = quic::new_quic_client(
         &reg.root_cert,
-        &reg.cert_pem,
+        reg.cert_pem_chain
+            .get(0)
+            .ok_or_else(|| anyhow!("No certificate available for QUIC client"))?,
         &node_cert.serialize_private_key_pem(),
     )
     .with_context(|| "Failed to create mTLS QUIC client")?;
@@ -114,7 +116,7 @@ pub(crate) async fn start(args: Args) -> Result<()> {
         },
         socket,
         reg.root_cert,
-        reg.cert_pem,
+        reg.cert_pem_chain,
         node_cert.serialize_private_key_pem(),
     ));
 

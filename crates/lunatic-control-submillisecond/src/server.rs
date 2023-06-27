@@ -10,6 +10,7 @@ use chrono::{DateTime, Utc};
 use lunatic::{
     abstract_process,
     ap::{Config, ProcessRef},
+    ProcessName,
 };
 use lunatic_control::api::{NodeStart, Register};
 use serde::{Deserialize, Serialize};
@@ -18,6 +19,9 @@ use uuid::Uuid;
 use crate::host::{self, CertPk};
 
 use self::store::ControlServerStore;
+
+#[derive(ProcessName)]
+pub struct ControlServerProcess;
 
 #[derive(Clone, Debug)]
 pub struct ControlServer {
@@ -46,12 +50,12 @@ pub struct NodeDetails {
     pub created_at: DateTime<Utc>,
     pub stopped_at: Option<DateTime<Utc>>,
     pub node_address: String,
-    pub attributes: BincodeJsonValue,
+    pub attributes: HashMap<String, String>,
 }
 
 impl ControlServer {
     pub fn lookup() -> Option<ProcessRef<Self>> {
-        ProcessRef::lookup("ControlServer")
+        ProcessRef::lookup(&ControlServerProcess)
     }
 }
 
@@ -111,7 +115,7 @@ impl ControlServer {
             created_at: Utc::now(),
             stopped_at: None,
             node_address: data.node_address.to_string(),
-            attributes: serde_json::json!(data.attributes).into(),
+            attributes: data.attributes,
         };
         self.store.add_node(id, &details);
         self.nodes.insert(id, details);

@@ -1,5 +1,25 @@
 # Lunatic Changelog
 
+## v0.13.0
+
+Released 2023-05-03.
+
+### Changes
+
+- Wasmtime updated to 8.0
+- Process monitoring support added ([@tqwewe](https://github.com/tqwewe))
+- SQLite support added ([@SquattingSocrates](https://github.com/SquattingSocrates))
+- Support for intermediate CA certificates added ([@teskeras](https://github.com/teskeras))
+- Show name of registered processes when they fail ([@tqwewe](https://github.com/tqwewe))
+- Environment spawn limit ([@kosticmarin](https://github.com/kosticmarin))
+- `peer_addr` host API added ([@MarkintoshZ](https://github.com/MarkintoshZ))
+- Metrics API added ([@Roger](https://github.com/Roger))
+- `process::exists` API added ([@jtenner](https://github.com/jtenner))
+- Cargo lunatic wrapper added ([@Gentle](https://github.com/Gentle))
+- Improved CLI default arguments ([@pinkforest](https://github.com/pinkforest))
+- Improved CI workflow ([@shamilsan](https://github.com/shamilsan))
+- Additional tests added ([@sid-707](https://github.com/sid-707))
+
 ## v0.12.0
 
 Released 2022-11-15.

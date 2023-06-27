@@ -5,7 +5,7 @@ homepage = "https://lunatic.solutions"
 license = "Apache-2.0/MIT"
 name = "lunatic-sqlite-api"
 repository = "https://github.com/lunatic-solutions/lunatic/tree/main/crates/lunatic-sqlite-api"
-version = "0.13.0"
+version = "0.13.3"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

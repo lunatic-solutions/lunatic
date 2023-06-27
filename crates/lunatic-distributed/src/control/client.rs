@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use dashmap::DashMap;
 use lunatic_control::api::*;
 use lunatic_control::NodeInfo;
@@ -99,18 +99,29 @@ impl Client {
         url: Url,
         reg: Register,
     ) -> Result<Registration> {
-        let resp: Registration = client
+        let resp = client
             .post(url)
             .json(&reg)
             .send()
             .await
-            .with_context(|| "Error sending HTTP registration request.")?
-            .error_for_status()
-            .with_context(|| "HTTP registration request returned an error response.")?
-            .json()
-            .await
-            .with_context(|| "Error parsing the registration request JSON.")?;
-        Ok(resp)
+            .with_context(|| "Error sending HTTP registration request.")?;
+
+        let status = resp.status();
+        if !status.is_success() {
+            let body = resp.text().await.with_context(|| {
+                format!("Error parsing body as a text. Response not successful: {status}")
+            })?;
+            Err(anyhow!(
+                "HTTP registration request returned an error response: {body}"
+            ))
+        } else {
+            let reg = resp
+                .json()
+                .await
+                .with_context(|| "Error parsing the registration request JSON.")?;
+
+            Ok(reg)
+        }
     }
 
     async fn start(client: &HttpClient, reg: &Registration, start: NodeStart) -> Result<u64> {

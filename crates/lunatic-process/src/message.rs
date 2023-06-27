@@ -29,6 +29,7 @@ pub type Resource = dyn Any + Send + Sync;
 pub enum Message {
     Data(DataMessage),
     LinkDied(Option<i64>),
+    ProcessDied(u64),
 }
 
 impl Message {
@@ -36,6 +37,15 @@ impl Message {
         match self {
             Message::Data(message) => message.tag,
             Message::LinkDied(tag) => *tag,
+            Message::ProcessDied(_) => None,
+        }
+    }
+
+    pub fn process_id(&self) -> Option<u64> {
+        match self {
+            Message::Data(_) => None,
+            Message::LinkDied(_) => None,
+            Message::ProcessDied(process_id) => Some(*process_id),
         }
     }
 
@@ -46,6 +56,7 @@ impl Message {
             Message::LinkDied(_) => {
                 metrics::increment_counter!("lunatic.process.messages.link_died.count");
             }
+            Message::ProcessDied(_) => {}
         }
     }
 }

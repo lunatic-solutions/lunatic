@@ -61,6 +61,32 @@ To run the tests:
 cargo test
 ```
 
+## Changelog generation
+
+The changelog is updated using the [git-cliff](https://git-cliff.org/) cli,
+which generates the changelog file from the [Git](https://git-scm.com/) history by utilizing [conventional commits](https://git-cliff.org/#conventional_commits).
+
+The changelog template is defined in [Cargo.toml](/Cargo.toml) under `[workspace.metadata.git-cliff.*]`.
+
+Updating the CHANGELOG.md file can be achieved with the following command:
+
+```bash
+git cliff --config ./Cargo.toml --latest --prepend ./CHANGELOG.md
+```
+
+The commit types are as follows:
+
+* **feat**: A new feature
+* **fix**: A bug fix
+* **docs**: Documentation only changes
+* **style**: Changes that do not affect the meaning of the code (white-space, formatting, missing semi-colons, etc)
+* **refactor**: A code change that neither fixes a bug nor adds a feature
+* **perf**: A code change that improves performance
+* **test**: Adding missing or correcting existing tests
+* **chore**: Changes to the build process or auxiliary tools and libraries such as documentation generation
+
+For more information, see the [git-cliff usage documentation](https://git-cliff.org/#usage).
+
 ## Useful resources
 - [Project Loom on virtual threads](https://cr.openjdk.org/~rpressler/loom/loom/sol1_part1.html)
 - [Erlang documentation](https://www.erlang.org/docs) - these explain some concepts that Lunatic implements

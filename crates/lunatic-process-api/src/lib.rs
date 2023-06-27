@@ -1,6 +1,7 @@
 use std::{
     convert::{TryFrom, TryInto},
     future::Future,
+    io::Write,
     path::Path,
     sync::Arc,
     time::{Duration, Instant},
@@ -9,6 +10,7 @@ use std::{
 use anyhow::{anyhow, Result};
 use hash_map_id::HashMapId;
 use lunatic_common_api::{get_memory, IntoTrap};
+use lunatic_distributed::DistributedCtx;
 use lunatic_error_api::ErrorCtx;
 use lunatic_process::{
     config::ProcessConfig,
@@ -44,10 +46,11 @@ pub trait ProcessCtx<S: ProcessState> {
 }
 
 // Register the process APIs to the linker
-pub fn register<T>(linker: &mut Linker<T>) -> Result<()>
+pub fn register<T, E>(linker: &mut Linker<T>) -> Result<()>
 where
     T: ProcessState
         + ProcessCtx<T>
+        + DistributedCtx<E>
         + ErrorCtx
         + LunaticWasiCtx
         + Send
@@ -56,6 +59,7 @@ where
         + 'static,
     for<'a> &'a T: Send,
     T::Config: ProcessConfigCtx,
+    E: Environment + 'static,
 {
     #[cfg(feature = "metrics")]
     lunatic_process::describe_metrics();
@@ -166,6 +170,7 @@ where
     )?;
 
     linker.func_wrap8_async("lunatic::process", "spawn", spawn)?;
+    linker.func_wrap11_async("lunatic::process", "get_or_spawn", get_or_spawn)?;
     linker.func_wrap1_async("lunatic::process", "sleep_ms", sleep_ms)?;
     linker.func_wrap("lunatic::process", "die_when_link_dies", die_when_link_dies)?;
 
@@ -173,6 +178,8 @@ where
     linker.func_wrap("lunatic::process", "environment_id", environment_id)?;
     linker.func_wrap("lunatic::process", "link", link)?;
     linker.func_wrap("lunatic::process", "unlink", unlink)?;
+    linker.func_wrap("lunatic::process", "monitor", monitor)?;
+    linker.func_wrap("lunatic::process", "stop_monitoring", stop_monitoring)?;
     linker.func_wrap("lunatic::process", "kill", kill)?;
     linker.func_wrap("lunatic::process", "exists", exists)?;
     Ok(())
@@ -592,7 +599,7 @@ where
                 .clone(),
         };
 
-        let mut state = state.new_state(module.clone(), config)?;
+        let mut new_state = state.new_state(module.clone(), config)?;
 
         let memory = get_memory(&mut caller)?;
         let func_str = memory
@@ -639,7 +646,7 @@ where
         // Inherit stdout and stderr streams if they are redirected by the parent.
         let stdout = if let Some(stdout) = caller.data().get_stdout() {
             let next_stream = stdout.next();
-            state.set_stdout(next_stream.clone());
+            new_state.set_stdout(next_stream.clone());
             Some((stdout.clone(), next_stream))
         } else {
             None
@@ -648,19 +655,19 @@ where
             // If stderr is same as stdout, use same `next_stream`.
             if let Some((stdout, next_stream)) = stdout {
                 if &stdout == stderr {
-                    state.set_stderr(next_stream);
+                    new_state.set_stderr(next_stream);
                 } else {
-                    state.set_stderr(stderr.next());
+                    new_state.set_stderr(stderr.next());
                 }
             } else {
-                state.set_stderr(stderr.next());
+                new_state.set_stderr(stderr.next());
             }
         }
 
         // set state instead of config TODO
         let env = caller.data().environment();
         let (proc_or_error_id, result) = match lunatic_process::wasm::spawn_wasm(
-            env, runtime, &module, state, function, params, link,
+            env, runtime, &module, new_state, function, params, link,
         )
         .await
         {
@@ -672,6 +679,223 @@ where
             .write(caller, id_ptr as usize, &proc_or_error_id.to_le_bytes())
             .or_trap("lunatic::process::spawn")?;
         Ok(result)
+    })
+}
+
+// Looks up or spawns a new process.
+//
+// This function has a similar signature as `spawn`, but it first tries to look up a process in the registry
+// under `name`. If it exists returns it, if not spawns a new one and registers it under this name. This
+// operation is atomic. While a new process is being looked up and spawned, no other process can be inserted
+// into the registry under the same name.
+//
+// Different than spawn, the lookup can result in a process running on a different node. This means that the
+// node_id also needs to be returned through a pointer.
+//
+// Returns:
+// * 0 on success        - The ID of the newly created process is written to **id_ptr**
+// * 1 on error          - The error ID is written to **id_ptr**
+// * 2 on lookup success - The lookup found a process and the id is written to **id_ptr**
+//
+// Traps:
+// * If the name lookup string is not a valid utf8 string.
+// * If the module ID doesn't exist.
+// * If the function string is not a valid utf8 string.
+// * If the params array is in a wrong format.
+// * If any memory outside the guest heap space is referenced.
+#[allow(clippy::too_many_arguments)]
+fn get_or_spawn<T, E>(
+    mut caller: Caller<T>,
+    name_str_ptr: u32,
+    name_str_len: u32,
+    link: i64,
+    config_id: i64,
+    module_id: i64,
+    func_str_ptr: u32,
+    func_str_len: u32,
+    params_ptr: u32,
+    params_len: u32,
+    node_id_ptr: u32,
+    id_ptr: u32,
+) -> Box<dyn Future<Output = Result<u32>> + Send + '_>
+where
+    T: ProcessState
+        + ProcessCtx<T>
+        + DistributedCtx<E>
+        + ErrorCtx
+        + LunaticWasiCtx
+        + ResourceLimiter
+        + Send
+        + Sync
+        + 'static,
+    for<'a> &'a T: Send,
+    T::Config: ProcessConfigCtx,
+    E: Environment,
+{
+    Box::new(async move {
+        let memory = get_memory(&mut caller)?;
+        let (memory_slice, state) = memory.data_and_store_mut(&mut caller);
+        let name = memory_slice
+            .get(name_str_ptr as usize..(name_str_ptr + name_str_len) as usize)
+            .or_trap("lunatic::process::get_or_spawn")?;
+        let name = std::str::from_utf8(name).or_trap("lunatic::process::get_or_spawn")?;
+
+        // Lock the registry for every other process before lookup.
+        let registry = state.registry().clone();
+        let mut registry = registry.write().await;
+        let process = registry.get(name).copied();
+
+        if let Some((node_id, process_id)) = process {
+            // Return the process from the registry.
+            memory_slice
+                .get_mut(node_id_ptr as usize..(node_id_ptr + 8) as usize)
+                .or_trap("lunatic::process::get_or_spawn")?
+                .write(&node_id.to_le_bytes())
+                .or_trap("lunatic::process::get_or_spawn")?;
+
+            memory_slice
+                .get_mut(id_ptr as usize..(id_ptr + 8) as usize)
+                .or_trap("lunatic::process::get_or_spawn")?
+                .write(&process_id.to_le_bytes())
+                .or_trap("lunatic::process::get_or_spawn")?;
+            Ok(2)
+        } else {
+            let name = name.to_owned();
+            // Spawn a new process. This is copy of the code in `spawn` because host functions can't call
+            // each other.
+            if !state.config().can_spawn_processes() {
+                return Err(anyhow!(
+                    "lunatic::process:get_or_spawn: Process doesn't have permissions to spawn sub-processes"
+                ));
+            }
+
+            let env = state.environment();
+            env.can_spawn_next_process()
+                .await
+                .or_trap("lunatic::process:get_or_spawn: Process spawn limit reached.")?;
+
+            if !state.is_initialized() {
+                return Err(
+                    anyhow!("lunatic::process:get_or_spawn: Cannot spawn process during module initialization")
+                );
+            }
+
+            let config = match config_id {
+                -1 => state.config().clone(),
+                config_id => Arc::new(
+                    state
+                        .config_resources()
+                        .get(config_id as u64)
+                        .or_trap("lunatic::process::get_or_spawn: Config ID doesn't exist")?
+                        .clone(),
+                ),
+            };
+
+            let module = match module_id {
+                -1 => state.module().clone(),
+                module_id => state
+                    .module_resources()
+                    .get(module_id as u64)
+                    .or_trap("lunatic::process::get_or_spawn: Module ID doesn't exist")?
+                    .clone(),
+            };
+
+            let mut new_state = state.new_state(module.clone(), config)?;
+
+            let func_str = memory_slice
+                .get(func_str_ptr as usize..(func_str_ptr + func_str_len) as usize)
+                .or_trap("lunatic::process::get_or_spawn")?;
+            let function =
+                std::str::from_utf8(func_str).or_trap("lunatic::process::get_or_spawn")?;
+            let params = memory_slice
+                .get(params_ptr as usize..(params_ptr + params_len) as usize)
+                .or_trap("lunatic::process::get_or_spawn")?;
+            let params_chunks = &mut params.chunks_exact(17);
+            let params = params_chunks
+                .map(|chunk| {
+                    let value = u128::from_le_bytes(chunk[1..].try_into()?);
+                    let result = match chunk[0] {
+                        0x7F => Val::I32(value as i32),
+                        0x7E => Val::I64(value as i64),
+                        0x7B => Val::V128(value),
+                        _ => return Err(anyhow!("Unsupported type ID")),
+                    };
+                    Ok(result)
+                })
+                .collect::<Result<Vec<_>>>()?;
+            if !params_chunks.remainder().is_empty() {
+                return Err(anyhow!(
+                    "Params array must be in chunks of 17 bytes, but {} bytes remained",
+                    params_chunks.remainder().len()
+                ));
+            }
+            // Should processes be linked together?
+            let link: Option<(Option<i64>, Arc<dyn Process>)> = match link {
+                0 => None,
+                tag => {
+                    let id = state.id();
+                    let signal_mailbox = state.signal_mailbox().clone();
+                    let process = WasmProcess::new(id, signal_mailbox.0);
+                    Some((Some(tag), Arc::new(process)))
+                }
+            };
+
+            let runtime = state.runtime().clone();
+
+            // Inherit stdout and stderr streams if they are redirected by the parent.
+            let stdout = if let Some(stdout) = state.get_stdout() {
+                let next_stream = stdout.next();
+                new_state.set_stdout(next_stream.clone());
+                Some((stdout.clone(), next_stream))
+            } else {
+                None
+            };
+            if let Some(stderr) = state.get_stderr() {
+                // If stderr is same as stdout, use same `next_stream`.
+                if let Some((stdout, next_stream)) = stdout {
+                    if &stdout == stderr {
+                        new_state.set_stderr(next_stream);
+                    } else {
+                        new_state.set_stderr(stderr.next());
+                    }
+                } else {
+                    new_state.set_stderr(stderr.next());
+                }
+            }
+
+            // set state instead of config TODO
+            let env = state.environment();
+            let (proc_or_error_id, result) = match lunatic_process::wasm::spawn_wasm(
+                env, runtime, &module, new_state, function, params, link,
+            )
+            .await
+            {
+                Ok((_, process)) => (process.id(), 0),
+                Err(error) => (state.error_resources_mut().add(error), 1),
+            };
+
+            let node_id = state
+                .distributed()
+                .as_ref()
+                .map(|d| d.node_id())
+                .unwrap_or(0);
+            memory_slice
+                .get_mut(node_id_ptr as usize..(node_id_ptr + 8) as usize)
+                .or_trap("lunatic::process::get_or_spawn")?
+                .write(&node_id.to_le_bytes())
+                .or_trap("lunatic::process::get_or_spawn")?;
+
+            memory_slice
+                .get_mut(id_ptr as usize..(id_ptr + 8) as usize)
+                .or_trap("lunatic::process::get_or_spawn")?
+                .write(&proc_or_error_id.to_le_bytes())
+                .or_trap("lunatic::process::get_or_spawn")?;
+
+            // Register newly spawned process under correct name
+            registry.insert(name, (node_id, proc_or_error_id));
+
+            Ok(result)
+        }
     })
 }
 
@@ -782,6 +1006,47 @@ fn unlink<T: ProcessState + ProcessCtx<T>>(mut caller: Caller<T>, process_id: u6
         .0
         .send(Signal::UnLink { process_id })
         .expect("The signal is sent to itself and the receiver must exist at this point");
+
+    Ok(())
+}
+
+// Start monitoring **process_id**. This is not an atomic operation.
+//
+// Traps:
+// * If the process ID doesn't exist.
+fn monitor<T: ProcessState + ProcessCtx<T>>(caller: Caller<T>, process_id: u64) -> Result<()> {
+    // Send link signal to other process
+    let process = caller.data().environment().get_process(process_id);
+
+    if let Some(process) = process {
+        let id = caller.data().id();
+        let signal_mailbox = caller.data().signal_mailbox().clone();
+        let this_process = WasmProcess::new(id, signal_mailbox.0);
+        process.send(Signal::Monitor(Arc::new(this_process)));
+    }
+
+    Ok(())
+}
+
+// Stop monitoring **process_id**. This is not an atomic operation.
+//
+// Traps:
+// * If the process ID doesn't exist.
+fn stop_monitoring<T: ProcessState + ProcessCtx<T>>(
+    caller: Caller<T>,
+    process_id: u64,
+) -> Result<()> {
+    // Create handle to itself
+    let this_process_id = caller.data().id();
+
+    // Send unlink signal to other process
+    let process = caller.data().environment().get_process(process_id);
+
+    if let Some(process) = process {
+        process.send(Signal::StopMonitoring {
+            process_id: this_process_id,
+        });
+    }
 
     Ok(())
 }

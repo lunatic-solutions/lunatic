@@ -26,6 +26,7 @@ pub fn register<T: ProcessState + ProcessCtx<T> + NetworkingCtx + Send + 'static
     linker.func_wrap("lunatic::message", "read_data", read_data)?;
     linker.func_wrap("lunatic::message", "seek_data", seek_data)?;
     linker.func_wrap("lunatic::message", "get_tag", get_tag)?;
+    linker.func_wrap("lunatic::message", "get_process_id", get_process_id)?;
     linker.func_wrap("lunatic::message", "data_size", data_size)?;
     linker.func_wrap("lunatic::message", "push_module", push_module)?;
     linker.func_wrap("lunatic::message", "take_module", take_module)?;
@@ -163,6 +164,9 @@ fn write_data<T: ProcessState + ProcessCtx<T>>(
         Message::LinkDied(_) => {
             return Err(anyhow!("Unexpected `Message::LinkDied` in scratch area"))
         }
+        Message::ProcessDied(_) => {
+            return Err(anyhow!("Unexpected `Message::ProcessDied` in scratch area"))
+        }
     };
     // Put message back after writing to it.
     caller.data_mut().message_scratch_area().replace(message);
@@ -195,6 +199,9 @@ fn read_data<T: ProcessState + ProcessCtx<T>>(
         Message::LinkDied(_) => {
             return Err(anyhow!("Unexpected `Message::LinkDied` in scratch area"))
         }
+        Message::ProcessDied(_) => {
+            return Err(anyhow!("Unexpected `Message::ProcessDied` in scratch area"))
+        }
     };
     // Put message back after reading from it.
     caller.data_mut().message_scratch_area().replace(message);
@@ -219,6 +226,9 @@ fn seek_data<T: ProcessState + ProcessCtx<T>>(mut caller: Caller<T>, index: u64)
         Message::LinkDied(_) => {
             return Err(anyhow!("Unexpected `Message::LinkDied` in scratch area"))
         }
+        Message::ProcessDied(_) => {
+            return Err(anyhow!("Unexpected `Message::ProcessDied` in scratch area"))
+        }
     };
     Ok(())
 }
@@ -233,10 +243,20 @@ fn get_tag<T: ProcessState + ProcessCtx<T>>(mut caller: Caller<T>) -> Result<i64
         .message_scratch_area()
         .as_ref()
         .or_trap("lunatic::message::get_tag")?;
-    match message.tag() {
-        Some(tag) => Ok(tag),
-        None => Ok(0),
-    }
+    Ok(message.tag().unwrap_or(0))
+}
+
+// Returns the process id if the message is a process died signal, or 0 if any other message type.
+//
+// Traps:
+// * If it's called without a message being inside of the scratch area.
+fn get_process_id<T: ProcessState + ProcessCtx<T>>(mut caller: Caller<T>) -> Result<u64> {
+    let message = caller
+        .data_mut()
+        .message_scratch_area()
+        .as_ref()
+        .or_trap("lunatic::message::get_process_id")?;
+    Ok(message.process_id().unwrap_or(0))
 }
 
 // Returns the size in bytes of the message buffer.
@@ -253,6 +273,9 @@ fn data_size<T: ProcessState + ProcessCtx<T>>(mut caller: Caller<T>) -> Result<u
         Message::Data(data) => data.size(),
         Message::LinkDied(_) => {
             return Err(anyhow!("Unexpected `Message::LinkDied` in scratch area"))
+        }
+        Message::ProcessDied(_) => {
+            return Err(anyhow!("Unexpected `Message::ProcessDied` in scratch area"))
         }
     };
 
@@ -285,6 +308,9 @@ fn push_module<T: ProcessState + ProcessCtx<T> + NetworkingCtx + 'static>(
         Message::LinkDied(_) => {
             return Err(anyhow!("Unexpected `Message::LinkDied` in scratch area"))
         }
+        Message::ProcessDied(_) => {
+            return Err(anyhow!("Unexpected `Message::ProcessDied` in scratch area"))
+        }
     };
     Ok(index)
 }
@@ -310,6 +336,9 @@ fn take_module<T: ProcessState + ProcessCtx<T> + NetworkingCtx + 'static>(
             .or_trap("lunatic::message::take_module")?,
         Message::LinkDied(_) => {
             return Err(anyhow!("Unexpected `Message::LinkDied` in scratch area"))
+        }
+        Message::ProcessDied(_) => {
+            return Err(anyhow!("Unexpected `Message::ProcessDied` in scratch area"))
         }
     };
     Ok(caller.data_mut().module_resources_mut().add(module))
@@ -340,6 +369,9 @@ fn push_tcp_stream<T: ProcessState + ProcessCtx<T> + NetworkingCtx>(
         Message::LinkDied(_) => {
             return Err(anyhow!("Unexpected `Message::LinkDied` in scratch area"))
         }
+        Message::ProcessDied(_) => {
+            return Err(anyhow!("Unexpected `Message::ProcessDied` in scratch area"))
+        }
     };
     Ok(index)
 }
@@ -365,6 +397,9 @@ fn take_tcp_stream<T: ProcessState + ProcessCtx<T> + NetworkingCtx>(
             .or_trap("lunatic::message::take_tcp_stream")?,
         Message::LinkDied(_) => {
             return Err(anyhow!("Unexpected `Message::LinkDied` in scratch area"))
+        }
+        Message::ProcessDied(_) => {
+            return Err(anyhow!("Unexpected `Message::ProcessDied` in scratch area"))
         }
     };
     Ok(caller.data_mut().tcp_stream_resources_mut().add(tcp_stream))
@@ -396,6 +431,9 @@ fn push_tls_stream<T: ProcessState + ProcessCtx<T> + NetworkingCtx>(
         Message::LinkDied(_) => {
             return Err(anyhow!("Unexpected `Message::LinkDied` in scratch area"))
         }
+        Message::ProcessDied(_) => {
+            return Err(anyhow!("Unexpected `Message::ProcessDied` in scratch area"))
+        }
     };
     Ok(index)
 }
@@ -421,6 +459,9 @@ fn take_tls_stream<T: ProcessState + ProcessCtx<T> + NetworkingCtx>(
             .or_trap("lunatic::message::take_tls_stream")?,
         Message::LinkDied(_) => {
             return Err(anyhow!("Unexpected `Message::LinkDied` in scratch area"))
+        }
+        Message::ProcessDied(_) => {
+            return Err(anyhow!("Unexpected `Message::ProcessDied` in scratch area"))
         }
     };
     Ok(caller.data_mut().tls_stream_resources_mut().add(tls_stream))
@@ -514,7 +555,8 @@ fn send_receive_skip_search<T: ProcessState + ProcessCtx<T> + Send>(
 //
 // Returns:
 // * 0    if it's a data message.
-// * 1    if it's a signal turned into a message.
+// * 1    if it's a link died signal.
+// * 2    if it's a process died signal.
 // * 9027 if call timed out.
 //
 // Traps:
@@ -553,6 +595,7 @@ fn receive<T: ProcessState + ProcessCtx<T> + Send>(
             let result = match message {
                 Message::Data(_) => 0,
                 Message::LinkDied(_) => 1,
+                Message::ProcessDied(_) => 2,
             };
             // Put the message into the scratch area
             caller.data_mut().message_scratch_area().replace(message);
@@ -587,6 +630,9 @@ fn push_udp_socket<T: ProcessState + ProcessCtx<T> + NetworkingCtx>(
         Message::LinkDied(_) => {
             return Err(anyhow!("Unexpected `Message::LinkDied` in scratch area"))
         }
+        Message::ProcessDied(_) => {
+            return Err(anyhow!("Unexpected `Message::ProcessDied` in scratch area"))
+        }
     };
     Ok(index)
 }
@@ -612,6 +658,9 @@ fn take_udp_socket<T: ProcessState + ProcessCtx<T> + NetworkingCtx>(
             .or_trap("lunatic::message::take_udp_socket")?,
         Message::LinkDied(_) => {
             return Err(anyhow!("Unexpected `Message::LinkDied` in scratch area"))
+        }
+        Message::ProcessDied(_) => {
+            return Err(anyhow!("Unexpected `Message::ProcessDied` in scratch area"))
         }
     };
     Ok(caller.data_mut().udp_resources_mut().add(udp_socket))
