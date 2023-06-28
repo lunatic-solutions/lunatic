@@ -24,7 +24,7 @@ pub trait Environment: Send + Sync {
 pub trait Environments: Send + Sync {
     type Env: Environment;
 
-    async fn create(&self, id: u64) -> Arc<Self::Env>;
+    async fn create(&self, id: u64) -> Result<Arc<Self::Env>>;
     async fn get(&self, id: u64) -> Option<Arc<Self::Env>>;
 }
 
@@ -111,12 +111,12 @@ pub struct LunaticEnvironments {
 #[async_trait]
 impl Environments for LunaticEnvironments {
     type Env = LunaticEnvironment;
-    async fn create(&self, id: u64) -> Arc<Self::Env> {
+    async fn create(&self, id: u64) -> Result<Arc<Self::Env>> {
         let env = Arc::new(LunaticEnvironment::new(id));
         self.envs.insert(id, env.clone());
         #[cfg(feature = "metrics")]
         metrics::gauge!("lunatic.process.environment.count", self.envs.len() as f64);
-        env
+        Ok(env)
     }
 
     async fn get(&self, id: u64) -> Option<Arc<Self::Env>> {

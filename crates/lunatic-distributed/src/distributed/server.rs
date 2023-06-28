@@ -176,7 +176,7 @@ where
 
     let env = match env {
         Some(env) => env,
-        None => ctx.envs.create(environment_id).await,
+        None => ctx.envs.create(environment_id).await?,
     };
 
     env.can_spawn_next_process().await?;

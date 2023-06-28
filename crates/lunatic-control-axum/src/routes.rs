@@ -49,6 +49,7 @@ pub async fn register(
             add_module: format!("http://{host}/module"),
             get_nodes: format!("http://{host}/nodes"),
         },
+        envs: Vec::new(),
     })
 }
 
