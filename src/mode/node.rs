@@ -121,7 +121,7 @@ pub(crate) async fn start(args: Args) -> Result<()> {
     ));
 
     if args.wasm.is_some() {
-        let env = envs.create(1).await;
+        let env = envs.create(1).await?;
         tokio::task::spawn(async {
             if let Err(e) = run_wasm(RunWasm {
                 path: args.wasm.unwrap(),
