@@ -9,23 +9,9 @@ use serde::{Deserialize, Serialize};
 use crate::mode::config::{ConfigManager, Provider};
 
 #[derive(Parser, Debug)]
-pub(crate) enum AuthArgs {
-    Login {
-        /// contains destination of auth server
-        #[clap(short, long)]
-        provider: Option<String>,
-    },
-    Logout {
-        /// contains destination of auth server
-        #[clap(short, long)]
-        provider: Option<String>,
-    },
-}
-
-#[derive(Parser, Debug)]
 pub struct Args {
-    #[command(subcommand)]
-    auth: AuthArgs,
+    #[clap(short, long)]
+    provider: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -36,52 +22,45 @@ pub struct CliLoginResponse {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CliLogin {
     pub app_id: String,
-    // pub user_id: String,
 }
 
 static CTRL_URL: &str = "http://localhost:3000";
 
 pub(crate) async fn start(args: Args) -> Result<()> {
     let mut config_manager = ConfigManager::new().unwrap();
-    match args.auth {
-        AuthArgs::Logout { provider } => {
-            let base_url = provider.unwrap_or_else(|| CTRL_URL.to_string());
-            config_manager.logout_provider(base_url);
-        }
-        AuthArgs::Login { provider } => {
-            let base_url = provider.unwrap_or_else(|| CTRL_URL.to_string());
-            let client = reqwest::Client::new();
-            let res = client
-                .post(format!("{base_url}/api/cli/login"))
-                .json(&CliLogin {
-                    app_id: config_manager.get_app_id(),
-                })
-                .send()
-                .await
-                .expect("failed to send cli/login request")
-                .json::<CliLoginResponse>()
-                .await
-                .expect("failed to parse JSON from cli/login");
+    let provider = args.provider.unwrap_or_else(|| CTRL_URL.to_string());
+    config_manager.logout();
 
-            let login_id =
-                url::form_urlencoded::byte_serialize(res.login_id.as_bytes()).collect::<String>();
-            let app_id =
-                url::form_urlencoded::byte_serialize(config_manager.get_app_id().as_bytes())
-                    .collect::<String>();
-            info!("\n\nPlease visit the following URL to authenticate this cli app {base_url}/cli/authenticate/{app_id}?login_id={login_id}\n\n");
+    let client = reqwest::Client::new();
+    let res = client
+        .post(format!("{provider}/api/cli/login"))
+        .json(&CliLogin {
+            app_id: config_manager.get_app_id(),
+        })
+        .send()
+        .await
+        .expect("failed to send cli/login request")
+        .json::<CliLoginResponse>()
+        .await
+        .expect("failed to parse JSON from cli/login");
 
-            let status_url = format!("{base_url}/api/cli/login/{}", res.login_id);
-            let auth_status = check_auth_status(&status_url, &client).await;
-            if auth_status.is_empty() {
-                panic!("Cli Login failed");
-            }
+    let login_id =
+        url::form_urlencoded::byte_serialize(res.login_id.as_bytes()).collect::<String>();
+    let app_id = url::form_urlencoded::byte_serialize(config_manager.get_app_id().as_bytes())
+        .collect::<String>();
+    info!("\n\nPlease visit the following URL to authenticate this cli app {provider}/cli/authenticate/{app_id}?login_id={login_id}\n\n");
 
-            config_manager.add_provider(Provider {
-                name: base_url,
-                cookies: auth_status,
-            });
-        }
+    let status_url = format!("{provider}/api/cli/login/{}", res.login_id);
+    let auth_status = check_auth_status(&status_url, &client).await;
+
+    if auth_status.is_empty() {
+        panic!("Cli Login failed");
     }
+
+    config_manager.login(Provider {
+        name: provider,
+        cookies: auth_status,
+    });
 
     config_manager.flush()?;
     Ok(())

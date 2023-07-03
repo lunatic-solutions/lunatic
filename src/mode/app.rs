@@ -1,34 +1,15 @@
-use super::config::ConfigManager;
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use clap::Parser;
-use log::{debug, info};
+use serde::{Deserialize, Serialize};
+
+use crate::mode::config::ProjectLunaticConfig;
+
+use super::config::ConfigManager;
 
 #[derive(Parser, Debug, Clone)]
 #[clap(rename_all = "kebab_case")]
 pub enum AppArgs {
-    /// Map a binary within the current repository to an `App` on the lunatic
-    /// platform so that the correct binary is deployed when using `lunatic deploy`
-    Add {
-        /// The name of the App
-        name: String,
-
-        /// Bind App on remote to `bin` in repository
-        #[arg(short = 'b', long)]
-        bin: Option<String>,
-
-        /// Bind App on remote to example in repository
-        #[arg(short = 'e', long)]
-        example: Option<String>,
-
-        /// Bind App on remote to workspace member (package) in repository
-        #[arg(short = 's', long)]
-        package: Option<String>,
-    },
-    Remove {
-        /// The name of the App to remove
-        name: String,
-    },
-    List,
+    Create { name: String },
 }
 
 #[derive(Parser, Debug)]
@@ -37,61 +18,72 @@ pub struct Args {
     app: AppArgs,
 }
 
+#[derive(Serialize)]
+pub struct CreateProject {
+    name: String,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct Project {
+    pub project_id: i64,
+    pub name: String,
+    pub domains: Vec<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct App {
+    app_id: i64,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct Env {
+    env_id: i64,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ProjectDetails {
+    pub project_id: i64,
+    pub apps: Vec<App>,
+    pub envs: Vec<Env>,
+}
+
 pub(crate) async fn start(args: Args) -> Result<()> {
     match args.app {
-        AppArgs::Add {
-            name,
-            bin,
-            example,
-            package,
-        } => {
-            let mut config =
-                ConfigManager::new().map_err(|e| anyhow!("failed to load config {e:?}"))?;
-            config.update_project_apps().await?;
-            let app_to_update = match config.find_app(name.as_str()) {
-                Some(matching_app) => matching_app,
-                None => {
-                    // create new app and store in list
-                    config.create_new_app(name).await?
-                }
-            };
-            app_to_update.example = example;
-            app_to_update.bin = bin;
-            app_to_update.package = package;
-
-            config.flush()?;
-        }
-        AppArgs::Remove { name } => {
-            let mut config =
-                ConfigManager::new().map_err(|e| anyhow!("failed to load config {e:?}"))?;
-            config.remove_app(name).await?;
-        }
-        AppArgs::List => {
-            let mut config =
-                ConfigManager::new().map_err(|e| anyhow!("failed to load config {e:?}"))?;
-            config.update_project_apps().await?;
-
-            info!("Available apps on remote:");
-            for app in config.project_config.remote.into_iter() {
-                let (mapping_type, mapping_path) = match (
-                    app.bin.as_deref(),
-                    app.example.as_deref(),
-                    app.package.as_deref(),
-                ) {
-                    (None, None, None) => ("No mapping yet", ""),
-                    (None, Some(example), None) => ("example ", example),
-                    (Some(bin), None, None) => ("bin ", bin),
-                    (None, None, Some(package)) => ("package/workspace member ", package),
-                    _ => ("WARNING! Multiple mappings found for app", ""),
-                };
-                debug!(
-                    "- Name: \"{}\". Id: {}. Mapping: {}{}",
-                    app.app_name, app.app_id, mapping_type, mapping_path
-                );
-            }
+        AppArgs::Create { name } => {
+            let mut config_manager = ConfigManager::new().unwrap();
+            let (client, provider) = config_manager.get_http_client()?;
+            let url = provider.get_url()?;
+            let response = client
+                .post(url.join("api/projects")?)
+                .json(&CreateProject { name })
+                .send()
+                .await?
+                .error_for_status()?;
+            let project = response.json::<Project>().await?;
+            let response = client
+                .get(url.join(&format!("api/projects/{}", project.project_id))?)
+                .send()
+                .await?
+                .error_for_status()?;
+            let project_details = response.json::<ProjectDetails>().await?;
+            // TODO for now every project has single app and env
+            config_manager.init_project(ProjectLunaticConfig {
+                project_id: project.project_id,
+                project_name: project.name,
+                domains: project.domains,
+                app_id: project_details
+                    .apps
+                    .get(0)
+                    .map(|app| app.app_id)
+                    .ok_or_else(|| anyhow::anyhow!("Unexpected config missing app_id"))?,
+                env_id: project_details
+                    .envs
+                    .get(0)
+                    .map(|env| env.env_id)
+                    .ok_or_else(|| anyhow::anyhow!("Unexpected config missing env_id"))?,
+            });
+            config_manager.flush()?;
         }
     }
     Ok(())
-
-    // Err(anyhow!("No available port on 127.0.0.1. Aborting"))
 }

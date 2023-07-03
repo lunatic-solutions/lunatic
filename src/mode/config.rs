@@ -1,8 +1,6 @@
 use std::{
-    collections::HashMap,
     fs,
     io::{Read, Seek, Write},
-    iter::FromIterator,
     path::PathBuf,
     str::FromStr,
 };
@@ -16,92 +14,22 @@ use reqwest::{
 };
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
-use super::api::{self, App, ProjectDetails, SaveApp};
-
 #[derive(Debug, Serialize, Deserialize)]
 pub struct GlobalLunaticConfig {
     /// unique id for every installation of the cli tool
     /// used to identify "apps" during /cli/login calls
     pub cli_app_id: String,
     pub version: String,
-    pub providers: Vec<Provider>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Default, Clone)]
-pub struct AppConfig {
-    pub app_name: String,
-    pub app_id: String,
-    // in order to deploy an app there needs to be a compiled wasm file
-    // which can come either from `main.rs`, a cargo `bin` or `example`
-    // If neither a `bin` nor an `example` are provided it is assumed that
-    // there's only a single app with the entrypoint at `main.rs`
-    pub bin: Option<String>,
-    pub example: Option<String>,
-    // package means subcrate/workspace member
-    pub package: Option<String>,
-}
-
-impl From<App> for AppConfig {
-    fn from(new_app: App) -> Self {
-        AppConfig {
-            app_name: new_app.name,
-            app_id: format!("{}", new_app.app_id),
-            bin: None,
-            example: None,
-            package: None,
-        }
-    }
-}
-
-impl AppConfig {
-    pub fn has_valid_mapping(&self) -> bool {
-        matches!(
-            (
-                self.bin.as_ref(),
-                self.example.as_ref(),
-                self.package.as_ref(),
-            ),
-            (Some(_), None, None) | (None, Some(_), None) | (None, None, Some(_))
-        )
-    }
-
-    pub fn get_binary_name(&self) -> String {
-        format!(
-            "{}.wasm",
-            self.get_build_flags()
-                .last()
-                .expect("app should have binary name")
-        )
-    }
-
-    pub fn get_build_flags(&self) -> Vec<&str> {
-        let mut build_flags = vec![];
-        if let Some(bin) = self.bin.as_deref() {
-            build_flags.push("--bin");
-            build_flags.push(bin);
-            // let bins = bin.into_iter().flat_map(|b| ["--bin".to_owned(), b]);
-            // vec!["build".to_owned()].into_iter().chain(bins).collect()
-        } else if let Some(example) = self.example.as_deref() {
-            build_flags.push("--example");
-            build_flags.push(example);
-        } else if let Some(package) = self.package.as_deref() {
-            build_flags.push("--package");
-            build_flags.push(package);
-        }
-        build_flags
-    }
+    pub provider: Option<Provider>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct ProjectLunaticConfig {
-    /// id of project on lunatic platform
-    pub project_id: String,
-    pub project_url: String,
+    pub project_id: i64,
     pub project_name: String,
-    pub provider: String,
-
-    // mapping for remote project
-    pub remote: Vec<AppConfig>,
+    pub domains: Vec<String>,
+    pub app_id: i64,
+    pub env_id: i64,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -115,23 +43,11 @@ pub enum ConfigError {
 
 impl FileBased for ProjectLunaticConfig {
     fn get_file_path() -> Result<PathBuf, ConfigError> {
-        let mut current_dir = match std::env::current_dir() {
+        let current_dir = match std::env::current_dir() {
             Ok(dir) => dir,
             Err(_) => return Err(ConfigError::FileMissing("Failed to find lunatic.toml in working directory and parent directories. Are you sure you're in the correct directory?")),
         };
-
-        loop {
-            let candidate = current_dir.join("lunatic.toml");
-            if candidate.exists() && candidate.is_file() {
-                return Ok(candidate);
-            }
-
-            if !current_dir.pop() {
-                break;
-            }
-        }
-
-        Err(ConfigError::FileMissing("Failed to find lunatic.toml in working directory and parent directories. Are you sure you're in the correct directory?"))
+        Ok(current_dir.join("lunatic.toml"))
     }
 }
 
@@ -188,7 +104,7 @@ impl Default for GlobalLunaticConfig {
     fn default() -> Self {
         Self {
             version: "0.1".to_string(),
-            providers: vec![],
+            provider: None,
             cli_app_id: uuid::Uuid::new_v4().to_string(),
         }
     }
@@ -255,13 +171,13 @@ where
 pub struct ConfigManager {
     pub global_config: GlobalLunaticConfig,
     // mapping of local project to platform Project/Apps
-    pub project_config: ProjectLunaticConfig,
+    pub project_config: Option<ProjectLunaticConfig>,
 }
 
 impl ConfigManager {
     pub fn new() -> Result<ConfigManager, ConfigError> {
         let global_config = ConfigManager::get_global_config()?;
-        let project_config = ConfigManager::get_project_config()?;
+        let project_config = ConfigManager::get_project_config().ok();
 
         Ok(ConfigManager {
             global_config,
@@ -269,10 +185,14 @@ impl ConfigManager {
         })
     }
 
-    fn get_http_client(&self) -> anyhow::Result<(reqwest::Client, Provider)> {
-        let provider = self.get_current_provider()?;
-        let client = provider.get_http_client()?;
-        Ok((client, provider))
+    pub fn get_http_client(&self) -> anyhow::Result<(reqwest::Client, Provider)> {
+        match self.global_config.provider.clone() {
+            Some(provider) => {
+                let client = provider.get_http_client()?;
+                Ok((client, provider))
+            }
+            None => Err(anyhow!("First login by calling `lunatic login`")),
+        }
     }
 
     async fn request_platform_skip_status<T: DeserializeOwned, I: Serialize>(
@@ -330,34 +250,20 @@ impl ConfigManager {
         ))
     }
 
-    pub async fn update_project_apps(&mut self) -> anyhow::Result<()> {
-        let new_apps = self
-            .request_platform_skip_status::<Vec<api::App>, ()>(
-                Method::GET,
-                format!("/api/project/{}/apps", self.project_config.project_id),
-                "list project apps",
-                None,
-                None,
-            )
-            .await?;
+    pub fn project_config(&self) -> anyhow::Result<&ProjectLunaticConfig> {
+        self.project_config
+            .as_ref()
+            .ok_or_else(|| anyhow!("Project `lunatic.toml` not found in current directory."))
+    }
 
-        let app_names: HashMap<String, bool> = HashMap::from_iter(
-            self.project_config
-                .remote
-                .iter()
-                .map(|app| (app.app_name.clone(), true)),
-        );
+    pub fn project_config_mut(&mut self) -> anyhow::Result<&mut ProjectLunaticConfig> {
+        self.project_config
+            .as_mut()
+            .ok_or_else(|| anyhow!("Project `lunatic.toml` not found in current directory."))
+    }
 
-        for new_app in new_apps
-            .into_iter()
-            .filter(|config_app| !app_names.contains_key(&config_app.name))
-        {
-            self.project_config.remote.push(new_app.into());
-        }
-
-        self.flush()?;
-
-        Ok(())
+    pub fn init_project(&mut self, project_config: ProjectLunaticConfig) {
+        self.project_config = Some(project_config);
     }
 
     pub async fn upload_artefact_for_app(
@@ -393,42 +299,6 @@ impl ConfigManager {
         }
     }
 
-    pub async fn create_new_app(&mut self, name: String) -> anyhow::Result<&mut AppConfig> {
-        let new_app = self
-            .request_platform_skip_status::<api::App, SaveApp>(
-                Method::POST,
-                format!("/api/project/{}/apps", self.project_config.project_id),
-                "create new app",
-                Some(SaveApp { name }),
-                None,
-            )
-            .await?;
-
-        self.project_config.remote.push(new_app.into());
-        self.flush()?;
-
-        Ok(self.project_config.remote.last_mut().unwrap())
-    }
-
-    pub async fn remove_app(&mut self, name: String) -> anyhow::Result<()> {
-        self.project_config
-            .remote
-            .retain(|app| app.app_name != name);
-        self.flush()?;
-        Ok(())
-    }
-
-    pub async fn lookup_project(&self) -> anyhow::Result<ProjectDetails> {
-        self.request_platform_skip_status(
-            Method::GET,
-            self.project_config.project_url.to_string(),
-            "create new app",
-            None as Option<()>,
-            None,
-        )
-        .await
-    }
-
     fn get_global_config() -> Result<GlobalLunaticConfig, ConfigError> {
         // make sure the config directory exists
         let config_path = GlobalLunaticConfig::get_file_path()?;
@@ -440,78 +310,28 @@ impl ConfigManager {
         Ok(ProjectLunaticConfig::from_toml_file(project_config_path))
     }
 
-    pub fn get_current_provider(&self) -> anyhow::Result<Provider> {
-        let provider = self
-            .global_config
-            .providers
-            .iter()
-            .find(|provider| provider.name == self.project_config.provider)
-            .ok_or_else(|| {
-                anyhow!(
-                    "Failed to find authenticated provider {}",
-                    self.project_config.provider
-                )
-            })?;
-
-        Ok(provider.clone())
+    pub fn login(&mut self, provider: Provider) {
+        self.global_config.provider = Some(provider);
     }
 
-    pub fn find_app(&mut self, name: &str) -> Option<&mut AppConfig> {
-        self.project_config
-            .remote
-            .iter_mut()
-            .find(|a| a.app_name == name)
-    }
-
-    pub fn add_provider(&mut self, provider: Provider) {
-        match self
-            .global_config
-            .providers
-            .iter()
-            .enumerate()
-            .find(|(_, p)| p.name == provider.name)
-        {
-            Some((index, _)) => {
-                self.global_config
-                    .providers
-                    .get_mut(index)
-                    .expect("something went horribly wrong")
-                    .cookies = provider.cookies;
-            }
-            None => self.global_config.providers.push(provider),
-        }
-    }
-
-    pub fn logout_provider(&mut self, provider_to_delete: String) {
-        self.global_config
-            .providers
-            .retain(|provider| provider.name != provider_to_delete);
+    pub fn logout(&mut self) {
+        self.global_config.provider = None;
     }
 
     pub fn get_app_id(&self) -> String {
         self.global_config.cli_app_id.clone()
     }
 
-    // pub fn delete_providers(&mut self, name: String) -> Option<Provider> {
-    //     if let Some((index, _)) = self
-    //         .global_config
-    //         .providers
-    //         .iter()
-    //         .enumerate()
-    //         .find(|(_, provider)| provider.name == name)
-    //     {
-    //         return Some(self.global_config.providers.remove(index));
-    //     }
-    //     None
-    // }
-
     pub fn flush(&mut self) -> anyhow::Result<()> {
         self.global_config
             .flush_file()
             .map_err(|e| anyhow!("Failed to flush ~/.lunatic/lunatic.toml config {e:?}"))?;
 
-        self.project_config
-            .flush_file()
-            .map_err(|e| anyhow!("Failed to flush project lunatic.toml config {e:?}"))
+        match self.project_config.as_mut() {
+            Some(project_config) => project_config
+                .flush_file()
+                .map_err(|e| anyhow!("Failed to flush project lunatic.toml config {e:?}")),
+            None => Ok(()),
+        }
     }
 }

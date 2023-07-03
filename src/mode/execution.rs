@@ -27,17 +27,12 @@ enum Commands {
     Control(super::control::Args),
     /// Starts a node
     Node(super::node::Args),
-    /// Authenticate app
-    Auth(super::auth::Args),
-    /// Build one or more applications
-    Build(super::deploy::Args),
-    /// Deploy one or more applications
-    Deploy(super::deploy::Args),
-    /// Manage data regarding remote lunatic project
-    Project(super::project::Args),
-    /// Manage mapping of repository binary and lunatic `App` within
-    /// the scope of the selected `Project`
+    /// Login to Lunatic cloud
+    Login(super::auth::Args),
+    /// Manage lunatic applications
     App(super::app::Args),
+    /// Deploy Lunatic app to cloud
+    Deploy, // / Authenticate app
 }
 
 pub(crate) async fn execute(augmented_args: Option<Vec<String>>) -> Result<()> {
@@ -53,13 +48,8 @@ pub(crate) async fn execute(augmented_args: Option<Vec<String>>) -> Result<()> {
         Commands::Run(a) => super::run::start(a).await,
         Commands::Control(a) => super::control::start(a).await,
         Commands::Node(a) => super::node::start(a).await,
-        Commands::Auth(a) => super::auth::start(a).await,
-        Commands::Build(a) => {
-            super::deploy::start_build(a).await?;
-            Ok(())
-        }
-        Commands::Deploy(a) => super::deploy::start(a).await,
-        Commands::Project(a) => super::project::start(a).await,
+        Commands::Login(a) => super::auth::start(a).await,
         Commands::App(a) => super::app::start(a).await,
+        Commands::Deploy => Ok(()),
     }
 }

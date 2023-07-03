@@ -38,8 +38,8 @@ pub(crate) async fn start(args: Args) -> Result<()> {
         ProjectArgs::Set { id } => {
             let mut config =
                 ConfigManager::new().map_err(|e| anyhow!("failed to load config {e:?}"))?;
-            config.project_config.project_url = format!("/api/projects/{id}");
-            config.project_config.project_id = id;
+            config.project_config_mut()?.project_url = format!("/api/projects/{id}");
+            config.project_config_mut()?.project_id = id;
             config.lookup_project().await?;
             config.flush()?;
         }
@@ -47,21 +47,21 @@ pub(crate) async fn start(args: Args) -> Result<()> {
         ProjectArgs::Remove => {
             let mut config =
                 ConfigManager::new().map_err(|e| anyhow!("failed to load config {e:?}"))?;
-            config.project_config = ProjectLunaticConfig::default();
+            config.project_config = Some(ProjectLunaticConfig::default());
             config.flush()?;
         }
         ProjectArgs::Get { name, url, id } => {
             let config =
                 ConfigManager::new().map_err(|e| anyhow!("failed to load config {e:?}"))?;
             if name {
-                info!("Name of project: {}", config.project_config.project_name);
+                info!("Name of project: {}", config.project_config()?.project_name);
             } else if url {
                 info!(
                     "Url of project: {}/{}",
-                    config.project_config.provider, config.project_config.project_url
+                    config.project_config()?.provider, config.project_config()?.project_url
                 );
             } else if id {
-                info!("Project ID: {}", config.project_config.project_id);
+                info!("Project ID: {}", config.project_config()?.project_id);
             }
         }
     }

@@ -3,9 +3,8 @@ use clap::Parser;
 use log::{debug, info};
 mod artefact;
 mod build;
-use crate::mode::{config::AppConfig, deploy::artefact::find_compiled_binary};
+use crate::mode::deploy::artefact::find_compiled_binary;
 
-pub(crate) use build::start_build;
 
 use super::config::ConfigManager;
 
@@ -41,7 +40,7 @@ pub(crate) async fn start(args: Args) -> Result<()> {
     let mut config = ConfigManager::new().map_err(|e| anyhow!("failed to load config {e:?}"))?;
 
     let artefact_apps: Vec<AppConfig> = build::start_build(args.clone()).await?;
-    config.update_project_apps().await?;
+    // config.update_project_apps().await?;
     debug!("Received the following artefact_apps {artefact_apps:?}");
 
     // collect artefacts

@@ -16,7 +16,7 @@ pub(crate) async fn start_build(args: Args) -> Result<Vec<AppConfig>> {
 
     let mut artefact_apps: Vec<AppConfig> = vec![];
 
-    for app in config.project_config.remote.iter() {
+    for app in config.project_config()?.remote.iter() {
         let mut build_args = vec!["build"];
         if !app.has_valid_mapping() {
             return Err(anyhow!("App {} has no valid mapping and cannot be deployed. Use `lunatic app add` to create mapping for App", app.app_name));
