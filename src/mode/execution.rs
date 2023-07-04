@@ -50,6 +50,6 @@ pub(crate) async fn execute(augmented_args: Option<Vec<String>>) -> Result<()> {
         Commands::Node(a) => super::node::start(a).await,
         Commands::Login(a) => super::auth::start(a).await,
         Commands::App(a) => super::app::start(a).await,
-        Commands::Deploy => Ok(()),
+        Commands::Deploy => super::deploy::start().await,
     }
 }

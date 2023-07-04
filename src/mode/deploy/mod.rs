@@ -1,63 +1,68 @@
+use std::{fs::File, io::Read};
+
 use anyhow::{anyhow, Result};
-use clap::Parser;
 use log::{debug, info};
+use serde::Deserialize;
 mod artefact;
 mod build;
-use crate::mode::deploy::artefact::find_compiled_binary;
-
 
 use super::config::ConfigManager;
 
-#[derive(Parser, Debug, Clone)]
-pub(crate) struct Args {
-    // /// Build and deploy the specified binary. This flag may be specified multiple times and supports common Unix glob patterns.
-    // #[clap(short = 'd', long)]
-    // bin: Option<Vec<String>>,
-
-    // /// Build all binary targets.
-    // #[clap(long)]
-    // bins: bool,
-
-    // /// Build and deploy the specified example. This flag may be specified multiple times and supports common Unix glob patterns.
-    // #[clap(long)]
-    // example: Option<Vec<String>>,
-
-    // ///Build all example targets.
-    // #[clap(long)]
-    // examples: bool,
-    name: Option<String>,
-
-    /// Deploy all mapped apps
-    #[clap(short = 'A', long)]
-    all: bool,
-
-    /// Build with release optimisations
-    #[clap(short = 'r', long)]
-    release: bool,
+#[derive(Debug, Deserialize)]
+struct Package {
+    name: String,
 }
 
-pub(crate) async fn start(args: Args) -> Result<()> {
-    let mut config = ConfigManager::new().map_err(|e| anyhow!("failed to load config {e:?}"))?;
+#[derive(Debug, Deserialize)]
+struct CargoToml {
+    package: Package,
+}
 
-    let artefact_apps: Vec<AppConfig> = build::start_build(args.clone()).await?;
-    // config.update_project_apps().await?;
-    debug!("Received the following artefact_apps {artefact_apps:?}");
+pub(crate) async fn start() -> Result<()> {
+    let cwd = std::env::current_dir()?;
+    let mut config = ConfigManager::new().map_err(|e| anyhow!("Failed to load config {e:?}"))?;
+    let project_config = config
+        .project_config
+        .as_ref()
+        .ok_or_else(|| anyhow!("Cannot find project config, missing `lunatic.toml`"))?;
+    let project_name = project_config.project_name.clone();
+    let app_id = project_config.app_id;
 
-    // collect artefacts
-    for (artefact, app) in artefact_apps.into_iter().map(|app| {
-        (
-            find_compiled_binary(app.get_binary_name(), "wasm32-wasi", args.release),
-            app,
+    let mut file = File::open(cwd.join("Cargo.toml")).map_err(|e| {
+        anyhow!(
+            "Cannot find project Cargo.toml in path {}. {e}",
+            cwd.to_string_lossy()
         )
-    }) {
-        let app_id = config
-            .upload_artefact_for_app(&app.app_id, artefact, app.get_binary_name())
+    })?;
+    let mut content = String::new();
+
+    file.read_to_string(&mut content)?;
+
+    let cargo: CargoToml = toml::from_str(&content)?;
+    debug!("{:#?}", cargo);
+
+    build::start_build().await?;
+
+    let binary_name = format!("{}.wasm", cargo.package.name);
+    let artefact = cwd.join("target/wasm32-wasi/release").join(&binary_name);
+
+    if artefact.exists() && artefact.is_file() {
+        info!(
+            "Deploying to Project {project_name} new version of app {}",
+            cargo.package.name
+        );
+        let mut artefact = File::open(artefact)?;
+        let mut artefact_bytes = Vec::new();
+        artefact.read_to_end(&mut artefact_bytes)?;
+        let new_version_id = config
+            .upload_artefact_for_app(&app_id, artefact_bytes, binary_name)
             .await?;
         info!(
-            "Uploaded app \"{}\". Created new version {app_id}",
-            app.app_name
+            "Deployed Project {project_name} new version app \"{}\", version={new_version_id}",
+            cargo.package.name
         );
+        Ok(())
+    } else {
+        Err(anyhow!("Cannot find {binary_name} build directory"))
     }
-
-    Ok(())
 }

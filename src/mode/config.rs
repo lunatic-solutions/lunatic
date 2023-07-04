@@ -195,20 +195,6 @@ impl ConfigManager {
         }
     }
 
-    async fn request_platform_skip_status<T: DeserializeOwned, I: Serialize>(
-        &self,
-        method: Method,
-        path: String,
-        description: &str,
-        body: Option<I>,
-        form_body: Option<Form>,
-    ) -> anyhow::Result<T> {
-        let (_, response) = self
-            .request_platform(method, path, description, body, form_body)
-            .await?;
-        Ok(response)
-    }
-
     // quality of life function that makes all calls to platform
     async fn request_platform<T: DeserializeOwned, I: Serialize>(
         &self,
@@ -250,25 +236,13 @@ impl ConfigManager {
         ))
     }
 
-    pub fn project_config(&self) -> anyhow::Result<&ProjectLunaticConfig> {
-        self.project_config
-            .as_ref()
-            .ok_or_else(|| anyhow!("Project `lunatic.toml` not found in current directory."))
-    }
-
-    pub fn project_config_mut(&mut self) -> anyhow::Result<&mut ProjectLunaticConfig> {
-        self.project_config
-            .as_mut()
-            .ok_or_else(|| anyhow!("Project `lunatic.toml` not found in current directory."))
-    }
-
     pub fn init_project(&mut self, project_config: ProjectLunaticConfig) {
         self.project_config = Some(project_config);
     }
 
     pub async fn upload_artefact_for_app(
         &mut self,
-        app_id: &str,
+        app_id: &i64,
         artefact: Vec<u8>,
         filename: String,
     ) -> anyhow::Result<i64> {

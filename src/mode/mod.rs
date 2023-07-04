@@ -12,7 +12,7 @@ mod auth;
 mod common;
 mod config;
 mod control;
-// mod deploy;
+mod deploy;
 mod init;
 mod node;
 mod run;
