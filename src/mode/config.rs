@@ -307,7 +307,13 @@ impl ConfigManager {
 
     fn get_project_config() -> Result<ProjectLunaticConfig, ConfigError> {
         let project_config_path = ProjectLunaticConfig::get_file_path()?;
-        Ok(ProjectLunaticConfig::from_toml_file(project_config_path))
+        if project_config_path.exists() && project_config_path.is_file() {
+            Ok(ProjectLunaticConfig::from_toml_file(project_config_path))
+        } else {
+            Err(ConfigError::FileMissing(
+                "Project config missing `lunatic.toml`",
+            ))
+        }
     }
 
     pub fn login(&mut self, provider: Provider) {

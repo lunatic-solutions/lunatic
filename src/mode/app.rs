@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use clap::Parser;
 use serde::{Deserialize, Serialize};
 
@@ -51,6 +51,11 @@ pub(crate) async fn start(args: Args) -> Result<()> {
     match args.app {
         AppArgs::Create { name } => {
             let mut config_manager = ConfigManager::new().unwrap();
+            if config_manager.project_config.is_some() {
+                return Err(anyhow!(
+                    "Project is already initialized, `lunatic.toml` exists in current directory."
+                ));
+            }
             let (client, provider) = config_manager.get_http_client()?;
             let url = provider.get_url()?;
             let response = client
