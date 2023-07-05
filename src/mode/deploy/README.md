@@ -1,51 +1,57 @@
 # Lunatic platform CLI
 
-This platform-related subset of lunatic CLI app is a command-line interface tool that allows you authenticate, manage, build and deploy programs to the lunatic platform
+This platform-related subset of lunatic CLI app is a command-line interface tool that allows you authenticate, manage, build and deploy programs to the lunatic platform.
 
-## Prerequisites
+## Getting Started
 
-- Rust (version 1.6.0 or higher)
-- lunatic vm and cli installation
+1. Before starting install [Lunatic](https://github.com/lunatic-solutions/lunatic).
 
-## How to use
+    ```
+    cargo install lunatic-runtime
+    ```
 
-1. Create a new lunatic project (skip if you have an existing one)
-```
-lunatic auth -p `PROVIDER_HOSTNAME`
-```
+2. Create a new account in [Lunatic Cloud](https://lunatic.cloud/).
 
-2. Initialise project. This will create a `lunatic.toml` file will contain data about remote project and it's apps
-```
-lunatic init
-```
+    Then, login your Lunatic CLI and connect it with Your account.
 
-3. Bind your local directory to the remote project
+    ```
+    lunatic login
+    ```
 
-```
-lunatic project add `PROJECT_ID` `PROJECT_NAME`
-```
+    Follow instructions displayed in Your terminal and authorize the CLI.
 
-4. List the apps in your project to verify the binding worked
 
-```
-lunatic app list
-```
+3. Create a new Lunatic Rust project (skip if you have an existing one).
 
-## Available Commands
+    ```
+    # Add the WebAssemby target
+    rustup target add wasm32-wasi
+    
+    # Create a new Rust project
+    cargo new hello-lunatic
+    cd hello-lunatic
 
-- `auth`: Authenticate cli app with lunatic platform
-- `app`: Subcommand that allows the user to manage apps on the platform
-  - `add`: maps a cargo binary (either `main.rs` or Cargo.toml `[[bin]]` or Cargo.toml `workspace.member`) to a lunatic platform `App` within the defined `Project`
-  - `remove`: removes an app on the remote and the local mapping
-  - `list`: lists all the apps currently configured in the `Project`
-- `deploy <PROJECT_NAME>|--all`: builds the selected wasm files and deploys the responding `Apps` to the platform
-- `project`: Allows the user to manage the platform `Project` mapping
-  - `set <PROJECT_ID>`: maps the local repository to a platform `Project`
+    # Initialize project for Lunatic 
+    lunatic init
+    ```
 
-## Example Usage
-Once you have authenticated and configured to which project your local repository belongs to you can deploy all mapped apps
+4. Setup Your project on the [Lunatic Cloud](https://lunatic.cloud).
 
-```
-lunatic deploy --all # this will deploy all the mapped cargo.toml binaries as `Apps` to the platform
-```
+    ```
+    lunatic app create hello-lunatic
+    ```
 
+    This will create a `lunatic.toml` configuration file with the following content.
+    ```toml
+    project_id = 17
+    project_name = "hello-lunatic"
+    domains = ["73685543-25ce-462d-b397-21bf921873d6.lunatic.run"]
+    app_id = 18
+    env_id = 17
+    ```
+
+5. Deploy Your application.
+
+    ```
+    lunatic deploy
+    ```
