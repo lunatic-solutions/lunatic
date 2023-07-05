@@ -69,6 +69,7 @@ impl FileBased for GlobalLunaticConfig {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Provider {
+    pub login_id: String,
     pub name: String,
     pub cookies: Vec<String>,
 }
@@ -294,6 +295,7 @@ impl ConfigManager {
         self.global_config.provider = Some(provider);
     }
 
+    #[allow(unused)]
     pub fn logout(&mut self) {
         self.global_config.provider = None;
     }

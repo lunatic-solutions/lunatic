@@ -23,6 +23,8 @@ struct StartApp {
     app_id: i64,
 }
 
+// TODO: add env vars upload from .env if exists?
+// TODO: add assets upload via zip from defined dir, e.g. static/?
 pub(crate) async fn start() -> Result<()> {
     let cwd = std::env::current_dir()?;
     let mut config = ConfigManager::new().map_err(|e| anyhow!("Failed to load config {e:?}"))?;
