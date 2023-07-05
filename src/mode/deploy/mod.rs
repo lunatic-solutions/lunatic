@@ -1,8 +1,8 @@
 use std::{fs::File, io::Read};
 
 use anyhow::{anyhow, Result};
-use log::{debug, info};
-use serde::Deserialize;
+use log::debug;
+use serde::{Deserialize, Serialize};
 mod artefact;
 mod build;
 
@@ -18,6 +18,11 @@ struct CargoToml {
     package: Package,
 }
 
+#[derive(Debug, Serialize)]
+struct StartApp {
+    app_id: i64,
+}
+
 pub(crate) async fn start() -> Result<()> {
     let cwd = std::env::current_dir()?;
     let mut config = ConfigManager::new().map_err(|e| anyhow!("Failed to load config {e:?}"))?;
@@ -27,6 +32,7 @@ pub(crate) async fn start() -> Result<()> {
         .ok_or_else(|| anyhow!("Cannot find project config, missing `lunatic.toml`"))?;
     let project_name = project_config.project_name.clone();
     let app_id = project_config.app_id;
+    let env_id = project_config.env_id;
 
     let mut file = File::open(cwd.join("Cargo.toml")).map_err(|e| {
         anyhow!(
@@ -47,8 +53,8 @@ pub(crate) async fn start() -> Result<()> {
     let artefact = cwd.join("target/wasm32-wasi/release").join(&binary_name);
 
     if artefact.exists() && artefact.is_file() {
-        info!(
-            "Deploying to Project {project_name} new version of app {}",
+        println!(
+            "Deploying project: {project_name} new version of app {}",
             cargo.package.name
         );
         let mut artefact = File::open(artefact)?;
@@ -57,8 +63,19 @@ pub(crate) async fn start() -> Result<()> {
         let new_version_id = config
             .upload_artefact_for_app(&app_id, artefact_bytes, binary_name)
             .await?;
-        info!(
-            "Deployed Project {project_name} new version app \"{}\", version={new_version_id}",
+        let (client, provider) = config.get_http_client()?;
+        client
+            .post(
+                provider
+                    .get_url()?
+                    .join(&format!("api/env/{}/start", env_id))?,
+            )
+            .json(&StartApp { app_id })
+            .send()
+            .await?
+            .error_for_status()?;
+        println!(
+            "Deployed project: {project_name} new version app \"{}\", version={new_version_id}",
             cargo.package.name
         );
         Ok(())
