@@ -32,7 +32,7 @@ pub(crate) async fn start(args: Args) -> Result<()> {
 
     match config_manager.global_config.provider {
         Some(_) => {
-            if dbg!(is_authenticated(&mut config_manager).await?) {
+            if is_authenticated(&mut config_manager).await? {
                 println!("\n\nYou are already authenticated.\n\n");
                 Ok(())
             } else {
@@ -142,7 +142,7 @@ async fn is_authenticated(config_manager: &mut ConfigManager) -> Result<bool> {
             }
         }
         Err(e) => {
-            if let Some(StatusCode::UNAUTHORIZED)  = e.status() {
+            if let Some(StatusCode::UNAUTHORIZED) = e.status() {
                 Ok(false)
             } else {
                 Ok(true)
