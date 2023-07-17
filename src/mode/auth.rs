@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use anyhow::Result;
+use anyhow::{anyhow, Context, Result};
 use clap::Parser;
 use log::debug;
 use reqwest::StatusCode;
@@ -90,32 +90,42 @@ async fn new_login(provider: String, config_manager: &mut ConfigManager) -> Resu
         })
         .send()
         .await
-        .expect("failed to send cli/login request")
-        .json::<CliLoginResponse>()
-        .await
-        .expect("failed to parse JSON from cli/login");
+        .with_context(|| "Error sending HTTP login request.")?;
+    let status = res.status();
+    if !status.is_success() {
+        let body = res.text().await.with_context(|| {
+            format!("Error parsing body as text. Response not successful: {status}")
+        })?;
+        Err(anyhow!(
+            "HTTP login request returned an error reponse: {body}"
+        ))
+    } else {
+        let login = res
+            .json::<CliLoginResponse>()
+            .await
+            .with_context(|| "Error parsing the login request JSON.")?;
 
-    let login_id =
-        url::form_urlencoded::byte_serialize(res.login_id.as_bytes()).collect::<String>();
-    let app_id = url::form_urlencoded::byte_serialize(config_manager.get_app_id().as_bytes())
-        .collect::<String>();
-    println!("\n\nPlease visit the following URL to authenticate this cli app {provider}/cli/authenticate/{app_id}?login_id={login_id}\n\n");
+        let login_id =
+            url::form_urlencoded::byte_serialize(login.login_id.as_bytes()).collect::<String>();
+        let app_id = url::form_urlencoded::byte_serialize(config_manager.get_app_id().as_bytes())
+            .collect::<String>();
+        println!("\n\nPlease visit the following URL to authenticate this cli app {provider}/cli/authenticate/{app_id}?login_id={login_id}\n\n");
 
-    let status_url = format!("{provider}/api/cli/login/{}", res.login_id);
-    let auth_status = check_auth_status(&status_url, &client).await;
+        let status_url = format!("{provider}/api/cli/login/{}", login.login_id);
+        let auth_status = check_auth_status(&status_url, &client).await;
 
-    if auth_status.is_empty() {
-        panic!("Cli Login failed");
+        if auth_status.is_empty() {
+            Err(anyhow!("Cli Login failed"))
+        } else {
+            config_manager.login(Provider {
+                name: provider,
+                cookies: auth_status,
+                login_id,
+            });
+            config_manager.flush()?;
+            Ok(())
+        }
     }
-
-    config_manager.login(Provider {
-        name: provider,
-        cookies: auth_status,
-        login_id,
-    });
-
-    config_manager.flush()?;
-    Ok(())
 }
 
 async fn is_authenticated(config_manager: &mut ConfigManager) -> Result<bool> {
