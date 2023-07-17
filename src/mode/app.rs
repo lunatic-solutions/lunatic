@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use clap::Parser;
 use serde::{Deserialize, Serialize};
 
@@ -62,15 +62,39 @@ pub(crate) async fn start(args: Args) -> Result<()> {
                 .post(url.join("api/projects")?)
                 .json(&CreateProject { name })
                 .send()
-                .await?
-                .error_for_status()?;
-            let project = response.json::<Project>().await?;
+                .await
+                .with_context(|| "Error sending HTTP create app request.")?;
+            let status = response.status();
+            if !status.is_success() {
+                let body = response.text().await.with_context(|| {
+                    format!("Error parsing body as text. Respose not successful: {status}")
+                })?;
+                return Err(anyhow!(
+                    "HTTP create app request returned an error response: {body}"
+                ));
+            }
+            let project = response
+                .json::<Project>()
+                .await
+                .with_context(|| "Error parsing the create app request JSON.")?;
             let response = client
                 .get(url.join(&format!("api/projects/{}", project.project_id))?)
                 .send()
-                .await?
-                .error_for_status()?;
-            let project_details = response.json::<ProjectDetails>().await?;
+                .await
+                .with_context(|| "Error sending HTTP get project request.")?;
+            let status = response.status();
+            if !status.is_success() {
+                let body = response.text().await.with_context(|| {
+                    format!("Error parsing body as text. Response not successful: {status}")
+                })?;
+                return Err(anyhow!(
+                    "HTTP get project request returned an error response: {body}"
+                ));
+            }
+            let project_details = response
+                .json::<ProjectDetails>()
+                .await
+                .with_context(|| "Error parsing the get project request JSON.")?;
             // TODO for now every project has single app and env
             config_manager.init_project(ProjectLunaticConfig {
                 project_id: project.project_id,
@@ -80,12 +104,12 @@ pub(crate) async fn start(args: Args) -> Result<()> {
                     .apps
                     .get(0)
                     .map(|app| app.app_id)
-                    .ok_or_else(|| anyhow::anyhow!("Unexpected config missing app_id"))?,
+                    .ok_or_else(|| anyhow!("Unexpected config missing app_id"))?,
                 env_id: project_details
                     .envs
                     .get(0)
                     .map(|env| env.env_id)
-                    .ok_or_else(|| anyhow::anyhow!("Unexpected config missing env_id"))?,
+                    .ok_or_else(|| anyhow!("Unexpected config missing env_id"))?,
             });
             config_manager.flush()?;
         }
