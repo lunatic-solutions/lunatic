@@ -1,6 +1,6 @@
 use std::{fs::File, io::Read};
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use log::debug;
 use serde::{Deserialize, Serialize};
 mod artefact;
@@ -66,7 +66,7 @@ pub(crate) async fn start() -> Result<()> {
             .upload_artefact_for_app(&app_id, artefact_bytes, binary_name)
             .await?;
         let (client, provider) = config.get_http_client()?;
-        client
+        let response = client
             .post(
                 provider
                     .get_url()?
@@ -74,8 +74,17 @@ pub(crate) async fn start() -> Result<()> {
             )
             .json(&StartApp { app_id })
             .send()
-            .await?
-            .error_for_status()?;
+            .await
+            .with_context(|| "Error sending HTTP app start request.")?;
+        let status = response.status();
+        if !status.is_success() {
+            let body = response.text().await.with_context(|| {
+                format!("Error parsing body as text. Response not successful: {status}")
+            })?;
+            return Err(anyhow!(
+                "HTTP start app request returned an error reponse: {body}"
+            ));
+        }
         println!(
             "Deployed project: {project_name} new version app \"{}\", version={new_version_id}",
             cargo.package.name
