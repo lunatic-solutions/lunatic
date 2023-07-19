@@ -59,6 +59,7 @@ async-ctrlc = "1.2.0"
 clap = { version = "4.0", features = ["cargo", "derive"] }
 dashmap = { workspace = true }
 dirs = "4.0.0"
+dotenvy = "0.15.7"
 env_logger = "0.9"
 log = { workspace = true }
 metrics-exporter-prometheus = { version = "0.11.0", optional = true }
@@ -73,6 +74,8 @@ url_serde = "0.2.0"
 uuid = { workspace = true }
 wasmtime = { workspace = true }
 wasmtime-wasi = { workspace = true }
+walkdir = "2.3.3"
+zip = "0.6.6"
 
 [dev-dependencies]
 criterion = { version = "0.4", features = ["async_tokio"] }

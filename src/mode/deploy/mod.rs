@@ -1,8 +1,16 @@
-use std::{fs::File, io::Read};
+use std::{
+    collections::HashMap,
+    fs::File,
+    io::{Cursor, Read, Write},
+    path::Path,
+};
 
 use anyhow::{anyhow, Context, Result};
 use log::debug;
+use reqwest::Client;
 use serde::{Deserialize, Serialize};
+use url::Url;
+use zip::{write::FileOptions, CompressionMethod, ZipWriter};
 mod artefact;
 mod build;
 
@@ -65,13 +73,15 @@ pub(crate) async fn start() -> Result<()> {
         let new_version_id = config
             .upload_artefact_for_app(&app_id, artefact_bytes, binary_name)
             .await?;
+
         let (client, provider) = config.get_http_client()?;
+        let root_url = provider.get_url()?;
+
+        upload_env_vars_if_exist(&cwd, &client, &root_url, env_id).await?;
+        upload_static_files_if_exist(&cwd, &client, &root_url, env_id).await?;
+
         let response = client
-            .post(
-                provider
-                    .get_url()?
-                    .join(&format!("api/env/{}/start", env_id))?,
-            )
+            .post(root_url.join(&format!("api/env/{}/start", env_id))?)
             .json(&StartApp { app_id })
             .send()
             .await
@@ -93,4 +103,95 @@ pub(crate) async fn start() -> Result<()> {
     } else {
         Err(anyhow!("Cannot find {binary_name} build directory"))
     }
+}
+
+// TODO: add ".env" file to config
+async fn upload_env_vars_if_exist(
+    cwd: &Path,
+    client: &Client,
+    root_url: &Url,
+    env_id: i64,
+) -> Result<()> {
+    let mut envs = HashMap::new();
+    let envs_path = cwd.join(".env");
+    if envs_path.exists() && envs_path.is_file() {
+        if let Ok(iter) = dotenvy::dotenv_iter() {
+            for item in iter {
+                let (key, val) = item.with_context(|| "Error reading .env variables.")?;
+                envs.insert(key, val);
+            }
+            let response = client
+                .post(root_url.join(&format!("api/env/{}/vars", env_id))?)
+                .json(&envs)
+                .send()
+                .await
+                .with_context(|| "Error sending HTTP post env vars request.")?;
+            let status = response.status();
+            if !status.is_success() {
+                let body = response.text().await.with_context(|| {
+                    format!("Error parsing body as text. Response not successfull: {status}")
+                })?;
+                return Err(anyhow!(
+                    "HTTP post env vars request returned an error response: {body}"
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+// TODO: add "static" directory to config
+async fn upload_static_files_if_exist(
+    cwd: &Path,
+    client: &Client,
+    root_url: &Url,
+    env_id: i64,
+) -> Result<()> {
+    let static_path = cwd.join("static");
+    if static_path.exists() && static_path.is_dir() {
+        let writer = Cursor::new(Vec::new());
+        let options = FileOptions::default()
+            .compression_method(CompressionMethod::Stored)
+            .unix_permissions(0o755);
+        let mut zip = ZipWriter::new(writer);
+        let walkdir = walkdir::WalkDir::new(static_path.clone());
+        let it = walkdir.into_iter();
+
+        for entry in it {
+            let entry = entry?;
+            let path = entry.path();
+            let name = path.strip_prefix(&static_path)?;
+
+            if path.is_file() {
+                zip.start_file(name.to_string_lossy().to_string(), options)?;
+                let mut f = File::open(path)?;
+                let mut buffer = Vec::new();
+                f.read_to_end(&mut buffer)?;
+                zip.write_all(&buffer)?;
+            }
+        }
+
+        let buffer = zip.finish()?.into_inner();
+        let part = reqwest::multipart::Part::bytes(buffer)
+            .file_name("assets.zip")
+            .mime_str("application/zip")?;
+        let form = reqwest::multipart::Form::new().part("file", part);
+
+        let response = client
+            .post(root_url.join(&format!("api/env/{}/assets", env_id))?)
+            .multipart(form)
+            .send()
+            .await
+            .with_context(|| "Error sending HTTP post assets zip requests.")?;
+        let status = response.status();
+        if !status.is_success() {
+            let body = response.text().await.with_context(|| {
+                format!("Error parsing body as text. Response not successfull: {status}")
+            })?;
+            return Err(anyhow!(
+                "HTTP post assets zip request returned an error response: {body}"
+            ));
+        }
+    }
+    Ok(())
 }
