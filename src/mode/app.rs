@@ -110,6 +110,8 @@ pub(crate) async fn start(args: Args) -> Result<()> {
                     .get(0)
                     .map(|env| env.env_id)
                     .ok_or_else(|| anyhow!("Unexpected config missing env_id"))?,
+                env_vars: None,
+                assets_dir: None,
             });
             config_manager.flush()?;
         }

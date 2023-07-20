@@ -41,6 +41,8 @@ pub(crate) async fn start() -> Result<()> {
     let project_name = project_config.project_name.clone();
     let app_id = project_config.app_id;
     let env_id = project_config.env_id;
+    let env_vars = project_config.env_vars.clone();
+    let assets_dir = project_config.assets_dir.clone();
 
     let mut file = File::open(cwd.join("Cargo.toml")).map_err(|e| {
         anyhow!(
@@ -75,8 +77,8 @@ pub(crate) async fn start() -> Result<()> {
         let (client, provider) = config.get_http_client()?;
         let root_url = provider.get_url()?;
 
-        upload_env_vars_if_exist(&cwd, &client, &root_url, env_id).await?;
-        upload_static_files_if_exist(&cwd, &client, &root_url, env_id).await?;
+        upload_env_vars_if_exist(&cwd, &client, &root_url, env_id, env_vars).await?;
+        upload_static_files_if_exist(&cwd, &client, &root_url, env_id, assets_dir).await?;
 
         let response = client
             .post(root_url.join(&format!("api/env/{}/start", env_id))?)
@@ -103,17 +105,17 @@ pub(crate) async fn start() -> Result<()> {
     }
 }
 
-// TODO: add ".env" file to config
 async fn upload_env_vars_if_exist(
     cwd: &Path,
     client: &Client,
     root_url: &Url,
     env_id: i64,
+    env_vars: Option<String>,
 ) -> Result<()> {
     let mut envs = HashMap::new();
-    let envs_path = cwd.join(".env");
+    let envs_path = cwd.join(env_vars.unwrap_or_else(|| ".env".to_string()));
     if envs_path.exists() && envs_path.is_file() {
-        if let Ok(iter) = dotenvy::dotenv_iter() {
+        if let Ok(iter) = dotenvy::from_path_iter(envs_path) {
             for item in iter {
                 let (key, val) = item.with_context(|| "Error reading .env variables.")?;
                 envs.insert(key, val);
@@ -138,14 +140,14 @@ async fn upload_env_vars_if_exist(
     Ok(())
 }
 
-// TODO: add "static" directory to config
 async fn upload_static_files_if_exist(
     cwd: &Path,
     client: &Client,
     root_url: &Url,
     env_id: i64,
+    assets_dir: Option<String>,
 ) -> Result<()> {
-    let static_path = cwd.join("static");
+    let static_path = cwd.join(assets_dir.unwrap_or_else(|| "static".to_string()));
     if static_path.exists() && static_path.is_dir() {
         let writer = Cursor::new(Vec::new());
         let options = FileOptions::default()

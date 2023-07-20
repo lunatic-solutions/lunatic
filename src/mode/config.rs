@@ -30,6 +30,8 @@ pub struct ProjectLunaticConfig {
     pub domains: Vec<String>,
     pub app_id: i64,
     pub env_id: i64,
+    pub env_vars: Option<String>,
+    pub assets_dir: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
