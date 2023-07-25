@@ -1,5 +1,6 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, Result};
 use clap::Parser;
+use reqwest::{Method, StatusCode};
 use serde::{Deserialize, Serialize};
 
 use crate::mode::config::ProjectLunaticConfig;
@@ -56,45 +57,24 @@ pub(crate) async fn start(args: Args) -> Result<()> {
                     "Project is already initialized, `lunatic.toml` exists in current directory."
                 ));
             }
-            let (client, provider) = config_manager.get_http_client()?;
-            let url = provider.get_url()?;
-            let response = client
-                .post(url.join("api/projects")?)
-                .json(&CreateProject { name })
-                .send()
-                .await
-                .with_context(|| "Error sending HTTP create app request.")?;
-            let status = response.status();
-            if !status.is_success() {
-                let body = response.text().await.with_context(|| {
-                    format!("Error parsing body as text. Respose not successful: {status}")
-                })?;
-                return Err(anyhow!(
-                    "HTTP create app request returned an error response: {body}"
-                ));
-            }
-            let project = response
-                .json::<Project>()
-                .await
-                .with_context(|| "Error parsing the create app request JSON.")?;
-            let response = client
-                .get(url.join(&format!("api/projects/{}", project.project_id))?)
-                .send()
-                .await
-                .with_context(|| "Error sending HTTP get project request.")?;
-            let status = response.status();
-            if !status.is_success() {
-                let body = response.text().await.with_context(|| {
-                    format!("Error parsing body as text. Response not successful: {status}")
-                })?;
-                return Err(anyhow!(
-                    "HTTP get project request returned an error response: {body}"
-                ));
-            }
-            let project_details = response
-                .json::<ProjectDetails>()
-                .await
-                .with_context(|| "Error parsing the get project request JSON.")?;
+            let (_, project): (StatusCode, Project) = config_manager
+                .request_platform(
+                    Method::POST,
+                    "api/projects",
+                    "create app",
+                    Some(CreateProject { name }),
+                    None,
+                )
+                .await?;
+            let (_, project_details): (StatusCode, ProjectDetails) = config_manager
+                .request_platform::<ProjectDetails, ()>(
+                    Method::GET,
+                    &format!("api/projects/{}", project.project_id),
+                    "get project",
+                    None,
+                    None,
+                )
+                .await?;
             // TODO for now every project has single app and env
             config_manager.init_project(ProjectLunaticConfig {
                 project_id: project.project_id,

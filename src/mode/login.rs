@@ -155,7 +155,7 @@ async fn is_authenticated(config_manager: &mut ConfigManager) -> Result<bool> {
             if let Some(StatusCode::UNAUTHORIZED) = e.status() {
                 Ok(false)
             } else {
-                Ok(true)
+                Ok(false)
             }
         }
     }

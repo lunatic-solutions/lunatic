@@ -2,14 +2,14 @@ use std::{
     collections::HashMap,
     fs::File,
     io::{Cursor, Read, Write},
-    path::Path,
+    path::{Path, PathBuf},
 };
 
 use anyhow::{anyhow, Context, Result};
 use log::debug;
-use reqwest::Client;
+use reqwest::Method;
 use serde::{Deserialize, Serialize};
-use url::Url;
+use serde_json::Value;
 use zip::{write::FileOptions, CompressionMethod, ZipWriter};
 mod artefact;
 mod build;
@@ -67,34 +67,10 @@ pub(crate) async fn start() -> Result<()> {
             "Deploying project: {project_name} new version of app {}",
             cargo.package.name
         );
-        let mut artefact = File::open(artefact)?;
-        let mut artefact_bytes = Vec::new();
-        artefact.read_to_end(&mut artefact_bytes)?;
-        let new_version_id = config
-            .upload_artefact_for_app(&app_id, artefact_bytes, binary_name)
-            .await?;
-
-        let (client, provider) = config.get_http_client()?;
-        let root_url = provider.get_url()?;
-
-        upload_env_vars_if_exist(&cwd, &client, &root_url, env_id, env_vars).await?;
-        upload_static_files_if_exist(&cwd, &client, &root_url, env_id, assets_dir).await?;
-
-        let response = client
-            .post(root_url.join(&format!("api/env/{}/start", env_id))?)
-            .json(&StartApp { app_id })
-            .send()
-            .await
-            .with_context(|| "Error sending HTTP app start request.")?;
-        let status = response.status();
-        if !status.is_success() {
-            let body = response.text().await.with_context(|| {
-                format!("Error parsing body as text. Response not successful: {status}")
-            })?;
-            return Err(anyhow!(
-                "HTTP start app request returned an error reponse: {body}"
-            ));
-        }
+        let new_version_id = upload_wasm_binary(app_id, binary_name, artefact, &mut config).await?;
+        upload_env_vars_if_exist(&cwd, env_id, env_vars, &config).await?;
+        upload_static_files_if_exist(&cwd, env_id, assets_dir, &config).await?;
+        start_app(app_id, env_id, &config).await?;
         println!(
             "Deployed project: {project_name} new version app \"{}\", version={new_version_id}",
             cargo.package.name
@@ -107,10 +83,9 @@ pub(crate) async fn start() -> Result<()> {
 
 async fn upload_env_vars_if_exist(
     cwd: &Path,
-    client: &Client,
-    root_url: &Url,
     env_id: i64,
     env_vars: Option<String>,
+    config_manager: &ConfigManager,
 ) -> Result<()> {
     let mut envs = HashMap::new();
     let envs_path = cwd.join(env_vars.unwrap_or_else(|| ".env".to_string()));
@@ -120,32 +95,40 @@ async fn upload_env_vars_if_exist(
                 let (key, val) = item.with_context(|| "Error reading .env variables.")?;
                 envs.insert(key, val);
             }
-            let response = client
-                .post(root_url.join(&format!("api/env/{}/vars", env_id))?)
-                .json(&envs)
-                .send()
-                .await
-                .with_context(|| "Error sending HTTP post env vars request.")?;
-            let status = response.status();
-            if !status.is_success() {
-                let body = response.text().await.with_context(|| {
-                    format!("Error parsing body as text. Response not successfull: {status}")
-                })?;
-                return Err(anyhow!(
-                    "HTTP post env vars request returned an error response: {body}"
-                ));
-            }
+            config_manager
+                .request_platform::<Value, HashMap<String, String>>(
+                    Method::POST,
+                    &format!("api/env/{}/vars", env_id),
+                    "env vars",
+                    Some(envs),
+                    None,
+                )
+                .await?;
         }
     }
     Ok(())
 }
 
+async fn upload_wasm_binary(
+    app_id: i64,
+    binary_name: String,
+    artefact: PathBuf,
+    config_manager: &mut ConfigManager,
+) -> Result<i64> {
+    let mut artefact = File::open(artefact)?;
+    let mut artefact_bytes = Vec::new();
+    artefact.read_to_end(&mut artefact_bytes)?;
+    let new_version_id = config_manager
+        .upload_artefact_for_app(&app_id, artefact_bytes, binary_name)
+        .await?;
+    Ok(new_version_id)
+}
+
 async fn upload_static_files_if_exist(
     cwd: &Path,
-    client: &Client,
-    root_url: &Url,
     env_id: i64,
     assets_dir: Option<String>,
+    config_manager: &ConfigManager,
 ) -> Result<()> {
     let static_path = cwd.join(assets_dir.unwrap_or_else(|| "static".to_string()));
     if static_path.exists() && static_path.is_dir() {
@@ -177,21 +160,28 @@ async fn upload_static_files_if_exist(
             .mime_str("application/zip")?;
         let form = reqwest::multipart::Form::new().part("file", part);
 
-        let response = client
-            .post(root_url.join(&format!("api/env/{}/assets", env_id))?)
-            .multipart(form)
-            .send()
-            .await
-            .with_context(|| "Error sending HTTP post assets zip requests.")?;
-        let status = response.status();
-        if !status.is_success() {
-            let body = response.text().await.with_context(|| {
-                format!("Error parsing body as text. Response not successfull: {status}")
-            })?;
-            return Err(anyhow!(
-                "HTTP post assets zip request returned an error response: {body}"
-            ));
-        }
+        config_manager
+            .request_platform::<Value, ()>(
+                Method::POST,
+                &format!("api/env/{}/assets", env_id),
+                "assets zip",
+                None,
+                Some(form),
+            )
+            .await?;
     }
+    Ok(())
+}
+
+async fn start_app(app_id: i64, env_id: i64, config_manager: &ConfigManager) -> Result<()> {
+    config_manager
+        .request_platform::<Value, StartApp>(
+            Method::POST,
+            &format!("api/env/{}/start", env_id),
+            "app start",
+            Some(StartApp { app_id }),
+            None,
+        )
+        .await?;
     Ok(())
 }

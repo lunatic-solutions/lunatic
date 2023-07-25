@@ -5,7 +5,7 @@ use std::{
     str::FromStr,
 };
 
-use anyhow::anyhow;
+use anyhow::{anyhow, Context};
 use log::debug;
 use reqwest::{
     header::{self, HeaderMap},
@@ -93,20 +93,12 @@ impl Provider {
         Url::from_str(&self.name)
             .map_err(|e| anyhow!("Failed to parse provider url '{}'. Error: {e:?}", self.name))
     }
-
-    pub fn get_http_client(&self) -> anyhow::Result<reqwest::Client> {
-        reqwest::ClientBuilder::new()
-            .cookie_store(true)
-            .default_headers(self.get_cookie_headers()?)
-            .build()
-            .map_err(|e| anyhow!("Failed to build reqwest client {e:?}"))
-    }
 }
 
 impl Default for GlobalLunaticConfig {
     fn default() -> Self {
         Self {
-            version: "0.1".to_string(),
+            version: "0.1.0".to_string(),
             provider: None,
             cli_app_id: uuid::Uuid::new_v4().to_string(),
         }
@@ -191,7 +183,16 @@ impl ConfigManager {
     pub fn get_http_client(&self) -> anyhow::Result<(reqwest::Client, Provider)> {
         match self.global_config.provider.clone() {
             Some(provider) => {
-                let client = provider.get_http_client()?;
+                let mut headers = provider.get_cookie_headers()?;
+                headers.insert(
+                    header::HeaderName::from_static("lunatic-cli-version"),
+                    header::HeaderValue::from_str(&self.global_config.version)?,
+                );
+                let client = reqwest::ClientBuilder::new()
+                    .cookie_store(true)
+                    .default_headers(headers)
+                    .build()
+                    .map_err(|e| anyhow!("Failed to build reqwest client {e:?}"))?;
                 Ok((client, provider))
             }
             None => Err(anyhow!("First login by calling `lunatic login`")),
@@ -199,10 +200,10 @@ impl ConfigManager {
     }
 
     // quality of life function that makes all calls to platform
-    async fn request_platform<T: DeserializeOwned, I: Serialize>(
+    pub async fn request_platform<T: DeserializeOwned, I: Serialize>(
         &self,
         method: Method,
-        path: String,
+        path: &str,
         description: &str,
         body: Option<I>,
         form_body: Option<Form>,
@@ -210,7 +211,7 @@ impl ConfigManager {
         let (client, provider) = self.get_http_client()?;
         let full_url = provider
             .get_url()?
-            .join(&path)
+            .join(path)
             .map_err(|e| anyhow!("Failed to join url {e:?}"))?;
 
         let mut builder = client.request(method, full_url.clone());
@@ -226,17 +227,27 @@ impl ConfigManager {
         let response = builder
             .send()
             .await
-            .map_err(|e| anyhow!("Failed request to {description} in project {e:?}"))?;
+            .with_context(|| format!("Error sending HTTP {} request.", description))?;
 
         debug!("Response from '{description}' {response:?}");
 
-        Ok((
-            response.status(),
-            response
-                .json()
-                .await
-                .map_err(|e| anyhow!("Failed to parse json from GET {full_url} {e:?}"))?,
-        ))
+        let status = response.status();
+        if !status.is_success() {
+            let body = response.text().await.with_context(|| {
+                format!("Error parsing body as text. Resposnse not successful: {status}")
+            })?;
+            Err(anyhow!(
+                "HTTP {description} request returned an error response: {body}"
+            ))
+        } else {
+            Ok((
+                response.status(),
+                response
+                    .json()
+                    .await
+                    .with_context(|| format!("Error parsing the {description} request JSON."))?,
+            ))
+        }
     }
 
     pub fn init_project(&mut self, project_config: ProjectLunaticConfig) {
@@ -256,7 +267,7 @@ impl ConfigManager {
         let (status, new_version) = self
             .request_platform::<serde_json::Value, ()>(
                 Method::POST,
-                format!("/api/apps/{app_id}/versions"),
+                &format!("/api/apps/{app_id}/versions"),
                 "upload wasm",
                 None,
                 Some(form),
