@@ -135,30 +135,23 @@ async fn is_authenticated(config_manager: &mut ConfigManager) -> Result<bool> {
         .as_ref()
         .ok_or_else(|| anyhow::anyhow!("Unexpected missing provider in `lunatic.toml`"))?;
     let client = reqwest::Client::new();
-    match client
+    let response = client
         .get(
             provider
                 .get_url()?
                 .join(&format!("api/cli/login/{}", provider.login_id))?,
         )
         .send()
-        .await
-    {
-        Ok(res) => {
-            if [StatusCode::UNAUTHORIZED, StatusCode::FORBIDDEN].contains(&res.status()) {
-                Ok(false)
-            } else {
-                Ok(true)
-            }
-        }
-        Err(e) => {
-            if let Some(StatusCode::UNAUTHORIZED) = e.status() {
-                Ok(false)
-            } else {
-                Ok(false)
-            }
-        }
+        .await?;
+    if response.status() == StatusCode::OK {
+        return Ok(true);
     }
+    if response.status() == StatusCode::UNAUTHORIZED {
+        return Ok(false);
+    }
+    let response = response.error_for_status()?;
+    let body = response.text().await?;
+    Err(anyhow!("Unexpected login API response: {body}"))
 }
 
 async fn refresh_existing_login(config_manager: &mut ConfigManager) -> Result<()> {
@@ -184,7 +177,7 @@ async fn refresh_existing_login(config_manager: &mut ConfigManager) -> Result<()
     let auth_status = check_auth_status(&status_url, &client).await;
 
     if auth_status.is_empty() {
-        panic!("Cli Login failed");
+        return Err(anyhow!("Cli Login failed"));
     }
 
     config_manager.login(Provider {

@@ -32,7 +32,7 @@ enum Commands {
     /// Manage lunatic applications
     App(super::app::Args),
     /// Deploy Lunatic app to cloud
-    Deploy, // / Authenticate app
+    Deploy,
 }
 
 pub(crate) async fn execute(augmented_args: Option<Vec<String>>) -> Result<()> {

@@ -14,6 +14,8 @@ use reqwest::{
 };
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
+static VERSION: &str = "0.1.0";
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct GlobalLunaticConfig {
     /// unique id for every installation of the cli tool
@@ -41,6 +43,12 @@ pub enum ConfigError {
     TomlDecodingFailed,
     FileWriteFailed(String),
     FileReadFailed(String),
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct ApiError {
+    pub code: String,
+    pub message: String,
 }
 
 impl FileBased for ProjectLunaticConfig {
@@ -98,7 +106,7 @@ impl Provider {
 impl Default for GlobalLunaticConfig {
     fn default() -> Self {
         Self {
-            version: "0.1.0".to_string(),
+            version: VERSION.to_string(),
             provider: None,
             cli_app_id: uuid::Uuid::new_v4().to_string(),
         }
@@ -233,11 +241,20 @@ impl ConfigManager {
 
         let status = response.status();
         if !status.is_success() {
-            let body = response.text().await.with_context(|| {
-                format!("Error parsing body as text. Resposnse not successful: {status}")
+            if status == StatusCode::UNAUTHORIZED {
+                println!("\n\nYou are not authenticated. Please login again via `lunatic login` command.\n\n");
+            }
+            let body = response.json::<ApiError>().await.with_context(|| {
+                format!("Error parsing body as json. Resposnse not successful: {status}")
             })?;
+
+            if body.code.as_str() == "lunatic_cli_update_required" {
+                println!("\n\nLunatic version missmatch. Install the latest `lunatic-runtime` version, e.g. `cargo install lunatic-runtime`.\n\n")
+            }
             Err(anyhow!(
-                "HTTP {description} request returned an error response: {body}"
+                "HTTP {description} request returned an error response.\n\nStatus: {status}\n\nCode: {}\n\nMessage: {}\n\n",
+                body.code,
+                body.message
             ))
         } else {
             Ok((
@@ -290,7 +307,9 @@ impl ConfigManager {
     fn get_global_config() -> Result<GlobalLunaticConfig, ConfigError> {
         // make sure the config directory exists
         let config_path = GlobalLunaticConfig::get_file_path()?;
-        Ok(GlobalLunaticConfig::from_toml_file(config_path))
+        let mut global_config = GlobalLunaticConfig::from_toml_file(config_path);
+        global_config.version = VERSION.to_string();
+        Ok(global_config)
     }
 
     fn get_project_config() -> Result<ProjectLunaticConfig, ConfigError> {
