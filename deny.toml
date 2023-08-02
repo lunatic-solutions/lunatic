@@ -96,6 +96,7 @@ allow = [
     # https://www.openssl.org/blog/blog/2017/03/22/license/
     # ring crate is ISC & MIT
     "OpenSSL",
+    "CC0-1.0",
 ]
 # List of explicitly disallowed licenses
 # See https://spdx.org/licenses/ for list of possible licenses
