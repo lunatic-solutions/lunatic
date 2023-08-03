@@ -31,6 +31,12 @@ struct StartApp {
     app_id: i64,
 }
 
+#[derive(Debug, Serialize)]
+struct NewAppInstance {
+    app_version_id: i64,
+    env_id: i64,
+}
+
 pub(crate) async fn start() -> Result<()> {
     let cwd = std::env::current_dir()?;
     let mut config = ConfigManager::new().map_err(|e| anyhow!("Failed to load config {e:?}"))?;
@@ -67,7 +73,8 @@ pub(crate) async fn start() -> Result<()> {
             "Deploying project: {project_name} new version of app {}",
             cargo.package.name
         );
-        let new_version_id = upload_wasm_binary(app_id, binary_name, artefact, &mut config).await?;
+        let new_version_id =
+            upload_wasm_binary(env_id, app_id, binary_name, artefact, &mut config).await?;
         upload_env_vars_if_exist(&cwd, env_id, env_vars, &config).await?;
         upload_static_files_if_exist(&cwd, env_id, assets_dir, &config).await?;
         start_app(app_id, env_id, &config).await?;
@@ -110,6 +117,7 @@ async fn upload_env_vars_if_exist(
 }
 
 async fn upload_wasm_binary(
+    env_id: i64,
     app_id: i64,
     binary_name: String,
     artefact: PathBuf,
@@ -120,6 +128,18 @@ async fn upload_wasm_binary(
     artefact.read_to_end(&mut artefact_bytes)?;
     let new_version_id = config_manager
         .upload_artefact_for_app(&app_id, artefact_bytes, binary_name)
+        .await?;
+    config_manager
+        .request_platform::<Value, NewAppInstance>(
+            Method::POST,
+            &format!("api/apps/{app_id}/instances"),
+            "create app instance",
+            Some(NewAppInstance {
+                app_version_id: new_version_id,
+                env_id,
+            }),
+            None,
+        )
         .await?;
     Ok(new_version_id)
 }
