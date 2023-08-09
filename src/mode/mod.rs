@@ -6,8 +6,12 @@ pub(crate) mod cargo_test;
 // Default mode, if no other mode could be detected.
 pub(crate) mod execution;
 
+mod app;
 mod common;
+mod config;
 mod control;
+mod deploy;
 mod init;
+mod login;
 mod node;
 mod run;

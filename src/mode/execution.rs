@@ -27,6 +27,12 @@ enum Commands {
     Control(super::control::Args),
     /// Starts a node
     Node(super::node::Args),
+    /// Login to Lunatic cloud
+    Login(super::login::Args),
+    /// Manage lunatic applications
+    App(super::app::Args),
+    /// Deploy Lunatic app to cloud
+    Deploy,
 }
 
 pub(crate) async fn execute(augmented_args: Option<Vec<String>>) -> Result<()> {
@@ -42,5 +48,8 @@ pub(crate) async fn execute(augmented_args: Option<Vec<String>>) -> Result<()> {
         Commands::Run(a) => super::run::start(a).await,
         Commands::Control(a) => super::control::start(a).await,
         Commands::Node(a) => super::node::start(a).await,
+        Commands::Login(a) => super::login::start(a).await,
+        Commands::App(a) => super::app::start(a).await,
+        Commands::Deploy => super::deploy::start().await,
     }
 }
