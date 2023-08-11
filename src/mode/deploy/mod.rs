@@ -1,5 +1,6 @@
 use std::{
     collections::HashMap,
+    ffi::OsStr,
     fs::File,
     io::{Cursor, Read, Write},
     path::{Path, PathBuf},
@@ -160,17 +161,23 @@ async fn upload_static_files_if_exist(
         let walkdir = walkdir::WalkDir::new(static_path.clone());
         let it = walkdir.into_iter();
 
-        for entry in it {
+        let zip_root = static_path.file_name().unwrap_or(OsStr::new("static"));
+        let parent_path = static_path.parent().unwrap_or(&static_path);
+        zip.add_directory(zip_root.to_string_lossy(), options)?;
+
+        for entry in it.skip(1) {
             let entry = entry?;
             let path = entry.path();
-            let name = path.strip_prefix(&static_path)?;
+            let name = path.strip_prefix(parent_path)?;
 
             if path.is_file() {
-                zip.start_file(name.to_string_lossy().to_string(), options)?;
+                zip.start_file(name.to_string_lossy(), options)?;
                 let mut f = File::open(path)?;
                 let mut buffer = Vec::new();
                 f.read_to_end(&mut buffer)?;
                 zip.write_all(&buffer)?;
+            } else if path.is_dir() {
+                zip.add_directory(name.to_string_lossy(), options)?;
             }
         }
 
