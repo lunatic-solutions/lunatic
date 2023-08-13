@@ -5,7 +5,7 @@ edition = "2021"
 description = "Helper library for holding stdout streams of lunatic processes."
 homepage = "https://lunatic.solutions"
 repository = "https://github.com/lunatic-solutions/lunatic/tree/main/crates/lunatic-registry-api"
-license = "Apache-2.0/MIT"
+license = "Apache-2.0 OR MIT"
 
 [dependencies]
 wasi-common = { workspace = true }

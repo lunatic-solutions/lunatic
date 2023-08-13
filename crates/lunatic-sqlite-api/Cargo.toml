@@ -2,7 +2,7 @@
 description = "Lunatic host functions for sqlite."
 edition = "2021"
 homepage = "https://lunatic.solutions"
-license = "Apache-2.0/MIT"
+license = "Apache-2.0 OR MIT"
 name = "lunatic-sqlite-api"
 repository = "https://github.com/lunatic-solutions/lunatic/tree/main/crates/lunatic-sqlite-api"
 version = "0.13.3"

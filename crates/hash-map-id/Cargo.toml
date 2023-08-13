@@ -5,6 +5,6 @@ edition = "2021"
 description = "HashMap wrapper with incremental ID (u64) as key"
 homepage = "https://lunatic.solutions"
 repository = "https://github.com/lunatic-solutions/lunatic/tree/main/crates/hash-map-id"
-license = "Apache-2.0/MIT"
+license = "Apache-2.0 OR MIT"
 
 [dependencies]
