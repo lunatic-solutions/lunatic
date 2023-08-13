@@ -7,7 +7,7 @@ description = "An actor platform built on WebAssembly"
 homepage = "https://lunatic.solutions"
 repository = "https://github.com/lunatic-solutions/lunatic"
 categories = ["wasm"]
-license = "Apache-2.0/MIT"
+license = "Apache-2.0 OR MIT"
 readme = "README.md"
 default-run = "lunatic"
 

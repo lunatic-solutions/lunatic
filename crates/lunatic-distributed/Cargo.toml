@@ -5,7 +5,7 @@ edition = "2021"
 description = "Node to node communication"
 homepage = "https://lunatic.solutions"
 repository = "https://github.com/lunatic-solutions/lunatic/tree/main/crates"
-license = "Apache-2.0/MIT"
+license = "Apache-2.0 OR MIT"
 
 [dependencies]
 lunatic-control = { workspace = true }
