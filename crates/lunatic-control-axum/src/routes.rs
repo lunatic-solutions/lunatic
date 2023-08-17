@@ -50,6 +50,7 @@ pub async fn register(
             get_nodes: format!("http://{host}/nodes"),
         },
         envs: Vec::new(),
+        is_privileged: true,
     })
 }
 

@@ -1,4 +1,5 @@
 use std::{
+    collections::HashSet,
     net::{SocketAddr, UdpSocket},
     path::PathBuf,
 };
@@ -77,6 +78,17 @@ pub(crate) async fn start(args: Args) -> Result<()> {
     )
     .await?;
 
+    let allowed_envs = if reg.is_privileged {
+        None
+    } else {
+        Some(
+            reg.envs
+                .iter()
+                .map(|env_id| *env_id as u64)
+                .collect::<HashSet<u64>>(),
+        )
+    };
+
     let control_client =
         control::Client::new(http_client.clone(), reg.clone(), socket, node_attributes).await?;
 
@@ -113,6 +125,7 @@ pub(crate) async fn start(args: Args) -> Result<()> {
             modules: Modules::<DefaultProcessState>::default(),
             distributed: dist.clone(),
             runtime: runtime.clone(),
+            allowed_envs,
         },
         socket,
         reg.root_cert,
