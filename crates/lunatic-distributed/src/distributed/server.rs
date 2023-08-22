@@ -1,4 +1,4 @@
-use std::{net::SocketAddr, sync::Arc};
+use std::{collections::HashSet, net::SocketAddr, sync::Arc};
 
 use anyhow::{anyhow, Result};
 
@@ -25,6 +25,7 @@ pub struct ServerCtx<T, E: Environment> {
     pub modules: Modules<T>,
     pub distributed: DistributedProcessState,
     pub runtime: WasmtimeRuntime,
+    pub allowed_envs: Option<HashSet<u64>>,
 }
 
 impl<T: 'static, E: Environment> Clone for ServerCtx<T, E> {
@@ -34,6 +35,7 @@ impl<T: 'static, E: Environment> Clone for ServerCtx<T, E> {
             modules: self.modules.clone(),
             distributed: self.distributed.clone(),
             runtime: self.runtime.clone(),
+            allowed_envs: self.allowed_envs.clone(),
         }
     }
 }
@@ -152,6 +154,13 @@ where
         config,
     } = spawn;
 
+    if let Some(ref allowed_envs) = ctx.allowed_envs {
+        if !allowed_envs.contains(&environment_id) {
+            return Ok(Err(ClientError::Unexpected(format!(
+                "This node does not have access to environment {environment_id}"
+            ))));
+        }
+    }
     let config: T::Config = rmp_serde::from_slice(&config[..])?;
     let config = Arc::new(config);
 
@@ -176,7 +185,7 @@ where
 
     let env = match env {
         Some(env) => env,
-        None => ctx.envs.create(environment_id).await,
+        None => ctx.envs.create(environment_id).await?,
     };
 
     env.can_spawn_next_process().await?;
@@ -209,6 +218,13 @@ where
     T: ProcessState + DistributedCtx<E> + ResourceLimiter + Send + 'static,
     E: Environment,
 {
+    if let Some(ref allowed_envs) = ctx.allowed_envs {
+        if !allowed_envs.contains(&environment_id) {
+            return Err(ClientError::Unexpected(format!(
+                "This node does not have access to environment {environment_id}"
+            )));
+        }
+    }
     let env = ctx.envs.get(environment_id).await;
     if let Some(env) = env {
         if let Some(proc) = env.get_process(process_id) {

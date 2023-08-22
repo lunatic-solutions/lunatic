@@ -124,7 +124,7 @@ impl ControlServer {
 
     #[handle_message]
     pub fn stop_node(&mut self, reg_id: u64) {
-        if let Some(mut node) = self.nodes.get_mut(&reg_id) {
+        if let Some(node) = self.nodes.get_mut(&reg_id) {
             node.status = 2;
             node.stopped_at = Some(Utc::now());
             self.store.add_node(reg_id, node);

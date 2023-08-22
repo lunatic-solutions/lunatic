@@ -44,7 +44,7 @@ pub(crate) async fn start(mut args: Args) -> Result<()> {
     let runtime = runtimes::wasmtime::WasmtimeRuntime::new(&wasmtime_config)?;
     let envs = Arc::new(LunaticEnvironments::default());
 
-    let env = envs.create(1).await;
+    let env = envs.create(1).await?;
     if args.bench {
         args.wasm_args.push("--bench".to_owned());
     }
