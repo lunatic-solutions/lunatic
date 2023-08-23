@@ -70,7 +70,7 @@ pub fn new_quic_client(ca_cert: &str, cert: &str, key: &str) -> Result<Client> {
     let client_crypto = rustls::ClientConfig::builder()
         .with_safe_defaults()
         .with_root_certificates(roots)
-        .with_single_cert(cert, pk)?;
+        .with_client_auth_cert(cert, pk)?;
 
     let client_config = ClientConfig::new(Arc::new(client_crypto));
     let mut endpoint = Endpoint::client("[::]:0".parse().unwrap())?;
@@ -113,7 +113,7 @@ pub fn new_quic_server(
 
     let server_crypto = rustls::ServerConfig::builder()
         .with_safe_defaults()
-        .with_client_cert_verifier(AllowAnyAuthenticatedClient::new(roots))
+        .with_client_cert_verifier(Arc::new(AllowAnyAuthenticatedClient::new(roots)))
         .with_single_cert(cert_chain, pk)?;
     let mut server_config = ServerConfig::with_crypto(Arc::new(server_crypto));
     Arc::get_mut(&mut server_config.transport)
