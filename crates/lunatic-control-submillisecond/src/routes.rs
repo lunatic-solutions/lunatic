@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use lunatic_control::{
     api::{
         ControlUrls, ModuleBytes, ModuleId, NodeStart, NodeStarted, NodesList, Register,
@@ -6,6 +8,7 @@ use lunatic_control::{
     NodeInfo,
 };
 use lunatic_log::info;
+use submillisecond::extract::Query;
 
 use crate::{
     api::{
@@ -51,6 +54,8 @@ pub fn register(
             add_module: format!("http://{host}/module"),
             get_nodes: format!("http://{host}/nodes"),
         },
+        envs: Vec::new(),
+        is_privileged: true,
     })
 }
 
@@ -85,6 +90,7 @@ pub fn node_started(
 
 pub fn list_nodes(
     _node_auth: NodeAuth,
+    Query(query): Query<HashMap<String, String>>,
     ControlServerExtractor(control): ControlServerExtractor,
 ) -> ApiResponse<NodesList> {
     let all_nodes = control.get_nodes();
@@ -92,6 +98,14 @@ pub fn list_nodes(
         .into_values()
         .filter(|n| n.status < 2 && !n.node_address.is_empty())
         .collect();
+    let nds: Vec<_> = if !query.is_empty() {
+        nds.into_iter()
+            .filter(|node| query.iter().all(|(k, v)| node.attributes.get(k) == Some(v)))
+            .collect()
+    } else {
+        nds
+    };
+
     let nodes: Vec<_> = control
         .get_registrations()
         .into_iter()

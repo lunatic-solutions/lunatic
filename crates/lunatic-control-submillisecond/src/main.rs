@@ -10,14 +10,14 @@ use lunatic::AbstractProcess;
 use submillisecond::{router, Application};
 
 use crate::routes::{add_module, get_module, list_nodes, node_started, node_stopped, register};
-use crate::server::ControlServer;
+use crate::server::{ControlServer, ControlServerProcess};
 
 fn main() -> anyhow::Result<()> {
     let root_cert = host::test_root_cert();
     let ca_cert = host::default_server_certificates(&root_cert.cert, &root_cert.pk);
 
     ControlServer::link()
-        .start_as("ControlServer", ca_cert)
+        .start_as(&ControlServerProcess, ca_cert)
         .unwrap();
 
     let addrs: Vec<_> = (3030..3999_u16)

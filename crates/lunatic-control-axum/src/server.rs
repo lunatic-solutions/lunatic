@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     net::{SocketAddr, TcpListener},
     sync::{
         atomic::{self, AtomicU64},
@@ -41,7 +42,7 @@ pub struct NodeDetails {
     pub created_at: DateTime<Utc>,
     pub stopped_at: Option<DateTime<Utc>>,
     pub node_address: String,
-    pub attributes: serde_json::Value,
+    pub attributes: HashMap<String, String>,
 }
 
 impl ControlServer {
@@ -79,7 +80,7 @@ impl ControlServer {
             created_at: Utc::now(),
             stopped_at: None,
             node_address: data.node_address.to_string(),
-            attributes: serde_json::json!(data.attributes),
+            attributes: data.attributes,
         };
         self.nodes.insert(id, details);
         (id, data.node_address.to_string())

@@ -17,6 +17,8 @@ pub struct Registration {
     pub authentication_token: String,
     pub root_cert: String,
     pub urls: ControlUrls,
+    pub envs: Vec<i64>,
+    pub is_privileged: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

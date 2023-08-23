@@ -1,4 +1,5 @@
 use std::{
+    collections::HashSet,
     net::{SocketAddr, UdpSocket},
     path::PathBuf,
 };
@@ -62,7 +63,7 @@ pub(crate) async fn start(args: Args) -> Result<()> {
     // TODO unwrap, better message
     let node_name = Uuid::new_v4();
     let node_name_str = node_name.as_hyphenated().to_string();
-    let node_attributes: HashMap<String, String> = Default::default(); //args.tag.into_iter().collect(); TODO
+    let node_attributes: HashMap<String, String> = args.tag.clone().into_iter().collect();
     let node_cert = lunatic_distributed::distributed::server::gen_node_cert(&node_name_str)
         .with_context(|| "Failed to generate node CSR and PK")?;
     log::info!("Generate CSR for node name {node_name_str}");
@@ -76,6 +77,17 @@ pub(crate) async fn start(args: Args) -> Result<()> {
         node_cert.serialize_request_pem()?,
     )
     .await?;
+
+    let allowed_envs = if reg.is_privileged {
+        None
+    } else {
+        Some(
+            reg.envs
+                .iter()
+                .map(|env_id| *env_id as u64)
+                .collect::<HashSet<u64>>(),
+        )
+    };
 
     let control_client =
         control::Client::new(http_client.clone(), reg.clone(), socket, node_attributes).await?;
@@ -114,6 +126,7 @@ pub(crate) async fn start(args: Args) -> Result<()> {
             distributed: dist.clone(),
             runtime: runtime.clone(),
             node_client: distributed_client.clone(),
+            allowed_envs,
         },
         socket,
         reg.root_cert,
@@ -122,7 +135,7 @@ pub(crate) async fn start(args: Args) -> Result<()> {
     ));
 
     if args.wasm.is_some() {
-        let env = envs.create(1).await;
+        let env = envs.create(1).await?;
         tokio::task::spawn(async {
             if let Err(e) = run_wasm(RunWasm {
                 path: args.wasm.unwrap(),

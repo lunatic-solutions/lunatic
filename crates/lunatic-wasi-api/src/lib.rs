@@ -9,7 +9,7 @@ use wasmtime_wasi::{ambient_authority, Dir, WasiCtx, WasiCtxBuilder};
 pub fn build_wasi(
     args: Option<&Vec<String>>,
     envs: Option<&Vec<(String, String)>>,
-    dirs: &[String],
+    dirs: &[(String, String)],
 ) -> Result<WasiCtx> {
     let mut wasi = WasiCtxBuilder::new().inherit_stdio();
     if let Some(envs) = envs {
@@ -18,8 +18,8 @@ pub fn build_wasi(
     if let Some(args) = args {
         wasi = wasi.args(args)?;
     }
-    for preopen_dir_path in dirs {
-        let preopen_dir = Dir::open_ambient_dir(preopen_dir_path, ambient_authority())?;
+    for (preopen_dir_path, resolved_path) in dirs {
+        let preopen_dir = Dir::open_ambient_dir(resolved_path, ambient_authority())?;
         wasi = wasi.preopened_dir(preopen_dir, preopen_dir_path)?;
     }
     Ok(wasi.build())
