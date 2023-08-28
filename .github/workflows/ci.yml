@@ -78,8 +78,8 @@ jobs:
       - name: Tar release on macOS
         if: startsWith(github.ref, 'refs/tags/') && runner.os == 'macOS'
         run: |
-          tar czf lunatic-macos-x86_64.tar.gz README.md README.md LICENSE-MIT LICENSE-APACHE target/x86_64-apple-darwin/release/lunatic
-          tar czf lunatic-macos-aarch64.tar.gz README.md README.md LICENSE-MIT LICENSE-APACHE target/aarch64-apple-darwin/release/lunatic
+          tar -czf lunatic-macos-x86_64.tar.gz README.md LICENSE-MIT LICENSE-APACHE -C target/x86_64-apple-darwin/release lunatic
+          tar -czf lunatic-macos-aarch64.tar.gz README.md LICENSE-MIT LICENSE-APACHE -C target/aarch64-apple-darwin/release lunatic
       - name: Get release name
         if: startsWith(github.ref, 'refs/tags/')
         id: getReleaseName
