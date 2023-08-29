@@ -41,15 +41,6 @@ cargo install lunatic-runtime
 
 ---
 
-On **macOS** you can use [Homebrew][6] too:
-
-```bash
-brew tap lunatic-solutions/lunatic
-brew install lunatic
-```
-
----
-
 We also provide pre-built binaries for **Windows**, **Linux** and **macOS** on the
 [releases page][5], that you can include in your `PATH`.
 
@@ -137,7 +128,6 @@ at your option.
 [3]: https://crates.io/crates/lunatic
 [4]: https://discord.gg/b7zDqpXpB4
 [5]: https://github.com/lunatic-solutions/lunatic/releases
-[6]: https://brew.sh/
 [7]: https://rustup.rs/
 [8]: https://golangbot.com/goroutines
 [9]: https://tokio.rs
