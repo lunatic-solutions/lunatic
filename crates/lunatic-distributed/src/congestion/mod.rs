@@ -69,8 +69,7 @@ pub struct MessageChunk {
 const CHUNK_SIZE: usize = 1024;
 
 pub async fn congestion_control_worker(state: distributed::Client) -> ! {
-    let waker = state.inner.has_messages.take_weak();
-    (&waker).await;
+    state.inner.has_messages.notified().await;
     log::trace!("starting congestion control worker");
     loop {
         for env in state.inner.buf_rx.iter() {
@@ -159,7 +158,7 @@ pub async fn congestion_control_worker(state: distributed::Client) -> ! {
             }
             // wait to be woken up by next message
             if state.inner.in_progress.is_empty() {
-                (&waker).await;
+                state.inner.has_messages.notified().await;
             }
         }
     }

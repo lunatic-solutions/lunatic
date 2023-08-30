@@ -12,7 +12,7 @@ use bytes::Bytes;
 use dashmap::DashMap;
 use tokio::sync::{
     mpsc::{Receiver, Sender},
-    RwLock,
+    Notify, RwLock,
 };
 
 use crate::{
@@ -93,7 +93,7 @@ pub struct Inner {
     pub nodes_queues: DashMap<NodeId, Sender<MessageChunk>>,
     pub responses: DashMap<MessageId, Arc<IncomingResponse>>,
     pub response_tx: Sender<(MessageId, ResponseContent)>,
-    pub has_messages: Arc<AsyncCell<()>>,
+    pub has_messages: Arc<Notify>,
 }
 
 impl Client {
@@ -111,7 +111,7 @@ impl Client {
                 nodes_queues: DashMap::new(),
                 responses: DashMap::new(),
                 response_tx: send,
-                has_messages: AsyncCell::shared(),
+                has_messages: Arc::new(Notify::new()),
             }),
         };
         tokio::spawn(congestion::congestion_control_worker(client.clone()));
@@ -191,7 +191,7 @@ impl Client {
             Ok(_) => (),
             Err(_) => log::error!("lunatic::distributed::client::send"),
         };
-        self.inner.has_messages.set(());
+        self.inner.has_messages.notify_one();
         Ok(message_id)
     }
 
