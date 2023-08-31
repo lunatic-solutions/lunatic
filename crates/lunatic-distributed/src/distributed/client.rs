@@ -139,7 +139,7 @@ impl Client {
         let tx = match self.inner.buf_tx.get(&(env, src)) {
             Some(tx) => tx,
             None => {
-                let (send, recv) = tokio::sync::mpsc::channel(10000); // TODO: configuration
+                let (send, recv) = tokio::sync::mpsc::channel(1_000_000); // TODO: configuration
                 match self.inner.buf_rx.get(&env) {
                     Some(env_queue) => {
                         env_queue.insert(src, RwLock::new(recv));
@@ -165,7 +165,7 @@ impl Client {
                 .control_client
                 .node_info(node.0)
                 .ok_or_else(|| anyhow!("Node does not exist"))?;
-            let (send, recv) = tokio::sync::mpsc::channel(10000); // TODO: configuration
+            let (send, recv) = tokio::sync::mpsc::channel(1_000_000); // TODO: configuration
             tokio::spawn(node_connection_manager(NodeConnectionManager {
                 streams: 10, // TODO: configuration
                 node_info,

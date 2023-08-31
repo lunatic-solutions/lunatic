@@ -320,9 +320,10 @@ where
             Certificate::from_params(cert_params).or_trap("lunatic::distributed::sign_node")?;
 
         let Ok(cert_pem) = CertificateSigningRequest::from_pem(csr_pem)
-            .and_then(|sign_request| sign_request.serialize_pem_with_signer(&ca_cert)) else {
-                return Ok(0);
-            };
+            .and_then(|sign_request| sign_request.serialize_pem_with_signer(&ca_cert))
+        else {
+            return Ok(0);
+        };
 
         let data = bincode::serialize(&cert_pem).or_trap("lunatic::distributed::sign_node")?;
         let ptr = write_to_guest_vec(&mut caller, &memory, &data, len_ptr)
