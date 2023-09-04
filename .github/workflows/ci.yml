@@ -30,7 +30,7 @@ jobs:
             content_type: application/zip
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       - name: Install latest Rust
         if: runner.os != 'macOS'
         uses: actions-rs/toolchain@v1
