@@ -73,7 +73,6 @@ type BufRx = RwLock<Receiver<MessageCtx>>;
 
 type IncomingResponse = (AsyncCell<ResponseContent>, Instant);
 
-// TODO: replace distributed::Client
 #[derive(Clone)]
 pub struct Client {
     pub node_id: NodeId,
@@ -139,7 +138,7 @@ impl Client {
         let tx = match self.inner.buf_tx.get(&(env, src)) {
             Some(tx) => tx,
             None => {
-                let (send, recv) = tokio::sync::mpsc::channel(1_000_000); // TODO: configuration
+                let (send, recv) = tokio::sync::mpsc::channel(1_000_000);
                 match self.inner.buf_rx.get(&env) {
                     Some(env_queue) => {
                         env_queue.insert(src, RwLock::new(recv));
@@ -165,9 +164,9 @@ impl Client {
                 .control_client
                 .node_info(node.0)
                 .ok_or_else(|| anyhow!("Node does not exist"))?;
-            let (send, recv) = tokio::sync::mpsc::channel(1_000_000); // TODO: configuration
+            let (send, recv) = tokio::sync::mpsc::channel(1_000_000);
             tokio::spawn(node_connection_manager(NodeConnectionManager {
-                streams: 10, // TODO: configuration
+                streams: 10,
                 node_info,
                 client: self.inner.node_client.clone(),
                 message_chunks: recv,
@@ -195,7 +194,6 @@ impl Client {
         Ok(message_id)
     }
 
-    // TODO: how to detect process is dead?
     pub fn remove_process_resources(&self, env: EnvironmentId, process_id: ProcessId) {
         self.inner.buf_tx.remove(&(env, process_id));
     }

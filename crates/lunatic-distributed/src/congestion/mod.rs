@@ -304,5 +304,4 @@ async fn stream_task(mut state: StreamTask) {
             }
         };
     }
-    // state.manager_notifier.send(()).await.ok();
 }
