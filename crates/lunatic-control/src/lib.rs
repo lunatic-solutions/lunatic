@@ -10,3 +10,9 @@ pub struct NodeInfo {
     pub address: SocketAddr,
     pub name: String,
 }
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CertAttrs {
+    pub allowed_envs: Vec<u64>,
+    pub is_privileged: bool,
+}

@@ -14,7 +14,7 @@ use wasmtime::ResourceLimiter;
 
 use crate::{
     distributed::message::{Request, Response},
-    quic::{self, SendStream},
+    quic::{self, NodeEnvPermission, SendStream},
     DistributedCtx, DistributedProcessState,
 };
 
@@ -82,11 +82,12 @@ pub async fn handle_message<T, E>(
     send: &mut SendStream,
     msg_id: u64,
     msg: Request,
+    node_permissions: Arc<NodeEnvPermission>,
 ) where
     T: ProcessState + DistributedCtx<E> + ResourceLimiter + Send + Sync + 'static,
     E: Environment + 'static,
 {
-    if let Err(e) = handle_message_err(ctx, send, msg_id, msg).await {
+    if let Err(e) = handle_message_err(ctx, send, msg_id, msg, node_permissions).await {
         log::error!("Error handling message: {e}");
     }
 }
@@ -96,11 +97,45 @@ async fn handle_message_err<T, E>(
     send: &mut SendStream,
     msg_id: u64,
     msg: Request,
+    node_permissions: Arc<NodeEnvPermission>,
 ) -> Result<()>
 where
     T: ProcessState + DistributedCtx<E> + ResourceLimiter + Send + Sync + 'static,
     E: Environment + 'static,
 {
+    let env_id = match &msg {
+        Request::Spawn(spawn) => &spawn.environment_id,
+        Request::Message {
+            environment_id,
+            process_id: _,
+            tag: _,
+            data: _,
+        } => environment_id,
+    };
+    if let Some(ref allowed_envs) = node_permissions.0 {
+        if !allowed_envs.contains(env_id) {
+            let mut data = super::message::pack_response(
+                msg_id,
+                Response::Error(ClientError::Unexpected(format!(
+                    "The node sending the request does not have access to the environment {env_id}"
+                ))),
+            );
+            send.send(&mut data).await?;
+            return Ok(());
+        }
+    }
+    if let Some(ref allowed_envs) = ctx.allowed_envs {
+        if !allowed_envs.contains(env_id) {
+            let mut data = super::message::pack_response(
+                msg_id,
+                Response::Error(ClientError::Unexpected(format!(
+                    "This node does not have access to environment {env_id}"
+                ))),
+            );
+            send.send(&mut data).await?;
+            return Ok(());
+        }
+    }
     match msg {
         Request::Spawn(spawn) => {
             match handle_spawn(ctx, spawn).await {
@@ -153,14 +188,6 @@ where
         params,
         config,
     } = spawn;
-
-    if let Some(ref allowed_envs) = ctx.allowed_envs {
-        if !allowed_envs.contains(&environment_id) {
-            return Ok(Err(ClientError::Unexpected(format!(
-                "This node does not have access to environment {environment_id}"
-            ))));
-        }
-    }
     let config: T::Config = rmp_serde::from_slice(&config[..])?;
     let config = Arc::new(config);
 
@@ -218,13 +245,6 @@ where
     T: ProcessState + DistributedCtx<E> + ResourceLimiter + Send + 'static,
     E: Environment,
 {
-    if let Some(ref allowed_envs) = ctx.allowed_envs {
-        if !allowed_envs.contains(&environment_id) {
-            return Err(ClientError::Unexpected(format!(
-                "This node does not have access to environment {environment_id}"
-            )));
-        }
-    }
     let env = ctx.envs.get(environment_id).await;
     if let Some(env) = env {
         if let Some(proc) = env.get_process(process_id) {

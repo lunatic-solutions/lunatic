@@ -1,12 +1,14 @@
-use std::{net::SocketAddr, sync::Arc, time::Duration};
+use std::{collections::HashSet, net::SocketAddr, sync::Arc, time::Duration};
 
 use anyhow::{anyhow, Result};
 use bytes::Bytes;
+use lunatic_control::CertAttrs;
 use lunatic_process::{env::Environment, state::ProcessState};
-use quinn::{ClientConfig, Connecting, ConnectionError, Endpoint, ServerConfig};
+use quinn::{ClientConfig, Connecting, Connection, ConnectionError, Endpoint, ServerConfig};
 use rustls::server::AllowAnyAuthenticatedClient;
 use rustls_pemfile::Item;
 use wasmtime::ResourceLimiter;
+use x509_parser::{der_parser::oid, oid_registry::asn1_rs::Utf8String, prelude::FromDer};
 
 use crate::{distributed, DistributedCtx};
 
@@ -69,6 +71,28 @@ impl Client {
         let (send, recv) = conn.open_bi().await?;
         Ok((SendStream { stream: send }, RecvStream { stream: recv }))
     }
+}
+
+fn get_cert_attrs(conn: &Connection) -> Result<CertAttrs> {
+    let peer_identity = match conn
+        .peer_identity()
+        .ok_or(anyhow!("Peer must provide an identity."))?
+        .downcast::<Vec<rustls::Certificate>>()
+    {
+        Ok(certs) => Ok(certs),
+        Err(_) => Err(anyhow!("Failed to downcast peer identity.")),
+    }?;
+    if peer_identity.len() != 1 {
+        return Err(anyhow!("More than one identity certificate detected."));
+    }
+    let cert = peer_identity.get(0).unwrap();
+    let (_rem, x509) = x509_parser::certificate::X509Certificate::from_der(&cert.0)?;
+    let oid = oid!(2.5.29 .9);
+    let ext = x509
+        .get_extension_unique(&oid)?
+        .ok_or_else(|| anyhow!("Missing critical Lunatic certificate extension."))?;
+    let (_rem, value) = Utf8String::from_der(ext.value)?;
+    Ok(serde_json::from_str(&value.string())?)
 }
 
 pub fn new_quic_client(ca_cert: &str, cert: &str, key: &str) -> Result<Client> {
@@ -165,6 +189,19 @@ where
     Err(anyhow!("Node server exited"))
 }
 
+pub struct NodeEnvPermission(pub Option<HashSet<u64>>);
+
+impl NodeEnvPermission {
+    fn new(cert_attrs: CertAttrs) -> Self {
+        let some_set: Option<HashSet<u64>> = if cert_attrs.is_privileged {
+            None
+        } else {
+            Some(cert_attrs.allowed_envs.into_iter().collect())
+        };
+        Self(some_set)
+    }
+}
+
 async fn handle_quic_connection_node<T, E>(
     ctx: distributed::server::ServerCtx<T, E>,
     conn: Connecting,
@@ -175,6 +212,8 @@ where
 {
     log::info!("New node connection");
     let conn = conn.await?;
+    let node_cert_attrs = get_cert_attrs(&conn)?;
+    let node_permissions = Arc::new(NodeEnvPermission::new(node_cert_attrs));
     log::info!("Remote {} connected", conn.remote_address());
     loop {
         if let Some(reason) = conn.close_reason() {
@@ -187,7 +226,12 @@ where
             Ok((s, r)) => {
                 let send = SendStream { stream: s };
                 let recv = RecvStream { stream: r };
-                tokio::spawn(handle_quic_stream_node(ctx.clone(), send, recv));
+                tokio::spawn(handle_quic_stream_node(
+                    ctx.clone(),
+                    send,
+                    recv,
+                    node_permissions.clone(),
+                ));
             }
             Err(ConnectionError::LocallyClosed) => break,
             Err(_) => {}
@@ -201,6 +245,7 @@ async fn handle_quic_stream_node<T, E>(
     ctx: distributed::server::ServerCtx<T, E>,
     mut send: SendStream,
     mut recv: RecvStream,
+    node_permissions: Arc<NodeEnvPermission>,
 ) where
     T: ProcessState + ResourceLimiter + DistributedCtx<E> + Send + Sync + 'static,
     E: Environment + 'static,
@@ -209,7 +254,14 @@ async fn handle_quic_stream_node<T, E>(
         if let Ok((msg_id, request)) =
             rmp_serde::from_slice::<(u64, distributed::message::Request)>(&bytes)
         {
-            distributed::server::handle_message(ctx.clone(), &mut send, msg_id, request).await;
+            distributed::server::handle_message(
+                ctx.clone(),
+                &mut send,
+                msg_id,
+                request,
+                node_permissions.clone(),
+            )
+            .await;
         } else {
             log::debug!("Error deserializing request");
         }
