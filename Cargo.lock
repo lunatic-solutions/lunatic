@@ -1726,6 +1726,7 @@ name = "lunatic-distributed-api"
 version = "0.13.2"
 dependencies = [
  "anyhow",
+ "asn1-rs",
  "bincode",
  "log",
  "lunatic-common-api",
@@ -1735,6 +1736,7 @@ dependencies = [
  "lunatic-process-api",
  "rcgen",
  "rmp-serde",
+ "serde_json",
  "tokio",
  "wasmtime",
 ]

@@ -1,10 +1,11 @@
 use std::{future::Future, sync::Arc, time::Duration};
 
 use anyhow::{anyhow, Result};
+use asn1_rs::ToDer;
 use lunatic_common_api::{get_memory, write_to_guest_vec, IntoTrap};
 use lunatic_distributed::{
     distributed::message::{ClientError, Spawn, Val},
-    DistributedCtx,
+    CertAttrs, DistributedCtx, SUBJECT_DIR_ATTRS,
 };
 use lunatic_error_api::ErrorCtx;
 use lunatic_process::{
@@ -12,7 +13,7 @@ use lunatic_process::{
     message::{DataMessage, Message},
 };
 use lunatic_process_api::ProcessCtx;
-use rcgen::{Certificate, CertificateParams, CertificateSigningRequest, KeyPair};
+use rcgen::{Certificate, CertificateParams, CertificateSigningRequest, CustomExtension, KeyPair};
 use tokio::time::timeout;
 use wasmtime::{Caller, Linker, ResourceLimiter};
 
@@ -315,12 +316,22 @@ where
         let ca_cert =
             Certificate::from_params(cert_params).or_trap("lunatic::distributed::sign_node")?;
 
-        let Ok(cert_pem) = CertificateSigningRequest::from_pem(csr_pem)
-            .and_then(|sign_request| sign_request.serialize_pem_with_signer(&ca_cert))
-        else {
-            return Ok(0);
-        };
-
+        let mut csr = CertificateSigningRequest::from_pem(csr_pem)
+            .or_trap("lunatic::distributed::sign_node")?;
+        // Add json to custom certificate extension
+        csr.params
+            .custom_extensions
+            .push(CustomExtension::from_oid_content(
+                &SUBJECT_DIR_ATTRS,
+                serde_json::to_string(&CertAttrs {
+                    allowed_envs: vec![],
+                    is_privileged: true,
+                })
+                .or_trap("lunatic::distributed::sign_node")?
+                .to_der_vec()
+                .or_trap("lunatic::distributed::sign_node")?,
+            ));
+        let cert_pem = csr.serialize_pem_with_signer(&ca_cert).or_trap("lunatic::distributed::sign_node")?;
         let data = bincode::serialize(&cert_pem).or_trap("lunatic::distributed::sign_node")?;
         let ptr = write_to_guest_vec(&mut caller, &memory, &data, len_ptr)
             .await

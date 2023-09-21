@@ -7,8 +7,8 @@ use axum::{
     routing::{get, post},
     Extension, Json, Router,
 };
-use lunatic_control::{api::*, CertAttrs, NodeInfo};
-use lunatic_distributed::control::cert::TEST_ROOT_CERT;
+use lunatic_control::{api::*, NodeInfo};
+use lunatic_distributed::{control::cert::TEST_ROOT_CERT, CertAttrs, SUBJECT_DIR_ATTRS};
 use rcgen::{CertificateSigningRequest, CustomExtension};
 use tower_http::limit::RequestBodyLimitLayer;
 
@@ -16,8 +16,6 @@ use crate::{
     api::{ok, ApiError, ApiResponse, HostExtractor, JsonExtractor, NodeAuth, PathExtractor},
     server::ControlServer,
 };
-
-const SUBJECT_DIR_ATTRS: [u64; 4] = [2, 5, 29, 9];
 
 pub async fn register(
     control: Extension<Arc<ControlServer>>,

@@ -8,6 +8,7 @@ use lunatic_process::{
     runtimes::wasmtime::{WasmtimeCompiledModule, WasmtimeRuntime},
     state::ProcessState,
 };
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 pub trait DistributedCtx<E: Environment>: ProcessState + Sized {
@@ -48,4 +49,12 @@ impl DistributedProcessState {
     pub fn node_id(&self) -> u64 {
         self.node_id
     }
+}
+
+pub const SUBJECT_DIR_ATTRS: [u64; 4] = [2, 5, 29, 9];
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CertAttrs {
+    pub allowed_envs: Vec<u64>,
+    pub is_privileged: bool,
 }

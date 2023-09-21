@@ -2,7 +2,6 @@ use std::{collections::HashSet, net::SocketAddr, sync::Arc, time::Duration};
 
 use anyhow::{anyhow, Result};
 use bytes::Bytes;
-use lunatic_control::CertAttrs;
 use lunatic_process::{env::Environment, state::ProcessState};
 use quinn::{ClientConfig, Connecting, Connection, ConnectionError, Endpoint, ServerConfig};
 use rustls::server::AllowAnyAuthenticatedClient;
@@ -10,7 +9,7 @@ use rustls_pemfile::Item;
 use wasmtime::ResourceLimiter;
 use x509_parser::{der_parser::oid, oid_registry::asn1_rs::Utf8String, prelude::FromDer};
 
-use crate::{distributed, DistributedCtx};
+use crate::{distributed, CertAttrs, DistributedCtx};
 
 pub struct SendStream {
     pub stream: quinn::SendStream,

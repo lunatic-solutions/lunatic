@@ -14,10 +14,12 @@ lunatic-error-api = { workspace = true }
 lunatic-process = { workspace = true }
 lunatic-process-api = { workspace = true }
 
+asn1-rs = "0.5.2"
 anyhow = { workspace = true }
 bincode = { workspace = true }
 rcgen = { version = "0.10", features = ["pem", "x509-parser"] }
 rmp-serde = "1.1.1"
 log = { workspace = true }
+serde_json = "1.0.89"
 tokio = { workspace = true, features = ["time"] }
 wasmtime = { workspace = true }
