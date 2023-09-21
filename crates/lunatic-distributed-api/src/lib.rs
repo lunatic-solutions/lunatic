@@ -331,7 +331,9 @@ where
                 .to_der_vec()
                 .or_trap("lunatic::distributed::sign_node")?,
             ));
-        let cert_pem = csr.serialize_pem_with_signer(&ca_cert).or_trap("lunatic::distributed::sign_node")?;
+        let cert_pem = csr
+            .serialize_pem_with_signer(&ca_cert)
+            .or_trap("lunatic::distributed::sign_node")?;
         let data = bincode::serialize(&cert_pem).or_trap("lunatic::distributed::sign_node")?;
         let ptr = write_to_guest_vec(&mut caller, &memory, &data, len_ptr)
             .await
