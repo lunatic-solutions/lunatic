@@ -27,4 +27,4 @@ serde_json = "1.0.89"
 tokio = { workspace = true, features = ["io-util", "rt", "sync", "time"] }
 uuid = { version = "1.0", features = ["serde", "v4"] }
 wasmtime = { workspace = true }
-x509-parser = "0.15.1"
+x509-parser = "0.14.0"
