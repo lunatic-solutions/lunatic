@@ -14,17 +14,21 @@ use wasmtime::ResourceLimiter;
 
 use crate::{
     distributed::message::{Request, Response},
-    quic::{self, NodeEnvPermission, SendStream},
+    quic::{self, NodeEnvPermission},
     DistributedCtx, DistributedProcessState,
 };
 
-use super::message::{ClientError, Spawn};
+use super::{
+    client::{Client, NodeId, ResponseParams},
+    message::{ClientError, ResponseContent, Spawn},
+};
 
 pub struct ServerCtx<T, E: Environment> {
     pub envs: Arc<dyn Environments<Env = E>>,
     pub modules: Modules<T>,
     pub distributed: DistributedProcessState,
     pub runtime: WasmtimeRuntime,
+    pub node_client: Client,
     pub allowed_envs: Option<HashSet<u64>>,
 }
 
@@ -35,6 +39,7 @@ impl<T: 'static, E: Environment> Clone for ServerCtx<T, E> {
             modules: self.modules.clone(),
             distributed: self.distributed.clone(),
             runtime: self.runtime.clone(),
+            node_client: self.node_client.clone(),
             allowed_envs: self.allowed_envs.clone(),
         }
     }
@@ -79,7 +84,6 @@ where
 
 pub async fn handle_message<T, E>(
     ctx: ServerCtx<T, E>,
-    send: &mut SendStream,
     msg_id: u64,
     msg: Request,
     node_permissions: Arc<NodeEnvPermission>,
@@ -87,14 +91,13 @@ pub async fn handle_message<T, E>(
     T: ProcessState + DistributedCtx<E> + ResourceLimiter + Send + Sync + 'static,
     E: Environment + 'static,
 {
-    if let Err(e) = handle_message_err(ctx, send, msg_id, msg, node_permissions).await {
+    if let Err(e) = handle_message_err(ctx, msg_id, msg, node_permissions).await {
         log::error!("Error handling message: {e}");
     }
 }
 
 async fn handle_message_err<T, E>(
     ctx: ServerCtx<T, E>,
-    send: &mut SendStream,
     msg_id: u64,
     msg: Request,
     node_permissions: Arc<NodeEnvPermission>,
@@ -104,74 +107,132 @@ where
     E: Environment + 'static,
 {
     let env_id = match &msg {
-        Request::Spawn(spawn) => &spawn.environment_id,
+        Request::Spawn(spawn) => Some((spawn.response_node_id, spawn.environment_id)),
         Request::Message {
+            node_id,
             environment_id,
             process_id: _,
             tag: _,
             data: _,
-        } => environment_id,
+        } => Some((*node_id, *environment_id)),
+        Request::Response(_) => None,
     };
-    if let Some(ref allowed_envs) = node_permissions.0 {
-        if !allowed_envs.contains(env_id) {
-            let mut data = super::message::pack_response(
-                msg_id,
-                Response::Error(ClientError::Unexpected(format!(
+    if let Some((node_id, env_id)) = env_id {
+        if let Some(ref allowed_envs) = node_permissions.0 {
+            if !allowed_envs.contains(&env_id) {
+                ctx.node_client
+                    .send_response(ResponseParams {
+                        node_id: NodeId(node_id),
+                        response: Response {
+                            message_id: msg_id,
+                            content: ResponseContent::Error(ClientError::Unexpected(format!(
                     "The node sending the request does not have access to the environment {env_id}"
                 ))),
-            );
-            send.send(&mut data).await?;
-            return Ok(());
+                        },
+                    })
+                    .await?;
+                return Ok(());
+            }
         }
-    }
-    if let Some(ref allowed_envs) = ctx.allowed_envs {
-        if !allowed_envs.contains(env_id) {
-            let mut data = super::message::pack_response(
-                msg_id,
-                Response::Error(ClientError::Unexpected(format!(
-                    "This node does not have access to environment {env_id}"
-                ))),
-            );
-            send.send(&mut data).await?;
-            return Ok(());
+        if let Some(ref allowed_envs) = ctx.allowed_envs {
+            if !allowed_envs.contains(&env_id) {
+                ctx.node_client
+                    .send_response(ResponseParams {
+                        node_id: NodeId(node_id),
+                        response: Response {
+                            message_id: msg_id,
+                            content: ResponseContent::Error(ClientError::Unexpected(format!(
+                                "This node does not have access to environment {env_id}"
+                            ))),
+                        },
+                    })
+                    .await?;
+                return Ok(());
+            }
         }
     }
     match msg {
         Request::Spawn(spawn) => {
-            match handle_spawn(ctx, spawn).await {
+            log::trace!("lunatic::distributed::server process Spawn");
+            let node_id = spawn.response_node_id;
+            match handle_spawn(ctx.clone(), spawn).await {
                 Ok(Ok(id)) => {
-                    let mut data = super::message::pack_response(msg_id, Response::Spawned(id));
-                    send.send(&mut data).await?;
+                    log::trace!("lunatic::distributed::server Spawned {id}");
+                    ctx.node_client
+                        .send_response(ResponseParams {
+                            node_id: NodeId(node_id),
+                            response: Response {
+                                message_id: msg_id,
+                                content: ResponseContent::Spawned(id),
+                            },
+                        })
+                        .await?;
                 }
                 Ok(Err(client_error)) => {
-                    let mut data =
-                        super::message::pack_response(msg_id, Response::Error(client_error));
-                    send.send(&mut data).await?;
+                    log::trace!("lunatic::distributed::server Spawn error: {client_error:?}");
+                    ctx.node_client
+                        .send_response(ResponseParams {
+                            node_id: NodeId(node_id),
+                            response: Response {
+                                message_id: msg_id,
+                                content: ResponseContent::Error(client_error),
+                            },
+                        })
+                        .await?;
                 }
                 Err(error) => {
-                    let mut data = super::message::pack_response(
-                        msg_id,
-                        Response::Error(ClientError::Unexpected(error.to_string())),
-                    );
-                    send.send(&mut data).await?
+                    log::trace!("lunatic::distributed::server Spawn error: {error}");
+                    ctx.node_client
+                        .send_response(ResponseParams {
+                            node_id: NodeId(node_id),
+                            response: Response {
+                                message_id: msg_id,
+                                content: ResponseContent::Error(ClientError::Unexpected(
+                                    error.to_string(),
+                                )),
+                            },
+                        })
+                        .await?;
                 }
             };
         }
         Request::Message {
+            node_id,
             environment_id,
             process_id,
             tag,
             data,
-        } => match handle_process_message(ctx, environment_id, process_id, tag, data).await {
-            Ok(_) => {
-                let mut data = super::message::pack_response(msg_id, Response::Sent);
-                send.send(&mut data).await?;
+        } => {
+            log::trace!("distributed::server process Message");
+            match handle_process_message(ctx.clone(), environment_id, process_id, tag, data).await {
+                Ok(_) => {
+                    ctx.node_client
+                        .send_response(ResponseParams {
+                            node_id: NodeId(node_id),
+                            response: Response {
+                                message_id: msg_id,
+                                content: ResponseContent::Sent,
+                            },
+                        })
+                        .await?;
+                }
+                Err(error) => {
+                    ctx.node_client
+                        .send_response(ResponseParams {
+                            node_id: NodeId(node_id),
+                            response: Response {
+                                message_id: msg_id,
+                                content: ResponseContent::Error(error),
+                            },
+                        })
+                        .await?;
+                }
             }
-            Err(error) => {
-                let mut data = super::message::pack_response(msg_id, Response::Error(error));
-                send.send(&mut data).await?;
-            }
-        },
+        }
+        Request::Response(response) => {
+            log::trace!("distributed::server process Response");
+            ctx.node_client.recv_response(response).await;
+        }
     };
     Ok(())
 }
@@ -187,6 +248,7 @@ where
         function,
         params,
         config,
+        ..
     } = spawn;
     let config: T::Config = rmp_serde::from_slice(&config[..])?;
     let config = Arc::new(config);

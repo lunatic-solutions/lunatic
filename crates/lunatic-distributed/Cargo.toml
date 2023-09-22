@@ -17,10 +17,10 @@ rmp-serde = "1.1.1"
 bytes = "1"
 dashmap = { workspace = true }
 log = { workspace = true }
-quinn = { version = "0.9" }
+quinn = { version = "0.10.2" }
 rcgen = { version = "0.10", features = ["pem", "x509-parser"] }
 reqwest = { workspace = true, features = ["json"] }
-rustls = { version = "0.20" }
+rustls = { version = "0.21.6" }
 rustls-pemfile = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = "1.0.89"

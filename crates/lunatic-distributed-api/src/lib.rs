@@ -4,7 +4,11 @@ use anyhow::{anyhow, Result};
 use asn1_rs::ToDer;
 use lunatic_common_api::{get_memory, write_to_guest_vec, IntoTrap};
 use lunatic_distributed::{
-    distributed::message::{ClientError, Spawn, Val},
+    distributed::{
+        self,
+        client::{EnvironmentId, NodeId, ProcessId, SendParams, SpawnParams},
+        message::{ClientError, Spawn, Val},
+    },
     CertAttrs, DistributedCtx, SUBJECT_DIR_ATTRS,
 };
 use lunatic_error_api::ErrorCtx;
@@ -436,39 +440,46 @@ where
 
         log::debug!("Spawn on node {node_id}, mod {module_id}, fn {function}, params {params:?}");
 
-        let (process_or_error_id, ret) = match state
-            .distributed()?
-            .node_client
-            .spawn(
-                node_id,
-                Spawn {
-                    environment_id: state.environment_id(),
-                    function: function.to_string(),
-                    module_id,
-                    params,
-                    config,
-                },
-            )
+        let self_node_id = state.distributed()?.node_id();
+        let spawn_params = SpawnParams {
+            env: EnvironmentId(state.environment_id()),
+            src: ProcessId(state.id()),
+            node: NodeId(node_id),
+            spawn: Spawn {
+                response_node_id: self_node_id,
+                environment_id: state.environment_id(),
+                function: function.to_string(),
+                module_id,
+                params,
+                config,
+            },
+        };
+        let node_client = state.distributed()?.node_client.clone();
+        let spawn_response = node_client
+            .spawn(spawn_params)
             .await
-        {
-            Ok(process_id) => (process_id, 0),
-            Err(error) => {
+            .map(|message_id| node_client.await_response(message_id))?
+            .await?;
+        let (process_or_error_id, ret) = match spawn_response {
+            distributed::message::ResponseContent::Spawned(process_id) => Ok((process_id, 0)),
+            distributed::message::ResponseContent::Error(error) => {
                 let (code, message): (u32, String) = match error {
                     ClientError::Unexpected(cause) => Err(anyhow!(cause)),
+                    ClientError::Connection(cause) => Ok((9027, cause)),
                     ClientError::NodeNotFound => Ok((1, "Node does not exist.".to_string())),
                     ClientError::ModuleNotFound => Ok((2, "Module does not exist.".to_string())),
-                    ClientError::Connection(cause) => Ok((9027, cause)),
-                    _ => Err(anyhow!("unreachable")),
+                    ClientError::ProcessNotFound => Err(anyhow!("unreachable")),
                 }?;
-                (
+                Ok((
                     caller
                         .data_mut()
                         .error_resources_mut()
                         .add(anyhow!(message)),
                     code,
-                )
+                ))
             }
-        };
+            _ => Err(anyhow!("unreachable")),
+        }?;
 
         memory
             .write(
@@ -524,20 +535,17 @@ where
             }
 
             let state = caller.data();
-            match state
-                .distributed()?
-                .node_client
-                .message_process(node_id, state.environment_id(), process_id, tag, buffer)
-                .await
-            {
+            let send_params = SendParams {
+                env: EnvironmentId(state.environment_id()),
+                src: ProcessId(state.id()),
+                node: NodeId(node_id),
+                dest: ProcessId(process_id),
+                tag,
+                data: buffer,
+            };
+            match state.distributed()?.node_client.send(send_params).await {
                 Ok(_) => Ok(0),
-                Err(error) => match error {
-                    ClientError::Unexpected(cause) => Err(anyhow!(cause)),
-                    ClientError::ProcessNotFound => Ok(1),
-                    ClientError::NodeNotFound => Ok(2),
-                    ClientError::Connection(_) => Ok(9027),
-                    _ => Err(anyhow!("unreachable")),
-                },
+                Err(cause) => Err(anyhow!(cause)),
             }
         } else {
             Err(anyhow!("Only Message::Data can be sent across nodes."))
@@ -597,19 +605,17 @@ where
             }
 
             let state = caller.data();
-            let code = match state
-                .distributed()?
-                .node_client
-                .message_process(node_id, state.environment_id(), process_id, tag, buffer)
-                .await
-            {
+            let send_params = SendParams {
+                env: EnvironmentId(state.environment_id()),
+                src: ProcessId(state.id()),
+                node: NodeId(node_id),
+                dest: ProcessId(process_id),
+                tag,
+                data: buffer,
+            };
+            let code = match state.distributed()?.node_client.send(send_params).await {
                 Ok(_) => Ok(0),
-                Err(error) => match error {
-                    ClientError::ProcessNotFound => Ok(1),
-                    ClientError::NodeNotFound => Ok(2),
-                    ClientError::Unexpected(cause) => Err(anyhow!(cause)),
-                    _ => Err(anyhow!("unreachable")),
-                },
+                Err(error) => Err(anyhow!(error)),
             }?;
 
             if code != 0 {

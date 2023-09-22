@@ -14,11 +14,12 @@ use wasmtime::{Caller, Linker};
 
 use lunatic_common_api::{get_memory, IntoTrap};
 use lunatic_error_api::ErrorCtx;
+use webpki::TrustAnchor;
 
 use crate::dns::DnsIterator;
 use crate::{socket_address, NetworkingCtx, TlsConnection, TlsListener};
 use tokio_rustls::rustls::{self, OwnedTrustAnchor};
-use tokio_rustls::{webpki, TlsAcceptor, TlsConnector, TlsStream};
+use tokio_rustls::{TlsAcceptor, TlsConnector, TlsStream};
 
 // Register TLS networking APIs to the linker
 pub fn register<T: NetworkingCtx + ErrorCtx + Send + 'static>(
@@ -377,7 +378,7 @@ fn tls_connect<T: NetworkingCtx + ErrorCtx + Send>(
                 .map(|pem| {
                     let certs =
                         load_certs(pem).or_trap("lunatic::networking::tls_connect::load_certs")?;
-                    let ta = webpki::TrustAnchor::try_from_cert_der(&certs.0[..])
+                    let ta = TrustAnchor::try_from_cert_der(&certs.0[..])
                         .or_trap("lunatic::networking::tls_connect::load_cert DER")?;
                     Ok(OwnedTrustAnchor::from_subject_spki_name_constraints(
                         ta.subject,
@@ -386,17 +387,15 @@ fn tls_connect<T: NetworkingCtx + ErrorCtx + Send>(
                     ))
                 })
                 .filter_map(|r: Result<OwnedTrustAnchor>| r.ok());
-            root_cert_store.add_server_trust_anchors(trust_anchors);
+            root_cert_store.add_trust_anchors(trust_anchors);
         } else {
-            root_cert_store.add_server_trust_anchors(webpki_roots::TLS_SERVER_ROOTS.0.iter().map(
-                |ta| {
-                    OwnedTrustAnchor::from_subject_spki_name_constraints(
-                        ta.subject,
-                        ta.spki,
-                        ta.name_constraints,
-                    )
-                },
-            ));
+            root_cert_store.add_trust_anchors(webpki_roots::TLS_SERVER_ROOTS.iter().map(|ta| {
+                OwnedTrustAnchor::from_subject_spki_name_constraints(
+                    ta.subject,
+                    ta.spki,
+                    ta.name_constraints,
+                )
+            }));
         }
 
         let config = rustls::ClientConfig::builder()
