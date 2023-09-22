@@ -12,7 +12,7 @@ use x509_parser::{der_parser::oid, oid_registry::asn1_rs::Utf8String, prelude::F
 
 use crate::{
     distributed::{self},
-    DistributedCtx, CertAttrs,
+    CertAttrs, DistributedCtx,
 };
 
 #[derive(Clone)]
@@ -227,8 +227,13 @@ async fn handle_quic_stream_node<T, E>(
     log::trace!("distributed::server::handle_quic_stream started");
     while let Ok((msg_id, bytes)) = read_next_stream_message(&mut recv_ctx).await {
         if let Ok(request) = rmp_serde::from_slice::<distributed::message::Request>(&bytes) {
-            distributed::server::handle_message(ctx.clone(), msg_id, request, node_permissions.clone())
-                .await;
+            distributed::server::handle_message(
+                ctx.clone(),
+                msg_id,
+                request,
+                node_permissions.clone(),
+            )
+            .await;
         } else {
             log::debug!("Error deserializing request");
         }
