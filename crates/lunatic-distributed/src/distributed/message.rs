@@ -5,11 +5,13 @@ use serde::{Deserialize, Serialize};
 pub enum Request {
     Spawn(Spawn),
     Message {
+        node_id: u64,
         environment_id: u64,
         process_id: u64,
         tag: Option<i64>,
         data: Vec<u8>,
     },
+    Response(Response),
 }
 
 impl Request {
@@ -17,12 +19,14 @@ impl Request {
         match self {
             Request::Spawn(_) => "Spawn",
             Request::Message { .. } => "Message",
+            Request::Response(_) => "Response",
         }
     }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Spawn {
+    pub response_node_id: u64,
     pub environment_id: u64,
     pub module_id: u64,
     pub function: String,
@@ -46,7 +50,13 @@ impl Default for ClientError {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub enum Response {
+pub struct Response {
+    pub message_id: u64,
+    pub content: ResponseContent,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum ResponseContent {
     Spawned(u64),
     Sent,
     Linked,
@@ -55,11 +65,11 @@ pub enum Response {
 
 impl Response {
     pub fn kind(&self) -> &'static str {
-        match self {
-            Response::Spawned(_) => "Spawned",
-            Response::Sent => "Sent",
-            Response::Linked => "Linked",
-            Response::Error(_) => "Error",
+        match self.content {
+            ResponseContent::Spawned(_) => "Spawned",
+            ResponseContent::Sent => "Sent",
+            ResponseContent::Linked => "Linked",
+            ResponseContent::Error(_) => "Error",
         }
     }
 }

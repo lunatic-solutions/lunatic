@@ -106,12 +106,12 @@ pub(crate) async fn start(args: Args) -> Result<()> {
     .with_context(|| "Failed to create mTLS QUIC client")?;
 
     let distributed_client =
-        distributed::Client::new(node_id, control_client.clone(), quic_client.clone()).await?;
+        distributed::Client::new(node_id, control_client.clone(), quic_client.clone());
 
     let dist = lunatic_distributed::DistributedProcessState::new(
         node_id,
         control_client.clone(),
-        distributed_client,
+        distributed_client.clone(),
     )
     .await?;
 
@@ -125,6 +125,7 @@ pub(crate) async fn start(args: Args) -> Result<()> {
             modules: Modules::<DefaultProcessState>::default(),
             distributed: dist.clone(),
             runtime: runtime.clone(),
+            node_client: distributed_client.clone(),
             allowed_envs,
         },
         socket,
