@@ -14,7 +14,7 @@ use wasmtime::ResourceLimiter;
 
 use crate::{
     distributed::message::{Request, Response},
-    quic::{self},
+    quic::{self, NodeEnvPermission},
     DistributedCtx, DistributedProcessState,
 };
 
@@ -82,21 +82,75 @@ where
     Ok(())
 }
 
-pub async fn handle_message<T, E>(ctx: ServerCtx<T, E>, msg_id: u64, msg: Request)
-where
+pub async fn handle_message<T, E>(
+    ctx: ServerCtx<T, E>,
+    msg_id: u64,
+    msg: Request,
+    node_permissions: Arc<NodeEnvPermission>,
+) where
     T: ProcessState + DistributedCtx<E> + ResourceLimiter + Send + Sync + 'static,
     E: Environment + 'static,
 {
-    if let Err(e) = handle_message_err(ctx, msg_id, msg).await {
+    if let Err(e) = handle_message_err(ctx, msg_id, msg, node_permissions).await {
         log::error!("Error handling message: {e}");
     }
 }
 
-async fn handle_message_err<T, E>(ctx: ServerCtx<T, E>, msg_id: u64, msg: Request) -> Result<()>
+async fn handle_message_err<T, E>(
+    ctx: ServerCtx<T, E>,
+    msg_id: u64,
+    msg: Request,
+    node_permissions: Arc<NodeEnvPermission>,
+) -> Result<()>
 where
     T: ProcessState + DistributedCtx<E> + ResourceLimiter + Send + Sync + 'static,
     E: Environment + 'static,
 {
+    let env_id = match &msg {
+        Request::Spawn(spawn) => Some((spawn.response_node_id, spawn.environment_id)),
+        Request::Message {
+            node_id,
+            environment_id,
+            process_id: _,
+            tag: _,
+            data: _,
+        } => Some((*node_id, *environment_id)),
+        Request::Response(_) => None,
+    };
+    if let Some((node_id, env_id)) = env_id {
+        if let Some(ref allowed_envs) = node_permissions.0 {
+            if !allowed_envs.contains(&env_id) {
+                ctx.node_client
+                    .send_response(ResponseParams {
+                        node_id: NodeId(node_id),
+                        response: Response {
+                            message_id: msg_id,
+                            content: ResponseContent::Error(ClientError::Unexpected(format!(
+                    "The node sending the request does not have access to the environment {env_id}"
+                ))),
+                        },
+                    })
+                    .await?;
+                return Ok(());
+            }
+        }
+        if let Some(ref allowed_envs) = ctx.allowed_envs {
+            if !allowed_envs.contains(&env_id) {
+                ctx.node_client
+                    .send_response(ResponseParams {
+                        node_id: NodeId(node_id),
+                        response: Response {
+                            message_id: msg_id,
+                            content: ResponseContent::Error(ClientError::Unexpected(format!(
+                                "This node does not have access to environment {env_id}"
+                            ))),
+                        },
+                    })
+                    .await?;
+                return Ok(());
+            }
+        }
+    }
     match msg {
         Request::Spawn(spawn) => {
             log::trace!("lunatic::distributed::server process Spawn");
@@ -196,14 +250,6 @@ where
         config,
         ..
     } = spawn;
-
-    if let Some(ref allowed_envs) = ctx.allowed_envs {
-        if !allowed_envs.contains(&environment_id) {
-            return Ok(Err(ClientError::Unexpected(format!(
-                "This node does not have access to environment {environment_id}"
-            ))));
-        }
-    }
     let config: T::Config = rmp_serde::from_slice(&config[..])?;
     let config = Arc::new(config);
 
@@ -261,13 +307,6 @@ where
     T: ProcessState + DistributedCtx<E> + ResourceLimiter + Send + 'static,
     E: Environment,
 {
-    if let Some(ref allowed_envs) = ctx.allowed_envs {
-        if !allowed_envs.contains(&environment_id) {
-            return Err(ClientError::Unexpected(format!(
-                "This node does not have access to environment {environment_id}"
-            )));
-        }
-    }
     let env = ctx.envs.get(environment_id).await;
     if let Some(env) = env {
         if let Some(proc) = env.get_process(process_id) {

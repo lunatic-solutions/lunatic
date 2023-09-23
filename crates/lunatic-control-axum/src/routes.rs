@@ -1,5 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
 
+use asn1_rs::ToDer;
 use axum::{
     body::Bytes,
     extract::{DefaultBodyLimit, Query},
@@ -7,8 +8,8 @@ use axum::{
     Extension, Json, Router,
 };
 use lunatic_control::{api::*, NodeInfo};
-use lunatic_distributed::control::cert::TEST_ROOT_CERT;
-use rcgen::CertificateSigningRequest;
+use lunatic_distributed::{control::cert::TEST_ROOT_CERT, CertAttrs, SUBJECT_DIR_ATTRS};
+use rcgen::{CertificateSigningRequest, CustomExtension};
 use tower_http::limit::RequestBodyLimitLayer;
 
 use crate::{
@@ -24,8 +25,29 @@ pub async fn register(
     log::info!("Registration for node name {}", reg.node_name);
 
     let control = control.as_ref();
-    let cert_pem = CertificateSigningRequest::from_pem(&reg.csr_pem)
-        .and_then(|sign_request| sign_request.serialize_pem_with_signer(&control.ca_cert))
+
+    let mut sign_request = CertificateSigningRequest::from_pem(&reg.csr_pem).map_err(|e| {
+        ApiError::custom(
+            "sign_error",
+            format!("Certificate Signing Request invalid pem format: {}", e),
+        )
+    })?;
+    // Add json to custom certificate extension
+    sign_request
+        .params
+        .custom_extensions
+        .push(CustomExtension::from_oid_content(
+            &SUBJECT_DIR_ATTRS,
+            serde_json::to_string(&CertAttrs {
+                allowed_envs: vec![],
+                is_privileged: true,
+            })
+            .unwrap()
+            .to_der_vec()
+            .map_err(|e| ApiError::log_internal("Error serializing allowed envs to der", e))?,
+        ));
+    let cert_pem = sign_request
+        .serialize_pem_with_signer(&control.ca_cert)
         .map_err(|e| ApiError::custom("sign_error", e.to_string()))?;
 
     let mut authentication_token = [0u8; 32];
