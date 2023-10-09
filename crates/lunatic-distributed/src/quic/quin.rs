@@ -124,13 +124,16 @@ pub fn new_quic_server(
     }?;
 
     let mut cert_chain = Vec::new();
-    for cert in certs {
+    for (i, cert) in certs.iter().enumerate() {
         let mut cert = cert.as_bytes();
         let cert = rustls_pemfile::read_one(&mut cert)?.unwrap();
         let cert = match cert {
             Item::X509Certificate(cert) => Ok(rustls::Certificate(cert)),
             _ => Err(anyhow!("Not a valid certificate")),
         }?;
+        if i != 0 {
+            roots.add(&cert)?;
+        }
         cert_chain.push(cert);
     }
 

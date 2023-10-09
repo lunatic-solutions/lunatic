@@ -158,15 +158,19 @@ where
             match handle_spawn(ctx.clone(), spawn).await {
                 Ok(Ok(id)) => {
                     log::trace!("lunatic::distributed::server Spawned {id}");
-                    ctx.node_client
-                        .send_response(ResponseParams {
-                            node_id: NodeId(node_id),
-                            response: Response {
-                                message_id: msg_id,
-                                content: ResponseContent::Spawned(id),
-                            },
-                        })
-                        .await?;
+                    // The platform sends the spawn instructions with node_id = 0
+                    // in this case we do not respond
+                    if node_id != 0 {
+                        ctx.node_client
+                            .send_response(ResponseParams {
+                                node_id: NodeId(node_id),
+                                response: Response {
+                                    message_id: msg_id,
+                                    content: ResponseContent::Spawned(id),
+                                },
+                            })
+                            .await?;
+                    }
                 }
                 Ok(Err(client_error)) => {
                     log::trace!("lunatic::distributed::server Spawn error: {client_error:?}");
