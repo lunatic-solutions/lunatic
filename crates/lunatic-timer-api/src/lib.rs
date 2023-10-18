@@ -21,7 +21,7 @@ struct HeapValue {
 
 impl PartialOrd for HeapValue {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.instant.cmp(&other.instant).reverse())
+        Some(self.cmp(other))
     }
 }
 
