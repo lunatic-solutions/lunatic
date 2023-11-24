@@ -22,7 +22,7 @@ Released 2023-11-23.
 - Typo ([@bkolobara](https://github.com/bkolobara))
 - Lookup nodes host call ([@kosticmarin](https://github.com/kosticmarin))
 - Deploy flow create app instance ([@kosticmarin](https://github.com/kosticmarin))
-- Zip deploy assets include root dir and all subdirs ([kosticmarin](https://github.com/kosticmarin))
+- Zip deploy assets include root dir and all subdirs ([@kosticmarin](https://github.com/kosticmarin))
 - Fix mTLS root cert store ([@kosticmarin](https://github.com/kosticmarin))
 - Fix clippy PartialOrd, cargo update ([@withtypes](https://github.com/withtypes))
 
