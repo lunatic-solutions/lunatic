@@ -1,5 +1,31 @@
 # Lunatic Changelog
 
+## v0.14.0
+
+Released 2023-11-23.
+
+### Changes
+
+- Privileged and Unprivileged Nodes ([@teskeras](https://github.com/teskeras))
+- Quic message chunking ([@kosticmarin](https://github.com/kosticmarin))
+- Add custom certificate extenstion ([@kosticmarin](https://github.com/kosticmarin))
+- Lunatic CLI ([@kosticmarin](https://github.com/kosticmarin))
+- Log response body on unsuccessful registration ([@withtypes](https://github.com/withtypes))
+
+### Chore
+
+- Update license field following SPDX 2.1 license expression standard ([@frisoft](https://github.com/frisoft))
+- Remove macOS universal build ([@kosticmarin](https://github.com/kosticmarin))
+
+### Fix
+
+- Typo ([@bkolobara](https://github.com/bkolobara))
+- Lookup nodes host call ([@kosticmarin](https://github.com/kosticmarin))
+- Deploy flow create app instance ([@kosticmarin](https://github.com/kosticmarin))
+- Zip deploy assets include root dir and all subdirs ([kosticmarin](https://github.com/kosticmarin))
+- Fix mTLS root cert store ([@kosticmarin](https://github.com/kosticmarin))
+- Fix clippy PartialOrd, cargo update ([@withtypes](https://github.com/withtypes))
+
 ## v0.13.0
 
 Released 2023-05-03.
