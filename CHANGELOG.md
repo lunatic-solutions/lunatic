@@ -26,6 +26,32 @@ Released 2023-11-23.
 - Fix mTLS root cert store ([@kosticmarin](https://github.com/kosticmarin))
 - Fix clippy PartialOrd, cargo update ([@withtypes](https://github.com/withtypes))
 
+
+#### CLI Changes
+
+New Lunatic CLI commands were added that interact with the Lunatic Cloud.
+
+Login your Lunatic CLI and connect it with Your account on Lunatic Cloud.
+```
+lunatic login
+```
+
+Setup your project on Lunatic Cloud
+```
+lunatic app create hello-lunatic
+```
+
+Deploy Your application.
+```
+lunatic deploy
+```
+
+#### Privileged and Unprivileged Nodes
+
+Privileged nodes can process distributed messages from any environment, while unprivileged nodes on registration receive a list of allowed environments. Any message that an unprivileged node process and which comes from an environment to which the node does not have access will result in an error.
+
+By default control servers implementations, provided in this repository (see crates lunatic-control-axum and lunatic-control-submilliseconds), register only privileged nodes with no limitations.
+
 ## v0.13.0
 
 Released 2023-05-03.
