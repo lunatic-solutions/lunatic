@@ -1,5 +1,57 @@
 # Lunatic Changelog
 
+## v0.14.0
+
+Released 2023-11-23.
+
+### Changes
+
+- Privileged and Unprivileged Nodes ([@teskeras](https://github.com/teskeras))
+- Quic message chunking ([@kosticmarin](https://github.com/kosticmarin))
+- Add custom certificate extenstion ([@kosticmarin](https://github.com/kosticmarin))
+- Lunatic CLI ([@kosticmarin](https://github.com/kosticmarin))
+- Log response body on unsuccessful registration ([@withtypes](https://github.com/withtypes))
+
+### Chore
+
+- Update license field following SPDX 2.1 license expression standard ([@frisoft](https://github.com/frisoft))
+- Remove macOS universal build ([@kosticmarin](https://github.com/kosticmarin))
+
+### Fix
+
+- Typo ([@bkolobara](https://github.com/bkolobara))
+- Lookup nodes host call ([@kosticmarin](https://github.com/kosticmarin))
+- Deploy flow create app instance ([@kosticmarin](https://github.com/kosticmarin))
+- Zip deploy assets include root dir and all subdirs ([@kosticmarin](https://github.com/kosticmarin))
+- Fix mTLS root cert store ([@kosticmarin](https://github.com/kosticmarin))
+- Fix clippy PartialOrd, cargo update ([@withtypes](https://github.com/withtypes))
+
+
+#### CLI Changes
+
+New Lunatic CLI commands were added that interact with the Lunatic Cloud.
+
+Login your Lunatic CLI and connect it with Your account on Lunatic Cloud.
+```
+lunatic login
+```
+
+Setup your project on Lunatic Cloud
+```
+lunatic app create hello-lunatic
+```
+
+Deploy Your application.
+```
+lunatic deploy
+```
+
+#### Privileged and Unprivileged Nodes
+
+Privileged nodes can process distributed messages from any environment, while unprivileged nodes on registration receive a list of allowed environments. Any message that an unprivileged node process and which comes from an environment to which the node does not have access will result in an error.
+
+By default control servers implementations, provided in this repository (see crates lunatic-control-axum and lunatic-control-submilliseconds), register only privileged nodes with no limitations.
+
 ## v0.13.0
 
 Released 2023-05-03.
