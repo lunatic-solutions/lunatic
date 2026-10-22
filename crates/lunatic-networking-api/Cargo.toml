@@ -17,5 +17,5 @@ rustls-pemfile = { workspace = true }
 tokio = { workspace = true, features = ["io-util", "net", "sync", "time"] }
 tokio-rustls = "0.24.1"
 wasmtime = { workspace = true }
-webpki-roots = "0.25.2"
+webpki-roots = "1.0.10"
 rustls-webpki = "0.101.4"
